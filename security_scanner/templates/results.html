@@ -78,6 +78,18 @@
     .kv-table td:first-child { color: var(--muted); white-space: nowrap; width: 42%; }
     .kv-table tr:last-child td { border-bottom: none; }
 
+    /* Vulnerability table */
+    .vuln-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+    .vuln-table th { text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--border); color: var(--muted); font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; }
+    .vuln-table td { padding: 8px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .vuln-table tr:last-child td { border-bottom: none; }
+    .vuln-table tr:hover { background: rgba(255,255,255,.03); }
+    .sev-badge { display: inline-block; width: 20px; height: 20px; border-radius: 4px; text-align: center; line-height: 20px; font-size: .7rem; font-weight: 700; color: #fff; margin-right: 4px; }
+    .sev-critical { background: var(--critical); }
+    .sev-high { background: var(--high); }
+    .sev-medium { background: var(--medium); }
+    .sev-low { background: var(--green); }
+
     /* Issue list */
     .issue-list { list-style: none; margin-top: 10px; }
     .issue-item { display: flex; gap: 7px; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 0.82rem; }
@@ -545,37 +557,62 @@
 
     <!-- CVE / Known Vulnerabilities (Shodan InternetDB) -->
     {% set sv = results.categories.shodan_vulns %}
+    {% set sv_total = sv.critical_count + sv.high_count + sv.medium_count + sv.low_count %}
     {% set sv_tl = 'tl-crimson' if sv.critical_count > 0 else ('tl-red' if sv.high_count > 0 else ('tl-amber' if sv.medium_count > 0 else 'tl-green')) %}
-    <div class="cat-card">
+    <div class="cat-card" style="grid-column: 1 / -1;">
       <div class="cat-header" onclick="toggle(this)">
         <div class="cat-left"><div class="traffic-light {{ sv_tl }}"></div><div class="cat-title">CVE / Known Vulnerabilities</div></div>
         <div style="display:flex;align-items:center;gap:10px;">
           <span class="cat-grade {% if sv.critical_count > 0 %}color-red{% endif %}">
-            {% if sv.critical_count > 0 %}{{ sv.critical_count }} critical{% elif sv.high_count > 0 %}{{ sv.high_count }} high{% elif sv.medium_count > 0 %}{{ sv.medium_count }} medium{% else %}Clean{% endif %}
+            {{ sv_total }} found
           </span>
           <span class="chevron">&#9660;</span>
         </div>
       </div>
       <div class="cat-body">
-        <table class="kv-table">
-          <tr><td>IP scanned</td><td>{{ sv.ip or '—' }}</td></tr>
-          <tr><td>Critical CVEs</td><td>{% if sv.critical_count > 0 %}<span class="badge badge-red">{{ sv.critical_count }}</span>{% else %}0{% endif %}</td></tr>
-          <tr><td>High CVEs</td><td>{% if sv.high_count > 0 %}<span class="badge badge-red">{{ sv.high_count }}</span>{% else %}0{% endif %}</td></tr>
-          <tr><td>Medium CVEs</td><td>{% if sv.medium_count > 0 %}<span class="badge badge-amber">{{ sv.medium_count }}</span>{% else %}0{% endif %}</td></tr>
-          <tr><td>Open ports</td><td>{{ sv.open_ports | join(', ') if sv.open_ports else '—' }}</td></tr>
-          {% if sv.tags %}<tr><td>Tags</td><td>{{ sv.tags | join(', ') }}</td></tr>{% endif %}
-        </table>
-        {% if sv.cves %}
-        <div style="margin-top:8px;">
-          <p style="font-size:.78rem;color:var(--muted);margin-bottom:4px;">CVE details (top {{ sv.cves | length }}):</p>
-          {% for cve in sv.cves %}
-          <div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:.78rem;">
-            <span style="font-weight:600;color:{% if cve.severity == 'critical' %}var(--critical){% elif cve.severity == 'high' %}var(--high){% else %}var(--medium){% endif %};">{{ cve.cve_id }}</span>
-            <span class="badge {% if cve.severity == 'critical' %}badge-red{% elif cve.severity == 'high' %}badge-red{% else %}badge-amber{% endif %}" style="margin-left:6px;">CVSS {{ cve.cvss_score }}</span>
-            {% if cve.description %}<p style="margin:2px 0 0 0;color:var(--muted);">{{ cve.description }}</p>{% endif %}
-          </div>
-          {% endfor %}
+        <!-- Summary row -->
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:.82rem;">
+          <span>IP: <b>{{ sv.ip or '—' }}</b></span>
+          {% if sv.critical_count > 0 %}<span><span class="badge badge-red">Critical {{ sv.critical_count }}</span></span>{% endif %}
+          {% if sv.high_count > 0 %}<span><span class="badge badge-red">High {{ sv.high_count }}</span></span>{% endif %}
+          {% if sv.medium_count > 0 %}<span><span class="badge badge-amber">Medium {{ sv.medium_count }}</span></span>{% endif %}
+          {% if sv.low_count > 0 %}<span><span class="badge badge-green">Low {{ sv.low_count }}</span></span>{% endif %}
+          {% if sv.tags %}<span style="color:var(--muted);">Tags: {{ sv.tags | join(', ') }}</span>{% endif %}
         </div>
+        {% if sv.cves %}
+        <!-- Vulnerability table -->
+        <table class="vuln-table">
+          <thead>
+            <tr>
+              <th style="width:32px;">#</th>
+              <th style="width:80px;">Severity</th>
+              <th>Name</th>
+              <th style="width:60px;">CVSS</th>
+              <th style="width:60px;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for cve in sv.cves %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td>
+                <span class="sev-badge sev-{{ cve.severity }}">
+                  {% if cve.severity == 'critical' %}C{% elif cve.severity == 'high' %}H{% elif cve.severity == 'medium' %}M{% else %}L{% endif %}
+                </span>
+                {{ cve.severity | capitalize }}
+              </td>
+              <td>
+                <div style="font-weight:600;">{{ cve.cve_id }}</div>
+                {% if cve.description %}<div style="color:var(--muted);font-size:.74rem;margin-top:2px;">{{ cve.description }}</div>{% endif %}
+              </td>
+              <td><span class="badge {% if cve.cvss_score >= 7.0 %}badge-red{% elif cve.cvss_score >= 4.0 %}badge-amber{% else %}badge-green{% endif %}">{{ cve.cvss_score }}</span></td>
+              <td><span style="color:var(--medium);font-weight:500;">Active</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% elif sv_total == 0 %}
+        <p style="color:var(--green);font-size:.84rem;">No known CVEs detected for this IP.</p>
         {% endif %}
         {% if sv.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in sv.issues %}<li class="issue-item"><span class="issue-icon issue-err">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
       </div>
