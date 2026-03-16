@@ -629,6 +629,42 @@ def cat_securitytrails(d, S):
     return build_cat_card("DNS Intelligence (SecurityTrails)", col, summary, rows, st.get("issues", []), S)
 
 
+def cat_fraudulent_domains(d, S):
+    fd      = d.get("fraudulent_domains", {})
+    count   = fd.get("resolved_count", 0)
+    checked = fd.get("total_permutations", 0)
+    col     = C_CRITICAL if count > 5 else (C_RED if count > 2 else (C_AMBER if count > 0 else C_GREEN))
+    summary = f"{count} detected" if count > 0 else "Clean"
+    rows = [
+        ("Permutations checked", checked),
+        ("Resolved (active)",    count),
+    ]
+    for dom in fd.get("fraudulent_domains", [])[:8]:
+        rows.append((
+            dom.get("domain", ""),
+            f"{dom.get('technique', '')}  |  {dom.get('similarity', 0)}% match"
+        ))
+    return build_cat_card("Fraudulent / Lookalike Domains", col, summary, rows, fd.get("issues", []), S)
+
+
+def cat_privacy_compliance(d, S):
+    pc    = d.get("privacy_compliance", {})
+    pct   = pc.get("compliance_pct", 0)
+    found = pc.get("policy_found", False)
+    col   = C_GREEN if pct >= 80 else (C_AMBER if pct >= 50 else (C_RED if found else C_CRITICAL))
+    summary = f"{pct}%" if found else "Not found"
+    rows = [
+        ("Policy found", "Yes" if found else "No — compliance risk"),
+    ]
+    if found:
+        rows.append(("Compliance score", f"{pct}%"))
+        if pc.get("sections_found"):
+            rows.append(("Sections present", " | ".join(pc["sections_found"])))
+        if pc.get("sections_missing"):
+            rows.append(("Sections missing", " | ".join(pc["sections_missing"])))
+    return build_cat_card("Privacy Policy Compliance", col, summary, rows, pc.get("issues", []), S)
+
+
 def cat_website(d, S):
     ws    = d.get("website_security", {})
     score = ws.get("score", 0)
@@ -808,12 +844,14 @@ def generate_pdf(results: dict) -> bytes:
     story += cat_shodan(cats, S)
     story += cat_dehashed(cats, S)
     story += cat_virustotal(cats, S)
+    story += cat_fraudulent_domains(cats, S)
 
     # ── Technology & Governance ──────────────────────────────────────────────
     story += section_header("TECHNOLOGY & GOVERNANCE", S)
     story += cat_tech(cats, S)
     story += cat_domain(cats, S)
     story += cat_securitytrails(cats, S)
+    story += cat_privacy_compliance(cats, S)
     story += cat_security_policy(cats, S)
     story += cat_payment(cats, S)
 

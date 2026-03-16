@@ -1949,7 +1949,348 @@ class SecurityTrailsChecker:
 
 
 # ---------------------------------------------------------------------------
-# 24. Risk Scoring Engine
+# 24. Fraudulent / Lookalike Domain Detection
+# ---------------------------------------------------------------------------
+
+class FraudulentDomainChecker:
+    """
+    Generates typosquat and lookalike domain permutations, then checks
+    which ones actually resolve via DNS. Flags resolved domains as potential
+    phishing/brand-abuse risks.
+    """
+
+    # Common TLD variants to check
+    ALT_TLDS = [
+        ".com", ".net", ".org", ".co", ".dev", ".online", ".io", ".info",
+        ".biz", ".xyz", ".site", ".app", ".tech", ".store", ".shop",
+        ".co.za", ".africa",
+    ]
+
+    # Homoglyph map (visually similar characters)
+    HOMOGLYPHS = {
+        "a": ["4", "@"], "b": ["d", "6"], "c": ["k"],
+        "e": ["3"], "g": ["q", "9"], "i": ["1", "l", "!"],
+        "l": ["1", "i", "|"], "o": ["0"], "s": ["5", "$"],
+        "t": ["7"], "u": ["v"], "v": ["u"], "z": ["2"],
+    }
+
+    # Adjacent keyboard keys for fat-finger typos
+    KEYBOARD_ADJ = {
+        "q": "wa", "w": "qeas", "e": "wrds", "r": "etfs", "t": "ryg",
+        "y": "tuh", "u": "yij", "i": "uok", "o": "ipl", "p": "ol",
+        "a": "qwsz", "s": "wedxza", "d": "erfcxs", "f": "rtgvcd",
+        "g": "tyhbvf", "h": "yujnbg", "j": "uikmnh", "k": "iolmj",
+        "l": "opk", "z": "asx", "x": "zsdc", "c": "xdfv",
+        "v": "cfgb", "b": "vghn", "n": "bhjm", "m": "njk",
+    }
+
+    def _split_domain(self, domain: str) -> tuple:
+        """Split domain into name and TLD (handles multi-part TLDs like .co.za)."""
+        parts = domain.split(".")
+        if len(parts) >= 3 and parts[-2] in ("co", "com", "org", "net", "ac", "gov"):
+            return ".".join(parts[:-2]), "." + ".".join(parts[-2:])
+        return ".".join(parts[:-1]), "." + parts[-1]
+
+    def _generate_permutations(self, name: str, original_tld: str) -> list:
+        """Generate domain permutations. Returns list of (domain, technique, similarity%)."""
+        perms = []
+        seen = set()
+
+        def add(d, tech, sim):
+            if d not in seen:
+                seen.add(d)
+                perms.append((d, tech, sim))
+
+        # 1. Character omission (missing letter)
+        for i in range(len(name)):
+            variant = name[:i] + name[i+1:]
+            if len(variant) >= 2:
+                sim = round((len(name) - 1) / len(name) * 100)
+                add(variant + original_tld, "char-omission", sim)
+
+        # 2. Adjacent character swap
+        for i in range(len(name) - 1):
+            variant = name[:i] + name[i+1] + name[i] + name[i+2:]
+            sim = round((len(name) - 1) / len(name) * 100)
+            add(variant + original_tld, "char-swap", sim)
+
+        # 3. Character duplication
+        for i in range(len(name)):
+            variant = name[:i] + name[i] * 2 + name[i+1:]
+            sim = round(len(name) / (len(name) + 1) * 100)
+            add(variant + original_tld, "char-duplicate", sim)
+
+        # 4. Homoglyph substitution
+        for i, ch in enumerate(name):
+            for repl in self.HOMOGLYPHS.get(ch, []):
+                variant = name[:i] + repl + name[i+1:]
+                add(variant + original_tld, "homoglyph", 90)
+
+        # 5. Adjacent key substitution (fat finger)
+        for i, ch in enumerate(name):
+            for adj in self.KEYBOARD_ADJ.get(ch, ""):
+                variant = name[:i] + adj + name[i+1:]
+                sim = round((len(name) - 1) / len(name) * 100)
+                add(variant + original_tld, "keyboard-typo", sim)
+
+        # 6. TLD variants
+        for tld in self.ALT_TLDS:
+            if tld != original_tld:
+                add(name + tld, "tld-variant", 85)
+
+        # 7. Dot insertion (e.g., phi.shield.com)
+        for i in range(1, len(name)):
+            if name[i-1] != "." and name[i] != ".":
+                variant = name[:i] + "." + name[i:]
+                add(variant + original_tld, "dot-insertion", 80)
+
+        # 8. Hyphen insertion
+        for i in range(1, len(name)):
+            variant = name[:i] + "-" + name[i:]
+            add(variant + original_tld, "hyphen-insertion", 80)
+
+        return perms
+
+    def _resolves(self, domain: str) -> bool:
+        """Check if domain resolves to an IP address."""
+        try:
+            socket.gethostbyname(domain)
+            return True
+        except (socket.gaierror, socket.timeout, OSError):
+            return False
+
+    def check(self, domain: str) -> dict:
+        result = {
+            "status": "completed",
+            "total_permutations": 0,
+            "resolved_count": 0,
+            "fraudulent_domains": [],
+            "score": 100,
+            "issues": [],
+        }
+
+        try:
+            name, tld = self._split_domain(domain)
+            permutations = self._generate_permutations(name, tld)
+            result["total_permutations"] = len(permutations)
+
+            # Check DNS resolution in parallel (cap at 80 to keep it fast)
+            to_check = permutations[:80]
+            resolved = []
+
+            with ThreadPoolExecutor(max_workers=20) as ex:
+                futures = {
+                    ex.submit(self._resolves, perm[0]): perm
+                    for perm in to_check
+                }
+                for future in as_completed(futures, timeout=30):
+                    perm = futures[future]
+                    try:
+                        if future.result(timeout=5):
+                            resolved.append({
+                                "domain": perm[0],
+                                "technique": perm[1],
+                                "similarity": perm[2],
+                            })
+                    except Exception:
+                        pass
+
+            # Sort by similarity descending
+            resolved.sort(key=lambda x: x["similarity"], reverse=True)
+            result["resolved_count"] = len(resolved)
+            result["fraudulent_domains"] = resolved[:20]  # cap display at 20
+
+            if len(resolved) > 5:
+                result["issues"].append(
+                    f"CRITICAL: {len(resolved)} lookalike domains detected — "
+                    "high brand impersonation and phishing risk"
+                )
+            elif len(resolved) > 2:
+                result["issues"].append(
+                    f"{len(resolved)} lookalike domains detected — "
+                    "monitor for brand abuse and phishing campaigns"
+                )
+            elif len(resolved) > 0:
+                result["issues"].append(
+                    f"{len(resolved)} lookalike domain(s) found — "
+                    "review for potential typosquatting"
+                )
+
+            # Score: penalize per resolved lookalike
+            penalty = min(100, len(resolved) * 8)
+            result["score"] = max(0, 100 - penalty)
+
+        except Exception as e:
+            result["status"] = "error"
+            result["error"] = str(e)
+
+        return result
+
+
+# ---------------------------------------------------------------------------
+# 25. Privacy Policy Compliance Checker
+# ---------------------------------------------------------------------------
+
+class PrivacyComplianceChecker:
+    """
+    Fetches the domain's privacy policy page and checks for required sections
+    that map to POPIA / GDPR / general data protection compliance.
+    Fully passive — only reads publicly available pages.
+    """
+
+    POLICY_PATHS = [
+        "/privacy-policy", "/privacy", "/legal/privacy", "/privacypolicy",
+        "/privacy_policy", "/legal/privacy-policy", "/terms/privacy",
+        "/data-privacy", "/gdpr", "/popia",
+    ]
+
+    # Required sections with keywords to look for
+    REQUIRED_SECTIONS = {
+        "Data Collection": [
+            "collect", "data we collect", "information we collect",
+            "how do we collect", "what data", "personal information we gather",
+        ],
+        "Data Usage": [
+            "how we use", "use your data", "use of information",
+            "purpose of processing", "why we collect",
+        ],
+        "Data Sharing": [
+            "share your", "third part", "disclose", "transfer",
+            "sharing of information", "who we share",
+        ],
+        "Cookie Policy": [
+            "cookie", "tracking technolog", "web beacon", "pixel",
+        ],
+        "User Rights": [
+            "your rights", "right to access", "right to erasure", "right to delete",
+            "right to rectif", "data subject", "opt out", "opt-out",
+        ],
+        "Data Retention": [
+            "retention", "how long", "retain your", "storage period",
+            "delete your data",
+        ],
+        "Contact Information": [
+            "contact us", "data protection officer", "privacy officer",
+            "dpo@", "privacy@", "reach us",
+        ],
+        "Do Not Track": [
+            "do not track", "dnt", "do-not-track",
+        ],
+        "Children's Privacy": [
+            "children", "minor", "under 13", "under 16", "child",
+        ],
+        "Updates to Policy": [
+            "update", "changes to this", "modify this", "revised",
+            "amend this policy",
+        ],
+    }
+
+    def _find_policy_url(self, domain: str) -> tuple:
+        """Try common paths to find the privacy policy page."""
+        for path in self.POLICY_PATHS:
+            for scheme in ("https", "http"):
+                url = f"{scheme}://{domain}{path}"
+                try:
+                    r = requests.get(url, headers={"User-Agent": USER_AGENT},
+                                     timeout=8, allow_redirects=True)
+                    if r.status_code == 200 and len(r.text) > 500:
+                        return url, r.text.lower()
+                except Exception:
+                    continue
+
+        # Fallback: check homepage for privacy policy link
+        try:
+            r = requests.get(f"https://{domain}", headers={"User-Agent": USER_AGENT},
+                             timeout=8, allow_redirects=True)
+            if r.status_code == 200:
+                text = r.text.lower()
+                # Look for privacy policy link in HTML
+                import re as _re
+                matches = _re.findall(r'href=["\']([^"\']*privac[^"\']*)["\']', text)
+                for href in matches[:3]:
+                    if href.startswith("/"):
+                        href = f"https://{domain}{href}"
+                    elif not href.startswith("http"):
+                        href = f"https://{domain}/{href}"
+                    try:
+                        r2 = requests.get(href, headers={"User-Agent": USER_AGENT},
+                                          timeout=8, allow_redirects=True)
+                        if r2.status_code == 200 and len(r2.text) > 500:
+                            return href, r2.text.lower()
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+        return None, None
+
+    def check(self, domain: str) -> dict:
+        result = {
+            "status": "completed",
+            "policy_url": None,
+            "policy_found": False,
+            "sections_found": [],
+            "sections_missing": [],
+            "compliance_pct": 0,
+            "score": 0,
+            "issues": [],
+        }
+
+        try:
+            url, content = self._find_policy_url(domain)
+
+            if not content:
+                result["policy_found"] = False
+                result["sections_missing"] = list(self.REQUIRED_SECTIONS.keys())
+                result["issues"].append(
+                    "No privacy policy found — POPIA/GDPR compliance risk"
+                )
+                return result
+
+            result["policy_found"] = True
+            result["policy_url"] = url
+
+            # Check each required section
+            found = []
+            missing = []
+            for section, keywords in self.REQUIRED_SECTIONS.items():
+                if any(kw in content for kw in keywords):
+                    found.append(section)
+                else:
+                    missing.append(section)
+
+            result["sections_found"] = found
+            result["sections_missing"] = missing
+            total = len(self.REQUIRED_SECTIONS)
+            result["compliance_pct"] = round(len(found) / total * 100) if total else 0
+
+            # Issues for missing critical sections
+            critical_missing = [s for s in missing if s in (
+                "Data Collection", "Data Usage", "User Rights", "Contact Information"
+            )]
+            if critical_missing:
+                result["issues"].append(
+                    f"Privacy policy missing critical sections: {', '.join(critical_missing)}"
+                )
+            if missing and not critical_missing:
+                result["issues"].append(
+                    f"Privacy policy missing {len(missing)} recommended section(s): "
+                    f"{', '.join(missing[:3])}"
+                    + (f" (+{len(missing)-3} more)" if len(missing) > 3 else "")
+                )
+
+            # Score based on completeness
+            result["score"] = result["compliance_pct"]
+
+        except Exception as e:
+            result["status"] = "error"
+            result["error"] = str(e)
+
+        return result
+
+
+# ---------------------------------------------------------------------------
+# 26. Risk Scoring Engine
 # ---------------------------------------------------------------------------
 
 class RiskScorer:
@@ -1958,23 +2299,25 @@ class RiskScorer:
     All weights must sum to 100 when WAF bonus excluded.
     """
     WEIGHTS = {
-        "ssl":                  0.10,
-        "email_security":       0.06,
-        "email_hardening":      0.04,
-        "breaches":             0.08,
+        "ssl":                  0.09,
+        "email_security":       0.05,
+        "email_hardening":      0.03,
+        "breaches":             0.07,
         "http_headers":         0.05,
-        "website_security":     0.05,
-        "exposed_admin":        0.10,
-        "high_risk_protocols":  0.09,
-        "dnsbl":                0.07,
-        "tech_stack":           0.06,
-        "payment_security":     0.04,
-        "vpn_remote":           0.04,
-        "subdomains":           0.04,
-        "shodan_vulns":         0.08,
+        "website_security":     0.04,
+        "exposed_admin":        0.09,
+        "high_risk_protocols":  0.08,
+        "dnsbl":                0.06,
+        "tech_stack":           0.05,
+        "payment_security":     0.03,
+        "vpn_remote":           0.03,
+        "subdomains":           0.03,
+        "shodan_vulns":         0.07,
         "dehashed":             0.02,
-        "virustotal":           0.06,
+        "virustotal":           0.05,
         "securitytrails":       0.02,
+        "fraudulent_domains":   0.05,
+        "privacy_compliance":   0.03,
     }
 
     RECOMMENDATIONS = {
@@ -2012,6 +2355,10 @@ class RiskScorer:
         "security engine(s) flagged this domain as suspicious": "Review VirusTotal suspicious flags — investigate potential domain compromise or abuse.",
         "Domain categorized as": "Review domain categorization flags — being labeled as phishing/malware damages reputation and deliverability.",
         "associated domains on shared infrastructure": "Consider dedicated hosting to reduce shared-infrastructure risk and improve security isolation.",
+        "lookalike domains detected": "Register key lookalike domains defensively and set up domain monitoring for brand impersonation.",
+        "lookalike domain(s) found": "Review detected lookalike domains for potential typosquatting — consider defensive registration.",
+        "No privacy policy found": "Publish a comprehensive privacy policy to comply with POPIA/GDPR — failure to do so risks regulatory fines.",
+        "Privacy policy missing critical sections": "Update your privacy policy to include all required sections for POPIA/GDPR compliance.",
     }
 
     def calculate(self, results: dict) -> tuple:
@@ -2085,6 +2432,14 @@ class RiskScorer:
         else:
             st_risk = 0
 
+        # Fraudulent domain risk
+        fd = results.get("fraudulent_domains", {})
+        fd_risk = inv(fd.get("score", 100))
+
+        # Privacy compliance risk
+        pc = results.get("privacy_compliance", {})
+        pc_risk = inv(pc.get("score", 100))
+
         weighted = (
             ssl_risk         * self.WEIGHTS["ssl"] +
             email_risk       * self.WEIGHTS["email_security"] +
@@ -2102,7 +2457,9 @@ class RiskScorer:
             shodan_risk      * self.WEIGHTS["shodan_vulns"] +
             dehashed_risk    * self.WEIGHTS["dehashed"] +
             vt_risk          * self.WEIGHTS["virustotal"] +
-            st_risk          * self.WEIGHTS["securitytrails"]
+            st_risk          * self.WEIGHTS["securitytrails"] +
+            fd_risk          * self.WEIGHTS["fraudulent_domains"] +
+            pc_risk          * self.WEIGHTS["privacy_compliance"]
         )
 
         risk_score = round(weighted * 10)
@@ -2195,6 +2552,8 @@ class SecurityScanner:
             "dehashed":            (DehashedChecker().check,           domain),
             "virustotal":          (VirusTotalChecker().check,         domain),
             "securitytrails":      (SecurityTrailsChecker().check,     domain),
+            "fraudulent_domains":  (FraudulentDomainChecker().check,   domain),
+            "privacy_compliance":  (PrivacyComplianceChecker().check,  domain),
         }
 
         cat_results = {}

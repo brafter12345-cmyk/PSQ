@@ -719,6 +719,53 @@
       </div>
     </div>
 
+    <!-- Fraudulent / Lookalike Domains -->
+    {% set fd = results.categories.get('fraudulent_domains', {}) %}
+    {% set fd_count = fd.get('resolved_count', 0) %}
+    {% set fd_tl = 'tl-crimson' if fd_count > 5 else ('tl-red' if fd_count > 2 else ('tl-amber' if fd_count > 0 else 'tl-green')) %}
+    <div class="cat-card" style="grid-column: 1 / -1;">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light {{ fd_tl }}"></div><div class="cat-title">Fraudulent / Lookalike Domains</div></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="cat-grade {% if fd_count > 5 %}color-red{% elif fd_count > 0 %}color-amber{% endif %}">
+            {{ fd_count }} detected
+          </span>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="cat-body">
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:.82rem;">
+          <span>Permutations checked: <b>{{ fd.get('total_permutations', 0) }}</b></span>
+          <span>Resolved (active): <b class="{% if fd_count > 5 %}color-red{% elif fd_count > 0 %}color-amber{% endif %}">{{ fd_count }}</b></span>
+        </div>
+        {% if fd.get('fraudulent_domains') %}
+        <table class="vuln-table">
+          <thead>
+            <tr>
+              <th style="width:32px;">#</th>
+              <th>Domain</th>
+              <th style="width:120px;">Technique</th>
+              <th style="width:80px;">Similarity</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for d in fd.fraudulent_domains %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td><code style="color:var(--critical);">{{ d.domain }}</code></td>
+              <td><span class="badge badge-amber">{{ d.technique }}</span></td>
+              <td><span class="badge {% if d.similarity >= 85 %}badge-red{% else %}badge-amber{% endif %}">{{ d.similarity }}%</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% elif fd_count == 0 %}
+        <p style="color:var(--low);font-size:.84rem;">No active lookalike domains detected.</p>
+        {% endif %}
+        {% if fd.get('issues') %}<ul class="issue-list" style="margin-top:8px;">{% for i in fd.issues %}<li class="issue-item"><span class="issue-icon issue-err">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+    </div>
+
   </div>
 
   <!-- =================== TECH & GOVERNANCE =================== -->
@@ -802,6 +849,35 @@
         {% endif %}
         {% if st.get('issues') %}<ul class="issue-list" style="margin-top:8px;">{% for i in st.issues %}<li class="issue-item"><span class="issue-icon issue-warn">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
         {% endif %}
+      </div>
+    </div>
+
+    <!-- Privacy Policy Compliance -->
+    {% set pc = results.categories.get('privacy_compliance', {}) %}
+    {% set pc_pct = pc.get('compliance_pct', 0) %}
+    {% set pc_tl = 'tl-green' if pc_pct >= 80 else ('tl-amber' if pc_pct >= 50 else ('tl-red' if pc.get('policy_found') else 'tl-crimson')) %}
+    <div class="cat-card">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light {{ pc_tl }}"></div><div class="cat-title">Privacy Policy Compliance</div></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="cat-grade {% if pc_pct < 50 %}color-red{% elif pc_pct < 80 %}color-amber{% endif %}">
+            {% if not pc.get('policy_found') %}Not found{% else %}{{ pc_pct }}%{% endif %}
+          </span>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="cat-body">
+        {% if not pc.get('policy_found') %}
+        <p style="color:var(--critical);font-size:.82rem;margin-top:8px;">&#9888; No privacy policy page found — POPIA/GDPR compliance risk.</p>
+        {% else %}
+        <table class="kv-table">
+          <tr><td>Policy URL</td><td style="font-size:.76rem;word-break:break-all;">{{ pc.policy_url }}</td></tr>
+          <tr><td>Compliance score</td><td><span class="badge {% if pc_pct >= 80 %}badge-green{% elif pc_pct >= 50 %}badge-amber{% else %}badge-red{% endif %}">{{ pc_pct }}%</span></td></tr>
+          <tr><td>Sections found</td><td style="font-size:.78rem;">{{ pc.get('sections_found', []) | join(', ') or '—' }}</td></tr>
+          <tr><td>Sections missing</td><td style="font-size:.78rem;color:var(--critical);">{{ pc.get('sections_missing', []) | join(', ') or 'None' }}</td></tr>
+        </table>
+        {% endif %}
+        {% if pc.get('issues') %}<ul class="issue-list" style="margin-top:8px;">{% for i in pc.issues %}<li class="issue-item"><span class="issue-icon issue-err">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
       </div>
     </div>
 
