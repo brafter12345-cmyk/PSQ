@@ -426,7 +426,6 @@
         </div>
         {% endif %}
         {% endif %}
-        {% if dns.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in dns.issues %}<li class="issue-item"><span class="issue-icon issue-err">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
       </div>
     </div>
 
@@ -461,7 +460,6 @@
         </div>
         {% endfor %}
         {% else %}<p style="color:var(--low);font-size:.82rem;margin-top:8px;">&#10003; No critical database or service ports exposed</p>{% endif %}
-        {% if hrp.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in hrp.issues %}<li class="issue-item"><span class="issue-icon issue-err">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
       </div>
     </div>
 
@@ -499,13 +497,13 @@
       </div>
     </div>
 
-    <!-- External IP Discovery -->
+    <!-- CVE / Known Vulnerabilities -->
     {% set extip = results.categories.external_ips %}
     {% set extip_agg = extip.aggregate_vulns or {} %}
     {% set extip_tl = 'tl-crimson' if extip_agg.critical_count > 0 or extip_agg.kev_count > 0 else ('tl-red' if extip_agg.high_count > 0 else ('tl-amber' if extip_agg.total_cves > 0 else 'tl-green')) %}
     <div class="cat-card">
       <div class="cat-header" onclick="toggle(this)">
-        <div class="cat-left"><div class="traffic-light {{ extip_tl }}"></div><div class="cat-title">External IP Discovery</div></div>
+        <div class="cat-left"><div class="traffic-light {{ extip_tl }}"></div><div class="cat-title">CVE / Known Vulnerabilities</div></div>
         <div style="display:flex;align-items:center;gap:10px;"><span class="cat-grade">{{ extip.total_unique_ips | default(0) }} IPs found</span><span class="chevron">&#9660;</span></div>
       </div>
       <div class="cat-body">
@@ -727,85 +725,6 @@
         </div>
         {% endif %}
         {% if subs.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in subs.issues %}<li class="issue-item"><span class="issue-icon issue-warn">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
-      </div>
-    </div>
-
-    <!-- CVE / Known Vulnerabilities (Shodan InternetDB) -->
-    {% set sv = results.categories.shodan_vulns %}
-    {% set sv_total = sv.critical_count + sv.high_count + sv.medium_count + sv.low_count %}
-    {% set sv_tl = 'tl-crimson' if sv.critical_count > 0 else ('tl-red' if sv.high_count > 0 else ('tl-amber' if sv.medium_count > 0 else 'tl-green')) %}
-    <div class="cat-card" style="grid-column: 1 / -1;">
-      <div class="cat-header" onclick="toggle(this)">
-        <div class="cat-left"><div class="traffic-light {{ sv_tl }}"></div><div class="cat-title">CVE / Known Vulnerabilities</div></div>
-        <div style="display:flex;align-items:center;gap:10px;">
-          <span class="cat-grade {% if sv.critical_count > 0 %}color-red{% endif %}">
-            {{ sv_total }} found
-          </span>
-          <span class="chevron">&#9660;</span>
-        </div>
-      </div>
-      <div class="cat-body">
-        <!-- Summary row -->
-        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:.82rem;">
-          <span>IP: <b>{{ sv.ip or '—' }}</b></span>
-          {% if sv.critical_count > 0 %}<span><span class="badge badge-red">Critical {{ sv.critical_count }}</span></span>{% endif %}
-          {% if sv.high_count > 0 %}<span><span class="badge badge-red">High {{ sv.high_count }}</span></span>{% endif %}
-          {% if sv.medium_count > 0 %}<span><span class="badge badge-amber">Medium {{ sv.medium_count }}</span></span>{% endif %}
-          {% if sv.low_count > 0 %}<span><span class="badge badge-green">Low {{ sv.low_count }}</span></span>{% endif %}
-          {% if sv.kev_count is defined and sv.kev_count > 0 %}<span><span class="badge badge-red" style="background:#dc2626;animation:pulse 2s infinite;">⚡ {{ sv.kev_count }} in CISA KEV</span></span>{% endif %}
-          {% if sv.max_epss is defined and sv.max_epss > 0 %}<span><span class="badge {% if sv.max_epss >= 0.5 %}badge-red{% elif sv.max_epss >= 0.1 %}badge-amber{% else %}badge-green{% endif %}">Max EPSS: {{ (sv.max_epss * 100) | round(1) }}%</span></span>{% endif %}
-          {% if sv.tags %}<span style="color:var(--muted);">Tags: {{ sv.tags | join(', ') }}</span>{% endif %}
-        </div>
-        {% if sv.cves %}
-        <!-- Vulnerability table -->
-        <table class="vuln-table">
-          <thead>
-            <tr>
-              <th style="width:32px;">#</th>
-              <th style="width:80px;">Severity</th>
-              <th>Name</th>
-              <th style="width:60px;">CVSS</th>
-              <th style="width:70px;">EPSS</th>
-              <th style="width:60px;">KEV</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for cve in sv.cves %}
-            <tr>
-              <td>{{ loop.index }}</td>
-              <td>
-                <span class="sev-badge sev-{{ cve.severity }}">
-                  {% if cve.severity == 'critical' %}C{% elif cve.severity == 'high' %}H{% elif cve.severity == 'medium' %}M{% else %}L{% endif %}
-                </span>
-                {{ cve.severity | capitalize }}
-              </td>
-              <td>
-                <div style="font-weight:600;">{{ cve.cve_id }}</div>
-                {% if cve.description %}<div style="color:var(--muted);font-size:.74rem;margin-top:2px;">{{ cve.description }}</div>{% endif %}
-              </td>
-              <td><span class="badge {% if cve.cvss_score >= 7.0 %}badge-red{% elif cve.cvss_score >= 4.0 %}badge-amber{% else %}badge-green{% endif %}">{{ cve.cvss_score }}</span></td>
-              <td>
-                {% if cve.epss_score is not none %}
-                <span class="badge {% if cve.epss_score >= 0.5 %}badge-red{% elif cve.epss_score >= 0.1 %}badge-amber{% else %}badge-green{% endif %}">{{ (cve.epss_score * 100) | round(1) }}%</span>
-                {% else %}
-                <span style="color:var(--muted);">—</span>
-                {% endif %}
-              </td>
-              <td>
-                {% if cve.kev_exploited %}<span class="badge badge-red" style="background:#dc2626;font-size:.68rem;">EXPLOITED</span>
-                {% else %}<span style="color:var(--muted);">—</span>{% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        <p style="color:var(--muted);font-size:.72rem;margin-top:8px;">
-          <b>CVSS</b> = severity impact (0-10) &nbsp;|&nbsp; <b>EPSS</b> = probability of exploitation within 30 days (FIRST.org) &nbsp;|&nbsp; <b>KEV</b> = CISA Known Exploited Vulnerabilities catalog
-        </p>
-        {% elif sv_total == 0 %}
-        <p style="color:var(--green);font-size:.84rem;">No known CVEs detected for this IP.</p>
-        {% endif %}
-        {% if sv.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in sv.issues %}<li class="issue-item"><span class="issue-icon issue-err">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
       </div>
     </div>
 
