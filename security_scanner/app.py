@@ -25,7 +25,9 @@ from scanner import SecurityScanner
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin calls from Vercel frontend
 
-HIBP_API_KEY = os.environ.get("HIBP_API_KEY")  # Optional — set in env
+HIBP_API_KEY     = os.environ.get("HIBP_API_KEY")      # Optional
+DEHASHED_EMAIL   = os.environ.get("DEHASHED_EMAIL")    # Optional — paid
+DEHASHED_API_KEY = os.environ.get("DEHASHED_API_KEY")  # Optional — paid
 DB_PATH = os.environ.get("DB_PATH", "scans.db")
 MAX_CONCURRENT = int(os.environ.get("MAX_CONCURRENT_SCANS", "5"))
 
@@ -108,7 +110,11 @@ def fetch_scan(scan_id: str):
 def run_scan(scan_id: str, domain: str):
     with _semaphore:
         try:
-            scanner = SecurityScanner(hibp_api_key=HIBP_API_KEY)
+            scanner = SecurityScanner(
+                hibp_api_key=HIBP_API_KEY,
+                dehashed_email=DEHASHED_EMAIL,
+                dehashed_api_key=DEHASHED_API_KEY,
+            )
             results = scanner.scan(domain)
             update_scan(scan_id, results)
         except Exception as e:
