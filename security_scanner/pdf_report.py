@@ -514,24 +514,35 @@ def cat_payment(d, S):
 
 
 def cat_shodan(d, S):
-    sv   = d.get("shodan_vulns", {})
-    crit = sv.get("critical_count", 0)
-    high = sv.get("high_count", 0)
-    med  = sv.get("medium_count", 0)
-    col  = C_CRITICAL if crit > 0 else (C_RED if high > 0 else (C_AMBER if med > 0 else C_GREEN))
-    summary = (f"{crit} critical" if crit > 0 else f"{high} high" if high > 0 else
-               f"{med} medium" if med > 0 else "Clean")
+    sv    = d.get("shodan_vulns", {})
+    crit  = sv.get("critical_count", 0)
+    high  = sv.get("high_count", 0)
+    med   = sv.get("medium_count", 0)
+    low   = sv.get("low_count", 0)
+    total = crit + high + med + low
+    col   = C_CRITICAL if crit > 0 else (C_RED if high > 0 else (C_AMBER if med > 0 else C_GREEN))
+    summary = f"{total} CVE(s)" if total > 0 else "Clean"
+
+    # Summary rows
     rows = [
         ("IP scanned",   sv.get("ip") or "—"),
-        ("Critical CVEs", crit),
-        ("High CVEs",    high),
-        ("Medium CVEs",  med),
+        ("Total CVEs",   total),
+        ("Breakdown",    f"Critical: {crit}  |  High: {high}  |  Medium: {med}  |  Low: {low}"),
         ("Open ports",   ", ".join(str(p) for p in sv.get("open_ports", [])) or "—"),
-        ("Tags",         ", ".join(sv.get("tags", [])) or "—"),
     ]
-    # Append top CVE rows
-    for cve in sv.get("cves", [])[:6]:
-        rows.append((cve.get("cve_id", ""), f"CVSS {cve.get('cvss_score',0)} — {cve.get('severity','').upper()}"))
+    if sv.get("tags"):
+        rows.append(("Tags", ", ".join(sv["tags"])))
+
+    # Detailed CVE rows with severity + CVSS + description
+    for cve in sv.get("cves", [])[:8]:
+        sev = cve.get("severity", "unknown").upper()
+        cvss = cve.get("cvss_score", 0)
+        desc = cve.get("description", "")[:120]
+        label = f"{sev}  |  CVSS {cvss}"
+        if desc:
+            label += f"  —  {desc}"
+        rows.append((cve.get("cve_id", ""), label))
+
     return build_cat_card("CVE / Known Vulnerabilities (Shodan)", col, summary, rows, sv.get("issues", []), S)
 
 
