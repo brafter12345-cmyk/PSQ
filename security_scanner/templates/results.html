@@ -543,6 +543,76 @@
       </div>
     </div>
 
+    <!-- CVE / Known Vulnerabilities (Shodan InternetDB) -->
+    {% set sv = results.categories.shodan_vulns %}
+    {% set sv_tl = 'tl-crimson' if sv.critical_count > 0 else ('tl-red' if sv.high_count > 0 else ('tl-amber' if sv.medium_count > 0 else 'tl-green')) %}
+    <div class="cat-card">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light {{ sv_tl }}"></div><div class="cat-title">CVE / Known Vulnerabilities</div></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="cat-grade {% if sv.critical_count > 0 %}color-red{% endif %}">
+            {% if sv.critical_count > 0 %}{{ sv.critical_count }} critical{% elif sv.high_count > 0 %}{{ sv.high_count }} high{% elif sv.medium_count > 0 %}{{ sv.medium_count }} medium{% else %}Clean{% endif %}
+          </span>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="cat-body">
+        <table class="kv-table">
+          <tr><td>IP scanned</td><td>{{ sv.ip or '—' }}</td></tr>
+          <tr><td>Critical CVEs</td><td>{% if sv.critical_count > 0 %}<span class="badge badge-red">{{ sv.critical_count }}</span>{% else %}0{% endif %}</td></tr>
+          <tr><td>High CVEs</td><td>{% if sv.high_count > 0 %}<span class="badge badge-red">{{ sv.high_count }}</span>{% else %}0{% endif %}</td></tr>
+          <tr><td>Medium CVEs</td><td>{% if sv.medium_count > 0 %}<span class="badge badge-amber">{{ sv.medium_count }}</span>{% else %}0{% endif %}</td></tr>
+          <tr><td>Open ports</td><td>{{ sv.open_ports | join(', ') if sv.open_ports else '—' }}</td></tr>
+          {% if sv.tags %}<tr><td>Tags</td><td>{{ sv.tags | join(', ') }}</td></tr>{% endif %}
+        </table>
+        {% if sv.cves %}
+        <div style="margin-top:8px;">
+          <p style="font-size:.78rem;color:var(--muted);margin-bottom:4px;">CVE details (top {{ sv.cves | length }}):</p>
+          {% for cve in sv.cves %}
+          <div style="padding:5px 0;border-bottom:1px solid var(--border);font-size:.78rem;">
+            <span style="font-weight:600;color:{% if cve.severity == 'critical' %}var(--critical){% elif cve.severity == 'high' %}var(--high){% else %}var(--medium){% endif %};">{{ cve.cve_id }}</span>
+            <span class="badge {% if cve.severity == 'critical' %}badge-red{% elif cve.severity == 'high' %}badge-red{% else %}badge-amber{% endif %}" style="margin-left:6px;">CVSS {{ cve.cvss_score }}</span>
+            {% if cve.description %}<p style="margin:2px 0 0 0;color:var(--muted);">{{ cve.description }}</p>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if sv.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in sv.issues %}<li class="issue-item"><span class="issue-icon issue-err">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+    </div>
+
+    <!-- Dehashed Credential Leaks -->
+    {% set dh = results.categories.dehashed %}
+    {% set dh_tl = 'tl-crimson' if dh.total_entries > 50 else ('tl-red' if dh.total_entries > 10 else ('tl-amber' if dh.total_entries > 0 else 'tl-green')) %}
+    {% if dh.status == 'no_api_key' %}{% set dh_tl = 'tl-blue' %}{% endif %}
+    <div class="cat-card">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light {{ dh_tl }}"></div><div class="cat-title">Dehashed Credential Leaks</div></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="cat-grade">
+            {% if dh.status == 'no_api_key' %}No API key{% elif dh.total_entries > 0 %}{{ dh.total_entries }} records{% else %}Clean{% endif %}
+          </span>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="cat-body">
+        {% if dh.status == 'no_api_key' %}
+        <p style="font-size:.82rem;color:var(--muted);padding:8px 0;">Set <code>DEHASHED_EMAIL</code> and <code>DEHASHED_API_KEY</code> environment variables to enable Dehashed credential leak scanning.</p>
+        {% else %}
+        <table class="kv-table">
+          <tr><td>Total records</td><td>{% if dh.total_entries > 0 %}<span class="badge badge-red">{{ dh.total_entries }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+          <tr><td>Unique emails</td><td>{{ dh.unique_emails | default(0) }}</td></tr>
+          <tr><td>Passwords leaked</td><td>{% if dh.has_passwords %}<span class="badge badge-red">Yes</span>{% else %}No{% endif %}</td></tr>
+        </table>
+        {% if dh.sample_emails %}
+        <p style="font-size:.78rem;color:var(--muted);margin:8px 0 4px 0;">Sample leaked emails:</p>
+        <div class="sub-list">{% for e in dh.sample_emails %}<span class="sub-chip sub-risky">{{ e }}</span>{% endfor %}</div>
+        {% endif %}
+        {% if dh.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in dh.issues %}<li class="issue-item"><span class="issue-icon issue-err">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
+        {% endif %}
+      </div>
+    </div>
+
   </div>
 
   <!-- =================== TECH & GOVERNANCE =================== -->

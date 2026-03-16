@@ -1447,7 +1447,226 @@ class PaymentSecurityChecker:
 
 
 # ---------------------------------------------------------------------------
-# 20. Risk Scoring Engine
+# 20. Shodan InternetDB Vulnerability Checker (free, no API key)
+# ---------------------------------------------------------------------------
+
+class ShodanVulnChecker:
+    """
+    Queries Shodan's free InternetDB for CVEs associated with the domain's IP.
+    Enriches top CVEs with CVSS scores from the NVD API (also free, no key).
+    """
+    INTERNETDB_URL = "https://internetdb.shodan.io/{ip}"
+    NVD_URL        = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+
+    def _cvss_severity(self, score: float) -> str:
+        if score >= 9.0: return "critical"
+        if score >= 7.0: return "high"
+        if score >= 4.0: return "medium"
+        return "low"
+
+    def _fetch_cvss(self, cve_id: str) -> dict:
+        try:
+            r = requests.get(self.NVD_URL, params={"cveId": cve_id},
+                             headers={"User-Agent": USER_AGENT}, timeout=8)
+            if r.status_code != 200:
+                return {}
+            data = r.json()
+            vuln = data.get("vulnerabilities", [{}])[0].get("cve", {})
+            desc = next((d["value"] for d in vuln.get("descriptions", [])
+                         if d.get("lang") == "en"), "")
+            metrics = vuln.get("metrics", {})
+            # Try CVSS v3.1, then v3.0, then v2
+            for key in ("cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
+                m = metrics.get(key)
+                if m:
+                    base = m[0].get("cvssData", {})
+                    score = base.get("baseScore", 0.0)
+                    return {
+                        "cve_id": cve_id,
+                        "description": desc[:200],
+                        "cvss_score": score,
+                        "severity": self._cvss_severity(score),
+                        "vector": base.get("vectorString", ""),
+                    }
+            return {"cve_id": cve_id, "description": desc[:200], "cvss_score": 0.0, "severity": "unknown", "vector": ""}
+        except Exception:
+            return {"cve_id": cve_id, "description": "", "cvss_score": 0.0, "severity": "unknown", "vector": ""}
+
+    def check(self, domain: str) -> dict:
+        result = {
+            "status": "completed",
+            "ip": None,
+            "open_ports": [],
+            "cves": [],
+            "cpe_list": [],
+            "tags": [],
+            "critical_count": 0,
+            "high_count": 0,
+            "medium_count": 0,
+            "low_count": 0,
+            "score": 100,
+            "issues": [],
+        }
+        try:
+            ip = socket.gethostbyname(domain)
+            result["ip"] = ip
+
+            r = requests.get(self.INTERNETDB_URL.format(ip=ip),
+                             headers={"User-Agent": USER_AGENT}, timeout=10)
+            if r.status_code == 404:
+                result["status"] = "completed"
+                return result
+            if r.status_code != 200:
+                result["status"] = "error"
+                return result
+
+            data = r.json()
+            result["open_ports"] = data.get("ports", [])
+            result["cpe_list"]   = data.get("cpes", [])[:10]
+            result["tags"]       = data.get("tags", [])
+
+            raw_cves = data.get("vulns", [])[:20]  # cap at 20 CVEs
+
+            # Enrich top 10 CVEs with CVSS via NVD (rate-limited to avoid 503)
+            enriched = []
+            for cve_id in raw_cves[:10]:
+                info = self._fetch_cvss(cve_id)
+                if info:
+                    enriched.append(info)
+                    sev = info.get("severity", "unknown")
+                    if sev == "critical":   result["critical_count"] += 1
+                    elif sev == "high":     result["high_count"] += 1
+                    elif sev == "medium":   result["medium_count"] += 1
+                    else:                   result["low_count"] += 1
+
+            # Count severity for any CVEs beyond the enriched 10
+            for cve_id in raw_cves[10:]:
+                result["medium_count"] += 1  # conservative estimate
+
+            result["cves"] = enriched
+
+            # Build issues
+            if result["critical_count"] > 0:
+                result["issues"].append(
+                    f"CRITICAL: {result['critical_count']} critical CVE(s) found on this IP — patch immediately"
+                )
+            if result["high_count"] > 0:
+                result["issues"].append(
+                    f"{result['high_count']} high-severity CVE(s) detected — review and patch urgently"
+                )
+            if result["medium_count"] > 0:
+                result["issues"].append(
+                    f"{result['medium_count']} medium-severity CVE(s) detected — schedule patching"
+                )
+
+            # Score: 100 minus penalty per severity
+            penalty = (result["critical_count"] * 30 +
+                       result["high_count"] * 15 +
+                       result["medium_count"] * 5)
+            result["score"] = max(0, 100 - min(100, penalty))
+
+        except Exception as e:
+            result["status"] = "error"
+            result["error"] = str(e)
+
+        return result
+
+
+# ---------------------------------------------------------------------------
+# 21. Dehashed Credential Leak Checker (optional API key)
+# ---------------------------------------------------------------------------
+
+class DehashedChecker:
+    """
+    Queries Dehashed for credential leaks associated with the domain.
+    Requires DEHASHED_EMAIL + DEHASHED_API_KEY env vars (paid subscription).
+    Falls back gracefully with status='no_api_key' when credentials are absent.
+    """
+    API_URL = "https://api.dehashed.com/search"
+
+    def check(self, domain: str, email: str = None, api_key: str = None) -> dict:
+        result = {
+            "status": "completed",
+            "total_entries": 0,
+            "unique_emails": 0,
+            "has_passwords": False,
+            "sample_emails": [],
+            "score": 100,
+            "issues": [],
+        }
+
+        if not email or not api_key:
+            result["status"] = "no_api_key"
+            return result
+
+        try:
+            r = requests.get(
+                self.API_URL,
+                params={"query": f"domain:{domain}", "size": 100},
+                auth=(email, api_key),
+                headers={"Accept": "application/json", "User-Agent": USER_AGENT},
+                timeout=15,
+            )
+
+            if r.status_code == 401:
+                result["status"] = "auth_failed"
+                result["issues"].append("Dehashed authentication failed — check API credentials")
+                return result
+
+            if r.status_code == 302 or r.status_code == 403:
+                result["status"] = "subscription_required"
+                return result
+
+            if r.status_code != 200:
+                result["status"] = "error"
+                result["error"] = f"HTTP {r.status_code}"
+                return result
+
+            data = r.json()
+            entries = data.get("entries") or []
+            total   = data.get("total", len(entries))
+
+            result["total_entries"] = total
+
+            emails_seen = set()
+            has_pw = False
+            for entry in entries:
+                em = entry.get("email", "")
+                if em:
+                    emails_seen.add(em)
+                if entry.get("password") or entry.get("hashed_password"):
+                    has_pw = True
+
+            result["unique_emails"] = len(emails_seen)
+            result["has_passwords"] = has_pw
+            # Show up to 5 sample emails (truncated for display)
+            result["sample_emails"] = [
+                e[:40] + ("…" if len(e) > 40 else "") for e in list(emails_seen)[:5]
+            ]
+
+            if total > 0:
+                result["issues"].append(
+                    f"{total} credential record(s) found in Dehashed for this domain — "
+                    "notify affected users and enforce password reset"
+                )
+            if has_pw:
+                result["issues"].append(
+                    "Plaintext or hashed passwords found in leaked records — "
+                    "enforce immediate password reset and review authentication systems"
+                )
+
+            penalty = min(100, total * 2)
+            result["score"] = max(0, 100 - penalty)
+
+        except Exception as e:
+            result["status"] = "error"
+            result["error"] = str(e)
+
+        return result
+
+
+# ---------------------------------------------------------------------------
+# 22. Risk Scoring Engine
 # ---------------------------------------------------------------------------
 
 class RiskScorer:
@@ -1456,19 +1675,21 @@ class RiskScorer:
     All weights must sum to 100 when WAF bonus excluded.
     """
     WEIGHTS = {
-        "ssl":                  0.15,
-        "email_security":       0.08,
+        "ssl":                  0.12,
+        "email_security":       0.06,
         "email_hardening":      0.04,
-        "breaches":             0.12,
-        "http_headers":         0.06,
+        "breaches":             0.10,
+        "http_headers":         0.05,
         "website_security":     0.05,
-        "exposed_admin":        0.13,
+        "exposed_admin":        0.11,
         "high_risk_protocols":  0.10,
         "dnsbl":                0.08,
         "tech_stack":           0.07,
         "payment_security":     0.04,
         "vpn_remote":           0.04,
         "subdomains":           0.04,
+        "shodan_vulns":         0.08,
+        "dehashed":             0.02,
     }
 
     RECOMMENDATIONS = {
@@ -1496,6 +1717,12 @@ class RiskScorer:
         "Domain/IP listed on": "Investigate blacklist listings — likely indicates past spam, malware distribution, or compromise.",
         "Self-hosted payment card form": "Migrate to a PCI-compliant payment provider (Stripe, PayFast, Peach Payments) to avoid storing card data.",
         "No known breaches found": "",
+        "CRITICAL: 1 critical CVE": "Patch critical CVEs on your public-facing servers immediately — attackers actively exploit these.",
+        "critical CVE(s) found": "Patch critical CVEs on your public-facing servers immediately — attackers actively exploit these.",
+        "high-severity CVE(s) detected": "Review and patch high-severity CVEs — schedule remediation within 30 days.",
+        "medium-severity CVE(s) detected": "Review medium-severity CVEs and schedule patching within 90 days.",
+        "credential record(s) found in Dehashed": "Notify affected users and enforce mandatory password reset for all leaked accounts.",
+        "Plaintext or hashed passwords found": "Enforce immediate password reset and review authentication systems for all affected accounts.",
     }
 
     def calculate(self, results: dict) -> tuple:
@@ -1546,6 +1773,15 @@ class RiskScorer:
         risky_subs = len(results.get("subdomains", {}).get("risky_subdomains", []))
         sub_risk = min(100, risky_subs * 15)
 
+        # Shodan CVE risk
+        shodan = results.get("shodan_vulns", {})
+        shodan_risk = inv(shodan.get("score", 100))
+
+        # Dehashed credential leak risk
+        dehashed = results.get("dehashed", {})
+        dehashed_total = dehashed.get("total_entries", 0)
+        dehashed_risk = min(100, dehashed_total * 2) if dehashed.get("status") not in ("no_api_key", "auth_failed") else 0
+
         weighted = (
             ssl_risk         * self.WEIGHTS["ssl"] +
             email_risk       * self.WEIGHTS["email_security"] +
@@ -1559,7 +1795,9 @@ class RiskScorer:
             tech_risk        * self.WEIGHTS["tech_stack"] +
             pay_risk         * self.WEIGHTS["payment_security"] +
             vpn_risk         * self.WEIGHTS["vpn_remote"] +
-            sub_risk         * self.WEIGHTS["subdomains"]
+            sub_risk         * self.WEIGHTS["subdomains"] +
+            shodan_risk      * self.WEIGHTS["shodan_vulns"] +
+            dehashed_risk    * self.WEIGHTS["dehashed"]
         )
 
         risk_score = round(weighted * 10)
@@ -1605,8 +1843,12 @@ class RiskScorer:
 # ---------------------------------------------------------------------------
 
 class SecurityScanner:
-    def __init__(self, hibp_api_key: Optional[str] = None):
-        self.hibp_api_key = hibp_api_key
+    def __init__(self, hibp_api_key: Optional[str] = None,
+                 dehashed_email: Optional[str] = None,
+                 dehashed_api_key: Optional[str] = None):
+        self.hibp_api_key      = hibp_api_key
+        self.dehashed_email    = dehashed_email
+        self.dehashed_api_key  = dehashed_api_key
 
     def scan(self, domain: str) -> dict:
         domain = domain.lower().strip().removeprefix("https://").removeprefix("http://").split("/")[0]
@@ -1638,14 +1880,18 @@ class SecurityScanner:
             "breaches":            (BreachChecker().check,             domain),
             "website_security":    (WebsiteSecurityChecker().check,    domain),
             "payment_security":    (PaymentSecurityChecker().check,    domain),
+            "shodan_vulns":        (ShodanVulnChecker().check,         domain),
+            "dehashed":            (DehashedChecker().check,           domain),
         }
 
         cat_results = {}
-        with ThreadPoolExecutor(max_workers=10) as ex:
+        with ThreadPoolExecutor(max_workers=12) as ex:
             futures = {}
             for name, (fn, arg) in checkers.items():
                 if name == "breaches":
                     futures[ex.submit(fn, arg, self.hibp_api_key)] = name
+                elif name == "dehashed":
+                    futures[ex.submit(fn, arg, self.dehashed_email, self.dehashed_api_key)] = name
                 else:
                     futures[ex.submit(fn, arg)] = name
 

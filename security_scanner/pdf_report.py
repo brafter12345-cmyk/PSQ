@@ -513,6 +513,46 @@ def cat_payment(d, S):
                           rows, pay.get("issues", []), S)
 
 
+def cat_shodan(d, S):
+    sv   = d.get("shodan_vulns", {})
+    crit = sv.get("critical_count", 0)
+    high = sv.get("high_count", 0)
+    med  = sv.get("medium_count", 0)
+    col  = C_CRITICAL if crit > 0 else (C_RED if high > 0 else (C_AMBER if med > 0 else C_GREEN))
+    summary = (f"{crit} critical" if crit > 0 else f"{high} high" if high > 0 else
+               f"{med} medium" if med > 0 else "Clean")
+    rows = [
+        ("IP scanned",   sv.get("ip") or "—"),
+        ("Critical CVEs", crit),
+        ("High CVEs",    high),
+        ("Medium CVEs",  med),
+        ("Open ports",   ", ".join(str(p) for p in sv.get("open_ports", [])) or "—"),
+        ("Tags",         ", ".join(sv.get("tags", [])) or "—"),
+    ]
+    # Append top CVE rows
+    for cve in sv.get("cves", [])[:6]:
+        rows.append((cve.get("cve_id", ""), f"CVSS {cve.get('cvss_score',0)} — {cve.get('severity','').upper()}"))
+    return build_cat_card("CVE / Known Vulnerabilities (Shodan)", col, summary, rows, sv.get("issues", []), S)
+
+
+def cat_dehashed(d, S):
+    dh     = d.get("dehashed", {})
+    status = dh.get("status", "completed")
+    total  = dh.get("total_entries", 0)
+    col    = (C_CRITICAL if total > 50 else C_RED if total > 10 else
+              C_AMBER if total > 0 else (C_BLUE if status == "no_api_key" else C_GREEN))
+    summary = "No API key" if status == "no_api_key" else (f"{total} records" if total > 0 else "Clean")
+    rows = [
+        ("Status",        "API key not configured" if status == "no_api_key" else status),
+        ("Total records", total),
+        ("Unique emails", dh.get("unique_emails", 0)),
+        ("Passwords in leaks", "Yes — CRITICAL" if dh.get("has_passwords") else "No"),
+    ]
+    if dh.get("sample_emails"):
+        rows.append(("Sample emails", " | ".join(dh["sample_emails"][:3])))
+    return build_cat_card("Dehashed Credential Leaks", col, summary, rows, dh.get("issues", []), S)
+
+
 def cat_website(d, S):
     ws    = d.get("website_security", {})
     score = ws.get("score", 0)
@@ -689,6 +729,8 @@ def generate_pdf(results: dict) -> bytes:
     story += cat_dnsbl(cats, S)
     story += cat_admin(cats, S)
     story += cat_subdomains(cats, S)
+    story += cat_shodan(cats, S)
+    story += cat_dehashed(cats, S)
 
     # ── Technology & Governance ──────────────────────────────────────────────
     story += section_header("TECHNOLOGY & GOVERNANCE", S)
