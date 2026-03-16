@@ -25,9 +25,12 @@ from scanner import SecurityScanner
 app = Flask(__name__)
 CORS(app)  # Allow cross-origin calls from Vercel frontend
 
-HIBP_API_KEY     = os.environ.get("HIBP_API_KEY")      # Optional
-DEHASHED_EMAIL   = os.environ.get("DEHASHED_EMAIL")    # Optional — paid
-DEHASHED_API_KEY = os.environ.get("DEHASHED_API_KEY")  # Optional — paid
+HIBP_API_KEY           = os.environ.get("HIBP_API_KEY")            # Optional
+DEHASHED_EMAIL         = os.environ.get("DEHASHED_EMAIL")          # Optional — paid
+DEHASHED_API_KEY       = os.environ.get("DEHASHED_API_KEY")        # Optional — paid
+VIRUSTOTAL_API_KEY     = os.environ.get("VIRUSTOTAL_API_KEY")      # Optional — free tier
+SECURITYTRAILS_API_KEY = os.environ.get("SECURITYTRAILS_API_KEY")  # Optional — free tier
+SHODAN_API_KEY         = os.environ.get("SHODAN_API_KEY")          # Optional — free account
 DB_PATH = os.environ.get("DB_PATH", "scans.db")
 MAX_CONCURRENT = int(os.environ.get("MAX_CONCURRENT_SCANS", "5"))
 
@@ -114,6 +117,9 @@ def run_scan(scan_id: str, domain: str):
                 hibp_api_key=HIBP_API_KEY,
                 dehashed_email=DEHASHED_EMAIL,
                 dehashed_api_key=DEHASHED_API_KEY,
+                virustotal_api_key=VIRUSTOTAL_API_KEY,
+                securitytrails_api_key=SECURITYTRAILS_API_KEY,
+                shodan_api_key=SHODAN_API_KEY,
             )
             results = scanner.scan(domain)
             update_scan(scan_id, results)

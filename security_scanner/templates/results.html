@@ -555,13 +555,13 @@
       </div>
     </div>
 
-    <!-- CVE / Known Vulnerabilities (Shodan InternetDB) -->
+    <!-- CVE / Known Vulnerabilities (Shodan) -->
     {% set sv = results.categories.shodan_vulns %}
     {% set sv_total = sv.critical_count + sv.high_count + sv.medium_count + sv.low_count %}
     {% set sv_tl = 'tl-crimson' if sv.critical_count > 0 else ('tl-red' if sv.high_count > 0 else ('tl-amber' if sv.medium_count > 0 else 'tl-green')) %}
     <div class="cat-card" style="grid-column: 1 / -1;">
       <div class="cat-header" onclick="toggle(this)">
-        <div class="cat-left"><div class="traffic-light {{ sv_tl }}"></div><div class="cat-title">CVE / Known Vulnerabilities</div></div>
+        <div class="cat-left"><div class="traffic-light {{ sv_tl }}"></div><div class="cat-title">CVE / Known Vulnerabilities {% if sv.get('data_source') == 'shodan_full_api' %}<span class="badge badge-blue" style="margin-left:6px;">Full API</span>{% endif %}</div></div>
         <div style="display:flex;align-items:center;gap:10px;">
           <span class="cat-grade {% if sv.critical_count > 0 %}color-red{% endif %}">
             {{ sv_total }} found
@@ -573,12 +573,35 @@
         <!-- Summary row -->
         <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:10px;font-size:.82rem;">
           <span>IP: <b>{{ sv.ip or '—' }}</b></span>
+          {% if sv.get('data_source') == 'shodan_full_api' %}
+          {% if sv.get('os') %}<span>OS: <b>{{ sv.os }}</b></span>{% endif %}
+          {% if sv.get('org') %}<span>Org: <b>{{ sv.org }}</b></span>{% endif %}
+          {% if sv.get('isp') %}<span>ISP: <b>{{ sv.isp }}</b></span>{% endif %}
+          {% if sv.get('asn') %}<span>ASN: <b>{{ sv.asn }}</b></span>{% endif %}
+          {% endif %}
           {% if sv.critical_count > 0 %}<span><span class="badge badge-red">Critical {{ sv.critical_count }}</span></span>{% endif %}
           {% if sv.high_count > 0 %}<span><span class="badge badge-red">High {{ sv.high_count }}</span></span>{% endif %}
           {% if sv.medium_count > 0 %}<span><span class="badge badge-amber">Medium {{ sv.medium_count }}</span></span>{% endif %}
           {% if sv.low_count > 0 %}<span><span class="badge badge-green">Low {{ sv.low_count }}</span></span>{% endif %}
           {% if sv.tags %}<span style="color:var(--muted);">Tags: {{ sv.tags | join(', ') }}</span>{% endif %}
         </div>
+        {% if sv.get('services') %}
+        <!-- Service banners (Shodan full API) -->
+        <p style="font-size:.78rem;color:var(--muted);margin-bottom:4px;">Detected services:</p>
+        <table class="vuln-table" style="margin-bottom:14px;">
+          <thead><tr><th>Port</th><th>Product</th><th>Version</th><th>Module</th></tr></thead>
+          <tbody>
+            {% for svc in sv.services %}
+            <tr>
+              <td><span class="badge badge-blue">{{ svc.port }}/{{ svc.transport }}</span></td>
+              <td>{{ svc.product or '—' }}</td>
+              <td>{{ svc.version or '—' }}</td>
+              <td style="color:var(--muted);">{{ svc.module or '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        {% endif %}
         {% if sv.cves %}
         <!-- Vulnerability table -->
         <table class="vuln-table">
@@ -650,6 +673,52 @@
       </div>
     </div>
 
+    <!-- VirusTotal Reputation -->
+    {% set vt = results.categories.get('virustotal', {}) %}
+    {% set vt_mal = vt.get('malicious_count', 0) %}
+    {% set vt_sus = vt.get('suspicious_count', 0) %}
+    {% set vt_tl = 'tl-crimson' if vt_mal > 3 else ('tl-red' if vt_mal > 0 else ('tl-amber' if vt_sus > 0 else 'tl-green')) %}
+    {% if vt.get('status') == 'no_api_key' %}{% set vt_tl = 'tl-blue' %}{% endif %}
+    <div class="cat-card">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light {{ vt_tl }}"></div><div class="cat-title">VirusTotal Reputation</div></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="cat-grade {% if vt_mal > 0 %}color-red{% endif %}">
+            {% if vt.get('status') == 'no_api_key' %}No API key{% elif vt_mal > 0 %}{{ vt_mal }} malicious{% elif vt_sus > 0 %}{{ vt_sus }} suspicious{% else %}Clean{% endif %}
+          </span>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="cat-body">
+        {% if vt.get('status') == 'no_api_key' %}
+        <p style="font-size:.82rem;color:var(--muted);padding:8px 0;">Set <code>VIRUSTOTAL_API_KEY</code> environment variable to enable VirusTotal domain reputation scanning (free tier: 4 req/min).</p>
+        {% else %}
+        <table class="kv-table">
+          <tr><td>Malicious detections</td><td>{% if vt_mal > 0 %}<span class="badge badge-red">{{ vt_mal }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+          <tr><td>Suspicious detections</td><td>{% if vt_sus > 0 %}<span class="badge badge-amber">{{ vt_sus }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+          <tr><td>Harmless</td><td>{{ vt.get('harmless_count', 0) }}</td></tr>
+          <tr><td>Undetected</td><td>{{ vt.get('undetected_count', 0) }}</td></tr>
+          <tr><td>Community reputation</td><td>{{ vt.get('reputation', 0) }}</td></tr>
+          <tr><td>Community votes</td><td>&#128077; {{ vt.get('harmless_votes', 0) }} / &#128078; {{ vt.get('malicious_votes', 0) }}</td></tr>
+          {% if vt.get('popularity_rank') %}<tr><td>Popularity rank</td><td>#{{ '{:,}'.format(vt.popularity_rank) }}</td></tr>{% endif %}
+          {% if vt.get('categories') %}<tr><td>Categories</td><td style="font-size:.78rem;">{{ vt.categories.values() | list | join(', ') }}</td></tr>{% endif %}
+        </table>
+        {% if vt.get('flagging_engines') %}
+        <p style="font-size:.78rem;color:var(--critical);margin:8px 0 4px 0;">&#9888; Flagging engines:</p>
+        <div style="margin-top:4px;">
+          {% for eng in vt.flagging_engines %}
+          <div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border);font-size:.78rem;">
+            <span>{{ eng.engine }}</span>
+            <span><span class="badge badge-{% if eng.category == 'malicious' %}red{% else %}amber{% endif %}">{{ eng.category }}</span> {{ eng.result }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if vt.get('issues') %}<ul class="issue-list" style="margin-top:8px;">{% for i in vt.issues %}<li class="issue-item"><span class="issue-icon issue-err">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
+        {% endif %}
+      </div>
+    </div>
+
   </div>
 
   <!-- =================== TECH & GOVERNANCE =================== -->
@@ -699,6 +768,40 @@
           <tr><td>WHOIS privacy</td><td>{% if di.privacy_protected %}<span class="badge badge-grey">Protected</span>{% else %}Public{% endif %}</td></tr>
         </table>
         {% if di.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in di.issues %}<li class="issue-item"><span class="issue-icon issue-warn">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+    </div>
+
+    <!-- SecurityTrails DNS Intelligence -->
+    {% set st = results.categories.get('securitytrails', {}) %}
+    {% set st_tl = 'tl-amber' if st.get('issues') else 'tl-green' %}
+    {% if st.get('status') == 'no_api_key' %}{% set st_tl = 'tl-blue' %}{% endif %}
+    <div class="cat-card">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light {{ st_tl }}"></div><div class="cat-title">DNS Intelligence (SecurityTrails)</div></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="cat-grade">
+            {% if st.get('status') == 'no_api_key' %}No API key{% elif st.get('associated_count', 0) > 0 %}{{ st.associated_count }} assoc.{% else %}Info{% endif %}
+          </span>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="cat-body">
+        {% if st.get('status') == 'no_api_key' %}
+        <p style="font-size:.82rem;color:var(--muted);padding:8px 0;">Set <code>SECURITYTRAILS_API_KEY</code> environment variable to enable SecurityTrails DNS intelligence (free tier: 2,500 queries/month).</p>
+        {% else %}
+        <table class="kv-table">
+          {% if st.get('a_records') %}<tr><td>A records</td><td style="font-size:.78rem;">{{ st.a_records | join(', ') }}</td></tr>{% endif %}
+          {% if st.get('mx_records') %}<tr><td>MX records</td><td style="font-size:.78rem;">{{ st.mx_records | join(', ') }}</td></tr>{% endif %}
+          {% if st.get('ns_records') %}<tr><td>NS records</td><td style="font-size:.78rem;">{{ st.ns_records | join(', ') }}</td></tr>{% endif %}
+          <tr><td>Associated domains</td><td>{% if st.get('associated_count', 0) > 50 %}<span class="badge badge-amber">{{ st.associated_count }}</span>{% else %}{{ st.get('associated_count', 0) }}{% endif %}</td></tr>
+          {% if st.get('alexa_rank') %}<tr><td>Alexa rank</td><td>#{{ '{:,}'.format(st.alexa_rank) }}</td></tr>{% endif %}
+        </table>
+        {% if st.get('associated_domains') %}
+        <p style="font-size:.78rem;color:var(--muted);margin:8px 0 4px 0;">Associated domains:</p>
+        <div class="sub-list">{% for d in st.associated_domains %}<span class="sub-chip sub-normal">{{ d }}</span>{% endfor %}</div>
+        {% endif %}
+        {% if st.get('issues') %}<ul class="issue-list" style="margin-top:8px;">{% for i in st.issues %}<li class="issue-item"><span class="issue-icon issue-warn">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
+        {% endif %}
       </div>
     </div>
 

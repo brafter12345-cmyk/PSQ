@@ -521,19 +521,35 @@ def cat_shodan(d, S):
     low   = sv.get("low_count", 0)
     total = crit + high + med + low
     col   = C_CRITICAL if crit > 0 else (C_RED if high > 0 else (C_AMBER if med > 0 else C_GREEN))
+    source = "Full API" if sv.get("data_source") == "shodan_full_api" else "InternetDB"
     summary = f"{total} CVE(s)" if total > 0 else "Clean"
 
-    # Summary rows
     rows = [
         ("IP scanned",   sv.get("ip") or "—"),
+        ("Data source",  source),
         ("Total CVEs",   total),
         ("Breakdown",    f"Critical: {crit}  |  High: {high}  |  Medium: {med}  |  Low: {low}"),
         ("Open ports",   ", ".join(str(p) for p in sv.get("open_ports", [])) or "—"),
     ]
+    if sv.get("os"):
+        rows.append(("OS", sv["os"]))
+    if sv.get("org"):
+        rows.append(("Organization", sv["org"]))
+    if sv.get("isp"):
+        rows.append(("ISP", sv["isp"]))
+    if sv.get("asn"):
+        rows.append(("ASN", sv["asn"]))
     if sv.get("tags"):
         rows.append(("Tags", ", ".join(sv["tags"])))
 
-    # Detailed CVE rows with severity + CVSS + description
+    # Service banners (full API)
+    for svc in sv.get("services", [])[:6]:
+        port_label = f"Port {svc.get('port', '?')}/{svc.get('transport', 'tcp')}"
+        product = svc.get("product", "")
+        version = svc.get("version", "")
+        rows.append((port_label, f"{product} {version}".strip() or "—"))
+
+    # Detailed CVE rows
     for cve in sv.get("cves", [])[:8]:
         sev = cve.get("severity", "unknown").upper()
         cvss = cve.get("cvss_score", 0)
@@ -543,7 +559,7 @@ def cat_shodan(d, S):
             label += f"  —  {desc}"
         rows.append((cve.get("cve_id", ""), label))
 
-    return build_cat_card("CVE / Known Vulnerabilities (Shodan)", col, summary, rows, sv.get("issues", []), S)
+    return build_cat_card(f"CVE / Known Vulnerabilities (Shodan {source})", col, summary, rows, sv.get("issues", []), S)
 
 
 def cat_dehashed(d, S):
@@ -562,6 +578,55 @@ def cat_dehashed(d, S):
     if dh.get("sample_emails"):
         rows.append(("Sample emails", " | ".join(dh["sample_emails"][:3])))
     return build_cat_card("Dehashed Credential Leaks", col, summary, rows, dh.get("issues", []), S)
+
+
+def cat_virustotal(d, S):
+    vt     = d.get("virustotal", {})
+    status = vt.get("status", "completed")
+    mal    = vt.get("malicious_count", 0)
+    sus    = vt.get("suspicious_count", 0)
+    col    = (C_CRITICAL if mal > 3 else C_RED if mal > 0 else
+              C_AMBER if sus > 0 else (C_BLUE if status == "no_api_key" else C_GREEN))
+    summary = ("No API key" if status == "no_api_key" else
+               f"{mal} malicious" if mal > 0 else
+               f"{sus} suspicious" if sus > 0 else "Clean")
+    rows = [
+        ("Status",              "API key not configured" if status == "no_api_key" else status),
+        ("Malicious detections", mal),
+        ("Suspicious detections", sus),
+        ("Harmless",             vt.get("harmless_count", 0)),
+        ("Undetected",           vt.get("undetected_count", 0)),
+        ("Community reputation", vt.get("reputation", 0)),
+        ("Community votes",      f"Harmless: {vt.get('harmless_votes', 0)}  |  Malicious: {vt.get('malicious_votes', 0)}"),
+    ]
+    if vt.get("popularity_rank"):
+        rows.append(("Popularity rank", f"#{vt['popularity_rank']:,}"))
+    if vt.get("categories"):
+        rows.append(("Categories", " | ".join(list(vt["categories"].values())[:5])))
+    for eng in vt.get("flagging_engines", [])[:5]:
+        rows.append((eng.get("engine", ""), f"{eng.get('category', '')} — {eng.get('result', '')}"))
+    return build_cat_card("VirusTotal Reputation", col, summary, rows, vt.get("issues", []), S)
+
+
+def cat_securitytrails(d, S):
+    st     = d.get("securitytrails", {})
+    status = st.get("status", "completed")
+    assoc  = st.get("associated_count", 0)
+    col    = C_AMBER if assoc > 50 else (C_BLUE if status == "no_api_key" else C_GREEN)
+    summary = ("No API key" if status == "no_api_key" else
+               f"{assoc} associated" if assoc > 0 else "Info")
+    rows = [
+        ("Status",             "API key not configured" if status == "no_api_key" else status),
+        ("A records",          ", ".join(st.get("a_records", [])) or "—"),
+        ("MX records",         ", ".join(st.get("mx_records", [])) or "—"),
+        ("NS records",         ", ".join(st.get("ns_records", [])) or "—"),
+        ("Associated domains", assoc),
+    ]
+    if st.get("alexa_rank"):
+        rows.append(("Alexa rank", f"#{st['alexa_rank']:,}"))
+    if st.get("associated_domains"):
+        rows.append(("Top associated", " | ".join(st["associated_domains"][:5])))
+    return build_cat_card("DNS Intelligence (SecurityTrails)", col, summary, rows, st.get("issues", []), S)
 
 
 def cat_website(d, S):
@@ -742,11 +807,13 @@ def generate_pdf(results: dict) -> bytes:
     story += cat_subdomains(cats, S)
     story += cat_shodan(cats, S)
     story += cat_dehashed(cats, S)
+    story += cat_virustotal(cats, S)
 
     # ── Technology & Governance ──────────────────────────────────────────────
     story += section_header("TECHNOLOGY & GOVERNANCE", S)
     story += cat_tech(cats, S)
     story += cat_domain(cats, S)
+    story += cat_securitytrails(cats, S)
     story += cat_security_policy(cats, S)
     story += cat_payment(cats, S)
 

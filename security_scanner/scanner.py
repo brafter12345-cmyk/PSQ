@@ -1453,9 +1453,12 @@ class PaymentSecurityChecker:
 class ShodanVulnChecker:
     """
     Queries Shodan's free InternetDB for CVEs associated with the domain's IP.
+    When SHODAN_API_KEY is provided, uses the full Shodan API for richer data
+    (service banners, OS detection, ISP/ASN info) and falls back to InternetDB otherwise.
     Enriches top CVEs with CVSS scores from the NVD API (also free, no key).
     """
     INTERNETDB_URL = "https://internetdb.shodan.io/{ip}"
+    SHODAN_HOST_URL = "https://api.shodan.io/shodan/host/{ip}"
     NVD_URL        = "https://services.nvd.nist.gov/rest/json/cves/2.0"
 
     def _cvss_severity(self, score: float) -> str:
@@ -1492,14 +1495,100 @@ class ShodanVulnChecker:
         except Exception:
             return {"cve_id": cve_id, "description": "", "cvss_score": 0.0, "severity": "unknown", "vector": ""}
 
-    def check(self, domain: str) -> dict:
+    def _check_full_api(self, ip: str, api_key: str, result: dict) -> bool:
+        """Use Shodan full API. Returns True if successful, False to fall back."""
+        try:
+            r = requests.get(self.SHODAN_HOST_URL.format(ip=ip),
+                             params={"key": api_key},
+                             headers={"User-Agent": USER_AGENT}, timeout=15)
+            if r.status_code in (401, 403):
+                return False  # bad key, fall back to InternetDB
+            if r.status_code != 200:
+                return False
+
+            data = r.json()
+            result["data_source"] = "shodan_full_api"
+            result["open_ports"] = data.get("ports", [])
+            result["tags"] = data.get("tags", [])
+            result["os"] = data.get("os")
+            result["isp"] = data.get("isp")
+            result["org"] = data.get("org")
+            result["asn"] = data.get("asn")
+            result["hostnames"] = data.get("hostnames", [])
+
+            # Extract service banners from data['data']
+            services = []
+            for svc in data.get("data", []):
+                services.append({
+                    "port": svc.get("port"),
+                    "transport": svc.get("transport", "tcp"),
+                    "product": svc.get("product", ""),
+                    "version": svc.get("version", ""),
+                    "module": svc.get("_shodan", {}).get("module", ""),
+                    "banner_snippet": (svc.get("data", "") or "")[:150],
+                })
+            result["services"] = services
+
+            # CVEs from full API
+            raw_cves = data.get("vulns", [])[:20]
+            return self._enrich_cves(raw_cves, result)
+
+        except Exception:
+            return False
+
+    def _check_internetdb(self, ip: str, result: dict) -> bool:
+        """Use free InternetDB. Returns True if successful."""
+        r = requests.get(self.INTERNETDB_URL.format(ip=ip),
+                         headers={"User-Agent": USER_AGENT}, timeout=10)
+        if r.status_code == 404:
+            return True
+        if r.status_code != 200:
+            result["status"] = "error"
+            return False
+
+        data = r.json()
+        result["data_source"] = "internetdb"
+        result["open_ports"] = data.get("ports", [])
+        result["cpe_list"]   = data.get("cpes", [])[:10]
+        result["tags"]       = data.get("tags", [])
+
+        raw_cves = data.get("vulns", [])[:20]
+        return self._enrich_cves(raw_cves, result)
+
+    def _enrich_cves(self, raw_cves: list, result: dict) -> bool:
+        """Enrich CVEs with CVSS data and update result."""
+        enriched = []
+        for cve_id in raw_cves[:10]:
+            info = self._fetch_cvss(cve_id)
+            if info:
+                enriched.append(info)
+                sev = info.get("severity", "unknown")
+                if sev == "critical":   result["critical_count"] += 1
+                elif sev == "high":     result["high_count"] += 1
+                elif sev == "medium":   result["medium_count"] += 1
+                else:                   result["low_count"] += 1
+
+        for cve_id in raw_cves[10:]:
+            result["medium_count"] += 1
+
+        result["cves"] = enriched
+        return True
+
+    def check(self, domain: str, api_key: str = None) -> dict:
         result = {
             "status": "completed",
+            "data_source": "internetdb",
             "ip": None,
             "open_ports": [],
             "cves": [],
             "cpe_list": [],
             "tags": [],
+            "services": [],
+            "os": None,
+            "isp": None,
+            "org": None,
+            "asn": None,
+            "hostnames": [],
             "critical_count": 0,
             "high_count": 0,
             "medium_count": 0,
@@ -1511,39 +1600,12 @@ class ShodanVulnChecker:
             ip = socket.gethostbyname(domain)
             result["ip"] = ip
 
-            r = requests.get(self.INTERNETDB_URL.format(ip=ip),
-                             headers={"User-Agent": USER_AGENT}, timeout=10)
-            if r.status_code == 404:
-                result["status"] = "completed"
-                return result
-            if r.status_code != 200:
-                result["status"] = "error"
-                return result
-
-            data = r.json()
-            result["open_ports"] = data.get("ports", [])
-            result["cpe_list"]   = data.get("cpes", [])[:10]
-            result["tags"]       = data.get("tags", [])
-
-            raw_cves = data.get("vulns", [])[:20]  # cap at 20 CVEs
-
-            # Enrich top 10 CVEs with CVSS via NVD (rate-limited to avoid 503)
-            enriched = []
-            for cve_id in raw_cves[:10]:
-                info = self._fetch_cvss(cve_id)
-                if info:
-                    enriched.append(info)
-                    sev = info.get("severity", "unknown")
-                    if sev == "critical":   result["critical_count"] += 1
-                    elif sev == "high":     result["high_count"] += 1
-                    elif sev == "medium":   result["medium_count"] += 1
-                    else:                   result["low_count"] += 1
-
-            # Count severity for any CVEs beyond the enriched 10
-            for cve_id in raw_cves[10:]:
-                result["medium_count"] += 1  # conservative estimate
-
-            result["cves"] = enriched
+            # Try full Shodan API first if key available, fall back to InternetDB
+            if api_key:
+                if not self._check_full_api(ip, api_key, result):
+                    self._check_internetdb(ip, result)
+            else:
+                self._check_internetdb(ip, result)
 
             # Build issues
             if result["critical_count"] > 0:
@@ -1666,7 +1728,228 @@ class DehashedChecker:
 
 
 # ---------------------------------------------------------------------------
-# 22. Risk Scoring Engine
+# 22. VirusTotal Domain Reputation Checker (optional API key)
+# ---------------------------------------------------------------------------
+
+class VirusTotalChecker:
+    """
+    Queries VirusTotal API v3 for domain reputation, malware/phishing flags,
+    and security engine detection counts.
+    Requires VIRUSTOTAL_API_KEY env var (free tier: 4 req/min, 500/day).
+    """
+    API_URL = "https://www.virustotal.com/api/v3/domains/{domain}"
+
+    def check(self, domain: str, api_key: str = None) -> dict:
+        result = {
+            "status": "completed",
+            "reputation": 0,
+            "malicious_count": 0,
+            "suspicious_count": 0,
+            "harmless_count": 0,
+            "undetected_count": 0,
+            "malicious_votes": 0,
+            "harmless_votes": 0,
+            "categories": {},
+            "popularity_rank": None,
+            "flagging_engines": [],
+            "score": 100,
+            "issues": [],
+        }
+
+        if not api_key:
+            result["status"] = "no_api_key"
+            return result
+
+        try:
+            r = requests.get(
+                self.API_URL.format(domain=domain),
+                headers={"x-apikey": api_key, "User-Agent": USER_AGENT},
+                timeout=15,
+            )
+
+            if r.status_code == 401:
+                result["status"] = "auth_failed"
+                result["issues"].append("VirusTotal API key invalid")
+                return result
+            if r.status_code == 429:
+                result["status"] = "rate_limited"
+                return result
+            if r.status_code != 200:
+                result["status"] = "error"
+                result["error"] = f"HTTP {r.status_code}"
+                return result
+
+            data = r.json().get("data", {}).get("attributes", {})
+
+            # Analysis stats
+            stats = data.get("last_analysis_stats", {})
+            result["malicious_count"]  = stats.get("malicious", 0)
+            result["suspicious_count"] = stats.get("suspicious", 0)
+            result["harmless_count"]   = stats.get("harmless", 0)
+            result["undetected_count"] = stats.get("undetected", 0)
+
+            # Community reputation & votes
+            result["reputation"]      = data.get("reputation", 0)
+            votes = data.get("total_votes", {})
+            result["malicious_votes"] = votes.get("malicious", 0)
+            result["harmless_votes"]  = votes.get("harmless", 0)
+
+            # Categories from security vendors
+            result["categories"] = data.get("categories", {})
+
+            # Popularity rank
+            ranks = data.get("popularity_ranks", {})
+            if ranks:
+                top_rank = min((v.get("rank", 999999) for v in ranks.values()), default=None)
+                result["popularity_rank"] = top_rank
+
+            # Flagging engines (which engines said malicious/suspicious)
+            analysis = data.get("last_analysis_results", {})
+            for engine, info in analysis.items():
+                cat = info.get("category", "")
+                if cat in ("malicious", "suspicious"):
+                    result["flagging_engines"].append({
+                        "engine": engine,
+                        "category": cat,
+                        "result": info.get("result", ""),
+                    })
+
+            # Build issues
+            mal = result["malicious_count"]
+            sus = result["suspicious_count"]
+            if mal > 0:
+                result["issues"].append(
+                    f"CRITICAL: {mal} security engine(s) flagged this domain as MALICIOUS"
+                )
+            if sus > 0:
+                result["issues"].append(
+                    f"{sus} security engine(s) flagged this domain as suspicious"
+                )
+
+            # Check categories for phishing/malware
+            bad_cats = [v for v in result["categories"].values()
+                        if any(w in v.lower() for w in ("malware", "phishing", "spam", "scam"))]
+            if bad_cats:
+                result["issues"].append(
+                    f"Domain categorized as: {', '.join(bad_cats)}"
+                )
+
+            # Score: penalize per detection
+            penalty = mal * 10 + sus * 5
+            result["score"] = max(0, 100 - min(100, penalty))
+
+        except Exception as e:
+            result["status"] = "error"
+            result["error"] = str(e)
+
+        return result
+
+
+# ---------------------------------------------------------------------------
+# 23. SecurityTrails Domain Intelligence Checker (optional API key)
+# ---------------------------------------------------------------------------
+
+class SecurityTrailsChecker:
+    """
+    Queries SecurityTrails API for current DNS records, associated domains,
+    and domain metadata.
+    Requires SECURITYTRAILS_API_KEY env var (free tier: 2,500 queries/month).
+    """
+    BASE_URL     = "https://api.securitytrails.com/v1"
+    DOMAIN_URL   = BASE_URL + "/domain/{domain}"
+    ASSOC_URL    = BASE_URL + "/domain/{domain}/associated"
+
+    def check(self, domain: str, api_key: str = None) -> dict:
+        result = {
+            "status": "completed",
+            "a_records": [],
+            "mx_records": [],
+            "ns_records": [],
+            "associated_domains": [],
+            "associated_count": 0,
+            "alexa_rank": None,
+            "score": 100,
+            "issues": [],
+        }
+
+        if not api_key:
+            result["status"] = "no_api_key"
+            return result
+
+        headers = {"APIKEY": api_key, "Accept": "application/json"}
+
+        try:
+            # Domain info
+            r = requests.get(
+                self.DOMAIN_URL.format(domain=domain),
+                headers=headers, timeout=15,
+            )
+            if r.status_code == 401 or r.status_code == 403:
+                result["status"] = "auth_failed"
+                result["issues"].append("SecurityTrails API key invalid or quota exceeded")
+                return result
+            if r.status_code == 429:
+                result["status"] = "rate_limited"
+                return result
+            if r.status_code != 200:
+                result["status"] = "error"
+                result["error"] = f"HTTP {r.status_code}"
+                return result
+
+            data = r.json()
+
+            # Extract DNS records
+            current = data.get("current_dns", {})
+            a_rec = current.get("a", {})
+            if a_rec:
+                result["a_records"] = [
+                    v.get("ip", "") for v in a_rec.get("values", [])
+                ]
+            mx_rec = current.get("mx", {})
+            if mx_rec:
+                result["mx_records"] = [
+                    v.get("hostname", "") for v in mx_rec.get("values", [])
+                ]
+            ns_rec = current.get("ns", {})
+            if ns_rec:
+                result["ns_records"] = [
+                    v.get("nameserver", "") for v in ns_rec.get("values", [])
+                ]
+
+            result["alexa_rank"] = data.get("alexa_rank")
+
+            # Associated domains
+            try:
+                r2 = requests.get(
+                    self.ASSOC_URL.format(domain=domain),
+                    headers=headers, timeout=15,
+                )
+                if r2.status_code == 200:
+                    assoc_data = r2.json()
+                    records = assoc_data.get("records", [])
+                    result["associated_count"] = assoc_data.get("record_count", len(records))
+                    result["associated_domains"] = [
+                        rec.get("hostname", "") for rec in records[:10]
+                    ]
+            except Exception:
+                pass  # non-critical, skip
+
+            # Flag if many associated domains (shared hosting risk)
+            if result["associated_count"] > 50:
+                result["issues"].append(
+                    f"{result['associated_count']} associated domains on shared infrastructure — "
+                    "shared hosting increases attack surface"
+                )
+
+        except Exception as e:
+            result["status"] = "error"
+            result["error"] = str(e)
+
+        return result
+
+
+# ---------------------------------------------------------------------------
+# 24. Risk Scoring Engine
 # ---------------------------------------------------------------------------
 
 class RiskScorer:
@@ -1675,21 +1958,23 @@ class RiskScorer:
     All weights must sum to 100 when WAF bonus excluded.
     """
     WEIGHTS = {
-        "ssl":                  0.12,
+        "ssl":                  0.10,
         "email_security":       0.06,
         "email_hardening":      0.04,
-        "breaches":             0.10,
+        "breaches":             0.08,
         "http_headers":         0.05,
         "website_security":     0.05,
-        "exposed_admin":        0.11,
-        "high_risk_protocols":  0.10,
-        "dnsbl":                0.08,
-        "tech_stack":           0.07,
+        "exposed_admin":        0.10,
+        "high_risk_protocols":  0.09,
+        "dnsbl":                0.07,
+        "tech_stack":           0.06,
         "payment_security":     0.04,
         "vpn_remote":           0.04,
         "subdomains":           0.04,
         "shodan_vulns":         0.08,
         "dehashed":             0.02,
+        "virustotal":           0.06,
+        "securitytrails":       0.02,
     }
 
     RECOMMENDATIONS = {
@@ -1723,6 +2008,10 @@ class RiskScorer:
         "medium-severity CVE(s) detected": "Review medium-severity CVEs and schedule patching within 90 days.",
         "credential record(s) found in Dehashed": "Notify affected users and enforce mandatory password reset for all leaked accounts.",
         "Plaintext or hashed passwords found": "Enforce immediate password reset and review authentication systems for all affected accounts.",
+        "security engine(s) flagged this domain as MALICIOUS": "Investigate VirusTotal malicious flags immediately — your domain may be compromised or serving malware.",
+        "security engine(s) flagged this domain as suspicious": "Review VirusTotal suspicious flags — investigate potential domain compromise or abuse.",
+        "Domain categorized as": "Review domain categorization flags — being labeled as phishing/malware damages reputation and deliverability.",
+        "associated domains on shared infrastructure": "Consider dedicated hosting to reduce shared-infrastructure risk and improve security isolation.",
     }
 
     def calculate(self, results: dict) -> tuple:
@@ -1782,6 +2071,20 @@ class RiskScorer:
         dehashed_total = dehashed.get("total_entries", 0)
         dehashed_risk = min(100, dehashed_total * 2) if dehashed.get("status") not in ("no_api_key", "auth_failed") else 0
 
+        # VirusTotal risk
+        vt = results.get("virustotal", {})
+        if vt.get("status") not in ("no_api_key", "auth_failed", "rate_limited"):
+            vt_risk = inv(vt.get("score", 100))
+        else:
+            vt_risk = 0
+
+        # SecurityTrails risk (mostly informational, low weight)
+        st = results.get("securitytrails", {})
+        if st.get("status") not in ("no_api_key", "auth_failed", "rate_limited"):
+            st_risk = inv(st.get("score", 100))
+        else:
+            st_risk = 0
+
         weighted = (
             ssl_risk         * self.WEIGHTS["ssl"] +
             email_risk       * self.WEIGHTS["email_security"] +
@@ -1797,7 +2100,9 @@ class RiskScorer:
             vpn_risk         * self.WEIGHTS["vpn_remote"] +
             sub_risk         * self.WEIGHTS["subdomains"] +
             shodan_risk      * self.WEIGHTS["shodan_vulns"] +
-            dehashed_risk    * self.WEIGHTS["dehashed"]
+            dehashed_risk    * self.WEIGHTS["dehashed"] +
+            vt_risk          * self.WEIGHTS["virustotal"] +
+            st_risk          * self.WEIGHTS["securitytrails"]
         )
 
         risk_score = round(weighted * 10)
@@ -1845,10 +2150,16 @@ class RiskScorer:
 class SecurityScanner:
     def __init__(self, hibp_api_key: Optional[str] = None,
                  dehashed_email: Optional[str] = None,
-                 dehashed_api_key: Optional[str] = None):
-        self.hibp_api_key      = hibp_api_key
-        self.dehashed_email    = dehashed_email
-        self.dehashed_api_key  = dehashed_api_key
+                 dehashed_api_key: Optional[str] = None,
+                 virustotal_api_key: Optional[str] = None,
+                 securitytrails_api_key: Optional[str] = None,
+                 shodan_api_key: Optional[str] = None):
+        self.hibp_api_key          = hibp_api_key
+        self.dehashed_email        = dehashed_email
+        self.dehashed_api_key      = dehashed_api_key
+        self.virustotal_api_key    = virustotal_api_key
+        self.securitytrails_api_key = securitytrails_api_key
+        self.shodan_api_key        = shodan_api_key
 
     def scan(self, domain: str) -> dict:
         domain = domain.lower().strip().removeprefix("https://").removeprefix("http://").split("/")[0]
@@ -1882,16 +2193,24 @@ class SecurityScanner:
             "payment_security":    (PaymentSecurityChecker().check,    domain),
             "shodan_vulns":        (ShodanVulnChecker().check,         domain),
             "dehashed":            (DehashedChecker().check,           domain),
+            "virustotal":          (VirusTotalChecker().check,         domain),
+            "securitytrails":      (SecurityTrailsChecker().check,     domain),
         }
 
         cat_results = {}
-        with ThreadPoolExecutor(max_workers=12) as ex:
+        with ThreadPoolExecutor(max_workers=14) as ex:
             futures = {}
             for name, (fn, arg) in checkers.items():
                 if name == "breaches":
                     futures[ex.submit(fn, arg, self.hibp_api_key)] = name
                 elif name == "dehashed":
                     futures[ex.submit(fn, arg, self.dehashed_email, self.dehashed_api_key)] = name
+                elif name == "virustotal":
+                    futures[ex.submit(fn, arg, self.virustotal_api_key)] = name
+                elif name == "securitytrails":
+                    futures[ex.submit(fn, arg, self.securitytrails_api_key)] = name
+                elif name == "shodan_vulns":
+                    futures[ex.submit(fn, arg, self.shodan_api_key)] = name
                 else:
                     futures[ex.submit(fn, arg)] = name
 
