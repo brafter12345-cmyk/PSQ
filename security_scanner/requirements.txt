@@ -9,3 +9,6 @@ flask-cors>=4.0.0
 
 # WHOIS domain intelligence
 python-whois>=0.9.4
+
+# PDF report generation
+reportlab>=4.0.0

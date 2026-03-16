@@ -3,10 +3,12 @@ Cyber Insurance Security Scanner — Flask API
 Endpoints:
   POST /api/scan           {"domain": "example.co.za"}   → {scan_id, status}
   GET  /api/scan/<id>      → JSON results or {"status": "pending"}
+  GET  /api/scan/<id>/pdf  → download PDF report
   GET  /results/<id>       → HTML visual report
   GET  /api/history/<dom>  → last 10 scans for a domain
 """
 
+import io
 import os
 import json
 import sqlite3
@@ -15,7 +17,7 @@ import uuid
 from datetime import datetime, timezone
 from functools import wraps
 
-from flask import Flask, request, jsonify, render_template, abort
+from flask import Flask, request, jsonify, render_template, abort, send_file
 from flask_cors import CORS
 
 from scanner import SecurityScanner
@@ -169,6 +171,30 @@ def get_scan(scan_id: str):
     results = json.loads(row["results"])
     results["scan_id"] = scan_id
     return jsonify(results)
+
+
+@app.route("/api/scan/<scan_id>/pdf", methods=["GET"])
+def download_pdf(scan_id: str):
+    row = fetch_scan(scan_id)
+    if not row:
+        return jsonify({"error": "Scan not found"}), 404
+    if row["status"] == "pending":
+        return jsonify({"error": "Scan not yet completed"}), 409
+    if row["status"] == "failed":
+        return jsonify({"error": "Scan failed — no PDF available"}), 500
+
+    from pdf_report import generate_pdf
+    results = json.loads(row["results"])
+    results["scan_id"] = scan_id
+    pdf_bytes = generate_pdf(results)
+
+    filename = f"cyber-risk-{row['domain']}-{results.get('scan_timestamp','')[:10]}.pdf"
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename,
+    )
 
 
 @app.route("/api/history/<path:domain>", methods=["GET"])
