@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ASI Bestsure – Phishield Cyber Cover</title>
-  <meta name="description" content="Get an instant cyber insurance quote from ASI Bestsure Phishield. Estimate your premium and submit your details in minutes."/>
+  <title>Phishield Cyber Protect Cover</title>
+  <meta name="description" content="Get an instant cyber insurance quote from Phishield Cyber Protect Cover. Estimate your premium and submit your details in minutes."/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet"/>
@@ -14,7 +14,7 @@
 
   <!-- ===== HEADER ===== -->
   <header class="site-header">
-    <h1>ASI Bestsure – <span class="brand-accent">Phishield Cyber Cover</span></h1>
+    <h1><span class="brand-accent">Phishield Cyber Protect Cover</span></h1>
   </header>
 
   <!-- ===== STEP INDICATOR ===== -->
@@ -38,7 +38,7 @@
         <!-- FormSubmit config -->
         <input type="hidden" name="_subject" id="fs_subject" value="Phishield Cyber Cover Lead" />
         <input type="hidden" name="_captcha" value="false" />
-        <input type="hidden" name="_next" value="https://qoutes.phishield.com/?submitted=true" />
+        <input type="hidden" name="_next" value="https://quotes.phishield.com/?submitted=true" />
         <input type="text" name="_honey" style="display:none" tabindex="-1" autocomplete="off" />
 
         <!-- Hidden quote fields -->
@@ -54,6 +54,30 @@
       <div id="step1" class="step-panel active">
         <h2 class="section-title">Cyber Insurance Quote Estimator</h2>
         <p class="section-subtitle">Adjust the sliders below to see your estimated premium instantly.</p>
+
+        <!-- Industry -->
+        <div class="form-group" style="margin-bottom: 24px;">
+          <label class="field-label" for="industryField">Industry</label>
+          <select class="form-select" id="industryField" name="Industry" required>
+            <option value="" disabled selected>Select industry</option>
+            <option>Agriculture</option>
+            <option>Construction</option>
+            <option>Finance, Insurance and Real Estate</option>
+            <option>Healthcare</option>
+            <option>Manufacturing</option>
+            <option>Mining</option>
+            <option>Public Administration</option>
+            <option>Retail</option>
+            <option>Services</option>
+            <option>Software and Technology</option>
+            <option>Transportation</option>
+            <option>Wholesale</option>
+            <option>Other</option>
+          </select>
+        </div>
+
+        <!-- Disclaimer shows here -->
+        <div id="industryDisclaimer" class="industry-disclaimer"></div>
 
         <!-- Revenue Slider -->
         <div class="slider-group">
@@ -115,48 +139,24 @@
           <label class="field-label" style="font-size: 0.75rem; margin-bottom: 8px;">Which specific MDR product applies?</label>
           <div class="radio-group" style="flex-direction: column; gap: 8px;">
             <div class="radio-option">
-              <input type="radio" id="mdrEssNotDep" name="mdrType" value="Essentials + endpoints not deployed" checked/>
-              <label for="mdrEssNotDep" style="text-align: left;">Essentials + endpoints not deployed (10% discount)</label>
+              <input type="radio" id="mdrEssNotDep" name="mdrType" value="Sophos MDR Essentials + Endpoints not deployed" checked/>
+              <label for="mdrEssNotDep" style="text-align: left;">Sophos MDR Essentials + Endpoints not deployed</label>
             </div>
             <div class="radio-option">
-              <input type="radio" id="mdrEssDep" name="mdrType" value="Essentials + endpoints deployed"/>
-              <label for="mdrEssDep" style="text-align: left;">Essentials + endpoints deployed (15% discount)</label>
+              <input type="radio" id="mdrEssDep" name="mdrType" value="Sophos MDR Essentials + Endpoints deployed"/>
+              <label for="mdrEssDep" style="text-align: left;">Sophos MDR Essentials + Endpoints deployed</label>
             </div>
             <div class="radio-option">
-              <input type="radio" id="mdrCompNotDep" name="mdrType" value="Complete + endpoints not deployed"/>
-              <label for="mdrCompNotDep" style="text-align: left;">Complete + endpoints not deployed (20% discount)</label>
+              <input type="radio" id="mdrCompNotDep" name="mdrType" value="Sophos MDR Complete + Endpoints not deployed"/>
+              <label for="mdrCompNotDep" style="text-align: left;">Sophos MDR Complete + Endpoints not deployed</label>
             </div>
             <div class="radio-option">
-              <input type="radio" id="mdrCompDep" name="mdrType" value="Complete + endpoints deployed"/>
-              <label for="mdrCompDep" style="text-align: left;">Complete + endpoints deployed (30% discount)</label>
+              <input type="radio" id="mdrCompDep" name="mdrType" value="Sophos MDR Complete + Endpoints deployed"/>
+              <label for="mdrCompDep" style="text-align: left;">Sophos MDR Complete + Endpoints deployed</label>
             </div>
           </div>
         </div>
         
-
-        <!-- Industry -->
-        <div class="form-group" style="margin-top: 24px;">
-          <label class="field-label" for="industryField">Industry</label>
-          <select class="form-select" id="industryField" name="Industry" required>
-            <option value="" disabled selected>Select industry</option>
-            <option>Agriculture</option>
-            <option>Construction</option>
-            <option>Finance, Insurance and Real Estate</option>
-            <option>Healthcare</option>
-            <option>Manufacturing</option>
-            <option>Mining</option>
-            <option>Public Administration</option>
-            <option>Retail</option>
-            <option>Services</option>
-            <option>Software and Technology</option>
-            <option>Transportation</option>
-            <option>Wholesale</option>
-            <option>Other</option>
-          </select>
-        </div>
-
-        <!-- Disclaimer shows here -->
-        <div id="industryDisclaimer" class="industry-disclaimer"></div>
 
         <!-- Next -->
         <div class="btn-row">
@@ -251,7 +251,7 @@
 
     </div><!-- /.glass-card -->
 
-    <p class="footer-note">ASI Bestsure – Phishield Cyber Cover © 2026. All premiums are estimates and subject to underwriting.</p>
+    <p class="footer-note">Phishield Cyber Protect Cover © 2026. All premiums are estimates and subject to underwriting.</p>
   </div>
 
   <script src="script.js"></script>
