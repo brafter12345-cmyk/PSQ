@@ -231,6 +231,11 @@ def valid_domain(domain: str) -> bool:
 # Routes
 # ---------------------------------------------------------------------------
 
+@app.route("/")
+def index():
+    return render_template("index.html")
+
+
 @app.route("/api/scan", methods=["POST"])
 def start_scan():
     data = request.get_json(silent=True) or {}
