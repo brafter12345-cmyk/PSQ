@@ -49,8 +49,12 @@ DB_PATH = os.environ.get("DB_PATH", "scans.db")
 MAX_CONCURRENT = int(os.environ.get("MAX_CONCURRENT_SCANS", "5"))
 
 VALID_INDUSTRIES = [
-    "healthcare", "legal", "finance", "tech", "manufacturing",
-    "retail", "education", "government", "other",
+    "Agriculture", "Communications", "Consumer", "Education", "Energy",
+    "Entertainment", "Financial Services", "Finance", "Healthcare",
+    "Hospitality", "Industrial / Manufacturing", "Manufacturing",
+    "Legal", "Media", "Pharmaceuticals", "Public Sector", "Research",
+    "Retail", "Services", "Technology", "Tech", "Transportation",
+    "Government", "Other",
 ]
 
 _semaphore = threading.Semaphore(MAX_CONCURRENT)
@@ -439,9 +443,9 @@ def start_scan():
         return jsonify({"error": "Invalid or missing domain"}), 400
 
     # Parse optional insurance context fields
-    industry = str(data.get("industry", "other")).strip().lower()
+    industry = str(data.get("industry", "Other")).strip()
     if industry not in VALID_INDUSTRIES:
-        industry = "other"
+        industry = "Other"
     try:
         annual_revenue = float(data.get("annual_revenue", 0))
     except (ValueError, TypeError):
@@ -454,7 +458,8 @@ def start_scan():
     include_fraudulent_domains = bool(data.get("include_fraudulent_domains", False))
 
     scan_id = str(uuid.uuid4())
-    save_scan(scan_id, domain, industry, annual_revenue, country)
+    effective_revenue = annual_revenue_zar if annual_revenue_zar > 0 else annual_revenue
+    save_scan(scan_id, domain, industry, effective_revenue, country)
 
     t = threading.Thread(
         target=run_scan,

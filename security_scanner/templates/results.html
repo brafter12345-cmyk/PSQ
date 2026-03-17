@@ -486,6 +486,54 @@
     </div>
     {% endif %}
 
+    <!-- Risk Mitigation Recommendations -->
+    {% if fin and fin.mitigations and fin.mitigations.findings %}
+    {% set mit = fin.mitigations %}
+    <div class="cat-card" style="grid-column: 1 / -1;">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light tl-green"></div><div class="cat-title">Risk Mitigation Recommendations</div></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="cat-grade" style="color:var(--low);">Save {{ cur }} {{ '{:,.0f}'.format(mit.savings) }}</span>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="cat-body" style="display:none;">
+        <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px;padding:12px;background:var(--surface2);border-radius:8px;">
+          <div style="flex:1;min-width:140px;">
+            <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;">Current Annual Loss</div>
+            <div style="font-size:1.1rem;font-weight:700;color:var(--critical);">{{ cur }} {{ '{:,.0f}'.format(mit.current_loss) }}</div>
+          </div>
+          <div style="flex:0;display:flex;align-items:center;font-size:1.4rem;color:var(--low);">&#10140;</div>
+          <div style="flex:1;min-width:140px;">
+            <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;">Mitigated Annual Loss</div>
+            <div style="font-size:1.1rem;font-weight:700;color:var(--low);">{{ cur }} {{ '{:,.0f}'.format(mit.mitigated_loss) }}</div>
+          </div>
+          <div style="flex:1;min-width:140px;">
+            <div style="font-size:.75rem;color:var(--muted);text-transform:uppercase;">Estimated Savings</div>
+            <div style="font-size:1.1rem;font-weight:700;color:var(--low);">{{ cur }} {{ '{:,.0f}'.format(mit.savings) }} ({{ mit.reduction_pct }}%)</div>
+          </div>
+        </div>
+        <table class="detail-tbl" style="width:100%;">
+          <thead><tr><th>Severity</th><th>Category</th><th>Finding</th><th>Recommendation</th><th style="text-align:right;">Est. Savings</th></tr></thead>
+          <tbody>
+          {% for f in mit.findings %}
+          <tr>
+            <td><span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:.75rem;font-weight:700;
+              {% if f.severity == 'Critical' %}background:#7f1d1d;color:var(--critical);
+              {% elif f.severity == 'High' %}background:#78350f;color:var(--high);
+              {% else %}background:#422006;color:var(--medium);{% endif %}">{{ f.severity }}</span></td>
+            <td style="font-weight:600;">{{ f.category }}</td>
+            <td>{{ f.finding }}</td>
+            <td>{{ f.recommendation }}</td>
+            <td style="text-align:right;color:var(--low);font-weight:600;">{{ cur }} {{ '{:,.0f}'.format(f.estimated_savings) }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
     <!-- Data Breach Index -->
     {% set dbi = results.insurance.dbi %}
     {% if dbi %}

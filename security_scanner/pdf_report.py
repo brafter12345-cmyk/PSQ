@@ -870,43 +870,47 @@ def cat_financial_impact(d, S):
 
 def cat_risk_mitigations(d, S):
     fin = d.get("financial_impact", {})
-    mit = fin.get("risk_mitigations", {})
+    mit = fin.get("mitigations", {})
     findings = mit.get("findings", [])
-    if fin.get("status") != "completed" or not findings:
+    if not findings:
         return []
 
-    total_savings = mit.get("total_potential_savings", 0)
-    current = mit.get("current_annual_loss", 0)
-    mitigated = mit.get("mitigated_annual_loss", 0)
-    summary = mit.get("summary", {})
+    is_zar = fin.get("currency") == "ZAR"
+    cur = "R" if is_zar else "$"
+
+    total_savings = mit.get("savings", 0)
+    current = mit.get("current_loss", 0)
+    mitigated = mit.get("mitigated_loss", 0)
+    reduction_pct = mit.get("reduction_pct", 0)
 
     rows = [
-        ("Current Annual Loss",  f"R {current:,.0f}"),
-        ("Mitigated Annual Loss", f"R {mitigated:,.0f}"),
-        ("Total Potential Savings", f"R {total_savings:,.0f}"),
+        ("Current Annual Loss",    f"{cur} {current:,.0f}"),
+        ("Mitigated Annual Loss",  f"{cur} {mitigated:,.0f}"),
+        ("Total Potential Savings", f"{cur} {total_savings:,.0f} ({reduction_pct}%)"),
         ("", ""),
     ]
 
-    # Summary counts
-    for sev in ("critical", "high", "medium"):
-        s = summary.get(sev, {})
-        if s.get("count", 0) > 0:
-            rows.append((f"{sev.title()} Findings", f"{s['count']} — R {s['total_savings_zar']:,.0f} savings"))
+    # Count by severity
+    for sev in ("Critical", "High", "Medium"):
+        sev_findings = [f for f in findings if f.get("severity") == sev]
+        if sev_findings:
+            sev_total = sum(f.get("estimated_savings", 0) for f in sev_findings)
+            rows.append((f"{sev} Findings", f"{len(sev_findings)} — {cur} {sev_total:,.0f} savings"))
 
     rows.append(("", ""))
 
     # Individual findings
-    for i, f in enumerate(findings):
+    for f in findings:
         sev = f.get("severity", "Medium")
-        savings = f.get("estimated_annual_savings_zar", 0)
-        rows.append((f"[{sev}] {f.get('recommendation', '')}",
-                      f"R {savings:,.0f}"))
+        savings = f.get("estimated_savings", 0)
+        rows.append((f"[{sev}] {f.get('category', '')}: {f.get('recommendation', '')}",
+                      f"{cur} {savings:,.0f}"))
 
     rows.append(("", ""))
     rows.append(("Note", "Savings are modelled projections based on FAIR methodology"))
 
     return build_cat_card("Risk Mitigation Recommendations", C_GREEN,
-                          f"Save R {total_savings:,.0f}", rows, [], S)
+                          f"Save {cur} {total_savings:,.0f}", rows, [], S)
 
 
 # ---------------------------------------------------------------------------
@@ -1081,6 +1085,7 @@ def generate_pdf(results: dict) -> bytes:
         story += section_header("INSURANCE ANALYTICS", S)
         story += cat_rsi(results, S)
         story += cat_financial_impact(results.get("insurance", {}), S)
+        story += cat_risk_mitigations(results.get("insurance", {}), S)
         story += cat_dbi(results, S)
         story += cat_remediation(results, S)
 
