@@ -397,34 +397,91 @@
     <!-- Financial Impact -->
     {% set fin = results.insurance.financial_impact %}
     {% if fin and fin.total %}
-    {% set fin_tl = 'tl-crimson' if fin.total.most_likely > 500000 else ('tl-red' if fin.total.most_likely > 200000 else ('tl-amber' if fin.total.most_likely > 50000 else 'tl-green')) %}
+    {% set is_zar = fin.currency == 'ZAR' %}
+    {% set cur = 'R' if is_zar else '$' %}
+    {% set fin_tl = 'tl-crimson' if fin.total.most_likely > 5000000 else ('tl-red' if fin.total.most_likely > 1000000 else ('tl-amber' if fin.total.most_likely > 200000 else 'tl-green')) %}
     <div class="cat-card">
       <div class="cat-header" onclick="toggle(this)">
         <div class="cat-left"><div class="traffic-light {{ fin_tl }}"></div><div class="cat-title">Financial Impact Analysis (FAIR)</div></div>
         <div style="display:flex;align-items:center;gap:10px;">
-          <span class="cat-grade">${{ '{:,.0f}'.format(fin.total.most_likely) }} est. annual loss</span>
+          <span class="cat-grade">{{ cur }} {{ '{:,.0f}'.format(fin.total.most_likely) }} est. annual loss</span>
           <span class="chevron">&#9660;</span>
         </div>
       </div>
       <div class="cat-body open">
+        {% if is_zar and fin.annual_revenue_zar %}
+        <div style="font-size:.82rem;color:var(--muted);margin-bottom:10px;">
+          Industry: <strong>{{ fin.industry | title }}</strong> &nbsp;|&nbsp;
+          Annual Revenue: <strong>R {{ '{:,.0f}'.format(fin.annual_revenue_zar) }}</strong>
+          {% if not results.scan_context or not results.scan_context.annual_revenue_zar %}<span style="opacity:.6;"> (default estimate)</span>{% endif %}
+        </div>
+        {% endif %}
+        {% if is_zar %}
+        {# ZAR path: scenarios have estimated_loss + probability (ransomware uses rsi_score) #}
+        <table class="vuln-table">
+          <thead><tr><th>Scenario</th><th>Probability / Driver</th><th>Estimated Loss</th><th>Key Detail</th></tr></thead>
+          <tbody>
+            {% set db = fin.scenarios.data_breach %}
+            <tr>
+              <td>Data Breach</td>
+              <td>P={{ '%.1f'|format((db.probability | default(0)) * 100) }}%</td>
+              <td><strong>{{ cur }} {{ '{:,.0f}'.format(db.estimated_loss | default(0)) }}</strong></td>
+              <td>{{ '{:,}'.format(db.estimated_records | default(0)) }} records @ {{ cur }}{{ '{:,.0f}'.format(db.cost_per_record | default(0)) }}/rec &nbsp;+&nbsp; POPIA {{ cur }} {{ '{:,.0f}'.format(db.regulatory_fine | default(0)) }}</td>
+            </tr>
+            {% set rw = fin.scenarios.ransomware %}
+            <tr>
+              <td>Ransomware</td>
+              <td>RSI={{ '%.2f'|format(rw.rsi_score | default(0)) }}</td>
+              <td><strong>{{ cur }} {{ '{:,.0f}'.format(rw.estimated_loss | default(0)) }}</strong></td>
+              <td>{{ rw.avg_downtime_days | default(22) }} days downtime &nbsp;+&nbsp; {{ cur }} {{ '{:,.0f}'.format(rw.ransom_estimate | default(0)) }} ransom</td>
+            </tr>
+            {% set bi = fin.scenarios.business_interruption %}
+            <tr>
+              <td>Business Interruption</td>
+              <td>P={{ '%.1f'|format((bi.probability | default(0)) * 100) }}%</td>
+              <td><strong>{{ cur }} {{ '{:,.0f}'.format(bi.estimated_loss | default(0)) }}</strong></td>
+              <td>—</td>
+            </tr>
+            <tr style="border-top:2px solid var(--border);font-weight:700;">
+              <td>Total Estimated Loss</td><td></td>
+              <td style="color:var(--critical);">{{ cur }} {{ '{:,.0f}'.format(fin.total.most_likely) }}</td>
+              <td>Min {{ cur }} {{ '{:,.0f}'.format(fin.total.min) }} &nbsp;|&nbsp; Max {{ cur }} {{ '{:,.0f}'.format(fin.total.max) }}</td>
+            </tr>
+          </tbody>
+        </table>
+        {% set ins = fin.insurance_recommendation %}
+        {% if ins %}
+        <div style="margin-top:14px;font-size:.82rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Insurance Cover Recommendation</div>
+        <table class="kv-table" style="margin-top:6px;">
+          <tr><td>Minimum Cover</td><td>{{ cur }} {{ '{:,.0f}'.format(ins.minimum_cover_zar | default(0)) }}</td></tr>
+          <tr><td>Recommended Cover</td><td><strong>{{ cur }} {{ '{:,.0f}'.format(ins.recommended_cover_zar | default(0)) }}</strong></td></tr>
+          <tr><td>Premium Risk Tier</td><td><strong>{{ ins.premium_risk_tier | default('N/A') }}</strong></td></tr>
+        </table>
+        {% endif %}
+        {% else %}
+        {# USD path #}
         <table class="vuln-table">
           <thead><tr><th>Scenario</th><th>Probability</th><th>Minimum</th><th>Most Likely</th><th>Maximum</th></tr></thead>
           <tbody>
             {% set db = fin.scenarios.data_breach %}
-            <tr><td>Data Breach</td><td>{{ '%.1f'|format(db.probability * 100) }}%</td><td>${{ '{:,.0f}'.format(db.min) }}</td><td><strong>${{ '{:,.0f}'.format(db.most_likely) }}</strong></td><td>${{ '{:,.0f}'.format(db.max) }}</td></tr>
+            <tr><td>Data Breach</td><td>{{ '%.1f'|format((db.probability | default(0)) * 100) }}%</td><td>{{ cur }}{{ '{:,.0f}'.format(db.min | default(0)) }}</td><td><strong>{{ cur }}{{ '{:,.0f}'.format(db.most_likely | default(0)) }}</strong></td><td>{{ cur }}{{ '{:,.0f}'.format(db.max | default(0)) }}</td></tr>
             {% set rw = fin.scenarios.ransomware %}
-            <tr><td>Ransomware</td><td>{{ '%.1f'|format(rw.probability * 100) }}%</td><td>${{ '{:,.0f}'.format(rw.min) }}</td><td><strong>${{ '{:,.0f}'.format(rw.most_likely) }}</strong></td><td>${{ '{:,.0f}'.format(rw.max) }}</td></tr>
+            <tr><td>Ransomware</td><td>{{ '%.1f'|format((rw.probability | default(0)) * 100) }}%</td><td>{{ cur }}{{ '{:,.0f}'.format(rw.min | default(0)) }}</td><td><strong>{{ cur }}{{ '{:,.0f}'.format(rw.most_likely | default(0)) }}</strong></td><td>{{ cur }}{{ '{:,.0f}'.format(rw.max | default(0)) }}</td></tr>
             {% set bi = fin.scenarios.business_interruption %}
-            <tr><td>Business Interruption</td><td>{{ '%.1f'|format(bi.probability * 100) }}%</td><td>${{ '{:,.0f}'.format(bi.min) }}</td><td><strong>${{ '{:,.0f}'.format(bi.most_likely) }}</strong></td><td>${{ '{:,.0f}'.format(bi.max) }}</td></tr>
-            <tr style="border-top:2px solid var(--border);font-weight:700;"><td>Total Estimated Loss</td><td></td><td>${{ '{:,.0f}'.format(fin.total.min) }}</td><td style="color:var(--critical);">${{ '{:,.0f}'.format(fin.total.most_likely) }}</td><td>${{ '{:,.0f}'.format(fin.total.max) }}</td></tr>
+            <tr><td>Business Interruption</td><td>{{ '%.1f'|format((bi.probability | default(0)) * 100) }}%</td><td>{{ cur }}{{ '{:,.0f}'.format(bi.min | default(0)) }}</td><td><strong>{{ cur }}{{ '{:,.0f}'.format(bi.most_likely | default(0)) }}</strong></td><td>{{ cur }}{{ '{:,.0f}'.format(bi.max | default(0)) }}</td></tr>
+            <tr style="border-top:2px solid var(--border);font-weight:700;"><td>Total</td><td></td><td>{{ cur }}{{ '{:,.0f}'.format(fin.total.min) }}</td><td style="color:var(--critical);">{{ cur }}{{ '{:,.0f}'.format(fin.total.most_likely) }}</td><td>{{ cur }}{{ '{:,.0f}'.format(fin.total.max) }}</td></tr>
           </tbody>
         </table>
+        {% set ins = fin.insurance_recommendations %}
+        {% if ins %}
         <div style="margin-top:14px;font-size:.82rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;">Insurance Recommendations</div>
         <table class="kv-table" style="margin-top:6px;">
-          <tr><td>Suggested Deductible</td><td>${{ '{:,.0f}'.format(fin.insurance_recommendations.suggested_deductible) }}</td></tr>
-          <tr><td>Expected Annual Loss</td><td><strong>${{ '{:,.0f}'.format(fin.insurance_recommendations.expected_annual_loss) }}</strong></td></tr>
-          <tr><td>Recommended Coverage Limit</td><td>${{ '{:,.0f}'.format(fin.insurance_recommendations.recommended_coverage) }}</td></tr>
+          <tr><td>Suggested Deductible</td><td>{{ cur }}{{ '{:,.0f}'.format(ins.suggested_deductible | default(0)) }}</td></tr>
+          <tr><td>Expected Annual Loss</td><td><strong>{{ cur }}{{ '{:,.0f}'.format(ins.expected_annual_loss | default(0)) }}</strong></td></tr>
+          <tr><td>Recommended Coverage Limit</td><td>{{ cur }}{{ '{:,.0f}'.format(ins.recommended_coverage | default(0)) }}</td></tr>
         </table>
+        {% endif %}
+        {% endif %}
       </div>
     </div>
     {% endif %}
@@ -462,7 +519,8 @@
       <div class="cat-header" onclick="toggle(this)">
         <div class="cat-left"><div class="traffic-light tl-blue"></div><div class="cat-title">Remediation Roadmap — Before/After Model</div></div>
         <div style="display:flex;align-items:center;gap:10px;">
-          <span class="cat-grade">{{ rem.step_count }} steps — ${{ '{:,.0f}'.format(rem.total_potential_savings) }} potential savings</span>
+          {% set rem_cur = 'R' if results.insurance.financial_impact and results.insurance.financial_impact.currency == 'ZAR' else '$' %}
+          <span class="cat-grade">{{ rem.step_count }} steps — {{ rem_cur }} {{ '{:,.0f}'.format(rem.total_potential_savings) }} potential savings</span>
           <span class="chevron">&#9660;</span>
         </div>
       </div>
@@ -472,14 +530,14 @@
             <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Current State</div>
             <div style="font-size:1.1rem;font-weight:700;color:var(--critical);">RSI: {{ '%.3f'|format(rem.current_rsi) }}</div>
             {% if rem.current_financial_impact %}
-            <div style="font-size:.88rem;color:var(--muted);margin-top:4px;">Est. Loss: ${{ '{:,.0f}'.format(rem.current_financial_impact.most_likely) }}/yr</div>
+            <div style="font-size:.88rem;color:var(--muted);margin-top:4px;">Est. Loss: {{ rem_cur }} {{ '{:,.0f}'.format(rem.current_financial_impact.most_likely) }}/yr</div>
             {% endif %}
           </div>
           <div style="flex:1;min-width:200px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;">
             <div style="font-size:.72rem;font-weight:700;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">After Remediation</div>
             <div style="font-size:1.1rem;font-weight:700;color:var(--low);">RSI: {{ '%.3f'|format(rem.simulated_rsi) }}</div>
             {% if rem.simulated_financial_impact %}
-            <div style="font-size:.88rem;color:var(--muted);margin-top:4px;">Est. Loss: ${{ '{:,.0f}'.format(rem.simulated_financial_impact.most_likely) }}/yr</div>
+            <div style="font-size:.88rem;color:var(--muted);margin-top:4px;">Est. Loss: {{ rem_cur }} {{ '{:,.0f}'.format(rem.simulated_financial_impact.most_likely) }}/yr</div>
             {% endif %}
           </div>
         </div>
@@ -493,7 +551,7 @@
               <td><span class="badge {% if step.priority == 1 %}badge-red{% elif step.priority == 2 %}badge-amber{% else %}badge-green{% endif %}">P{{ step.priority }}</span></td>
               <td>{{ step.estimated_cost }}</td>
               <td style="color:var(--low);">-{{ '%.2f'|format(step.rsi_reduction) }}</td>
-              <td style="color:var(--low);font-weight:600;">${{ '{:,.0f}'.format(step.annual_savings_estimate) }}</td>
+              <td style="color:var(--low);font-weight:600;">{{ rem_cur }} {{ '{:,.0f}'.format(step.annual_savings_estimate) }}</td>
             </tr>
           {% endfor %}
           </tbody>

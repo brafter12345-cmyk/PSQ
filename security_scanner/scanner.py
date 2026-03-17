@@ -3617,11 +3617,12 @@ class SecurityScanner:
             rsi_result = rsi_calc.calculate(cat_results, industry, annual_revenue)
             results["insurance"]["rsi"] = rsi_result
 
-            # Financial Impact — use ZAR model if annual_revenue_zar provided
+            # Financial Impact — default to ZAR (SA product); use 10M estimate if no revenue given
             fin_calc = FinancialImpactCalculator()
+            _zar = annual_revenue_zar if annual_revenue_zar > 0 else 10_000_000
             fin_result = fin_calc.calculate(
                 cat_results, rsi_result, annual_revenue, industry,
-                annual_revenue_zar=annual_revenue_zar
+                annual_revenue_zar=_zar
             )
             results["insurance"]["financial_impact"] = fin_result
 
@@ -3633,7 +3634,7 @@ class SecurityScanner:
             sim = RemediationSimulator()
             results["insurance"]["remediation"] = sim.calculate(
                 cat_results, rsi_result, fin_result,
-                annual_revenue_zar if annual_revenue_zar > 0 else annual_revenue,
+                _zar,
                 industry
             )
         except Exception as e:
