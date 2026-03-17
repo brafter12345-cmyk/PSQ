@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: phishield-scanner
+    runtime: python
+    buildCommand: pip install -r security_scanner/requirements.txt
+    startCommand: cd security_scanner && gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 600
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: PORT
+        value: "10000"
+    plan: free
