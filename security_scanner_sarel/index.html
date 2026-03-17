@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ASI Bestsure – Phishield Cyber Cover</title>
+  <meta name="description" content="Get an instant cyber insurance quote from ASI Bestsure Phishield. Estimate your premium and submit your details in minutes."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header class="site-header">
+    <h1>ASI Bestsure – <span class="brand-accent">Phishield Cyber Cover</span></h1>
+  </header>
+
+  <!-- ===== STEP INDICATOR ===== -->
+  <div class="main-container">
+    <div class="step-indicator">
+      <div class="step-group">
+        <div class="step-dot active" id="dot1">1</div>
+        <div class="step-label active" id="label1">Quote</div>
+      </div>
+      <div class="step-line"><div class="step-line-fill" id="lineFill"></div></div>
+      <div class="step-group">
+        <div class="step-dot" id="dot2">2</div>
+        <div class="step-label" id="label2">Details</div>
+      </div>
+    </div>
+
+    <!-- ===== CARD ===== -->
+    <div class="glass-card" style="margin-top: 24px;">
+
+      <form id="leadForm" novalidate autocomplete="on" method="POST" action="https://formsubmit.co/a5f019155bd599087b1f4de23d1703c3">
+        <!-- FormSubmit config -->
+        <input type="hidden" name="_subject" id="fs_subject" value="Phishield Cyber Cover Lead" />
+        <input type="hidden" name="_captcha" value="false" />
+        <input type="hidden" name="_next" value="https://qoutes.phishield.com/?submitted=true" />
+        <input type="text" name="_honey" style="display:none" tabindex="-1" autocomplete="off" />
+
+        <!-- Hidden quote fields -->
+        <input type="hidden" name="Revenue Band" id="h_revenueBand" value="" />
+        <input type="hidden" name="Cover Limit" id="h_coverLimit" value="" />
+        <input type="hidden" name="Annual Premium" id="h_annualPremium" value="" />
+        <input type="hidden" name="Monthly Premium" id="h_monthlyPremium" value="" />
+        <input type="hidden" name="MDR Selection" id="h_mdrQualified" value="" />
+        <input type="hidden" name="Custom Turnover" id="h_customTurnover" value="" />
+        <input type="hidden" name="Custom Cover" id="h_customCover" value="" />
+
+      <!-- ========== STEP 1 — QUOTE ========== -->
+      <div id="step1" class="step-panel active">
+        <h2 class="section-title">Cyber Insurance Quote Estimator</h2>
+        <p class="section-subtitle">Adjust the sliders below to see your estimated premium instantly.</p>
+
+        <!-- Revenue Slider -->
+        <div class="slider-group">
+          <label class="field-label" for="revenueSlider">Company Revenue Band</label>
+          <div class="slider-value" id="revenueValue">–</div>
+          <input id="revenueSlider" type="range" min="0" max="7" step="1" value="0"/>
+        </div>
+
+        <!-- Custom Turnover Input (Hidden by default) -->
+        <div id="customTurnoverGroup" class="form-group" style="display: none; margin-bottom: 24px;">
+          <label class="field-label" for="customTurnover">What is your company's turnover?</label>
+          <input class="form-input" id="customTurnover" type="text" placeholder="e.g. R250,000,000"/>
+        </div>
+
+        <!-- Cover Slider -->
+        <div class="slider-group">
+          <label class="field-label" for="coverSlider">Cover Limit</label>
+          <div class="slider-value" id="coverValue">–</div>
+          <input id="coverSlider" type="range" min="0" max="6" step="1" value="0"/>
+        </div>
+
+        <!-- Custom Cover Input (Hidden by default) -->
+        <div id="customCoverGroup" class="form-group" style="display: none; margin-bottom: 24px;">
+          <label class="field-label" for="customCover">What cover limit are you interested in?</label>
+          <input class="form-input" id="customCover" type="text" placeholder="e.g. R20,000,000"/>
+        </div>
+
+        <!-- Quote Display -->
+        <div class="quote-box">
+          <h3>Estimated Quote</h3>
+          <div class="premium-row">
+            <div class="premium-item">
+              <div class="premium-label">Annual Premium</div>
+              <div class="premium-amount" id="annualPremium">–</div>
+            </div>
+            <div class="premium-item">
+              <div class="premium-label">Monthly Premium</div>
+              <div class="premium-amount" id="monthlyPremium">–</div>
+            </div>
+          </div>
+          <div class="discount-badge" id="discountBadge">15% MDR Discount Applied</div>
+        </div>
+
+        <!-- MDR -->
+        <label class="field-label">Do you currently have or intend to purchase Sophos MDR Essentials/Complete?</label>
+        <div class="radio-group">
+          <div class="radio-option">
+            <input type="radio" id="mdrYes" name="mdr" value="yes"/>
+            <label for="mdrYes">Yes</label>
+          </div>
+          <div class="radio-option">
+            <input type="radio" id="mdrNo" name="mdr" value="no" checked/>
+            <label for="mdrNo">No</label>
+          </div>
+        </div>
+
+        <!-- MDR Sub-Options (Hidden by default) -->
+        <div id="mdrSubOptions" style="display: none; margin-top: 12px; margin-bottom: 8px;">
+          <label class="field-label" style="font-size: 0.75rem; margin-bottom: 8px;">Which specific MDR product applies?</label>
+          <div class="radio-group" style="flex-direction: column; gap: 8px;">
+            <div class="radio-option">
+              <input type="radio" id="mdrEssNotDep" name="mdrType" value="Essentials + endpoints not deployed" checked/>
+              <label for="mdrEssNotDep" style="text-align: left;">Essentials + endpoints not deployed (10% discount)</label>
+            </div>
+            <div class="radio-option">
+              <input type="radio" id="mdrEssDep" name="mdrType" value="Essentials + endpoints deployed"/>
+              <label for="mdrEssDep" style="text-align: left;">Essentials + endpoints deployed (15% discount)</label>
+            </div>
+            <div class="radio-option">
+              <input type="radio" id="mdrCompNotDep" name="mdrType" value="Complete + endpoints not deployed"/>
+              <label for="mdrCompNotDep" style="text-align: left;">Complete + endpoints not deployed (20% discount)</label>
+            </div>
+            <div class="radio-option">
+              <input type="radio" id="mdrCompDep" name="mdrType" value="Complete + endpoints deployed"/>
+              <label for="mdrCompDep" style="text-align: left;">Complete + endpoints deployed (30% discount)</label>
+            </div>
+          </div>
+        </div>
+        
+
+        <!-- Industry -->
+        <div class="form-group" style="margin-top: 24px;">
+          <label class="field-label" for="industryField">Industry</label>
+          <select class="form-select" id="industryField" name="Industry" required>
+            <option value="" disabled selected>Select industry</option>
+            <option>Agriculture</option>
+            <option>Construction</option>
+            <option>Finance, Insurance and Real Estate</option>
+            <option>Healthcare</option>
+            <option>Manufacturing</option>
+            <option>Mining</option>
+            <option>Public Administration</option>
+            <option>Retail</option>
+            <option>Services</option>
+            <option>Software and Technology</option>
+            <option>Transportation</option>
+            <option>Wholesale</option>
+            <option>Other</option>
+          </select>
+        </div>
+
+        <!-- Disclaimer shows here -->
+        <div id="industryDisclaimer" class="industry-disclaimer"></div>
+
+        <!-- Next -->
+        <div class="btn-row">
+          <button type="button" class="btn btn-primary" id="nextBtn">Next – Enter Your Details</button>
+        </div>
+      </div>
+
+      <!-- ========== STEP 2 — CONTACT DETAILS ========== -->
+      <div id="step2" class="step-panel">
+        <h2 class="section-title">Your Details</h2>
+        <p class="section-subtitle">Tell us a bit about your company so we can finalize your quote.</p>
+
+        <!-- Quote Summary -->
+        <div class="quote-summary">
+          <div class="summary-item">
+            <div class="summary-item-label">Revenue Band</div>
+            <div class="summary-item-value" id="sumRevenue">–</div>
+          </div>
+          <div class="summary-item">
+            <div class="summary-item-label">Cover Limit</div>
+            <div class="summary-item-value" id="sumCover">–</div>
+          </div>
+          <div class="summary-item">
+            <div class="summary-item-label">Annual</div>
+            <div class="summary-item-value" id="sumAnnual">–</div>
+          </div>
+          <div class="summary-item">
+            <div class="summary-item-label">Monthly</div>
+            <div class="summary-item-value" id="sumMonthly">–</div>
+          </div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+              <label class="field-label" for="companyName">Company Name *</label>
+              <input class="form-input" id="companyName" name="Company Name" type="text" placeholder="e.g. Acme (Pty) Ltd" required/>
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="tradingAs">Trading As *</label>
+              <input class="form-input" id="tradingAs" name="Trading As" type="text" placeholder="e.g. Acme Corp" required/>
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="resellerField">Reseller *</label>
+              <select class="form-select" id="resellerField" name="Reseller" required>
+                <option value="" disabled selected>Select reseller</option>
+                <option>DataGr8</option>
+                <option>FT-KZN</option>
+                <option>CyberInsight</option>
+                <option>IT Zeus</option>
+                <option>BDNS</option>
+                <option>French KZN</option>
+                <option>VOX Telecom</option>
+                <option>Netelligent</option>
+                <option>ASI-Bestsure</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="contactPerson">Contact Person *</label>
+              <input class="form-input" id="contactPerson" name="Contact Person" type="text" placeholder="Full name" required/>
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="contactNumber">Contact Number *</label>
+              <input class="form-input" id="contactNumber" name="Contact Number" type="tel" placeholder="e.g. 082 123 4567" required/>
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="emailField">Email Address *</label>
+              <input class="form-input" id="emailField" name="Email" type="email" placeholder="you@company.co.za" required/>
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="employeesField">Number of Employees *</label>
+              <input class="form-input" id="employeesField" name="Number of Employees" type="number" min="1" placeholder="e.g. 50" required/>
+            </div>
+        </div>
+
+        <!-- Buttons -->
+        <div class="btn-row">
+          <button type="button" class="btn btn-ghost" id="backBtn">← Back</button>
+          <button type="submit" class="btn btn-primary" id="submitBtn">Submit Lead</button>
+        </div>
+      </div>
+      </form>
+
+      <!-- ========== SUCCESS ========== -->
+      <div id="successPanel" class="step-panel" style="display:none;">
+        <div class="success-panel">
+          <div class="success-icon">✓</div>
+          <h2>Lead Submitted!</h2>
+          <p>Your quote details and contact information have been sent. A representative will be in touch shortly.</p>
+        </div>
+      </div>
+
+    </div><!-- /.glass-card -->
+
+    <p class="footer-note">ASI Bestsure – Phishield Cyber Cover © 2026. All premiums are estimates and subject to underwriting.</p>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
