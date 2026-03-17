@@ -382,6 +382,26 @@ def run_scan(scan_id: str, domain: str, industry: str = "other",
                 include_fraudulent_domains=include_fraudulent_domains,
             )
             update_scan(scan_id, results)
+            # Auto-link to client by domain
+            try:
+                with get_db() as conn:
+                    scan_row = conn.execute("SELECT client_id, domain FROM scans WHERE id=?", (scan_id,)).fetchone()
+                    if scan_row:
+                        cid = scan_row['client_id']
+                        if not cid:
+                            # Find client by domain match
+                            client_row = conn.execute(
+                                "SELECT id FROM clients WHERE domain=? LIMIT 1",
+                                (scan_row['domain'],)
+                            ).fetchone()
+                            if client_row:
+                                cid = client_row['id']
+                                conn.execute("UPDATE scans SET client_id=? WHERE id=?", (cid, scan_id))
+                                conn.commit()
+                        if cid:
+                            advance_pipeline(cid, 'scanned')
+            except Exception:
+                pass  # Don't fail the scan if CRM linking fails
             progress_q.put({"type": "complete"})
         except Exception as e:
             mark_failed(scan_id, str(e))
@@ -797,6 +817,40 @@ def link_scan(client_id):
         conn.commit()
     advance_pipeline(client_id, 'scanned')
     return redirect(url_for('view_client', client_id=client_id))
+
+
+@app.route("/crm/clients/<client_id>/run-scan", methods=["POST"])
+def client_run_scan(client_id):
+    with get_db() as conn:
+        client = conn.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
+        if not client:
+            abort(404)
+        client = dict(client)
+
+    domain = client.get('domain', '').strip()
+    if not domain or not valid_domain(domain):
+        return redirect(url_for('view_client', client_id=client_id))
+
+    industry = client.get('industry', 'other') or 'other'
+    annual_revenue = client.get('annual_revenue', 0) or 0
+
+    scan_id = str(uuid.uuid4())
+    save_scan(scan_id, domain, industry, annual_revenue, client.get('country', ''))
+
+    # Pre-link scan to client
+    with get_db() as conn:
+        conn.execute("UPDATE scans SET client_id=? WHERE id=?", (client_id, scan_id))
+        conn.commit()
+
+    t = threading.Thread(
+        target=run_scan,
+        args=(scan_id, domain, industry, annual_revenue,
+              int(annual_revenue) if annual_revenue else 0, client.get('country', ''), False),
+        daemon=True,
+    )
+    t.start()
+
+    return redirect(f"/results/{scan_id}")
 
 
 @app.route("/crm/clients/<client_id>/quotes/new")

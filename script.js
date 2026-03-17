@@ -263,10 +263,50 @@ function handleSubmit(e) {
   // Update subject dynamically
   $('fs_subject').value = `Lead Submission: ${$('companyName').value.trim()} - Phishield Cyber Cover`;
 
-  // Submit the form natively (standard POST to FormSubmit)
   submitBtn.disabled = true;
   submitBtn.textContent = 'Sending...';
-  leadForm.submit();
+
+  // Parse numeric premium values
+  function parseR(s) {
+    if (!s || s.includes('Contact')) return 0;
+    return parseFloat(s.replace(/[R\s,]/g, '')) || 0;
+  }
+
+  // Send to CRM API
+  fetch('/api/lead', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      company_name: $('companyName').value.trim(),
+      trading_as: $('tradingAs').value.trim(),
+      industry: industryField.value,
+      employee_count: parseInt($('employeesField').value, 10) || 0,
+      reseller: $('resellerField').value,
+      contact_person: $('contactPerson').value.trim(),
+      email: $('emailField').value.trim(),
+      contact_number: $('contactNumber').value.trim(),
+      cover_limit: parseR($('h_coverLimit').value),
+      annual_premium: parseR($('h_annualPremium').value),
+      monthly_premium: parseR($('h_monthlyPremium').value),
+      mdr_selection: mdrYes.checked ? 'yes' : 'no',
+      revenue_band: $('h_revenueBand').value,
+    })
+  }).then(r => r.json()).then(data => {
+    // Also send to FormSubmit for email notification (background)
+    leadForm.target = 'formsubmit_frame';
+    leadForm.submit();
+    // Show success
+    step1.classList.remove('active');
+    step2.classList.remove('active');
+    successPanel.style.display = 'block';
+    dot1.classList.remove('active');
+    dot1.classList.add('completed');
+    dot1.textContent = '✓';
+    dot2.classList.add('completed');
+  }).catch(err => {
+    // Fallback: just submit FormSubmit directly
+    leadForm.submit();
+  });
 }
 
 /* ===== Event Listeners ===== */

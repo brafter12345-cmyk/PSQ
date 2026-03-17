@@ -76,7 +76,9 @@
 
 <!-- Actions bar -->
 <div class="actions-bar">
-  <a href="/?domain={{ client.domain }}" class="btn btn-primary btn-sm">Run Scan</a>
+  <form method="POST" action="/crm/clients/{{ client.id }}/run-scan" style="display:inline;">
+    <button type="submit" class="btn btn-sm btn-success">Run Scan</button>
+  </form>
   <form method="POST" action="/crm/clients/{{ client.id }}/link-scan" class="inline-form">
     <input type="text" name="scan_id" class="form-input" placeholder="Scan ID" style="width: 120px; padding: 4px 10px; font-size: 0.82rem;">
     <button type="submit" class="btn btn-sm">Link Scan</button>
