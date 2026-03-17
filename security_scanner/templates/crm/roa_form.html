@@ -1,0 +1,67 @@
+{% extends "crm/_base_crm.html" %}
+{% block title %}Record of Advice — {{ client.company_name }}{% endblock %}
+{% block content %}
+<h2 style="margin-bottom: 20px;">Record of Advice — {{ client.company_name }}</h2>
+<div class="card">
+  <div class="card-title">FAIS Record of Advice</div>
+  <p style="color: var(--muted); font-size: 0.82rem; margin-bottom: 16px;">
+    Required under FAIS Act Section 9. Must be completed for every advisory interaction. Retained for 5 years.
+  </p>
+  <form method="POST" action="/crm/clients/{{ client.id }}/roa">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+      <div>
+        <label class="form-label">Advisor Name *</label>
+        <input type="text" name="advisor_name" class="form-input" required>
+      </div>
+      <div>
+        <label class="form-label">Linked Quote</label>
+        <select name="quote_id" class="form-input">
+          <option value="">— None —</option>
+          {% for q in quotes %}
+          <option value="{{ q.id }}">Quote {{ q.created_at[:10] }} — R {{ "%.0f"|format(q.cover_limit) }} cover ({{ q.status }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="form-label">Linked Policy</label>
+        <select name="policy_id" class="form-input">
+          <option value="">— None —</option>
+          {% for p in policies %}
+          <option value="{{ p.id }}">{{ p.policy_number }} — R {{ "%.0f"|format(p.cover_limit) }} cover</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <label class="form-label">Client Needs & Objectives *</label>
+    <textarea name="client_needs" class="form-input" rows="3" required placeholder="What does the client need? What are their business objectives and insurance requirements?"></textarea>
+
+    <label class="form-label" style="margin-top: 12px;">Risk Profile *</label>
+    <textarea name="risk_profile" class="form-input" rows="3" required placeholder="Client's risk appetite, current security posture, known vulnerabilities, industry exposure..."></textarea>
+
+    <label class="form-label" style="margin-top: 12px;">Products Recommended *</label>
+    <textarea name="products_recommended" class="form-input" rows="3" required placeholder="Cyber liability, data breach cover, ransomware cover, business interruption, MDR services..."></textarea>
+
+    <label class="form-label" style="margin-top: 12px;">Reasons for Recommendation *</label>
+    <textarea name="reasons" class="form-input" rows="3" required placeholder="Why these products suit the client's needs and risk profile..."></textarea>
+
+    <label class="form-label" style="margin-top: 12px;">Alternatives Considered</label>
+    <textarea name="alternatives_considered" class="form-input" rows="2" placeholder="Other products/providers considered and why they were not recommended..."></textarea>
+
+    <label class="form-label" style="margin-top: 12px;">Material Disclosures</label>
+    <textarea name="disclosures" class="form-input" rows="2" placeholder="Commission earned, fees, exclusions, waiting periods, excess amounts..."></textarea>
+
+    <div style="margin-top: 16px; padding: 12px; background: rgba(59,130,246,0.08); border-radius: 8px;">
+      <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+        <input type="checkbox" name="client_acknowledged" value="1">
+        <span style="font-size: 0.85rem;">Client has acknowledged receipt of this advice and understands the recommendations made.</span>
+      </label>
+    </div>
+
+    <div style="margin-top: 20px; display: flex; gap: 12px;">
+      <button type="submit" class="btn btn-primary">Save Record of Advice</button>
+      <a href="/crm/clients/{{ client.id }}" class="btn">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

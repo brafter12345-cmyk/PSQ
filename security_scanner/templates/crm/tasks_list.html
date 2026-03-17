@@ -1,0 +1,47 @@
+{% extends "crm/_base_crm.html" %}
+{% block title %}Tasks — PHISHIELD{% endblock %}
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+  <h2>Tasks</h2>
+  <a href="/crm/tasks/new" class="btn btn-primary">+ New Task</a>
+</div>
+
+<div style="display: flex; gap: 8px; margin-bottom: 16px;">
+  {% for s in ['pending', 'completed', 'all'] %}
+  <a href="/crm/tasks?status={{ s }}" class="filter-tab {% if active_status == s %}active{% endif %}">{{ s|title }}</a>
+  {% endfor %}
+</div>
+
+{% if tasks %}
+<div class="card" style="padding: 0; overflow-x: auto;">
+  <table class="table">
+    <thead><tr>
+      <th>TASK</th><th>CLIENT</th><th>DUE</th><th>PRIORITY</th><th>STATUS</th><th>ACTIONS</th>
+    </tr></thead>
+    <tbody>
+    {% for t in tasks %}
+    <tr{% if t.status == 'pending' and t.due_date and t.due_date < now_date %} style="background: rgba(239,68,68,0.05);"{% endif %}>
+      <td>{{ t.title }}</td>
+      <td>{% if t.company_name %}<a href="/crm/clients/{{ t.client_id }}">{{ t.company_name }}</a>{% else %}—{% endif %}</td>
+      <td>{{ t.due_date or '—' }}</td>
+      <td><span class="status-pill {{ t.priority }}">{{ t.priority|upper }}</span></td>
+      <td><span class="status-pill {{ t.status }}">{{ t.status|upper }}</span></td>
+      <td style="display: flex; gap: 4px;">
+        {% if t.status == 'pending' %}
+        <form method="POST" action="/crm/tasks/{{ t.id }}/complete" style="display:inline;">
+          <button type="submit" class="btn btn-sm" style="background: #16a34a; color: #fff; padding: 2px 8px; font-size: 0.72rem;">Done</button>
+        </form>
+        {% endif %}
+        <form method="POST" action="/crm/tasks/{{ t.id }}/delete" style="display:inline;" onsubmit="return confirm('Delete this task?')">
+          <button type="submit" class="btn btn-sm" style="background: rgba(239,68,68,0.15); color: #ef4444; padding: 2px 8px; font-size: 0.72rem;">&times;</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card"><div style="color: var(--muted); text-align: center; padding: 20px;">No tasks found.</div></div>
+{% endif %}
+{% endblock %}

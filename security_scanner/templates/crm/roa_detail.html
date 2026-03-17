@@ -1,0 +1,34 @@
+{% extends "crm/_base_crm.html" %}
+{% block title %}ROA — {{ client.company_name }}{% endblock %}
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+  <h2>Record of Advice</h2>
+  <a href="/crm/clients/{{ client.id }}" class="btn">Back to Client</a>
+</div>
+
+<div class="card">
+  <div class="card-title">FAIS Record of Advice</div>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; font-size: 0.85rem;">
+    <div><span style="color: var(--muted);">Advisor:</span> {{ roa.advisor_name or '—' }}</div>
+    <div><span style="color: var(--muted);">Date:</span> {{ roa.created_at[:10] }}</div>
+    <div><span style="color: var(--muted);">Client:</span> {{ client.company_name }}</div>
+    <div><span style="color: var(--muted);">Acknowledged:</span> {% if roa.client_acknowledged %}<span style="color: #16a34a;">Yes</span>{% else %}<span style="color: #ef4444;">No</span>{% endif %}</div>
+  </div>
+</div>
+
+{% for label, field in [
+  ('Client Needs & Objectives', roa.client_needs),
+  ('Risk Profile', roa.risk_profile),
+  ('Products Recommended', roa.products_recommended),
+  ('Reasons for Recommendation', roa.reasons),
+  ('Alternatives Considered', roa.alternatives_considered),
+  ('Material Disclosures', roa.disclosures)
+] %}
+{% if field %}
+<div class="card">
+  <div class="card-title">{{ label }}</div>
+  <div style="font-size: 0.85rem; white-space: pre-wrap;">{{ field }}</div>
+</div>
+{% endif %}
+{% endfor %}
+{% endblock %}

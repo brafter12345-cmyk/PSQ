@@ -1,0 +1,65 @@
+{% extends "crm/_base_crm.html" %}
+{% block title %}{{ claim.claim_number }} — Claim{% endblock %}
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+  <div style="display: flex; align-items: center; gap: 12px;">
+    <h2>{{ claim.claim_number }}</h2>
+    <span class="status-pill {{ claim.status }}">{{ claim.status|upper }}</span>
+  </div>
+  <a href="/crm/clients/{{ client.id }}" class="btn">Back to Client</a>
+</div>
+
+<div class="card">
+  <div class="card-title">Claim Details</div>
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 0.85rem;">
+    <div><span style="color: var(--muted);">Client:</span> {{ client.company_name }}</div>
+    <div><span style="color: var(--muted);">Policy:</span> {{ policy.policy_number if policy else '—' }}</div>
+    <div><span style="color: var(--muted);">Incident Type:</span> {{ claim.incident_type or '—' }}</div>
+    <div><span style="color: var(--muted);">Incident Date:</span> {{ claim.incident_date or '—' }}</div>
+    <div><span style="color: var(--muted);">Claim Date:</span> {{ claim.claim_date }}</div>
+    <div><span style="color: var(--muted);">Amount Claimed:</span> {{ claim.amount_claimed | zar }}</div>
+    <div><span style="color: var(--muted);">Amount Paid:</span> {{ claim.amount_paid | zar }}</div>
+  </div>
+  {% if claim.description %}
+  <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);">
+    <div style="color: var(--muted); font-size: 0.75rem; margin-bottom: 4px;">DESCRIPTION</div>
+    <div style="font-size: 0.85rem; white-space: pre-wrap;">{{ claim.description }}</div>
+  </div>
+  {% endif %}
+  {% if claim.resolution_notes %}
+  <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);">
+    <div style="color: var(--muted); font-size: 0.75rem; margin-bottom: 4px;">RESOLUTION NOTES</div>
+    <div style="font-size: 0.85rem; white-space: pre-wrap;">{{ claim.resolution_notes }}</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card-title">Update Claim</div>
+  <form method="POST" action="/crm/claims/{{ claim.id }}/update">
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+      <div>
+        <label class="form-label">Status</label>
+        <select name="status" class="form-input">
+          {% for s in ['filed', 'investigating', 'approved', 'paid', 'denied', 'withdrawn'] %}
+          <option value="{{ s }}" {% if claim.status == s %}selected{% endif %}>{{ s|title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="form-label">Amount Claimed (ZAR)</label>
+        <input type="number" name="amount_claimed" class="form-input" step="0.01" value="{{ claim.amount_claimed }}">
+      </div>
+      <div>
+        <label class="form-label">Amount Paid (ZAR)</label>
+        <input type="number" name="amount_paid" class="form-input" step="0.01" value="{{ claim.amount_paid }}">
+      </div>
+    </div>
+    <label class="form-label">Resolution Notes</label>
+    <textarea name="resolution_notes" class="form-input" rows="3">{{ claim.resolution_notes or '' }}</textarea>
+    <div style="margin-top: 16px;">
+      <button type="submit" class="btn btn-primary">Update Claim</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

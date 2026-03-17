@@ -25,6 +25,10 @@
     <div class="stat-number {% if overdue|length > 0 %}text-red{% endif %}">{{ overdue|length }}</div>
     <div class="stat-label">Overdue Invoices</div>
   </div>
+  <div class="stat-card">
+    <div class="stat-number" style="color: #16a34a;">{{ commission_total | zar }}</div>
+    <div class="stat-label">Active Commission</div>
+  </div>
 </div>
 
 <!-- Pipeline Funnel -->
@@ -129,5 +133,56 @@
     <div class="empty-state">No overdue invoices</div>
     {% endif %}
   </div>
+</div>
+
+<!-- Pending Tasks -->
+<div class="card">
+  <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div class="card-title" style="margin-bottom: 0;">Pending Tasks</div>
+    <a href="/crm/tasks" style="color: var(--blue); font-size: 0.8rem;">View all</a>
+  </div>
+  {% if pending_tasks %}
+  <table class="table" style="margin-top: 12px;">
+    <thead><tr><th>TASK</th><th>CLIENT</th><th>DUE</th><th>PRIORITY</th></tr></thead>
+    <tbody>
+    {% for t in pending_tasks %}
+    <tr{% if t.due_date and t.due_date < today_str %} style="background: rgba(239,68,68,0.05);"{% endif %}>
+      <td>{{ t.title }}</td>
+      <td>{% if t.company_name %}<a href="/crm/clients/{{ t.client_id }}">{{ t.company_name }}</a>{% else %}—{% endif %}</td>
+      <td>{{ t.due_date or '—' }}</td>
+      <td><span class="status-pill {{ t.priority }}">{{ t.priority|upper }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div style="color: var(--muted); font-size: 0.82rem; margin-top: 12px;">No pending tasks</div>
+  {% endif %}
+</div>
+
+<!-- Open Claims -->
+<div class="card">
+  <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div class="card-title" style="margin-bottom: 0;">Open Claims</div>
+    <a href="/crm/claims" style="color: var(--blue); font-size: 0.8rem;">View all</a>
+  </div>
+  {% if open_claims %}
+  <table class="table" style="margin-top: 12px;">
+    <thead><tr><th>CLAIM #</th><th>CLIENT</th><th>TYPE</th><th>CLAIMED</th><th>STATUS</th></tr></thead>
+    <tbody>
+    {% for cl in open_claims %}
+    <tr>
+      <td><a href="/crm/claims/{{ cl.id }}">{{ cl.claim_number }}</a></td>
+      <td><a href="/crm/clients/{{ cl.client_id }}">{{ cl.company_name }}</a></td>
+      <td>{{ cl.incident_type or '—' }}</td>
+      <td>{{ cl.amount_claimed | zar }}</td>
+      <td><span class="status-pill {{ cl.status }}">{{ cl.status|upper }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div style="color: var(--muted); font-size: 0.82rem; margin-top: 12px;">No open claims</div>
+  {% endif %}
 </div>
 {% endblock %}

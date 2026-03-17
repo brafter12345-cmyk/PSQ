@@ -302,6 +302,89 @@ def init_db():
             except Exception:
                 pass
 
+        for col, coltype, default in [
+            ('commission_rate', 'REAL', '0'),
+            ('commission_amount', 'REAL', '0'),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE policies ADD COLUMN {col} {coltype} DEFAULT {default}")
+            except Exception:
+                pass
+
+        # --- Phase 2: Insurance-specific tables ---
+        conn.execute("""CREATE TABLE IF NOT EXISTS records_of_advice (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL,
+            quote_id TEXT DEFAULT '',
+            policy_id TEXT DEFAULT '',
+            advisor_name TEXT DEFAULT '',
+            client_needs TEXT DEFAULT '',
+            risk_profile TEXT DEFAULT '',
+            products_recommended TEXT DEFAULT '',
+            reasons TEXT DEFAULT '',
+            alternatives_considered TEXT DEFAULT '',
+            disclosures TEXT DEFAULT '',
+            client_acknowledged INTEGER DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_roa_client ON records_of_advice(client_id)")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS claims (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL,
+            policy_id TEXT NOT NULL,
+            claim_number TEXT NOT NULL,
+            claim_date TEXT NOT NULL,
+            incident_date TEXT DEFAULT '',
+            incident_type TEXT DEFAULT '',
+            description TEXT DEFAULT '',
+            amount_claimed REAL DEFAULT 0,
+            amount_paid REAL DEFAULT 0,
+            status TEXT DEFAULT 'filed',
+            resolution_notes TEXT DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_client ON claims(client_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_claims_policy ON claims(policy_id)")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS communications (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL,
+            comm_type TEXT NOT NULL,
+            subject TEXT DEFAULT '',
+            body TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_comms_client ON communications(client_id)")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS tasks (
+            id TEXT PRIMARY KEY,
+            client_id TEXT DEFAULT '',
+            title TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            due_date TEXT DEFAULT '',
+            priority TEXT DEFAULT 'medium',
+            status TEXT DEFAULT 'pending',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_tasks_client ON tasks(client_id)")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS complaints (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL,
+            subject TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            status TEXT DEFAULT 'open',
+            resolution TEXT DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_complaints_client ON complaints(client_id)")
+
         conn.commit()
 
 
@@ -747,10 +830,35 @@ def crm_dashboard():
                 rd['days_overdue'] = 0
             overdue.append(rd)
 
+        # Pending tasks (overdue first)
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        pending_tasks = [dict(r) for r in conn.execute(
+            """SELECT t.*, c.company_name FROM tasks t
+               LEFT JOIN clients c ON c.id=t.client_id
+               WHERE t.status='pending'
+               ORDER BY CASE WHEN t.due_date < ? THEN 0 ELSE 1 END, t.due_date LIMIT 10""",
+            (today_str,)).fetchall()]
+
+        # Open claims
+        open_claims = [dict(r) for r in conn.execute(
+            """SELECT cl.*, c.company_name, p.policy_number FROM claims cl
+               JOIN clients c ON c.id=cl.client_id
+               LEFT JOIN policies p ON p.id=cl.policy_id
+               WHERE cl.status IN ('filed', 'investigating')
+               ORDER BY cl.created_at DESC LIMIT 10""").fetchall()]
+
+        # Commission summary
+        commission = conn.execute(
+            "SELECT COALESCE(SUM(commission_amount), 0) as total FROM policies WHERE status='active'"
+        ).fetchone()
+        commission_total = commission['total'] if commission else 0
+
     return render_template("crm/dashboard.html",
                            pipeline=pipeline, revenue=revenue,
                            renewals=renewals,
-                           overdue=overdue)
+                           overdue=overdue,
+                           pending_tasks=pending_tasks, open_claims=open_claims,
+                           commission_total=commission_total)
 
 
 @app.route("/crm/clients")
@@ -862,11 +970,30 @@ def view_client(client_id):
         activities = [dict(r) for r in conn.execute(
             "SELECT * FROM activities WHERE client_id=? ORDER BY created_at DESC LIMIT 50",
             (client_id,)).fetchall()]
+        roas = [dict(r) for r in conn.execute(
+            "SELECT * FROM records_of_advice WHERE client_id=? ORDER BY created_at DESC",
+            (client_id,)).fetchall()]
+        claims = [dict(r) for r in conn.execute(
+            """SELECT cl.*, p.policy_number FROM claims cl
+               LEFT JOIN policies p ON p.id=cl.policy_id
+               WHERE cl.client_id=? ORDER BY cl.created_at DESC""",
+            (client_id,)).fetchall()]
+        comms = [dict(r) for r in conn.execute(
+            "SELECT * FROM communications WHERE client_id=? ORDER BY created_at DESC",
+            (client_id,)).fetchall()]
+        client_tasks = [dict(r) for r in conn.execute(
+            "SELECT * FROM tasks WHERE client_id=? ORDER BY CASE status WHEN 'pending' THEN 0 ELSE 1 END, due_date",
+            (client_id,)).fetchall()]
+        complaints = [dict(r) for r in conn.execute(
+            "SELECT * FROM complaints WHERE client_id=? ORDER BY created_at DESC",
+            (client_id,)).fetchall()]
 
     return render_template("crm/client_detail.html",
                            client=client, contacts=contacts, scans=scans,
                            quotes=quotes, policies=policies, invoices=invoices,
-                           notes=notes, activities=activities)
+                           notes=notes, activities=activities,
+                           roas=roas, claims=claims, comms=comms,
+                           client_tasks=client_tasks, complaints=complaints)
 
 
 @app.route("/crm/clients/<client_id>/edit")
@@ -1092,6 +1219,13 @@ def bind_quote(quote_id):
              today, expiry, 'active', '', now, now)
         )
         conn.execute("UPDATE quotes SET status='accepted', updated_at=? WHERE id=?", (now, quote_id))
+
+        annual_premium = quote['annual_premium']
+        commission_rate = 12.5  # Default 12.5% for cyber insurance
+        commission_amount = annual_premium * (commission_rate / 100)
+        conn.execute("""UPDATE policies SET commission_rate=?, commission_amount=? WHERE id=?""",
+                     (commission_rate, commission_amount, policy_id))
+
         conn.commit()
 
     client_id = quote['client_id']
@@ -1426,6 +1560,258 @@ def archive_invoice(invoice_id):
     log_activity('invoice', invoice_id, client_id, 'archived', 'Invoice archived')
     flash("Invoice archived", "success")
     return redirect(url_for('view_client', client_id=client_id))
+
+
+# ── Record of Advice (ROA) ──────────────────────────────────────────
+
+@app.route("/crm/clients/<client_id>/roa/new")
+def new_roa(client_id):
+    with get_db() as conn:
+        client = conn.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
+        if not client:
+            flash("Client not found", "danger")
+            return redirect(url_for('list_clients'))
+        quotes = [dict(r) for r in conn.execute(
+            "SELECT id, cover_limit, annual_premium, status, created_at FROM quotes WHERE client_id=? ORDER BY created_at DESC",
+            (client_id,)).fetchall()]
+        policies = [dict(r) for r in conn.execute(
+            "SELECT id, policy_number, cover_limit, annual_premium FROM policies WHERE client_id=? ORDER BY created_at DESC",
+            (client_id,)).fetchall()]
+    return render_template("crm/roa_form.html", client=dict(client), quotes=quotes, policies=policies, roa=None)
+
+@app.route("/crm/clients/<client_id>/roa", methods=["POST"])
+def create_roa(client_id):
+    f = request.form
+    roa_id = str(uuid.uuid4())
+    now = _now()
+    with get_db() as conn:
+        conn.execute("""INSERT INTO records_of_advice
+            (id, client_id, quote_id, policy_id, advisor_name, client_needs, risk_profile,
+             products_recommended, reasons, alternatives_considered, disclosures, client_acknowledged,
+             created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (roa_id, client_id, f.get('quote_id', ''), f.get('policy_id', ''),
+             f.get('advisor_name', ''), f.get('client_needs', ''), f.get('risk_profile', ''),
+             f.get('products_recommended', ''), f.get('reasons', ''),
+             f.get('alternatives_considered', ''), f.get('disclosures', ''),
+             1 if f.get('client_acknowledged') else 0, now, now))
+        conn.commit()
+    log_activity('roa', roa_id, client_id, 'created', 'Record of Advice created')
+    flash("Record of Advice saved", "success")
+    return redirect(url_for('view_client', client_id=client_id))
+
+@app.route("/crm/roa/<roa_id>")
+def view_roa(roa_id):
+    with get_db() as conn:
+        roa = conn.execute("SELECT * FROM records_of_advice WHERE id=?", (roa_id,)).fetchone()
+        if not roa:
+            flash("ROA not found", "danger")
+            return redirect(url_for('crm_dashboard'))
+        roa = dict(roa)
+        client = conn.execute("SELECT * FROM clients WHERE id=?", (roa['client_id'],)).fetchone()
+    return render_template("crm/roa_detail.html", roa=roa, client=dict(client))
+
+
+# ── Claims Management ────────────────────────────────────────────────
+
+@app.route("/crm/clients/<client_id>/claims/new")
+def new_claim(client_id):
+    with get_db() as conn:
+        client = conn.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
+        if not client:
+            flash("Client not found", "danger")
+            return redirect(url_for('list_clients'))
+        policies = [dict(r) for r in conn.execute(
+            "SELECT id, policy_number, cover_limit FROM policies WHERE client_id=? AND status='active'",
+            (client_id,)).fetchall()]
+    return render_template("crm/claim_form.html", client=dict(client), policies=policies, claim=None)
+
+@app.route("/crm/clients/<client_id>/claims", methods=["POST"])
+def create_claim(client_id):
+    f = request.form
+    claim_id = str(uuid.uuid4())
+    claim_number = _next_number("CLM", "claims", "claim_number")
+    now = _now()
+    with get_db() as conn:
+        conn.execute("""INSERT INTO claims
+            (id, client_id, policy_id, claim_number, claim_date, incident_date, incident_type,
+             description, amount_claimed, status, created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (claim_id, client_id, f.get('policy_id', ''), claim_number,
+             f.get('claim_date', now[:10]), f.get('incident_date', ''),
+             f.get('incident_type', ''), f.get('description', ''),
+             float(f.get('amount_claimed', 0) or 0), 'filed', now, now))
+        conn.commit()
+    log_activity('claim', claim_id, client_id, 'created', f'Claim {claim_number} filed')
+    flash(f"Claim {claim_number} filed", "success")
+    return redirect(url_for('view_client', client_id=client_id))
+
+@app.route("/crm/claims/<claim_id>")
+def view_claim(claim_id):
+    with get_db() as conn:
+        claim = conn.execute("SELECT * FROM claims WHERE id=?", (claim_id,)).fetchone()
+        if not claim:
+            flash("Claim not found", "danger")
+            return redirect(url_for('crm_dashboard'))
+        claim = dict(claim)
+        client = conn.execute("SELECT * FROM clients WHERE id=?", (claim['client_id'],)).fetchone()
+        policy = conn.execute("SELECT * FROM policies WHERE id=?", (claim['policy_id'],)).fetchone()
+    return render_template("crm/claim_detail.html", claim=claim, client=dict(client),
+                           policy=dict(policy) if policy else {})
+
+@app.route("/crm/claims/<claim_id>/update", methods=["POST"])
+def update_claim(claim_id):
+    f = request.form
+    now = _now()
+    with get_db() as conn:
+        claim = conn.execute("SELECT * FROM claims WHERE id=?", (claim_id,)).fetchone()
+        if not claim:
+            flash("Claim not found", "danger")
+            return redirect(url_for('crm_dashboard'))
+        new_status = f.get('status', claim['status'])
+        conn.execute("""UPDATE claims SET status=?, amount_claimed=?, amount_paid=?,
+            resolution_notes=?, updated_at=? WHERE id=?""",
+            (new_status, float(f.get('amount_claimed', claim['amount_claimed']) or 0),
+             float(f.get('amount_paid', claim['amount_paid']) or 0),
+             f.get('resolution_notes', claim['resolution_notes']), now, claim_id))
+        conn.commit()
+    log_activity('claim', claim_id, claim['client_id'], 'updated', f'Claim updated to {new_status}')
+    flash("Claim updated", "success")
+    return redirect(url_for('view_claim', claim_id=claim_id))
+
+@app.route("/crm/claims")
+def list_claims():
+    status_filter = request.args.get('status', 'all')
+    with get_db() as conn:
+        if status_filter != 'all':
+            claims = [dict(r) for r in conn.execute(
+                """SELECT cl.*, c.company_name, p.policy_number FROM claims cl
+                   JOIN clients c ON c.id=cl.client_id
+                   LEFT JOIN policies p ON p.id=cl.policy_id
+                   WHERE cl.status=? ORDER BY cl.created_at DESC""",
+                (status_filter,)).fetchall()]
+        else:
+            claims = [dict(r) for r in conn.execute(
+                """SELECT cl.*, c.company_name, p.policy_number FROM claims cl
+                   JOIN clients c ON c.id=cl.client_id
+                   LEFT JOIN policies p ON p.id=cl.policy_id
+                   ORDER BY cl.created_at DESC""").fetchall()]
+    return render_template("crm/claims_list.html", claims=claims, active_status=status_filter)
+
+
+# ── Communication Log ────────────────────────────────────────────────
+
+@app.route("/crm/clients/<client_id>/comms", methods=["POST"])
+def add_communication(client_id):
+    f = request.form
+    comm_id = str(uuid.uuid4())
+    with get_db() as conn:
+        conn.execute("""INSERT INTO communications (id, client_id, comm_type, subject, body, created_at)
+            VALUES (?,?,?,?,?,?)""",
+            (comm_id, client_id, f.get('comm_type', 'note'), f.get('subject', ''),
+             f.get('body', ''), _now()))
+        conn.commit()
+    log_activity('communication', comm_id, client_id, 'logged', f'{f.get("comm_type", "note").title()}: {f.get("subject", "")}')
+    flash("Communication logged", "success")
+    return redirect(url_for('view_client', client_id=client_id))
+
+
+# ── Tasks ─────────────────────────────────────────────────────────────
+
+@app.route("/crm/tasks")
+def list_tasks():
+    status_filter = request.args.get('status', 'pending')
+    with get_db() as conn:
+        if status_filter == 'all':
+            tasks = [dict(r) for r in conn.execute(
+                """SELECT t.*, c.company_name FROM tasks t
+                   LEFT JOIN clients c ON c.id=t.client_id
+                   ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, t.due_date""").fetchall()]
+        else:
+            tasks = [dict(r) for r in conn.execute(
+                """SELECT t.*, c.company_name FROM tasks t
+                   LEFT JOIN clients c ON c.id=t.client_id
+                   WHERE t.status=?
+                   ORDER BY CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, t.due_date""",
+                (status_filter,)).fetchall()]
+    return render_template("crm/tasks_list.html", tasks=tasks, active_status=status_filter)
+
+@app.route("/crm/tasks/new")
+def new_task():
+    client_id = request.args.get('client_id', '')
+    with get_db() as conn:
+        clients = [dict(r) for r in conn.execute(
+            "SELECT id, company_name FROM clients WHERE (archived=0 OR archived IS NULL) ORDER BY company_name").fetchall()]
+    return render_template("crm/task_form.html", clients=clients, prefill_client=client_id, task=None)
+
+@app.route("/crm/tasks", methods=["POST"])
+def create_task():
+    f = request.form
+    task_id = str(uuid.uuid4())
+    now = _now()
+    client_id = f.get('client_id', '')
+    with get_db() as conn:
+        conn.execute("""INSERT INTO tasks (id, client_id, title, description, due_date, priority, status, created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?)""",
+            (task_id, client_id, f.get('title', ''), f.get('description', ''),
+             f.get('due_date', ''), f.get('priority', 'medium'), 'pending', now, now))
+        conn.commit()
+    if client_id:
+        log_activity('task', task_id, client_id, 'created', f'Task: {f.get("title", "")}')
+    flash("Task created", "success")
+    if client_id:
+        return redirect(url_for('view_client', client_id=client_id))
+    return redirect(url_for('list_tasks'))
+
+@app.route("/crm/tasks/<task_id>/complete", methods=["POST"])
+def complete_task(task_id):
+    with get_db() as conn:
+        task = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+        if task:
+            conn.execute("UPDATE tasks SET status='completed', updated_at=? WHERE id=?", (_now(), task_id))
+            conn.commit()
+            if task['client_id']:
+                log_activity('task', task_id, task['client_id'], 'completed', f'Task completed: {task["title"]}')
+    flash("Task completed", "success")
+    return redirect(request.referrer or url_for('list_tasks'))
+
+@app.route("/crm/tasks/<task_id>/delete", methods=["POST"])
+def delete_task(task_id):
+    with get_db() as conn:
+        conn.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+        conn.commit()
+    flash("Task deleted", "success")
+    return redirect(request.referrer or url_for('list_tasks'))
+
+
+# ── Complaints Register (FAIS requirement) ───────────────────────────
+
+@app.route("/crm/clients/<client_id>/complaints", methods=["POST"])
+def create_complaint(client_id):
+    f = request.form
+    comp_id = str(uuid.uuid4())
+    now = _now()
+    with get_db() as conn:
+        conn.execute("""INSERT INTO complaints (id, client_id, subject, description, status, created_at, updated_at)
+            VALUES (?,?,?,?,?,?,?)""",
+            (comp_id, client_id, f.get('subject', ''), f.get('description', ''), 'open', now, now))
+        conn.commit()
+    log_activity('complaint', comp_id, client_id, 'created', f'Complaint: {f.get("subject", "")}')
+    flash("Complaint recorded", "success")
+    return redirect(url_for('view_client', client_id=client_id))
+
+@app.route("/crm/complaints/<complaint_id>/resolve", methods=["POST"])
+def resolve_complaint(complaint_id):
+    f = request.form
+    with get_db() as conn:
+        comp = conn.execute("SELECT * FROM complaints WHERE id=?", (complaint_id,)).fetchone()
+        if comp:
+            conn.execute("UPDATE complaints SET status='resolved', resolution=?, updated_at=? WHERE id=?",
+                         (f.get('resolution', ''), _now(), complaint_id))
+            conn.commit()
+            log_activity('complaint', complaint_id, comp['client_id'], 'resolved', 'Complaint resolved')
+    flash("Complaint resolved", "success")
+    return redirect(request.referrer or url_for('crm_dashboard'))
 
 
 @app.route("/api/lead", methods=["POST"])

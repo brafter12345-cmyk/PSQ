@@ -129,6 +129,44 @@
   {% endif %}
 </div>
 
+<!-- Communication Log -->
+<div class="card">
+  <div class="card-title">Communication Log</div>
+  <form method="POST" action="/crm/clients/{{ client.id }}/comms" style="margin-bottom: 14px;">
+    <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+      <select name="comm_type" class="form-input" style="width: 140px;">
+        <option value="call">Phone Call</option>
+        <option value="email">Email</option>
+        <option value="meeting">Meeting</option>
+        <option value="note">Note</option>
+      </select>
+      <input type="text" name="subject" class="form-input" placeholder="Subject..." required style="flex: 1;">
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <textarea name="body" class="form-input" placeholder="Details (optional)..." rows="2" style="flex: 1;"></textarea>
+      <button type="submit" class="btn btn-primary" style="align-self: flex-end; padding: 6px 16px;">Log</button>
+    </div>
+  </form>
+  {% if comms %}
+  <div style="max-height: 300px; overflow-y: auto;">
+    {% for c in comms %}
+    <div style="padding: 8px 0; border-top: 1px solid var(--border); font-size: 0.85rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <span class="status-pill" style="font-size: 0.68rem; padding: 1px 6px;">{{ c.comm_type|upper }}</span>
+          <strong style="margin-left: 6px;">{{ c.subject }}</strong>
+        </div>
+        <span style="color: var(--muted); font-size: 0.72rem;">{{ c.created_at[:16].replace('T', ' ') }}</span>
+      </div>
+      {% if c.body %}<div style="color: var(--muted); font-size: 0.8rem; margin-top: 4px; white-space: pre-wrap;">{{ c.body }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div style="color: var(--muted); font-size: 0.82rem;">No communications logged yet.</div>
+  {% endif %}
+</div>
+
 <!-- Scans -->
 <div class="card">
   <div class="card-title">Scans</div>
@@ -253,6 +291,88 @@
   {% endif %}
 </div>
 
+<!-- Claims -->
+<div class="card">
+  <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div class="card-title" style="margin-bottom: 0;">Claims</div>
+    <a href="/crm/clients/{{ client.id }}/claims/new" class="btn btn-sm btn-primary" style="padding: 4px 12px; font-size: 0.75rem;">+ File Claim</a>
+  </div>
+  {% if claims %}
+  <table class="table" style="margin-top: 12px;">
+    <thead><tr><th>CLAIM #</th><th>POLICY</th><th>TYPE</th><th>CLAIMED</th><th>PAID</th><th>STATUS</th></tr></thead>
+    <tbody>
+    {% for cl in claims %}
+    <tr>
+      <td><a href="/crm/claims/{{ cl.id }}">{{ cl.claim_number }}</a></td>
+      <td>{{ cl.policy_number or '—' }}</td>
+      <td>{{ cl.incident_type or '—' }}</td>
+      <td>{{ cl.amount_claimed | zar }}</td>
+      <td>{{ cl.amount_paid | zar }}</td>
+      <td><span class="status-pill {{ cl.status }}">{{ cl.status|upper }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div style="color: var(--muted); font-size: 0.82rem; margin-top: 12px;">No claims.</div>
+  {% endif %}
+</div>
+
+<!-- Records of Advice -->
+<div class="card">
+  <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div class="card-title" style="margin-bottom: 0;">Records of Advice (FAIS)</div>
+    <a href="/crm/clients/{{ client.id }}/roa/new" class="btn btn-sm btn-primary" style="padding: 4px 12px; font-size: 0.75rem;">+ New ROA</a>
+  </div>
+  {% if roas %}
+  <table class="table" style="margin-top: 12px;">
+    <thead><tr><th>DATE</th><th>ADVISOR</th><th>PRODUCTS</th><th>ACKNOWLEDGED</th></tr></thead>
+    <tbody>
+    {% for r in roas %}
+    <tr>
+      <td><a href="/crm/roa/{{ r.id }}">{{ r.created_at[:10] }}</a></td>
+      <td>{{ r.advisor_name or '—' }}</td>
+      <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ r.products_recommended or '—' }}</td>
+      <td>{% if r.client_acknowledged %}<span style="color: #16a34a;">Yes</span>{% else %}<span style="color: #ef4444;">No</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div style="color: var(--muted); font-size: 0.82rem; margin-top: 12px;">No records of advice.</div>
+  {% endif %}
+</div>
+
+<!-- Tasks -->
+<div class="card">
+  <div style="display: flex; justify-content: space-between; align-items: center;">
+    <div class="card-title" style="margin-bottom: 0;">Tasks</div>
+    <a href="/crm/tasks/new?client_id={{ client.id }}" class="btn btn-sm btn-primary" style="padding: 4px 12px; font-size: 0.75rem;">+ Add Task</a>
+  </div>
+  {% if client_tasks %}
+  <div style="margin-top: 12px;">
+    {% for t in client_tasks %}
+    <div style="padding: 8px 0; border-top: 1px solid var(--border); font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <span style="{% if t.status == 'completed' %}text-decoration: line-through; color: var(--muted);{% endif %}">{{ t.title }}</span>
+        {% if t.due_date %}<span style="color: var(--muted); font-size: 0.72rem; margin-left: 8px;">Due: {{ t.due_date }}</span>{% endif %}
+        <span class="status-pill {{ t.priority }}" style="font-size: 0.62rem; padding: 0 4px; margin-left: 4px;">{{ t.priority|upper }}</span>
+      </div>
+      <div style="display: flex; gap: 4px;">
+        {% if t.status == 'pending' %}
+        <form method="POST" action="/crm/tasks/{{ t.id }}/complete" style="display:inline;">
+          <button type="submit" class="btn btn-sm" style="background: #16a34a; color: #fff; padding: 2px 6px; font-size: 0.68rem;">Done</button>
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div style="color: var(--muted); font-size: 0.82rem; margin-top: 12px;">No tasks.</div>
+  {% endif %}
+</div>
+
 <!-- Invoices -->
 <div class="card">
   <div class="card-title">Invoices</div>
@@ -281,6 +401,42 @@
   </table>
   {% else %}
   <div class="empty-state">No invoices yet. <a href="/crm/clients/{{ client.id }}/invoices/new">Create an invoice</a>.</div>
+  {% endif %}
+</div>
+
+<!-- Complaints Register -->
+<div class="card">
+  <div class="card-title">Complaints Register (FAIS)</div>
+  <form method="POST" action="/crm/clients/{{ client.id }}/complaints" style="margin-bottom: 14px;">
+    <div style="display: flex; gap: 8px;">
+      <input type="text" name="subject" class="form-input" placeholder="Complaint subject..." required style="flex: 1;">
+      <button type="submit" class="btn btn-primary" style="padding: 6px 16px; white-space: nowrap;">Record</button>
+    </div>
+    <textarea name="description" class="form-input" placeholder="Description (optional)..." rows="2" style="margin-top: 8px;"></textarea>
+  </form>
+  {% if complaints %}
+  {% for comp in complaints %}
+  <div style="padding: 8px 0; border-top: 1px solid var(--border); font-size: 0.85rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <span class="status-pill {{ comp.status }}" style="font-size: 0.68rem; padding: 1px 6px;">{{ comp.status|upper }}</span>
+        <strong style="margin-left: 6px;">{{ comp.subject }}</strong>
+      </div>
+      <span style="color: var(--muted); font-size: 0.72rem;">{{ comp.created_at[:10] }}</span>
+    </div>
+    {% if comp.description %}<div style="color: var(--muted); font-size: 0.8rem; margin-top: 2px;">{{ comp.description }}</div>{% endif %}
+    {% if comp.status == 'open' %}
+    <form method="POST" action="/crm/complaints/{{ comp.id }}/resolve" style="margin-top: 6px; display: flex; gap: 6px;">
+      <input type="text" name="resolution" class="form-input" placeholder="Resolution..." style="flex: 1; padding: 4px 8px; font-size: 0.78rem;">
+      <button type="submit" class="btn btn-sm" style="background: #16a34a; color: #fff; padding: 2px 8px; font-size: 0.72rem;">Resolve</button>
+    </form>
+    {% elif comp.resolution %}
+    <div style="color: #16a34a; font-size: 0.78rem; margin-top: 4px;">Resolution: {{ comp.resolution }}</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% else %}
+  <div style="color: var(--muted); font-size: 0.82rem;">No complaints recorded.</div>
   {% endif %}
 </div>
 

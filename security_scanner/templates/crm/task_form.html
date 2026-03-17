@@ -1,0 +1,42 @@
+{% extends "crm/_base_crm.html" %}
+{% block title %}New Task — PHISHIELD{% endblock %}
+{% block content %}
+<h2 style="margin-bottom: 20px;">New Task</h2>
+<div class="card">
+  <form method="POST" action="/crm/tasks">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+      <div style="grid-column: 1 / -1;">
+        <label class="form-label">Title *</label>
+        <input type="text" name="title" class="form-input" required placeholder="e.g., Follow up on renewal, Send ROA to client...">
+      </div>
+      <div>
+        <label class="form-label">Client</label>
+        <select name="client_id" class="form-input">
+          <option value="">— No client —</option>
+          {% for c in clients %}
+          <option value="{{ c.id }}" {% if prefill_client == c.id %}selected{% endif %}>{{ c.company_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="form-label">Due Date</label>
+        <input type="date" name="due_date" class="form-input">
+      </div>
+      <div>
+        <label class="form-label">Priority</label>
+        <select name="priority" class="form-input">
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+        </select>
+      </div>
+    </div>
+    <label class="form-label">Description</label>
+    <textarea name="description" class="form-input" rows="3" placeholder="Optional details..."></textarea>
+    <div style="margin-top: 20px; display: flex; gap: 12px;">
+      <button type="submit" class="btn btn-primary">Create Task</button>
+      <a href="/crm/tasks" class="btn">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

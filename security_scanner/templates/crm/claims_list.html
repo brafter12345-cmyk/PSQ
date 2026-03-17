@@ -1,0 +1,37 @@
+{% extends "crm/_base_crm.html" %}
+{% block title %}Claims — PHISHIELD{% endblock %}
+{% block content %}
+<h2 style="margin-bottom: 20px;">Claims</h2>
+
+<div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
+  {% for s in ['all', 'filed', 'investigating', 'approved', 'paid', 'denied'] %}
+  <a href="/crm/claims?status={{ s }}" class="filter-tab {% if active_status == s %}active{% endif %}">{{ s|title }}</a>
+  {% endfor %}
+</div>
+
+{% if claims %}
+<div class="card" style="padding: 0; overflow-x: auto;">
+  <table class="table">
+    <thead><tr>
+      <th>CLAIM #</th><th>CLIENT</th><th>POLICY</th><th>TYPE</th><th>CLAIMED</th><th>PAID</th><th>STATUS</th><th>DATE</th>
+    </tr></thead>
+    <tbody>
+    {% for cl in claims %}
+    <tr>
+      <td><a href="/crm/claims/{{ cl.id }}">{{ cl.claim_number }}</a></td>
+      <td><a href="/crm/clients/{{ cl.client_id }}">{{ cl.company_name }}</a></td>
+      <td>{{ cl.policy_number or '—' }}</td>
+      <td>{{ cl.incident_type or '—' }}</td>
+      <td>{{ cl.amount_claimed | zar }}</td>
+      <td>{{ cl.amount_paid | zar }}</td>
+      <td><span class="status-pill {{ cl.status }}">{{ cl.status|upper }}</span></td>
+      <td>{{ cl.claim_date }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card"><div style="color: var(--muted); text-align: center; padding: 20px;">No claims found.</div></div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "crm/_base_crm.html" %}
+{% block title %}New Claim — {{ client.company_name }}{% endblock %}
+{% block content %}
+<h2 style="margin-bottom: 20px;">File Claim — {{ client.company_name }}</h2>
+<div class="card">
+  <div class="card-title">First Notice of Loss (FNOL)</div>
+  <form method="POST" action="/crm/clients/{{ client.id }}/claims">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+      <div>
+        <label class="form-label">Policy *</label>
+        <select name="policy_id" class="form-input" required>
+          <option value="">— Select Policy —</option>
+          {% for p in policies %}
+          <option value="{{ p.id }}">{{ p.policy_number }} (Cover: R {{ "%.0f"|format(p.cover_limit) }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label class="form-label">Incident Type</label>
+        <select name="incident_type" class="form-input">
+          <option value="">— Select —</option>
+          <option value="ransomware">Ransomware Attack</option>
+          <option value="data_breach">Data Breach</option>
+          <option value="phishing">Phishing / BEC</option>
+          <option value="denial_of_service">Denial of Service</option>
+          <option value="system_failure">System Failure</option>
+          <option value="insider_threat">Insider Threat</option>
+          <option value="third_party">Third Party Breach</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div>
+        <label class="form-label">Incident Date</label>
+        <input type="date" name="incident_date" class="form-input">
+      </div>
+      <div>
+        <label class="form-label">Claim Date</label>
+        <input type="date" name="claim_date" class="form-input" value="{{ today }}">
+      </div>
+      <div>
+        <label class="form-label">Amount Claimed (ZAR)</label>
+        <input type="number" name="amount_claimed" class="form-input" step="0.01" placeholder="0.00">
+      </div>
+    </div>
+
+    <label class="form-label">Description of Incident *</label>
+    <textarea name="description" class="form-input" rows="4" required placeholder="Describe the cyber incident, what happened, when it was discovered, systems affected, data compromised..."></textarea>
+
+    <div style="margin-top: 20px; display: flex; gap: 12px;">
+      <button type="submit" class="btn btn-primary">File Claim</button>
+      <a href="/crm/clients/{{ client.id }}" class="btn">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
