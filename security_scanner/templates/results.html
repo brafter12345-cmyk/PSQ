@@ -20,10 +20,35 @@
     .domain-badge { background: var(--surface2); border: 1px solid var(--border); padding: 5px 14px; border-radius: 999px; font-size: 0.88rem; font-weight: 600; }
     .timestamp { color: var(--muted); font-size: 0.8rem; }
 
-    /* Pending */
+    /* Pending / scanning */
     .pending-card { text-align: center; padding: 60px 20px; }
     .spinner { width: 48px; height: 48px; border: 4px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+    .spinner-sm { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; flex-shrink: 0; }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    .scan-progress { max-width: 740px; margin: 0 auto; }
+    .progress-bar-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; height: 28px; margin-bottom: 24px; position: relative; }
+    .progress-bar-fill { height: 100%; background: linear-gradient(90deg, var(--blue), #6366f1); transition: width .4s ease; border-radius: 8px; }
+    .progress-bar-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: .78rem; font-weight: 600; color: var(--text); z-index: 1; }
+
+    .scan-section { margin-bottom: 16px; }
+    .scan-section-title { font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 8px; }
+    .scan-checklist { list-style: none; }
+    .scan-item { display: flex; align-items: center; gap: 10px; padding: 7px 12px; border-radius: 6px; font-size: .84rem; margin-bottom: 2px; transition: background .2s; }
+    .scan-item.running { background: rgba(59,130,246,.08); color: var(--blue); }
+    .scan-item.done { color: var(--low); }
+    .scan-item.pending { color: var(--muted); }
+    .scan-icon { width: 18px; text-align: center; flex-shrink: 0; font-size: .9rem; }
+    .scan-label { flex: 1; }
+    .scan-score { font-size: .76rem; font-weight: 600; opacity: .7; }
+
+    .ip-discovery-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 18px; display: none; }
+    .ip-discovery-card.visible { display: block; }
+    .ip-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .ip-chip { background: var(--surface2); border: 1px solid var(--border); padding: 3px 12px; border-radius: 999px; font-size: .82rem; font-weight: 600; font-family: monospace; }
+
+    .scan-complete-msg { text-align: center; padding: 18px; animation: fadeIn .5s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
     /* Hero */
     .hero { display: grid; grid-template-columns: 240px 1fr; gap: 18px; margin-bottom: 20px; }
@@ -145,13 +170,177 @@
   </div>
 
   {% if status == 'pending' %}
-  <div class="pending-card">
-    <div class="spinner"></div>
-    <h2 style="margin-bottom:8px;">Scan in progress…</h2>
-    <p style="color:var(--muted);margin-bottom:8px;">Running passive checks on <strong>{{ domain }}</strong></p>
-    <p style="color:var(--muted);font-size:0.82rem;">18 checks running in parallel — refreshes every 5 seconds.</p>
+  <div class="scan-progress" id="scanProgress">
+    <div style="text-align:center;margin-bottom:20px;">
+      <h2 style="margin-bottom:6px;">Scanning <strong>{{ domain }}</strong></h2>
+      <p style="color:var(--muted);font-size:.82rem;" id="scanSubtitle">Initializing checks…</p>
+    </div>
+
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" id="progressFill" style="width:0%"></div>
+      <div class="progress-bar-text" id="progressText">0 / 0</div>
+    </div>
+
+    <div class="ip-discovery-card" id="ipCard">
+      <div style="font-size:.82rem;font-weight:600;color:var(--blue);">Discovered IPs</div>
+      <div class="ip-list" id="ipList"></div>
+    </div>
+
+    <div id="scanSections"></div>
   </div>
-  <script>setTimeout(() => location.reload(), 5000);</script>
+
+  <script>
+  (function() {
+    const scanId = "{{ scan_id }}";
+    const manifest = {{ manifest_json | safe }};
+    const states = {};      // checker_id -> {status, score}
+    let totalCheckers = 0;
+    let doneCount = 0;
+    let discoveredIps = [];
+    const perIpCheckers = {};  // checker_id -> true (from manifest)
+
+    // Build UI from manifest
+    const sectionsEl = document.getElementById('scanSections');
+    manifest.forEach(section => {
+      const div = document.createElement('div');
+      div.className = 'scan-section';
+      div.innerHTML = `<div class="scan-section-title">${section.section}</div><ul class="scan-checklist" id="sec_${section.section.replace(/[^a-zA-Z]/g,'')}"></ul>`;
+      sectionsEl.appendChild(div);
+      const ul = div.querySelector('ul');
+      section.checkers.forEach(c => {
+        if (c.per_ip) { perIpCheckers[c.id] = c.label; }
+        states[c.id] = {status: 'pending', score: null};
+        totalCheckers++;
+        const li = document.createElement('li');
+        li.className = 'scan-item pending';
+        li.id = `chk_${c.id}`;
+        li.innerHTML = `<span class="scan-icon">&#9675;</span><span class="scan-label">${c.label}</span><span class="scan-score"></span>`;
+        ul.appendChild(li);
+      });
+    });
+
+    function updateProgress() {
+      const pct = totalCheckers > 0 ? Math.round(doneCount / totalCheckers * 100) : 0;
+      document.getElementById('progressFill').style.width = pct + '%';
+      document.getElementById('progressText').textContent = `${doneCount} / ${totalCheckers}`;
+      const running = Object.entries(states).find(([,v]) => v.status === 'running');
+      if (running) {
+        const label = document.querySelector(`#chk_${running[0].replace(/[:.]/g,'_')} .scan-label`);
+        document.getElementById('scanSubtitle').textContent = label ? label.textContent + '…' : 'Scanning…';
+      }
+    }
+
+    function setChecker(id, status, score) {
+      const safeId = id.replace(/[:.]/g, '_');
+      let el = document.getElementById(`chk_${safeId}`);
+      if (!el) {
+        // Dynamically added per-IP checker
+        const baseChecker = id.split(':')[0];
+        const ip = id.split(':')[1];
+        const parentSection = document.getElementById('sec_NetworkInfrastructure');
+        if (parentSection) {
+          el = document.createElement('li');
+          el.className = 'scan-item pending';
+          el.id = `chk_${safeId}`;
+          const label = (perIpCheckers[baseChecker] || baseChecker) + ` (${ip})`;
+          el.innerHTML = `<span class="scan-icon">&#9675;</span><span class="scan-label">${label}</span><span class="scan-score"></span>`;
+          // Insert after the base checker row
+          const baseEl = document.getElementById(`chk_${baseChecker}`);
+          if (baseEl && baseEl.nextSibling) {
+            parentSection.insertBefore(el, baseEl.nextSibling);
+          } else {
+            parentSection.appendChild(el);
+          }
+          totalCheckers++;
+          states[id] = {status: 'pending', score: null};
+        }
+      }
+      if (!el) return;
+
+      const prev = states[id];
+      if (status === 'done' && (!prev || prev.status !== 'done')) doneCount++;
+      states[id] = {status, score};
+
+      el.className = `scan-item ${status}`;
+      const icon = el.querySelector('.scan-icon');
+      const scoreEl = el.querySelector('.scan-score');
+      if (status === 'running') {
+        icon.innerHTML = '<div class="spinner-sm"></div>';
+      } else if (status === 'done') {
+        icon.innerHTML = '&#10003;';
+        if (score !== null && score !== undefined) scoreEl.textContent = score;
+      }
+      updateProgress();
+    }
+
+    // Remove base per-IP checker rows once real IP rows appear
+    function hideBasePerIp(checkerId) {
+      const el = document.getElementById(`chk_${checkerId}`);
+      if (el) { el.style.display = 'none'; totalCheckers--; }
+    }
+
+    // SSE
+    const evtSource = new EventSource(`/api/scan/${scanId}/progress`);
+    const seenPerIp = {};
+
+    evtSource.onmessage = function(event) {
+      const data = JSON.parse(event.data);
+
+      if (data.type === 'complete') {
+        evtSource.close();
+        document.getElementById('scanSubtitle').textContent = 'All checks complete!';
+        document.getElementById('progressFill').style.width = '100%';
+        document.getElementById('progressText').textContent = `${totalCheckers} / ${totalCheckers}`;
+        setTimeout(() => { window.location.reload(); }, 1200);
+        return;
+      }
+      if (data.type === 'error') {
+        evtSource.close();
+        document.getElementById('scanSubtitle').textContent = 'Scan failed: ' + (data.message || 'unknown error');
+        return;
+      }
+
+      const checker = data.checker;
+      const status = data.status;
+
+      // IP discovery special case
+      if (checker === 'ip_discovery' && status === 'done' && data.score && data.score.ips) {
+        // score field carries {ips: [...]} for ip_discovery
+      }
+      if (checker === 'ip_discovery' && status === 'done') {
+        setChecker('ip_discovery', 'done', null);
+        // Check if the progress event has IPs
+        if (data.ips) discoveredIps = data.ips;
+        if (discoveredIps.length > 0) {
+          const card = document.getElementById('ipCard');
+          card.classList.add('visible');
+          const list = document.getElementById('ipList');
+          list.innerHTML = discoveredIps.map(ip => `<span class="ip-chip">${ip}</span>`).join('');
+        }
+        return;
+      }
+
+      // Per-IP checker (format: "checker_name:ip")
+      if (checker.includes(':')) {
+        const base = checker.split(':')[0];
+        if (!seenPerIp[base]) {
+          seenPerIp[base] = true;
+          hideBasePerIp(base);
+        }
+      }
+
+      setChecker(checker, status, data.score);
+    };
+
+    evtSource.onerror = function() {
+      // On error, fall back to polling reload
+      evtSource.close();
+      setTimeout(() => { window.location.reload(); }, 3000);
+    };
+
+    updateProgress();
+  })();
+  </script>
 
   {% elif status == 'failed' %}
   <div class="pending-card">
@@ -381,6 +570,14 @@
 
   <!-- =================== NETWORK & INFRASTRUCTURE =================== -->
   <div class="section-label">&#127760; Network &amp; Infrastructure</div>
+  {% if results.discovered_ips %}
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <span style="font-size:.78rem;font-weight:600;color:var(--blue);">Discovered IPs:</span>
+    {% for ip in results.discovered_ips %}
+    <span style="background:var(--surface2);border:1px solid var(--border);padding:2px 10px;border-radius:999px;font-size:.82rem;font-family:monospace;font-weight:600;">{{ ip }}</span>
+    {% endfor %}
+  </div>
+  {% endif %}
   <div class="categories">
 
     <!-- DNS & Infrastructure -->

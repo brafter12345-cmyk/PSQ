@@ -820,16 +820,18 @@ class DNSInfrastructureChecker:
     INFO_PORTS = {80: "HTTP", 443: "HTTPS", 993: "IMAPS", 995: "POP3S", 8080: "HTTP-Alt", 8443: "HTTPS-Alt"}
     ALL_PORTS = {**HIGH_RISK_PORTS, **MEDIUM_RISK_PORTS, **INFO_PORTS}
 
-    def check(self, domain: str) -> dict:
+    def check(self, domain: str, ip: str = None) -> dict:
         result = {
             "status": "completed", "dns_records": {}, "reverse_dns": None,
             "open_ports": [], "server_info": {}, "issues": [], "risk_score": 0,
         }
+        if ip:
+            result["ip"] = ip
         try:
             if DNS_AVAILABLE:
                 result["dns_records"] = self._get_dns_records(domain)
-                result["reverse_dns"] = self._get_reverse_dns(domain)
-            result["open_ports"] = self._scan_ports(domain)
+                result["reverse_dns"] = self._get_reverse_dns(domain, ip=ip)
+            result["open_ports"] = self._scan_ports(domain, ip=ip)
             result["server_info"] = self._fingerprint_server(domain)
             result["risk_score"], result["issues"] = self._assess_risk(result["open_ports"])
         except Exception as e:
@@ -846,18 +848,18 @@ class DNSInfrastructureChecker:
                 records[rtype] = []
         return records
 
-    def _get_reverse_dns(self, domain: str) -> Optional[str]:
+    def _get_reverse_dns(self, domain: str, ip: str = None) -> Optional[str]:
         try:
-            ip = socket.gethostbyname(domain)
+            ip = ip or socket.gethostbyname(domain)
             rev = dns.reversename.from_address(ip)
             answer = dns.resolver.resolve(rev, "PTR", lifetime=DEFAULT_TIMEOUT)
             return str(answer[0])
         except Exception:
             return None
 
-    def _scan_ports(self, domain: str) -> list:
+    def _scan_ports(self, domain: str, ip: str = None) -> list:
         try:
-            ip = socket.gethostbyname(domain)
+            ip = ip or socket.gethostbyname(domain)
         except Exception:
             return []
 
@@ -936,15 +938,17 @@ class HighRiskProtocolChecker:
         8069: "Odoo ERP",
     }
 
-    def check(self, domain: str) -> dict:
+    def check(self, domain: str, ip: str = None) -> dict:
         result = {
             "status": "completed",
             "exposed_services": [],
             "critical_count": 0,
             "issues": [],
         }
+        if ip:
+            result["ip"] = ip
         try:
-            ip = socket.gethostbyname(domain)
+            ip = ip or socket.gethostbyname(domain)
         except Exception:
             return result
 
@@ -1048,7 +1052,7 @@ class DNSBLChecker:
         "uribl.com",
     ]
 
-    def check(self, domain: str) -> dict:
+    def check(self, domain: str, ip: str = None) -> dict:
         result = {
             "status": "completed",
             "ip_listings": [],
@@ -1056,11 +1060,13 @@ class DNSBLChecker:
             "blacklisted": False,
             "issues": [],
         }
+        if ip:
+            result["ip"] = ip
         if not DNS_AVAILABLE:
             result["status"] = "error"; return result
 
         try:
-            ip = socket.gethostbyname(domain)
+            ip = ip or socket.gethostbyname(domain)
             reversed_ip = ".".join(reversed(ip.split(".")))
 
             # IP-based checks
@@ -1574,7 +1580,7 @@ class ShodanVulnChecker:
         result["cves"] = enriched
         return True
 
-    def check(self, domain: str, api_key: str = None) -> dict:
+    def check(self, domain: str, api_key: str = None, ip: str = None) -> dict:
         result = {
             "status": "completed",
             "data_source": "internetdb",
@@ -1597,7 +1603,7 @@ class ShodanVulnChecker:
             "issues": [],
         }
         try:
-            ip = socket.gethostbyname(domain)
+            ip = ip or socket.gethostbyname(domain)
             result["ip"] = ip
 
             # Try full Shodan API first if key available, fall back to InternetDB
@@ -2505,6 +2511,9 @@ class RiskScorer:
 # ---------------------------------------------------------------------------
 
 class SecurityScanner:
+    # Checkers that should be run once per discovered IP
+    IP_LEVEL_CHECKERS = ("dns_infrastructure", "high_risk_protocols", "dnsbl", "shodan_vulns")
+
     def __init__(self, hibp_api_key: Optional[str] = None,
                  dehashed_email: Optional[str] = None,
                  dehashed_api_key: Optional[str] = None,
@@ -2518,69 +2527,154 @@ class SecurityScanner:
         self.securitytrails_api_key = securitytrails_api_key
         self.shodan_api_key        = shodan_api_key
 
-    def scan(self, domain: str) -> dict:
+    def discover_ips(self, domain: str) -> list:
+        """Resolve all A record IPs for a domain."""
+        ips = []
+        if DNS_AVAILABLE:
+            try:
+                answers = dns.resolver.resolve(domain, "A", lifetime=DEFAULT_TIMEOUT)
+                ips = list({str(rdata) for rdata in answers})
+            except Exception:
+                pass
+        if not ips:
+            try:
+                ips = [socket.gethostbyname(domain)]
+            except Exception:
+                pass
+        return ips
+
+    def _notify(self, on_progress, checker_name, status, result=None):
+        if on_progress:
+            try:
+                event = {"checker": checker_name, "status": status}
+                if status == "done" and result:
+                    event["score"] = result.get("score") or result.get("grade") or result.get("compliance_pct")
+                    if "ips" in result:
+                        event["ips"] = result["ips"]
+                on_progress(event)
+            except Exception:
+                pass
+
+    def _aggregate_ip_results(self, per_ip: dict, checker_name: str) -> dict:
+        """Merge per-IP results for a checker into a single aggregate (worst-case)."""
+        all_results = [per_ip[ip].get(checker_name, {}) for ip in per_ip if checker_name in per_ip.get(ip, {})]
+        if not all_results:
+            return {"status": "completed", "issues": []}
+        if len(all_results) == 1:
+            agg = dict(all_results[0])
+            agg["per_ip"] = per_ip
+            return agg
+        # Use the result with the worst (lowest) score
+        best = min(all_results, key=lambda r: r.get("score", r.get("risk_score", 100)))
+        agg = dict(best)
+        # Merge issues from all IPs
+        all_issues = []
+        for r in all_results:
+            for issue in r.get("issues", []):
+                if issue not in all_issues:
+                    all_issues.append(issue)
+        agg["issues"] = all_issues
+        agg["per_ip"] = per_ip
+        return agg
+
+    def scan(self, domain: str, on_progress: callable = None) -> dict:
         domain = domain.lower().strip().removeprefix("https://").removeprefix("http://").split("/")[0]
         results = {
             "domain_scanned": domain,
             "scan_timestamp": datetime.now(timezone.utc).isoformat(),
             "overall_risk_score": 0,
             "risk_level": "Unknown",
+            "discovered_ips": [],
             "categories": {},
             "recommendations": [],
         }
 
-        checkers = {
-            "ssl":                 (SSLChecker().check,               domain),
-            "email_security":      (EmailSecurityChecker().check,      domain),
-            "email_hardening":     (EmailHardeningChecker().check,     domain),
-            "http_headers":        (HTTPHeaderChecker().check,         domain),
-            "waf":                 (WAFChecker().check,                domain),
-            "cloud_cdn":           (CloudCDNChecker().check,           domain),
-            "domain_intel":        (DomainIntelChecker().check,        domain),
-            "subdomains":          (SubdomainChecker().check,          domain),
-            "exposed_admin":       (ExposedAdminChecker().check,       domain),
-            "vpn_remote":          (VPNRemoteAccessChecker().check,    domain),
-            "dns_infrastructure":  (DNSInfrastructureChecker().check,  domain),
-            "high_risk_protocols": (HighRiskProtocolChecker().check,   domain),
-            "security_policy":     (SecurityPolicyChecker().check,     domain),
-            "dnsbl":               (DNSBLChecker().check,              domain),
-            "tech_stack":          (TechStackChecker().check,          domain),
-            "breaches":            (BreachChecker().check,             domain),
-            "website_security":    (WebsiteSecurityChecker().check,    domain),
-            "payment_security":    (PaymentSecurityChecker().check,    domain),
-            "shodan_vulns":        (ShodanVulnChecker().check,         domain),
-            "dehashed":            (DehashedChecker().check,           domain),
-            "virustotal":          (VirusTotalChecker().check,         domain),
-            "securitytrails":      (SecurityTrailsChecker().check,     domain),
-            "fraudulent_domains":  (FraudulentDomainChecker().check,   domain),
-            "privacy_compliance":  (PrivacyComplianceChecker().check,  domain),
+        # --- Phase 1: IP Discovery ---
+        self._notify(on_progress, "ip_discovery", "running")
+        discovered_ips = self.discover_ips(domain)
+        results["discovered_ips"] = discovered_ips
+        self._notify(on_progress, "ip_discovery", "done", {"ips": discovered_ips})
+
+        # --- Phase 2: Domain-level checkers ---
+        domain_checkers = {
+            "ssl":                 (SSLChecker().check,               [domain]),
+            "email_security":      (EmailSecurityChecker().check,      [domain]),
+            "email_hardening":     (EmailHardeningChecker().check,     [domain]),
+            "http_headers":        (HTTPHeaderChecker().check,         [domain]),
+            "waf":                 (WAFChecker().check,                [domain]),
+            "cloud_cdn":           (CloudCDNChecker().check,           [domain]),
+            "domain_intel":        (DomainIntelChecker().check,        [domain]),
+            "subdomains":          (SubdomainChecker().check,          [domain]),
+            "exposed_admin":       (ExposedAdminChecker().check,       [domain]),
+            "vpn_remote":          (VPNRemoteAccessChecker().check,    [domain]),
+            "security_policy":     (SecurityPolicyChecker().check,     [domain]),
+            "tech_stack":          (TechStackChecker().check,          [domain]),
+            "breaches":            (BreachChecker().check,             [domain, self.hibp_api_key]),
+            "website_security":    (WebsiteSecurityChecker().check,    [domain]),
+            "payment_security":    (PaymentSecurityChecker().check,    [domain]),
+            "dehashed":            (DehashedChecker().check,           [domain, self.dehashed_email, self.dehashed_api_key]),
+            "virustotal":          (VirusTotalChecker().check,         [domain, self.virustotal_api_key]),
+            "securitytrails":      (SecurityTrailsChecker().check,     [domain, self.securitytrails_api_key]),
+            "fraudulent_domains":  (FraudulentDomainChecker().check,   [domain]),
+            "privacy_compliance":  (PrivacyComplianceChecker().check,  [domain]),
+        }
+
+        # --- Phase 3: IP-level checkers (per-IP) ---
+        ip_checkers_templates = {
+            "dns_infrastructure":  DNSInfrastructureChecker().check,
+            "high_risk_protocols": HighRiskProtocolChecker().check,
+            "dnsbl":               DNSBLChecker().check,
+            "shodan_vulns":        ShodanVulnChecker().check,
         }
 
         cat_results = {}
-        with ThreadPoolExecutor(max_workers=14) as ex:
+        per_ip_results = {}  # {ip: {checker_name: result}}
+
+        with ThreadPoolExecutor(max_workers=16) as ex:
             futures = {}
-            for name, (fn, arg) in checkers.items():
-                if name == "breaches":
-                    futures[ex.submit(fn, arg, self.hibp_api_key)] = name
-                elif name == "dehashed":
-                    futures[ex.submit(fn, arg, self.dehashed_email, self.dehashed_api_key)] = name
-                elif name == "virustotal":
-                    futures[ex.submit(fn, arg, self.virustotal_api_key)] = name
-                elif name == "securitytrails":
-                    futures[ex.submit(fn, arg, self.securitytrails_api_key)] = name
-                elif name == "shodan_vulns":
-                    futures[ex.submit(fn, arg, self.shodan_api_key)] = name
-                else:
-                    futures[ex.submit(fn, arg)] = name
 
+            # Submit domain-level checkers
+            for name, (fn, args) in domain_checkers.items():
+                self._notify(on_progress, name, "running")
+                futures[ex.submit(fn, *args)] = name
+
+            # Submit IP-level checkers for each IP
+            for ip in discovered_ips:
+                per_ip_results[ip] = {}
+                for checker_name, fn in ip_checkers_templates.items():
+                    label = f"{checker_name}:{ip}"
+                    self._notify(on_progress, label, "running")
+                    if checker_name == "shodan_vulns":
+                        futures[ex.submit(fn, domain, self.shodan_api_key, ip)] = label
+                    else:
+                        futures[ex.submit(fn, domain, ip)] = label
+
+            # Collect results
             for future in as_completed(futures, timeout=180):
-                name = futures[future]
+                label = futures[future]
                 try:
-                    cat_results[name] = future.result(timeout=DEFAULT_TIMEOUT * 2)
+                    result = future.result(timeout=DEFAULT_TIMEOUT * 2)
                 except Exception as e:
-                    cat_results[name] = {"status": "error", "error": str(e), "issues": []}
+                    result = {"status": "error", "error": str(e), "issues": []}
 
+                if ":" in label:
+                    # IP-level result — e.g. "shodan_vulns:1.2.3.4"
+                    checker_name, ip = label.split(":", 1)
+                    per_ip_results[ip][checker_name] = result
+                    self._notify(on_progress, label, "done", result)
+                else:
+                    cat_results[label] = result
+                    self._notify(on_progress, label, "done", result)
+
+        # --- Phase 4: Aggregate IP-level results ---
         results["categories"] = cat_results
+        results["categories"]["per_ip"] = per_ip_results
+        for checker_name in self.IP_LEVEL_CHECKERS:
+            results["categories"][checker_name] = self._aggregate_ip_results(
+                per_ip_results, checker_name
+            )
+
+        # --- Phase 5: Score ---
         scorer = RiskScorer()
         risk_score, risk_level, recommendations = scorer.calculate(cat_results)
         results["overall_risk_score"] = risk_score

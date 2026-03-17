@@ -11,13 +11,15 @@ Endpoints:
 import io
 import os
 import json
+import queue
 import sqlite3
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from functools import wraps
 
-from flask import Flask, request, jsonify, render_template, abort, send_file
+from flask import Flask, request, jsonify, render_template, abort, send_file, Response
 from flask_cors import CORS
 
 from scanner import SecurityScanner
@@ -35,6 +37,49 @@ DB_PATH = os.environ.get("DB_PATH", "scans.db")
 MAX_CONCURRENT = int(os.environ.get("MAX_CONCURRENT_SCANS", "5"))
 
 _semaphore = threading.Semaphore(MAX_CONCURRENT)
+
+# In-memory SSE progress tracking: scan_id -> queue.Queue()
+_scan_progress = {}
+
+CHECKER_MANIFEST = [
+    {"section": "Discovery", "checkers": [
+        {"id": "ip_discovery", "label": "IP Discovery"},
+    ]},
+    {"section": "Core Security", "checkers": [
+        {"id": "ssl", "label": "SSL / TLS Certificate"},
+        {"id": "http_headers", "label": "HTTP Security Headers"},
+        {"id": "website_security", "label": "Website Security"},
+        {"id": "waf", "label": "WAF / DDoS Protection"},
+    ]},
+    {"section": "Email Security", "checkers": [
+        {"id": "email_security", "label": "Email Authentication"},
+        {"id": "email_hardening", "label": "Email Hardening"},
+    ]},
+    {"section": "Network & Infrastructure", "checkers": [
+        {"id": "dns_infrastructure", "label": "DNS & Open Ports", "per_ip": True},
+        {"id": "high_risk_protocols", "label": "High-Risk Protocols", "per_ip": True},
+        {"id": "shodan_vulns", "label": "Shodan Vulnerabilities", "per_ip": True},
+        {"id": "dnsbl", "label": "DNSBL / Blacklists", "per_ip": True},
+        {"id": "cloud_cdn", "label": "Cloud & CDN"},
+        {"id": "vpn_remote", "label": "VPN / Remote Access"},
+    ]},
+    {"section": "Exposure & Reputation", "checkers": [
+        {"id": "breaches", "label": "Data Breaches (HIBP)"},
+        {"id": "dehashed", "label": "Credential Leaks"},
+        {"id": "exposed_admin", "label": "Exposed Admin Panels"},
+        {"id": "virustotal", "label": "VirusTotal Intelligence"},
+        {"id": "subdomains", "label": "Subdomain Recon"},
+        {"id": "fraudulent_domains", "label": "Lookalike Domains"},
+    ]},
+    {"section": "Technology & Governance", "checkers": [
+        {"id": "tech_stack", "label": "Technology Stack"},
+        {"id": "domain_intel", "label": "Domain Intelligence"},
+        {"id": "securitytrails", "label": "SecurityTrails DNS"},
+        {"id": "security_policy", "label": "Security Policy & VDP"},
+        {"id": "payment_security", "label": "Payment Security"},
+        {"id": "privacy_compliance", "label": "Privacy Compliance"},
+    ]},
+]
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +156,12 @@ def fetch_scan(scan_id: str):
 # ---------------------------------------------------------------------------
 
 def run_scan(scan_id: str, domain: str):
+    progress_q = queue.Queue()
+    _scan_progress[scan_id] = progress_q
+
+    def on_progress(event):
+        progress_q.put(event)
+
     with _semaphore:
         try:
             scanner = SecurityScanner(
@@ -121,10 +172,12 @@ def run_scan(scan_id: str, domain: str):
                 securitytrails_api_key=SECURITYTRAILS_API_KEY,
                 shodan_api_key=SHODAN_API_KEY,
             )
-            results = scanner.scan(domain)
+            results = scanner.scan(domain, on_progress=on_progress)
             update_scan(scan_id, results)
+            progress_q.put({"type": "complete"})
         except Exception as e:
             mark_failed(scan_id, str(e))
+            progress_q.put({"type": "error", "message": str(e)})
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +238,46 @@ def get_scan(scan_id: str):
     return jsonify(results)
 
 
+@app.route("/api/scan/<scan_id>/progress")
+def scan_progress(scan_id: str):
+    row = fetch_scan(scan_id)
+    if not row:
+        return jsonify({"error": "Scan not found"}), 404
+
+    # Already finished — send immediate terminal event
+    if row["status"] == "completed":
+        def done_stream():
+            yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+        return Response(done_stream(), mimetype="text/event-stream",
+                        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    if row["status"] == "failed":
+        def fail_stream():
+            yield f"data: {json.dumps({'type': 'error'})}\n\n"
+        return Response(fail_stream(), mimetype="text/event-stream",
+                        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    progress_q = _scan_progress.get(scan_id)
+    if not progress_q:
+        def empty_stream():
+            yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+        return Response(empty_stream(), mimetype="text/event-stream",
+                        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    def event_stream():
+        while True:
+            try:
+                event = progress_q.get(timeout=30)
+                yield f"data: {json.dumps(event, default=str)}\n\n"
+                if event.get("type") in ("complete", "error"):
+                    break
+            except queue.Empty:
+                yield ": keepalive\n\n"
+        _scan_progress.pop(scan_id, None)
+
+    return Response(event_stream(), mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 @app.route("/api/scan/<scan_id>/pdf", methods=["GET"])
 def download_pdf(scan_id: str):
     row = fetch_scan(scan_id)
@@ -238,6 +331,8 @@ def view_results(scan_id: str):
         status=row["status"],
         results=results,
         results_json=json.dumps(results, default=str) if results else "null",
+        checker_manifest=CHECKER_MANIFEST,
+        manifest_json=json.dumps(CHECKER_MANIFEST),
     )
 
 
