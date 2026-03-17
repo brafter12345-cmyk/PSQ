@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CyberRisk Assessment — Scan</title>
+  <style>
+    :root {
+      --bg: #0f1117; --surface: #1a1d27; --surface2: #222636; --border: #2e3347;
+      --text: #e2e8f0; --muted: #7c85a2; --low: #22c55e; --medium: #f59e0b;
+      --high: #f97316; --critical: #ef4444; --blue: #3b82f6; --radius: 12px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 1.6; min-height: 100vh; display: flex; flex-direction: column; }
+
+    .container { max-width: 1200px; margin: 0 auto; padding: 24px 20px; width: 100%; flex: 1; }
+
+    .header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 28px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+    .logo { font-size: 1.05rem; font-weight: 700; color: var(--blue); }
+    .header-sub { color: var(--muted); font-size: 0.8rem; }
+
+    .form-wrap { max-width: 520px; margin: 0 auto; }
+
+    .form-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px 24px; }
+
+    .form-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 4px; }
+    .form-desc { color: var(--muted); font-size: 0.82rem; margin-bottom: 22px; }
+
+    .field { margin-bottom: 18px; }
+    .field:last-of-type { margin-bottom: 22px; }
+    .field-label { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 6px; color: var(--text); }
+    .field-hint { font-size: 0.74rem; color: var(--muted); margin-top: 4px; }
+
+    input[type="text"], input[type="number"], select {
+      width: 100%; padding: 10px 14px; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); font-size: 0.88rem; font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    input[type="text"]:focus, input[type="number"]:focus, select:focus {
+      outline: none; border-color: var(--blue); box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+    }
+    input::placeholder { color: var(--muted); }
+    select { cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath d='M6 8L1 3h10z' fill='%237c85a2'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+    select option { background: var(--surface2); color: var(--text); }
+
+    .toggle-row { display: flex; align-items: center; gap: 10px; }
+    .toggle { position: relative; width: 42px; height: 24px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: var(--border); border-radius: 24px; transition: 0.2s; }
+    .toggle-slider::before { content: ""; position: absolute; height: 18px; width: 18px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.2s; }
+    .toggle input:checked + .toggle-slider { background: var(--blue); }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(18px); }
+    .toggle-label { font-size: 0.84rem; }
+    .toggle-note { font-size: 0.74rem; color: var(--muted); }
+
+    .submit-btn {
+      width: 100%; padding: 12px; background: var(--blue); color: white; border: none;
+      border-radius: 8px; font-size: 0.92rem; font-weight: 700; font-family: inherit;
+      cursor: pointer; transition: background 0.15s;
+    }
+    .submit-btn:hover { background: #2563eb; }
+    .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .error-msg { background: #7f1d1d; color: var(--critical); padding: 8px 14px; border-radius: 8px; font-size: 0.82rem; margin-bottom: 14px; display: none; }
+
+    /* Scanning state */
+    .scan-progress { display: none; text-align: center; padding: 30px 0; }
+    .spinner { width: 48px; height: 48px; border: 4px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .scan-domain { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
+    .scan-status { color: var(--muted); font-size: 0.82rem; }
+    .scan-elapsed { color: var(--muted); font-size: 0.76rem; margin-top: 8px; }
+
+    .footer { text-align: center; color: var(--muted); font-size: 0.76rem; padding: 18px 0; border-top: 1px solid var(--border); margin-top: 4px; }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <div class="header">
+    <div class="logo">&#128737; CyberRisk Assessment</div>
+    <div class="header-sub">Phishield Cyber Protect Cover</div>
+  </div>
+
+  <div class="form-wrap">
+    <div class="form-card">
+      <div class="form-title">New Security Scan</div>
+      <div class="form-desc">Passive, external assessment of publicly observable infrastructure for cyber insurance underwriting.</div>
+
+      <div id="error" class="error-msg"></div>
+
+      <form id="scan-form">
+        <div class="field">
+          <label class="field-label" for="domain">Domain *</label>
+          <input type="text" id="domain" name="domain" placeholder="e.g. phishield.com" required autocomplete="off" spellcheck="false" />
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="industry">Industry</label>
+          <select id="industry" name="industry">
+            <option value="Other" selected>Other / Not specified</option>
+            <option value="Agriculture">Agriculture</option>
+            <option value="Communications">Communications</option>
+            <option value="Consumer">Consumer</option>
+            <option value="Education">Education</option>
+            <option value="Energy">Energy</option>
+            <option value="Entertainment">Entertainment</option>
+            <option value="Financial Services">Financial Services</option>
+            <option value="Healthcare">Healthcare</option>
+            <option value="Hospitality">Hospitality</option>
+            <option value="Industrial / Manufacturing">Industrial / Manufacturing</option>
+            <option value="Media">Media</option>
+            <option value="Pharmaceuticals">Pharmaceuticals</option>
+            <option value="Public Sector">Public Sector</option>
+            <option value="Research">Research</option>
+            <option value="Retail">Retail</option>
+            <option value="Services">Services</option>
+            <option value="Technology">Technology</option>
+            <option value="Transportation">Transportation</option>
+          </select>
+          <div class="field-hint">Used for industry-specific risk multipliers and financial impact modelling.</div>
+        </div>
+
+        <div class="field">
+          <label class="field-label" for="revenue">Annual Revenue (ZAR)</label>
+          <input type="number" id="revenue" name="annual_revenue_zar" placeholder="e.g. 50000000" min="0" step="1" />
+          <div class="field-hint">Required for FAIR-based financial impact estimation. Leave blank to skip.</div>
+        </div>
+
+        <div class="field">
+          <div class="toggle-row">
+            <label class="toggle">
+              <input type="checkbox" id="fraud-check" name="include_fraudulent_domains" />
+              <span class="toggle-slider"></span>
+            </label>
+            <div>
+              <div class="toggle-label">Include Fraudulent Domain Check</div>
+              <div class="toggle-note">Detects typosquat/lookalike domains via certificate transparency. Adds ~2 minutes to scan time.</div>
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" class="submit-btn" id="submit-btn">&#128270; Start Scan</button>
+      </form>
+
+      <div id="scan-progress" class="scan-progress">
+        <div class="spinner"></div>
+        <div class="scan-domain" id="scan-domain"></div>
+        <div class="scan-status" id="scan-status">Running passive checks in parallel…</div>
+        <div class="scan-elapsed" id="scan-elapsed"></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">Phishield Cyber Protect Cover &middot; Passive External Assessment</div>
+
+<script>
+const form = document.getElementById('scan-form');
+const progress = document.getElementById('scan-progress');
+const errorEl = document.getElementById('error');
+const submitBtn = document.getElementById('submit-btn');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  errorEl.style.display = 'none';
+
+  const domain = document.getElementById('domain').value.trim().toLowerCase()
+    .replace(/^https?:\/\//, '').split('/')[0];
+  if (!domain) { showError('Please enter a domain.'); return; }
+
+  const body = { domain };
+  const industry = document.getElementById('industry').value;
+  if (industry !== 'Other') body.industry = industry;
+
+  const revenue = parseInt(document.getElementById('revenue').value, 10);
+  if (revenue > 0) body.annual_revenue_zar = revenue;
+
+  if (document.getElementById('fraud-check').checked) body.include_fraudulent_domains = true;
+
+  submitBtn.disabled = true;
+
+  try {
+    const res = await fetch('/api/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) { showError(data.error || 'Failed to start scan.'); submitBtn.disabled = false; return; }
+
+    // Switch to progress view
+    form.style.display = 'none';
+    progress.style.display = 'block';
+    document.getElementById('scan-domain').textContent = domain;
+
+    const startTime = Date.now();
+    const timer = setInterval(() => {
+      const secs = Math.floor((Date.now() - startTime) / 1000);
+      const m = Math.floor(secs / 60);
+      const s = secs % 60;
+      document.getElementById('scan-elapsed').textContent =
+        `Elapsed: ${m}:${s.toString().padStart(2, '0')}`;
+    }, 1000);
+
+    // Poll for results
+    const poll = setInterval(async () => {
+      try {
+        const r = await fetch(data.poll_url);
+        const result = await r.json();
+        if (result.status === 'pending') {
+          return; // keep polling
+        }
+        clearInterval(poll);
+        clearInterval(timer);
+        if (result.status === 'failed') {
+          showError('Scan failed: ' + (result.error || 'Unknown error'));
+          form.style.display = 'block';
+          progress.style.display = 'none';
+          submitBtn.disabled = false;
+          return;
+        }
+        // Success — redirect to results
+        window.location.href = data.report_url;
+      } catch (err) {
+        // Network error — keep polling
+      }
+    }, 5000);
+  } catch (err) {
+    showError('Network error: ' + err.message);
+    submitBtn.disabled = false;
+  }
+});
+
+function showError(msg) {
+  errorEl.textContent = msg;
+  errorEl.style.display = 'block';
+}
+</script>
+</body>
+</html>
