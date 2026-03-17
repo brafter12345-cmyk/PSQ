@@ -3191,7 +3191,7 @@ class FinancialImpactCalculator:
             },
             "annual_revenue": annual_revenue,
             "industry": industry,
-            "currency": "USD",
+            "currency": "ZAR",
         }
         output["mitigations"] = self._build_mitigations(categories, output)
         return output
