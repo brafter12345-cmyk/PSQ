@@ -12,3 +12,6 @@ python-whois>=0.9.4
 
 # PDF report generation
 reportlab>=4.0.0
+
+# Production WSGI server
+gunicorn>=21.2.0
