@@ -19,6 +19,9 @@ import uuid
 from datetime import datetime, timezone
 from functools import wraps
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from flask import Flask, request, jsonify, render_template, abort, send_file, Response
 from flask_cors import CORS
 

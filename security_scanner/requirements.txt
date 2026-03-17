@@ -12,3 +12,6 @@ python-whois>=0.9.4
 
 # PDF report generation
 reportlab>=4.0.0
+
+# Environment variable loading
+python-dotenv>=1.0.0
