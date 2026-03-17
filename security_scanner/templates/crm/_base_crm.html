@@ -158,6 +158,9 @@
     .status-pill.partial {
       background: rgba(6,182,212,0.15); color: var(--cyan);
     }
+    .status-pill.sent { background: rgba(59,130,246,0.15); color: #3b82f6; }
+    .status-pill.overdue { background: rgba(239,68,68,0.15); color: #ef4444; }
+    .status-pill.archived { background: rgba(107,114,128,0.15); color: #9ca3af; }
 
     /* ── Forms ── */
     .form-group { margin-bottom: 16px; }
@@ -254,6 +257,10 @@
 <body>
   <nav class="sidebar">
     <div class="sidebar-logo">PHISHIELD CRM</div>
+    <form action="/crm/search" method="GET" style="padding: 8px 16px;">
+      <input type="text" name="q" class="form-input" placeholder="Search clients, policies..."
+             style="padding: 6px 10px; font-size: 0.82rem; width: 100%; box-sizing: border-box;">
+    </form>
     <ul class="sidebar-nav">
       <li><a href="/crm/" class="{% if request.path == '/crm/' %}active{% endif %}">
         <span class="nav-icon">&#9634;</span><span>Dashboard</span>

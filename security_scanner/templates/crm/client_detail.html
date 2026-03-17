@@ -12,8 +12,24 @@
     <span class="domain-badge">{{ client.domain }}</span>
     {% endif %}
   </div>
-  <a href="/crm/clients/{{ client.id }}/edit" class="btn">Edit</a>
+  <div class="flex gap-8">
+    <a href="/crm/clients/{{ client.id }}/edit" class="btn">Edit</a>
+    {% if not client.archived %}
+    <form method="POST" action="/crm/clients/{{ client.id }}/archive" style="display:inline;" onsubmit="return confirm('Archive this client?')">
+      <button type="submit" class="btn btn-sm" style="background: #6b7280; color: #fff;">Archive</button>
+    </form>
+    {% endif %}
+  </div>
 </div>
+
+{% if client.archived %}
+<div style="background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+  <span style="color: #ef4444;">This client is archived.</span>
+  <form method="POST" action="/crm/clients/{{ client.id }}/unarchive">
+    <button type="submit" class="btn btn-sm" style="background: #16a34a; color: #fff;">Unarchive</button>
+  </form>
+</div>
+{% endif %}
 
 <!-- Info grid -->
 <div class="card">
@@ -87,6 +103,32 @@
   <a href="/crm/clients/{{ client.id }}/invoices/new" class="btn btn-sm">New Invoice</a>
 </div>
 
+<!-- Notes -->
+<div class="card">
+  <div class="card-title">Notes</div>
+  <form method="POST" action="/crm/clients/{{ client.id }}/notes" style="margin-bottom: 14px; display: flex; gap: 8px;">
+    <input type="text" name="text" class="form-input" placeholder="Add a note..." required style="flex: 1;">
+    <button type="submit" class="btn btn-primary" style="padding: 6px 16px; white-space: nowrap;">Add</button>
+  </form>
+  {% if notes %}
+  {% for n in notes %}
+  <div style="padding: 8px 0; border-top: 1px solid var(--border); font-size: 0.85rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <span>{{ n.text }}</span>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <span style="color: var(--muted); font-size: 0.72rem; white-space: nowrap;">{{ n.created_at[:16].replace('T', ' ') }}</span>
+        <form method="POST" action="/crm/clients/{{ client.id }}/notes/{{ n.id }}/delete" style="display:inline;">
+          <button type="submit" class="btn" style="padding: 2px 8px; font-size: 0.7rem; background: rgba(239,68,68,0.15); color: #ef4444; border: none; cursor: pointer;">&times;</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <div style="color: var(--muted); font-size: 0.82rem; padding-top: 8px;">No notes yet.</div>
+  {% endif %}
+</div>
+
 <!-- Scans -->
 <div class="card">
   <div class="card-title">Scans</div>
@@ -148,6 +190,11 @@
           </form>
           <form method="POST" action="/crm/quotes/{{ q.id }}/decline" style="display:inline;">
             <button type="submit" class="btn btn-sm btn-danger">Decline</button>
+          </form>
+          {% endif %}
+          {% if q.status in ('draft', 'declined') %}
+          <form method="POST" action="/crm/quotes/{{ q.id }}/archive" style="display:inline;">
+            <button type="submit" class="btn" style="padding: 2px 6px; font-size: 0.68rem; background: rgba(107,114,128,0.15); color: #9ca3af; border: none; cursor: pointer;" title="Archive">&#x1f5d1;</button>
           </form>
           {% endif %}
           {% if q.status == 'accepted' %}
@@ -234,6 +281,28 @@
   </table>
   {% else %}
   <div class="empty-state">No invoices yet. <a href="/crm/clients/{{ client.id }}/invoices/new">Create an invoice</a>.</div>
+  {% endif %}
+</div>
+
+<!-- Activity Timeline -->
+<div class="card">
+  <div class="card-title">Activity Timeline</div>
+  {% if activities %}
+  <div style="max-height: 400px; overflow-y: auto;">
+    {% for a in activities %}
+    <div style="padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.85rem;">
+      <div style="display: flex; justify-content: space-between;">
+        <span>{{ a.detail }}</span>
+        <span style="color: var(--muted); font-size: 0.75rem; white-space: nowrap;">{{ a.created_at[:16].replace('T', ' ') }}</span>
+      </div>
+      <div style="color: var(--muted); font-size: 0.72rem; margin-top: 2px;">
+        {{ a.entity_type }} &middot; {{ a.action }}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div style="color: var(--muted); font-size: 0.82rem;">No activity recorded yet.</div>
   {% endif %}
 </div>
 {% endblock %}

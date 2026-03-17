@@ -22,12 +22,13 @@ from functools import wraps
 from dotenv import load_dotenv
 load_dotenv()
 
-from flask import Flask, request, jsonify, render_template, abort, send_file, Response, redirect, url_for
+from flask import Flask, request, jsonify, render_template, abort, send_file, Response, redirect, url_for, flash
 from flask_cors import CORS
 
 from scanner import SecurityScanner
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
 CORS(app)  # Allow cross-origin calls from Vercel frontend
 
 
@@ -271,6 +272,32 @@ def init_db():
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_invoice ON payments(invoice_id)")
 
+        conn.execute("""CREATE TABLE IF NOT EXISTS activities (
+            id TEXT PRIMARY KEY,
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            client_id TEXT DEFAULT '',
+            action TEXT NOT NULL,
+            detail TEXT DEFAULT '',
+            created_at TEXT NOT NULL
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_activities_client ON activities(client_id)")
+
+        conn.execute("""CREATE TABLE IF NOT EXISTS client_notes (
+            id TEXT PRIMARY KEY,
+            client_id TEXT NOT NULL,
+            text TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_client_notes_client ON client_notes(client_id)")
+
+        # Add archived column to tables that need it
+        for tbl in ('clients', 'quotes', 'invoices'):
+            try:
+                conn.execute(f"ALTER TABLE {tbl} ADD COLUMN archived INTEGER DEFAULT 0")
+            except Exception:
+                pass
+
         conn.commit()
 
 
@@ -343,12 +370,39 @@ def advance_pipeline(client_id, new_stage):
     with get_db() as conn:
         row = conn.execute("SELECT pipeline_stage FROM clients WHERE id=?", (client_id,)).fetchone()
         if row:
-            current = PIPELINE_ORDER.index(row['pipeline_stage']) if row['pipeline_stage'] in PIPELINE_ORDER else -1
+            current_stage = row['pipeline_stage']
+            current = PIPELINE_ORDER.index(current_stage) if current_stage in PIPELINE_ORDER else -1
             target = PIPELINE_ORDER.index(new_stage) if new_stage in PIPELINE_ORDER else -1
             if target > current:
                 conn.execute("UPDATE clients SET pipeline_stage=?, updated_at=? WHERE id=?",
                              (new_stage, _now(), client_id))
                 conn.commit()
+                log_activity('client', client_id, client_id, 'stage_changed', f'Pipeline: {current_stage} \u2192 {new_stage}')
+
+
+def log_activity(entity_type, entity_id, client_id, action, detail=''):
+    try:
+        with get_db() as conn:
+            conn.execute(
+                "INSERT INTO activities (id, entity_type, entity_id, client_id, action, detail, created_at) VALUES (?,?,?,?,?,?,?)",
+                (str(uuid.uuid4()), entity_type, entity_id, client_id, action, detail, _now())
+            )
+            conn.commit()
+    except Exception:
+        pass
+
+
+def auto_update_invoice_statuses():
+    try:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        with get_db() as conn:
+            conn.execute(
+                "UPDATE invoices SET status='overdue', updated_at=? WHERE status='sent' AND due_date < ?",
+                (_now(), today)
+            )
+            conn.commit()
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -619,10 +673,11 @@ def view_results(scan_id: str):
 
 @app.route("/crm/")
 def crm_dashboard():
+    auto_update_invoice_statuses()
     with get_db() as conn:
         # Pipeline counts
         pipeline_rows = conn.execute(
-            "SELECT pipeline_stage, COUNT(*) as cnt FROM clients GROUP BY pipeline_stage"
+            "SELECT pipeline_stage, COUNT(*) as cnt FROM clients WHERE (archived=0 OR archived IS NULL) GROUP BY pipeline_stage"
         ).fetchall()
         pipeline = {r['pipeline_stage']: r['cnt'] for r in pipeline_rows}
         for stage in ('lead', 'scanned', 'quoted', 'bound', 'renewal'):
@@ -652,27 +707,45 @@ def crm_dashboard():
         # Upcoming renewals: policies expiring in 60 days
         cutoff = (now + timedelta(days=60)).strftime("%Y-%m-%d")
         today_str = now.strftime("%Y-%m-%d")
-        renewals = conn.execute(
+        renewals_raw = conn.execute(
             """SELECT p.*, c.company_name FROM policies p
                JOIN clients c ON c.id = p.client_id
                WHERE p.status='active' AND p.expiry_date <= ? AND p.expiry_date >= ?
                ORDER BY p.expiry_date""",
             (cutoff, today_str)
         ).fetchall()
+        renewals = []
+        for r in renewals_raw:
+            rd = dict(r)
+            try:
+                expiry = datetime.fromisoformat(rd['expiry_date'])
+                rd['days_left'] = (expiry - now).days
+            except Exception:
+                rd['days_left'] = 0
+            renewals.append(rd)
 
         # Overdue invoices
-        overdue = conn.execute(
+        overdue_raw = conn.execute(
             """SELECT i.*, c.company_name FROM invoices i
                JOIN clients c ON c.id = i.client_id
-               WHERE i.status='sent' AND i.due_date < ?
+               WHERE i.status IN ('sent', 'overdue') AND i.due_date < ?
                ORDER BY i.due_date""",
             (today_str,)
         ).fetchall()
+        overdue = []
+        for r in overdue_raw:
+            rd = dict(r)
+            try:
+                due = datetime.fromisoformat(rd['due_date'])
+                rd['days_overdue'] = (now - due).days
+            except Exception:
+                rd['days_overdue'] = 0
+            overdue.append(rd)
 
     return render_template("crm/dashboard.html",
                            pipeline=pipeline, revenue=revenue,
-                           renewals=[dict(r) for r in renewals],
-                           overdue=[dict(r) for r in overdue])
+                           renewals=renewals,
+                           overdue=overdue)
 
 
 @app.route("/crm/clients")
@@ -680,18 +753,27 @@ def list_clients():
     stage = request.args.get("stage", "")
     with get_db() as conn:
         if stage:
-            clients = conn.execute(
-                """SELECT cl.*, (SELECT name FROM contacts WHERE client_id=cl.id AND is_primary=1 LIMIT 1) as primary_contact
-                   FROM clients cl WHERE cl.pipeline_stage=? ORDER BY cl.company_name""",
-                (stage,)
-            ).fetchall()
+            if stage == 'archived':
+                clients = conn.execute(
+                    """SELECT cl.*, (SELECT name FROM contacts WHERE client_id=cl.id AND is_primary=1 LIMIT 1) as contact_name,
+                       (SELECT MAX(created_at) FROM scans WHERE client_id=cl.id) as last_scan
+                       FROM clients cl WHERE cl.archived=1 ORDER BY cl.company_name"""
+                ).fetchall()
+            else:
+                clients = conn.execute(
+                    """SELECT cl.*, (SELECT name FROM contacts WHERE client_id=cl.id AND is_primary=1 LIMIT 1) as contact_name,
+                       (SELECT MAX(created_at) FROM scans WHERE client_id=cl.id) as last_scan
+                       FROM clients cl WHERE cl.pipeline_stage=? AND (cl.archived=0 OR cl.archived IS NULL) ORDER BY cl.company_name""",
+                    (stage,)
+                ).fetchall()
         else:
             clients = conn.execute(
-                """SELECT cl.*, (SELECT name FROM contacts WHERE client_id=cl.id AND is_primary=1 LIMIT 1) as primary_contact
-                   FROM clients cl ORDER BY cl.company_name"""
+                """SELECT cl.*, (SELECT name FROM contacts WHERE client_id=cl.id AND is_primary=1 LIMIT 1) as contact_name,
+                   (SELECT MAX(created_at) FROM scans WHERE client_id=cl.id) as last_scan
+                   FROM clients cl WHERE (cl.archived=0 OR cl.archived IS NULL) ORDER BY cl.company_name"""
             ).fetchall()
     return render_template("crm/client_list.html",
-                           clients=[dict(r) for r in clients], stage=stage)
+                           clients=[dict(r) for r in clients], active_stage=stage or 'all')
 
 
 @app.route("/crm/clients/new")
@@ -727,6 +809,8 @@ def create_client():
         )
         conn.commit()
 
+    company_name = f.get('company_name', '')
+    log_activity('client', client_id, client_id, 'created', f'Client {company_name} created')
     return redirect(url_for('view_client', client_id=client_id))
 
 
@@ -747,7 +831,7 @@ def view_client(client_id):
         ).fetchall()]
 
         quotes = [dict(r) for r in conn.execute(
-            "SELECT * FROM quotes WHERE client_id=? ORDER BY created_at DESC", (client_id,)
+            "SELECT * FROM quotes q WHERE q.client_id=? AND (q.archived=0 OR q.archived IS NULL) ORDER BY q.created_at DESC", (client_id,)
         ).fetchall()]
 
         policies = [dict(r) for r in conn.execute(
@@ -755,7 +839,7 @@ def view_client(client_id):
         ).fetchall()]
 
         invoices_raw = conn.execute(
-            "SELECT * FROM invoices WHERE client_id=? ORDER BY created_at DESC", (client_id,)
+            "SELECT * FROM invoices inv WHERE inv.client_id=? AND (inv.archived=0 OR inv.archived IS NULL) ORDER BY inv.created_at DESC", (client_id,)
         ).fetchall()
         invoices = []
         for inv in invoices_raw:
@@ -767,9 +851,17 @@ def view_client(client_id):
             inv_dict['paid_amount'] = sum(p['amount'] for p in payments)
             invoices.append(inv_dict)
 
+        notes = [dict(r) for r in conn.execute(
+            "SELECT * FROM client_notes WHERE client_id=? ORDER BY created_at DESC",
+            (client_id,)).fetchall()]
+        activities = [dict(r) for r in conn.execute(
+            "SELECT * FROM activities WHERE client_id=? ORDER BY created_at DESC LIMIT 50",
+            (client_id,)).fetchall()]
+
     return render_template("crm/client_detail.html",
                            client=client, contacts=contacts, scans=scans,
-                           quotes=quotes, policies=policies, invoices=invoices)
+                           quotes=quotes, policies=policies, invoices=invoices,
+                           notes=notes, activities=activities)
 
 
 @app.route("/crm/clients/<client_id>/edit")
@@ -823,6 +915,7 @@ def update_client(client_id):
             )
         conn.commit()
 
+    log_activity('client', client_id, client_id, 'updated', 'Client details updated')
     return redirect(url_for('view_client', client_id=client_id))
 
 
@@ -839,6 +932,7 @@ def link_scan(client_id):
                 conn.execute("UPDATE clients SET domain=?, updated_at=? WHERE id=?",
                              (scan['domain'], _now(), client_id))
         conn.commit()
+    log_activity('scan', scan_id, client_id, 'linked', 'Scan linked to client')
     advance_pipeline(client_id, 'scanned')
     return redirect(url_for('view_client', client_id=client_id))
 
@@ -938,6 +1032,8 @@ def create_quote(client_id):
         )
         conn.commit()
 
+    cover_limit = float(f.get('cover_limit', 0) or 0)
+    log_activity('quote', quote_id, client_id, 'created', f'Quote created: R {cover_limit:,.0f} cover')
     advance_pipeline(client_id, 'quoted')
     return redirect(url_for('view_client', client_id=client_id))
 
@@ -948,9 +1044,11 @@ def accept_quote(quote_id):
         quote = conn.execute("SELECT client_id FROM quotes WHERE id=?", (quote_id,)).fetchone()
         if not quote:
             abort(404)
+        client_id = quote['client_id']
         conn.execute("UPDATE quotes SET status='accepted', updated_at=? WHERE id=?", (_now(), quote_id))
         conn.commit()
-    return redirect(url_for('view_client', client_id=quote['client_id']))
+    log_activity('quote', quote_id, client_id, 'accepted', 'Quote accepted')
+    return redirect(url_for('view_client', client_id=client_id))
 
 
 @app.route("/crm/quotes/<quote_id>/decline", methods=["POST"])
@@ -959,9 +1057,11 @@ def decline_quote(quote_id):
         quote = conn.execute("SELECT client_id FROM quotes WHERE id=?", (quote_id,)).fetchone()
         if not quote:
             abort(404)
+        client_id = quote['client_id']
         conn.execute("UPDATE quotes SET status='declined', updated_at=? WHERE id=?", (_now(), quote_id))
         conn.commit()
-    return redirect(url_for('view_client', client_id=quote['client_id']))
+    log_activity('quote', quote_id, client_id, 'declined', 'Quote declined')
+    return redirect(url_for('view_client', client_id=client_id))
 
 
 @app.route("/crm/quotes/<quote_id>/bind", methods=["POST"])
@@ -989,23 +1089,38 @@ def bind_quote(quote_id):
         conn.execute("UPDATE quotes SET status='accepted', updated_at=? WHERE id=?", (now, quote_id))
         conn.commit()
 
-    advance_pipeline(quote['client_id'], 'bound')
-    return redirect(url_for('view_client', client_id=quote['client_id']))
+    client_id = quote['client_id']
+    log_activity('policy', policy_id, client_id, 'created', f'Policy {policy_number} bound')
+    advance_pipeline(client_id, 'bound')
+    return redirect(url_for('view_client', client_id=client_id))
 
 
 @app.route("/crm/policies/renewals")
 def renewals_list():
-    cutoff = (datetime.now(timezone.utc) + timedelta(days=90)).strftime("%Y-%m-%d")
-    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    days = int(request.args.get('days', 60))
+    if days not in (30, 60, 90):
+        days = 60
+    today = datetime.now(timezone.utc)
+    cutoff = (today + timedelta(days=days)).strftime("%Y-%m-%d")
+    today_str = today.strftime("%Y-%m-%d")
     with get_db() as conn:
-        renewals = conn.execute(
+        renewals_raw = conn.execute(
             """SELECT p.*, c.company_name FROM policies p
                JOIN clients c ON c.id = p.client_id
                WHERE p.status='active' AND p.expiry_date <= ? AND p.expiry_date >= ?
                ORDER BY p.expiry_date""",
             (cutoff, today_str)
         ).fetchall()
-    return render_template("crm/renewals.html", renewals=[dict(r) for r in renewals])
+    renewals = []
+    for r in renewals_raw:
+        rd = dict(r)
+        try:
+            expiry = datetime.fromisoformat(rd['expiry_date'])
+            rd['days_left'] = (expiry - today).days
+        except Exception:
+            rd['days_left'] = 0
+        renewals.append(rd)
+    return render_template("crm/renewals.html", renewals=renewals, active_days=days)
 
 
 @app.route("/crm/policies/<policy_id>/renew", methods=["POST"])
@@ -1033,8 +1148,10 @@ def renew_policy(policy_id):
         conn.execute("UPDATE policies SET status='renewed', updated_at=? WHERE id=?", (now, policy_id))
         conn.commit()
 
-    advance_pipeline(old['client_id'], 'renewal')
-    return redirect(url_for('view_client', client_id=old['client_id']))
+    client_id = old['client_id']
+    log_activity('policy', new_id, client_id, 'renewed', f'Policy {new_number} renewed')
+    advance_pipeline(client_id, 'renewal')
+    return redirect(url_for('view_client', client_id=client_id))
 
 
 @app.route("/crm/clients/<client_id>/invoices/new")
@@ -1106,6 +1223,8 @@ def create_invoice(client_id):
             )
         conn.commit()
 
+    inv_number = invoice_number
+    log_activity('invoice', invoice_id, client_id, 'created', f'Invoice {inv_number} created: R {total:,.0f}')
     return redirect(url_for('view_invoice', invoice_id=invoice_id))
 
 
@@ -1194,7 +1313,114 @@ def record_payment(invoice_id):
 
         conn.commit()
 
+    amount = float(f.get('amount', 0) or 0)
+    client_id = invoice['client_id']
+    log_activity('payment', payment_id, client_id, 'payment_recorded', f'Payment R {amount:,.0f} recorded')
     return redirect(url_for('view_invoice', invoice_id=invoice_id))
+
+
+@app.route("/crm/clients/<client_id>/notes", methods=["POST"])
+def add_client_note(client_id):
+    text = request.form.get('text', '').strip()
+    if not text:
+        flash("Note cannot be empty", "warning")
+        return redirect(url_for('view_client', client_id=client_id))
+    note_id = str(uuid.uuid4())
+    with get_db() as conn:
+        conn.execute("INSERT INTO client_notes (id, client_id, text, created_at) VALUES (?,?,?,?)",
+                     (note_id, client_id, text, _now()))
+        conn.commit()
+    log_activity('client', client_id, client_id, 'note_added', 'Note added')
+    return redirect(url_for('view_client', client_id=client_id))
+
+
+@app.route("/crm/clients/<client_id>/notes/<note_id>/delete", methods=["POST"])
+def delete_client_note(client_id, note_id):
+    with get_db() as conn:
+        conn.execute("DELETE FROM client_notes WHERE id=? AND client_id=?", (note_id, client_id))
+        conn.commit()
+    return redirect(url_for('view_client', client_id=client_id))
+
+
+@app.route("/crm/search")
+def crm_search():
+    q = request.args.get('q', '').strip()
+    if not q:
+        return render_template("crm/search_results.html", q='', results={})
+    like = f'%{q}%'
+    with get_db() as conn:
+        clients = [dict(r) for r in conn.execute(
+            "SELECT id, company_name, domain, pipeline_stage FROM clients WHERE (company_name LIKE ? OR domain LIKE ?) AND (archived=0 OR archived IS NULL) ORDER BY company_name LIMIT 20",
+            (like, like)).fetchall()]
+        policies = [dict(r) for r in conn.execute(
+            "SELECT p.id, p.policy_number, p.status, c.company_name, p.client_id FROM policies p JOIN clients c ON c.id=p.client_id WHERE p.policy_number LIKE ? LIMIT 20",
+            (like,)).fetchall()]
+        invoices = [dict(r) for r in conn.execute(
+            "SELECT i.id, i.invoice_number, i.status, i.total, c.company_name, i.client_id FROM invoices i JOIN clients c ON c.id=i.client_id WHERE i.invoice_number LIKE ? LIMIT 20",
+            (like,)).fetchall()]
+    return render_template("crm/search_results.html", q=q,
+                           results={'clients': clients, 'policies': policies, 'invoices': invoices})
+
+
+@app.route("/crm/invoices/<invoice_id>/send", methods=["POST"])
+def send_invoice(invoice_id):
+    with get_db() as conn:
+        inv = conn.execute("SELECT * FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+        if not inv:
+            flash("Invoice not found", "danger")
+            return redirect(url_for('crm_dashboard'))
+        if inv['status'] != 'draft':
+            flash("Only draft invoices can be sent", "warning")
+            return redirect(url_for('view_invoice', invoice_id=invoice_id))
+        conn.execute("UPDATE invoices SET status='sent', updated_at=? WHERE id=?", (_now(), invoice_id))
+        conn.commit()
+    log_activity('invoice', invoice_id, inv['client_id'], 'sent', f'Invoice {inv["invoice_number"]} marked as sent')
+    flash("Invoice marked as sent", "success")
+    return redirect(url_for('view_invoice', invoice_id=invoice_id))
+
+
+@app.route("/crm/clients/<client_id>/archive", methods=["POST"])
+def archive_client(client_id):
+    with get_db() as conn:
+        conn.execute("UPDATE clients SET archived=1, updated_at=? WHERE id=?", (_now(), client_id))
+        conn.commit()
+    log_activity('client', client_id, client_id, 'archived', 'Client archived')
+    flash("Client archived", "success")
+    return redirect(url_for('list_clients'))
+
+
+@app.route("/crm/clients/<client_id>/unarchive", methods=["POST"])
+def unarchive_client(client_id):
+    with get_db() as conn:
+        conn.execute("UPDATE clients SET archived=0, updated_at=? WHERE id=?", (_now(), client_id))
+        conn.commit()
+    log_activity('client', client_id, client_id, 'unarchived', 'Client unarchived')
+    flash("Client restored", "success")
+    return redirect(url_for('view_client', client_id=client_id))
+
+
+@app.route("/crm/quotes/<quote_id>/archive", methods=["POST"])
+def archive_quote(quote_id):
+    with get_db() as conn:
+        q = conn.execute("SELECT client_id FROM quotes WHERE id=?", (quote_id,)).fetchone()
+        conn.execute("UPDATE quotes SET archived=1, updated_at=? WHERE id=?", (_now(), quote_id))
+        conn.commit()
+        client_id = q['client_id'] if q else ''
+    log_activity('quote', quote_id, client_id, 'archived', 'Quote archived')
+    flash("Quote archived", "success")
+    return redirect(url_for('view_client', client_id=client_id))
+
+
+@app.route("/crm/invoices/<invoice_id>/archive", methods=["POST"])
+def archive_invoice(invoice_id):
+    with get_db() as conn:
+        inv = conn.execute("SELECT client_id FROM invoices WHERE id=?", (invoice_id,)).fetchone()
+        conn.execute("UPDATE invoices SET archived=1, updated_at=? WHERE id=?", (_now(), invoice_id))
+        conn.commit()
+        client_id = inv['client_id'] if inv else ''
+    log_activity('invoice', invoice_id, client_id, 'archived', 'Invoice archived')
+    flash("Invoice archived", "success")
+    return redirect(url_for('view_client', client_id=client_id))
 
 
 @app.route("/api/lead", methods=["POST"])

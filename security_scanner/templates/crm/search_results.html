@@ -1,0 +1,68 @@
+{% extends "crm/_base_crm.html" %}
+{% block title %}Search — CRM{% endblock %}
+{% block content %}
+<h2 style="margin-bottom: 20px;">Search{% if q %}: "{{ q }}"{% endif %}</h2>
+
+{% if not q %}
+<div class="card"><div style="color: var(--muted); padding: 20px; text-align: center;">Enter a search term to find clients, policies, or invoices.</div></div>
+{% elif not results.clients and not results.policies and not results.invoices %}
+<div class="card"><div style="color: var(--muted); padding: 20px; text-align: center;">No results found for "{{ q }}".</div></div>
+{% else %}
+
+{% if results.clients %}
+<div class="card">
+  <div class="card-title">Clients ({{ results.clients|length }})</div>
+  <table class="table">
+    <thead><tr><th>Company</th><th>Domain</th><th>Stage</th></tr></thead>
+    <tbody>
+    {% for c in results.clients %}
+    <tr>
+      <td><a href="/crm/clients/{{ c.id }}">{{ c.company_name }}</a></td>
+      <td>{{ c.domain }}</td>
+      <td><span class="status-pill {{ c.pipeline_stage }}">{{ c.pipeline_stage }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if results.policies %}
+<div class="card">
+  <div class="card-title">Policies ({{ results.policies|length }})</div>
+  <table class="table">
+    <thead><tr><th>Policy #</th><th>Client</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for p in results.policies %}
+    <tr>
+      <td><a href="/crm/clients/{{ p.client_id }}">{{ p.policy_number }}</a></td>
+      <td>{{ p.company_name }}</td>
+      <td><span class="status-pill {{ p.status }}">{{ p.status }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if results.invoices %}
+<div class="card">
+  <div class="card-title">Invoices ({{ results.invoices|length }})</div>
+  <table class="table">
+    <thead><tr><th>Invoice #</th><th>Client</th><th>Total</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for i in results.invoices %}
+    <tr>
+      <td><a href="/crm/invoices/{{ i.id }}">{{ i.invoice_number }}</a></td>
+      <td>{{ i.company_name }}</td>
+      <td>{{ i.total | zar }}</td>
+      <td><span class="status-pill {{ i.status }}">{{ i.status }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

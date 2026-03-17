@@ -10,6 +10,16 @@
   </div>
   <div class="flex gap-8">
     <a href="/crm/invoices/{{ invoice.id }}/pdf" class="btn btn-primary btn-sm">Download PDF</a>
+    {% if invoice.status == 'draft' %}
+    <form method="POST" action="/crm/invoices/{{ invoice.id }}/send" style="display: inline;">
+      <button type="submit" class="btn btn-primary" style="padding: 6px 16px;">Mark as Sent</button>
+    </form>
+    {% endif %}
+    {% if invoice.status != 'paid' %}
+    <form method="POST" action="/crm/invoices/{{ invoice.id }}/archive" style="display: inline;" onsubmit="return confirm('Archive this invoice?')">
+      <button type="submit" class="btn" style="padding: 6px 16px; background: #6b7280; color: #fff;">Archive</button>
+    </form>
+    {% endif %}
     <button type="button" class="btn btn-sm btn-success" onclick="togglePaymentForm()">Record Payment</button>
   </div>
 </div>
