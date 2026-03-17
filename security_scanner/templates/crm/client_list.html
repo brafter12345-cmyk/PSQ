@@ -1,0 +1,58 @@
+{% extends "crm/_base_crm.html" %}
+
+{% block title %}Clients{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Clients</h1>
+  <a href="/crm/clients/new" class="btn btn-primary">+ New Client</a>
+</div>
+
+<!-- Filter tabs -->
+<div class="filter-tabs">
+  <a href="/crm/clients" class="filter-tab {% if active_stage == 'all' %}active{% endif %}">All</a>
+  <a href="/crm/clients?stage=lead" class="filter-tab {% if active_stage == 'lead' %}active{% endif %}">Lead</a>
+  <a href="/crm/clients?stage=scanned" class="filter-tab {% if active_stage == 'scanned' %}active{% endif %}">Scanned</a>
+  <a href="/crm/clients?stage=quoted" class="filter-tab {% if active_stage == 'quoted' %}active{% endif %}">Quoted</a>
+  <a href="/crm/clients?stage=bound" class="filter-tab {% if active_stage == 'bound' %}active{% endif %}">Bound</a>
+  <a href="/crm/clients?stage=renewal" class="filter-tab {% if active_stage == 'renewal' %}active{% endif %}">Renewal</a>
+</div>
+
+{% if clients %}
+<div class="card mb-0" style="padding: 0; overflow: hidden;">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Company Name</th>
+        <th>Domain</th>
+        <th>Industry</th>
+        <th>Stage</th>
+        <th>Contact</th>
+        <th>Revenue</th>
+        <th>Last Scan</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in clients %}
+      <tr>
+        <td><a href="/crm/clients/{{ c.id }}">{{ c.company_name }}</a></td>
+        <td><span class="text-muted" style="font-family: monospace; font-size: 0.82rem;">{{ c.domain or '—' }}</span></td>
+        <td>{{ c.industry or '—' }}</td>
+        <td><span class="stage-pill {{ c.pipeline_stage }}">{{ c.pipeline_stage }}</span></td>
+        <td>{{ c.contact_name or '—' }}</td>
+        <td>{{ c.annual_revenue | zar if c.annual_revenue else '—' }}</td>
+        <td class="text-muted">{{ c.last_scan or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <div class="empty-state">
+    No clients found{% if active_stage != 'all' %} in the "{{ active_stage }}" stage{% endif %}.<br>
+    <a href="/crm/clients/new" class="btn btn-primary btn-sm mt-12">Add your first client</a>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

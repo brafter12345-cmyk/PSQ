@@ -1,0 +1,162 @@
+{% extends "crm/_base_crm.html" %}
+
+{% block title %}Invoice {{ invoice.invoice_number }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="flex items-center gap-8 flex-wrap">
+    <h1 class="page-title">{{ invoice.invoice_number }}</h1>
+    <span class="status-pill {{ invoice.status }}">{{ invoice.status }}</span>
+  </div>
+  <div class="flex gap-8">
+    <a href="/crm/invoices/{{ invoice.id }}/pdf" class="btn btn-primary btn-sm">Download PDF</a>
+    <button type="button" class="btn btn-sm btn-success" onclick="togglePaymentForm()">Record Payment</button>
+  </div>
+</div>
+
+<!-- Invoice meta -->
+<div class="card">
+  <div class="info-grid">
+    <div>
+      <div class="info-item-label">Client</div>
+      <div class="info-item-value"><a href="/crm/clients/{{ client.id }}">{{ client.company_name }}</a></div>
+    </div>
+    <div>
+      <div class="info-item-label">Issue Date</div>
+      <div class="info-item-value">{{ invoice.issue_date }}</div>
+    </div>
+    <div>
+      <div class="info-item-label">Due Date</div>
+      <div class="info-item-value">{{ invoice.due_date }}</div>
+    </div>
+    {% if invoice.policy_number %}
+    <div>
+      <div class="info-item-label">Policy #</div>
+      <div class="info-item-value">{{ invoice.policy_number }}</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Line items -->
+<div class="card">
+  <div class="card-title">Line Items</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Description</th>
+        <th class="text-right">Qty</th>
+        <th class="text-right">Unit Price</th>
+        <th class="text-right">Line Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in line_items %}
+      <tr>
+        <td>{{ item.description }}</td>
+        <td class="text-right">{{ item.quantity }}</td>
+        <td class="text-right" style="font-family: monospace;">{{ item.unit_price | zar }}</td>
+        <td class="text-right text-bold" style="font-family: monospace;">{{ item.line_total | zar }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Totals -->
+  <div style="max-width: 300px; margin-left: auto; margin-top: 16px;">
+    <div class="flex justify-between" style="padding: 6px 0; font-size: 0.88rem;">
+      <span class="text-muted">Subtotal</span>
+      <span style="font-family: monospace;">{{ invoice.subtotal | zar }}</span>
+    </div>
+    <div class="flex justify-between" style="padding: 6px 0; font-size: 0.88rem;">
+      <span class="text-muted">VAT (15%)</span>
+      <span style="font-family: monospace;">{{ invoice.vat_amount | zar }}</span>
+    </div>
+    <div class="flex justify-between" style="padding: 8px 0; font-size: 1rem; border-top: 1px solid var(--border); margin-top: 4px;">
+      <span class="text-bold">Total</span>
+      <span class="text-bold" style="font-family: monospace;">{{ invoice.total | zar }}</span>
+    </div>
+    {% set amount_paid = invoice.paid_amount|default(0) %}
+    {% set balance = invoice.total - amount_paid %}
+    {% if amount_paid > 0 %}
+    <div class="flex justify-between" style="padding: 6px 0; font-size: 0.88rem;">
+      <span class="text-muted">Amount Paid</span>
+      <span class="text-green" style="font-family: monospace;">{{ amount_paid | zar }}</span>
+    </div>
+    <div class="flex justify-between" style="padding: 8px 0; font-size: 1rem; border-top: 1px solid var(--border); margin-top: 4px;">
+      <span class="text-bold">Balance Due</span>
+      <span class="text-bold {% if balance > 0 %}text-red{% else %}text-green{% endif %}" style="font-family: monospace;">{{ balance | zar }}</span>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Payment form (hidden by default) -->
+<div class="card" id="paymentForm" style="display: none;">
+  <div class="card-title">Record Payment</div>
+  <form method="POST" action="/crm/invoices/{{ invoice.id }}/pay">
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Amount (ZAR) *</label>
+        <input type="number" name="amount" class="form-input" step="0.01" required value="{{ (invoice.total - invoice.paid_amount|default(0)) }}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Method *</label>
+        <select name="method" class="form-input" required>
+          <option value="EFT">EFT</option>
+          <option value="Card">Card</option>
+          <option value="Debit Order">Debit Order</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Reference</label>
+        <input type="text" name="reference" class="form-input" placeholder="Payment reference or transaction ID">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Date *</label>
+        <input type="date" name="payment_date" class="form-input" required>
+      </div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-success">Submit Payment</button>
+      <button type="button" class="btn" onclick="togglePaymentForm()">Cancel</button>
+    </div>
+  </form>
+</div>
+
+<!-- Payment history -->
+{% if payments %}
+<div class="card">
+  <div class="card-title">Payment History</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Amount</th>
+        <th>Method</th>
+        <th>Reference</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in payments %}
+      <tr>
+        <td>{{ p.payment_date }}</td>
+        <td class="text-green" style="font-family: monospace;">{{ p.amount | zar }}</td>
+        <td>{{ p.method }}</td>
+        <td class="text-muted">{{ p.reference or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<script>
+function togglePaymentForm() {
+  var form = document.getElementById('paymentForm');
+  form.style.display = form.style.display === 'none' ? 'block' : 'none';
+}
+</script>
+{% endblock %}

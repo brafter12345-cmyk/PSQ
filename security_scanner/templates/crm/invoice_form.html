@@ -1,0 +1,123 @@
+{% extends "crm/_base_crm.html" %}
+
+{% block title %}New Invoice — {{ client.company_name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">New Invoice for {{ client.company_name }}</h1>
+</div>
+
+<div class="card">
+  <form method="POST" action="/crm/clients/{{ client.id }}/invoices" id="invoiceForm">
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Due In (days)</label>
+        <input type="number" name="due_days" class="form-input" value="30" min="1">
+      </div>
+      <div></div>
+    </div>
+
+    <!-- Line items -->
+    <div class="form-group">
+      <label class="form-label">Line Items</label>
+      <table class="data-table" id="lineItems">
+        <thead>
+          <tr>
+            <th style="width: 45%;">Description</th>
+            <th style="width: 12%;">Qty</th>
+            <th style="width: 18%;">Unit Price (ZAR)</th>
+            <th style="width: 18%;">Line Total</th>
+            <th style="width: 7%;"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="line-row">
+            <td><input type="text" name="description[]" class="form-input" value="{% if policy %}Cyber Insurance Premium — Policy {{ policy.policy_number }}{% endif %}"></td>
+            <td><input type="number" name="quantity[]" class="form-input line-qty" value="1" min="1" step="1"></td>
+            <td><input type="number" name="unit_price[]" class="form-input line-price" step="0.01" value="{{ policy.annual_premium if policy and policy.annual_premium else '' }}"></td>
+            <td class="line-total text-bold" style="font-family: monospace;">R 0.00</td>
+            <td></td>
+          </tr>
+        </tbody>
+      </table>
+      <button type="button" class="btn btn-sm mt-12" onclick="addRow()">+ Add Row</button>
+    </div>
+
+    <!-- Totals -->
+    <div style="max-width: 300px; margin-left: auto; margin-top: 16px;">
+      <div class="flex justify-between" style="padding: 6px 0; font-size: 0.88rem;">
+        <span class="text-muted">Subtotal</span>
+        <span id="subtotal" class="text-bold" style="font-family: monospace;">R 0.00</span>
+      </div>
+      <div class="flex justify-between" style="padding: 6px 0; font-size: 0.88rem;">
+        <span class="text-muted">VAT (15%)</span>
+        <span id="vat" style="font-family: monospace;">R 0.00</span>
+      </div>
+      <div class="flex justify-between" style="padding: 8px 0; font-size: 1rem; border-top: 1px solid var(--border); margin-top: 4px;">
+        <span class="text-bold">Total</span>
+        <span id="total" class="text-bold" style="font-family: monospace;">R 0.00</span>
+      </div>
+    </div>
+
+    <div class="form-group" style="margin-top: 20px;">
+      <label class="form-label">Notes</label>
+      <textarea name="notes" class="form-input" placeholder="Payment terms, bank details, etc."></textarea>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save Invoice</button>
+      <a href="/crm/clients/{{ client.id }}" class="btn">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<script>
+function formatZAR(val) {
+  return 'R ' + parseFloat(val || 0).toLocaleString('en-ZA', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+
+function recalc() {
+  var subtotal = 0;
+  var rows = document.querySelectorAll('.line-row');
+  rows.forEach(function(row) {
+    var qty = parseFloat(row.querySelector('.line-qty').value) || 0;
+    var price = parseFloat(row.querySelector('.line-price').value) || 0;
+    var lineTotal = qty * price;
+    row.querySelector('.line-total').textContent = formatZAR(lineTotal);
+    subtotal += lineTotal;
+  });
+  var vat = subtotal * 0.15;
+  var total = subtotal + vat;
+  document.getElementById('subtotal').textContent = formatZAR(subtotal);
+  document.getElementById('vat').textContent = formatZAR(vat);
+  document.getElementById('total').textContent = formatZAR(total);
+}
+
+function addRow() {
+  var tbody = document.querySelector('#lineItems tbody');
+  var tr = document.createElement('tr');
+  tr.className = 'line-row';
+  tr.innerHTML = '<td><input type="text" name="description[]" class="form-input"></td>' +
+    '<td><input type="number" name="quantity[]" class="form-input line-qty" value="1" min="1" step="1"></td>' +
+    '<td><input type="number" name="unit_price[]" class="form-input line-price" step="0.01"></td>' +
+    '<td class="line-total text-bold" style="font-family: monospace;">R 0.00</td>' +
+    '<td><button type="button" class="btn btn-sm btn-danger" onclick="removeRow(this)">X</button></td>';
+  tbody.appendChild(tr);
+  tr.querySelector('.line-qty').addEventListener('input', recalc);
+  tr.querySelector('.line-price').addEventListener('input', recalc);
+}
+
+function removeRow(btn) {
+  btn.closest('tr').remove();
+  recalc();
+}
+
+// Init listeners
+document.querySelectorAll('.line-qty, .line-price').forEach(function(el) {
+  el.addEventListener('input', recalc);
+});
+
+// Initial calc
+recalc();
+</script>
+{% endblock %}

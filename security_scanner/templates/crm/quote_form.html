@@ -1,0 +1,89 @@
+{% extends "crm/_base_crm.html" %}
+
+{% block title %}New Quote — {{ client.company_name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">New Quote for {{ client.company_name }}</h1>
+</div>
+
+{% if scan_data %}
+<!-- Scan summary -->
+<div class="card" style="border-left: 3px solid var(--blue);">
+  <div class="card-title">Scan Summary</div>
+  <div class="info-grid">
+    <div>
+      <div class="info-item-label">Risk Score</div>
+      <div class="info-item-value">{{ scan_data.risk_score }}/100</div>
+    </div>
+    <div>
+      <div class="info-item-label">Risk Level</div>
+      <div class="info-item-value">{{ scan_data.risk_level }}</div>
+    </div>
+    <div>
+      <div class="info-item-label">RSI Score</div>
+      <div class="info-item-value">{{ scan_data.rsi_score if scan_data.rsi_score else '—' }}</div>
+    </div>
+    <div>
+      <div class="info-item-label">Est. Annual Loss</div>
+      <div class="info-item-value">{{ scan_data.annual_loss | zar if scan_data.annual_loss else '—' }}</div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <form method="POST" action="/crm/clients/{{ client.id }}/quotes">
+    {% if scan_data %}
+    <input type="hidden" name="scan_id" value="{{ scan_data.scan_id }}">
+    <input type="hidden" name="risk_score" value="{{ scan_data.risk_score }}">
+    <input type="hidden" name="risk_level" value="{{ scan_data.risk_level }}">
+    {% endif %}
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Cover Limit (ZAR) *</label>
+        <input type="number" name="cover_limit" class="form-input" step="0.01" required
+               value="{{ scan_data.recommended_cover if scan_data and scan_data.recommended_cover else '' }}">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Annual Premium (ZAR) *</label>
+        <input type="number" name="annual_premium" class="form-input" step="0.01" required
+               value="{{ scan_data.premium_tier if scan_data and scan_data.premium_tier else '' }}">
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Monthly Premium (ZAR)</label>
+        <input type="number" name="monthly_premium" class="form-input" step="0.01">
+      </div>
+      <div class="form-group">
+        <label class="form-label">MDR Selection</label>
+        <select name="mdr_selection" class="form-input">
+          <option value="no">No</option>
+          <option value="yes">Yes</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Valid Until</label>
+        <input type="date" name="valid_until" class="form-input">
+      </div>
+      <div></div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea name="notes" class="form-input" placeholder="Additional notes or conditions..."></textarea>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save Quote</button>
+      <a href="/crm/clients/{{ client.id }}" class="btn">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

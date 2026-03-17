@@ -1155,3 +1155,168 @@ def generate_pdf(results: dict) -> bytes:
 
     doc.build(story, onFirstPage=hf, onLaterPages=hf)
     return buffer.getvalue()
+
+
+# ---------------------------------------------------------------------------
+# Invoice PDF Generator
+# ---------------------------------------------------------------------------
+
+def generate_invoice_pdf(invoice: dict, line_items: list, client: dict) -> bytes:
+    """Generate a professional invoice PDF in ZAR."""
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=MARGIN, rightMargin=MARGIN,
+        topMargin=25 * mm, bottomMargin=20 * mm,
+    )
+
+    S = {
+        "title": ParagraphStyle("inv_title", fontName="Helvetica-Bold", fontSize=22, textColor=C_NAVY),
+        "heading": ParagraphStyle("inv_heading", fontName="Helvetica-Bold", fontSize=12, textColor=C_NAVY),
+        "normal": ParagraphStyle("inv_normal", fontName="Helvetica", fontSize=10, textColor=C_BLACK, leading=14),
+        "small": ParagraphStyle("inv_small", fontName="Helvetica", fontSize=8, textColor=C_GREY_4, leading=11),
+        "bold": ParagraphStyle("inv_bold", fontName="Helvetica-Bold", fontSize=10, textColor=C_BLACK),
+        "right": ParagraphStyle("inv_right", fontName="Helvetica", fontSize=10, textColor=C_BLACK, alignment=TA_RIGHT),
+        "right_bold": ParagraphStyle("inv_right_bold", fontName="Helvetica-Bold", fontSize=10, textColor=C_BLACK, alignment=TA_RIGHT),
+        "total": ParagraphStyle("inv_total", fontName="Helvetica-Bold", fontSize=13, textColor=C_NAVY, alignment=TA_RIGHT),
+    }
+
+    story = []
+
+    # --- Header ---
+    story.append(Paragraph("PHISHIELD", S["title"]))
+    story.append(Paragraph("Cyber Insurance Brokers — Powered by Bryte Insurance", S["small"]))
+    story.append(Spacer(1, 6 * mm))
+    story.append(HRFlowable(width="100%", thickness=2, color=C_BLUE))
+    story.append(Spacer(1, 6 * mm))
+
+    # --- Invoice meta (2-column) ---
+    inv_num = invoice.get("invoice_number", "")
+    issue_date = invoice.get("issue_date", "")
+    due_date = invoice.get("due_date", "")
+    status = invoice.get("status", "draft").upper()
+
+    meta_left = [
+        Paragraph(f"<b>Invoice:</b> {inv_num}", S["normal"]),
+        Paragraph(f"<b>Date:</b> {issue_date}", S["normal"]),
+        Paragraph(f"<b>Due:</b> {due_date}", S["normal"]),
+        Paragraph(f"<b>Status:</b> {status}", S["normal"]),
+    ]
+    company = client.get("company_name", "—")
+    trading_as = client.get("trading_as", "")
+    domain = client.get("domain", "")
+    meta_right = [
+        Paragraph(f"<b>Bill To:</b>", S["normal"]),
+        Paragraph(company, S["bold"]),
+    ]
+    if trading_as:
+        meta_right.append(Paragraph(f"t/a {trading_as}", S["normal"]))
+    if domain:
+        meta_right.append(Paragraph(domain, S["normal"]))
+
+    # Pad lists to same length
+    max_len = max(len(meta_left), len(meta_right))
+    while len(meta_left) < max_len:
+        meta_left.append(Paragraph("", S["normal"]))
+    while len(meta_right) < max_len:
+        meta_right.append(Paragraph("", S["normal"]))
+
+    meta_data = [[meta_left[i], meta_right[i]] for i in range(max_len)]
+    meta_table = Table(meta_data, colWidths=[INNER_W * 0.5, INNER_W * 0.5])
+    meta_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(meta_table)
+    story.append(Spacer(1, 8 * mm))
+
+    # --- Line items table ---
+    header = [
+        Paragraph("<b>Description</b>", S["normal"]),
+        Paragraph("<b>Qty</b>", S["right_bold"]),
+        Paragraph("<b>Unit Price</b>", S["right_bold"]),
+        Paragraph("<b>Total</b>", S["right_bold"]),
+    ]
+    rows = [header]
+    for item in line_items:
+        rows.append([
+            Paragraph(item.get("description", ""), S["normal"]),
+            Paragraph(f"{item.get('quantity', 1):.0f}", S["right"]),
+            Paragraph(f"R {item.get('unit_price', 0):,.2f}", S["right"]),
+            Paragraph(f"R {item.get('line_total', 0):,.2f}", S["right"]),
+        ])
+
+    col_widths = [INNER_W * 0.50, INNER_W * 0.12, INNER_W * 0.19, INNER_W * 0.19]
+    items_table = Table(rows, colWidths=col_widths)
+    items_style = [
+        ("BACKGROUND", (0, 0), (-1, 0), C_NAVY),
+        ("TEXTCOLOR", (0, 0), (-1, 0), C_WHITE),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+        ("TOPPADDING", (0, 0), (-1, 0), 8),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
+        ("TOPPADDING", (0, 1), (-1, -1), 6),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.5, C_GREY_2),
+        ("LINEBELOW", (0, -1), (-1, -1), 1, C_NAVY),
+        ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]
+    # Alternate row colours
+    for i in range(1, len(rows)):
+        if i % 2 == 0:
+            items_style.append(("BACKGROUND", (0, i), (-1, i), C_GREY_1))
+    items_table.setStyle(TableStyle(items_style))
+    story.append(items_table)
+    story.append(Spacer(1, 6 * mm))
+
+    # --- Totals ---
+    subtotal = invoice.get("subtotal", 0)
+    vat_rate = invoice.get("vat_rate", 15)
+    vat_amount = invoice.get("vat_amount", 0)
+    total = invoice.get("total", 0)
+
+    totals_data = [
+        ["", Paragraph("Subtotal", S["right"]), Paragraph(f"R {subtotal:,.2f}", S["right_bold"])],
+        ["", Paragraph(f"VAT ({vat_rate}%)", S["right"]), Paragraph(f"R {vat_amount:,.2f}", S["right_bold"])],
+        ["", Paragraph("<b>TOTAL DUE</b>", S["right_bold"]), Paragraph(f"R {total:,.2f}", S["total"])],
+    ]
+    totals_table = Table(totals_data, colWidths=[INNER_W * 0.50, INNER_W * 0.25, INNER_W * 0.25])
+    totals_table.setStyle(TableStyle([
+        ("LINEABOVE", (1, 2), (-1, 2), 1.5, C_NAVY),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("ALIGN", (1, 0), (-1, -1), "RIGHT"),
+    ]))
+    story.append(totals_table)
+    story.append(Spacer(1, 10 * mm))
+
+    # --- Bank details ---
+    story.append(HRFlowable(width="100%", thickness=0.5, color=C_GREY_2))
+    story.append(Spacer(1, 4 * mm))
+    story.append(Paragraph("Payment Details", S["heading"]))
+    story.append(Spacer(1, 2 * mm))
+    bank_info = [
+        "<b>Bank:</b> First National Bank (FNB)",
+        "<b>Account Name:</b> Phishield (Pty) Ltd",
+        "<b>Account Number:</b> Available on request",
+        "<b>Branch Code:</b> 250655",
+        f"<b>Reference:</b> {inv_num}",
+    ]
+    for line in bank_info:
+        story.append(Paragraph(line, S["normal"]))
+    story.append(Spacer(1, 6 * mm))
+
+    # --- Footer disclaimer ---
+    story.append(HRFlowable(width="100%", thickness=0.5, color=C_GREY_2))
+    story.append(Spacer(1, 3 * mm))
+    story.append(Paragraph(
+        "Phishield (Pty) Ltd | Authorised Financial Services Provider | "
+        "Underwritten by Bryte Insurance Company Limited (FSP 17703)",
+        S["small"]
+    ))
+
+    doc.build(story)
+    return buffer.getvalue()

@@ -1,0 +1,94 @@
+{% extends "crm/_base_crm.html" %}
+
+{% block title %}{% if client %}Edit {{ client.company_name }}{% else %}New Client{% endif %}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">{% if client %}Edit {{ client.company_name }}{% else %}New Client{% endif %}</h1>
+</div>
+
+<div class="card">
+  <form method="POST" action="{% if client %}/crm/clients/{{ client.id }}{% else %}/crm/clients{% endif %}">
+    <div class="form-row">
+      <!-- Left column: Company info -->
+      <div>
+        <div class="form-group">
+          <label class="form-label">Company Name *</label>
+          <input type="text" name="company_name" class="form-input" required value="{{ client.company_name if client else '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Trading As</label>
+          <input type="text" name="trading_as" class="form-input" value="{{ client.trading_as if client and client.trading_as else '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Domain</label>
+          <input type="text" name="domain" class="form-input" placeholder="example.co.za" value="{{ client.domain if client and client.domain else '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Industry</label>
+          <select name="industry" class="form-input">
+            <option value="">-- Select --</option>
+            {% set industries = ['Financial Services', 'Healthcare', 'Retail', 'Manufacturing', 'Technology', 'Legal', 'Education', 'Government', 'Mining', 'Agriculture', 'Logistics', 'Telecommunications', 'Real Estate', 'Hospitality', 'Energy', 'Non-Profit', 'Other'] %}
+            {% for ind in industries %}
+            <option value="{{ ind }}" {% if client and client.industry == ind %}selected{% endif %}>{{ ind }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Annual Revenue (ZAR)</label>
+          <input type="number" name="annual_revenue" class="form-input" step="0.01" placeholder="0.00" value="{{ client.annual_revenue if client and client.annual_revenue else '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Employee Count</label>
+          <input type="number" name="employee_count" class="form-input" value="{{ client.employee_count if client and client.employee_count else '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Reseller</label>
+          <select name="reseller" class="form-input">
+            <option value="">-- Select --</option>
+            {% set resellers = ['DataGr8', 'FT-KZN', 'CyberInsight', 'IT Zeus', 'BDNS', 'French KZN', 'VOX Telecom', 'Netelligent', 'ASI-Bestsure', 'Other'] %}
+            {% for r in resellers %}
+            <option value="{{ r }}" {% if client and client.reseller == r %}selected{% endif %}>{{ r }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Country</label>
+          <input type="text" name="country" class="form-input" value="{{ client.country if client and client.country else 'South Africa' }}">
+        </div>
+      </div>
+
+      <!-- Right column: Contact info -->
+      <div>
+        <div class="form-group">
+          <label class="form-label">Contact Name *</label>
+          <input type="text" name="contact_name" class="form-input" required value="{{ contact.name if contact else '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email *</label>
+          <input type="email" name="contact_email" class="form-input" required value="{{ contact.email if contact else '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Phone</label>
+          <input type="tel" name="contact_phone" class="form-input" placeholder="+27" value="{{ contact.phone if contact and contact.phone else '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Role</label>
+          <input type="text" name="contact_role" class="form-input" placeholder="e.g. IT Manager, CFO" value="{{ contact.role if contact and contact.role else '' }}">
+        </div>
+      </div>
+    </div>
+
+    <!-- Full-width notes -->
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea name="notes" class="form-input">{{ client.notes if client and client.notes else '' }}</textarea>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save Client</button>
+      <a href="{% if client %}/crm/clients/{{ client.id }}{% else %}/crm/clients{% endif %}" class="btn">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

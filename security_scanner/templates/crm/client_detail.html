@@ -1,0 +1,237 @@
+{% extends "crm/_base_crm.html" %}
+
+{% block title %}{{ client.company_name }}{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="page-header">
+  <div class="flex items-center gap-8 flex-wrap">
+    <h1 class="page-title">{{ client.company_name }}</h1>
+    <span class="stage-pill {{ client.pipeline_stage }}">{{ client.pipeline_stage }}</span>
+    {% if client.domain %}
+    <span class="domain-badge">{{ client.domain }}</span>
+    {% endif %}
+  </div>
+  <a href="/crm/clients/{{ client.id }}/edit" class="btn">Edit</a>
+</div>
+
+<!-- Info grid -->
+<div class="card">
+  <div class="info-grid">
+    <div>
+      <div class="info-item-label">Industry</div>
+      <div class="info-item-value">{{ client.industry or '—' }}</div>
+    </div>
+    <div>
+      <div class="info-item-label">Annual Revenue</div>
+      <div class="info-item-value">{{ client.annual_revenue | zar if client.annual_revenue else '—' }}</div>
+    </div>
+    <div>
+      <div class="info-item-label">Employees</div>
+      <div class="info-item-value">{{ client.employee_count or '—' }}</div>
+    </div>
+    <div>
+      <div class="info-item-label">Reseller</div>
+      <div class="info-item-value">{{ client.reseller or '—' }}</div>
+    </div>
+    <div>
+      <div class="info-item-label">Country</div>
+      <div class="info-item-value">{{ client.country or '—' }}</div>
+    </div>
+    {% if client.trading_as %}
+    <div>
+      <div class="info-item-label">Trading As</div>
+      <div class="info-item-value">{{ client.trading_as }}</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Contact info -->
+{% if contacts %}
+<div class="card">
+  <div class="card-title">Contact</div>
+  {% for c in contacts %}
+  <div class="info-grid">
+    <div>
+      <div class="info-item-label">Name</div>
+      <div class="info-item-value">{{ c.name }}</div>
+    </div>
+    <div>
+      <div class="info-item-label">Email</div>
+      <div class="info-item-value"><a href="mailto:{{ c.email }}">{{ c.email }}</a></div>
+    </div>
+    <div>
+      <div class="info-item-label">Phone</div>
+      <div class="info-item-value">{{ c.phone or '—' }}</div>
+    </div>
+    <div>
+      <div class="info-item-label">Role</div>
+      <div class="info-item-value">{{ c.role or '—' }}</div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Actions bar -->
+<div class="actions-bar">
+  <a href="/?domain={{ client.domain }}" class="btn btn-primary btn-sm">Run Scan</a>
+  <form method="POST" action="/crm/clients/{{ client.id }}/link-scan" class="inline-form">
+    <input type="text" name="scan_id" class="form-input" placeholder="Scan ID" style="width: 120px; padding: 4px 10px; font-size: 0.82rem;">
+    <button type="submit" class="btn btn-sm">Link Scan</button>
+  </form>
+  <a href="/crm/clients/{{ client.id }}/quotes/new" class="btn btn-sm">New Quote</a>
+  <a href="/crm/clients/{{ client.id }}/invoices/new" class="btn btn-sm">New Invoice</a>
+</div>
+
+<!-- Scans -->
+<div class="card">
+  <div class="card-title">Scans</div>
+  {% if scans %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Domain</th>
+        <th>Risk Score</th>
+        <th>Risk Level</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in scans %}
+      <tr>
+        <td>{{ s.scan_date }}</td>
+        <td style="font-family: monospace;">{{ s.domain }}</td>
+        <td><span class="text-bold">{{ s.risk_score }}/100</span></td>
+        <td><span class="stage-pill {{ 'bound' if s.risk_level == 'Low' else 'scanned' if s.risk_level == 'Medium' else 'quoted' if s.risk_level == 'High' else 'lead' }}">{{ s.risk_level }}</span></td>
+        <td><a href="/results/{{ s.scan_id }}" class="btn btn-sm">View</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No scans linked yet. Run a scan or link an existing one.</div>
+  {% endif %}
+</div>
+
+<!-- Quotes -->
+<div class="card">
+  <div class="card-title">Quotes</div>
+  {% if quotes %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Cover Limit</th>
+        <th>Premium</th>
+        <th>Status</th>
+        <th>Valid Until</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for q in quotes %}
+      <tr>
+        <td>{{ q.created_at }}</td>
+        <td>{{ q.cover_limit | zar }}</td>
+        <td>{{ q.annual_premium | zar }}</td>
+        <td><span class="status-pill {{ q.status }}">{{ q.status }}</span></td>
+        <td>{{ q.valid_until or '—' }}</td>
+        <td class="flex gap-8">
+          {% if q.status == 'pending' or q.status == 'draft' %}
+          <form method="POST" action="/crm/quotes/{{ q.id }}/accept" style="display:inline;">
+            <button type="submit" class="btn btn-sm btn-success">Accept</button>
+          </form>
+          <form method="POST" action="/crm/quotes/{{ q.id }}/decline" style="display:inline;">
+            <button type="submit" class="btn btn-sm btn-danger">Decline</button>
+          </form>
+          {% endif %}
+          {% if q.status == 'accepted' %}
+          <form method="POST" action="/crm/quotes/{{ q.id }}/bind" style="display:inline;">
+            <button type="submit" class="btn btn-sm btn-primary">Bind</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No quotes yet. <a href="/crm/clients/{{ client.id }}/quotes/new">Create a quote</a>.</div>
+  {% endif %}
+</div>
+
+<!-- Policies -->
+<div class="card">
+  <div class="card-title">Policies</div>
+  {% if policies %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Policy #</th>
+        <th>Cover</th>
+        <th>Premium</th>
+        <th>Inception</th>
+        <th>Expiry</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in policies %}
+      <tr>
+        <td class="text-bold">{{ p.policy_number }}</td>
+        <td>{{ p.cover_limit | zar }}</td>
+        <td>{{ p.annual_premium | zar }}</td>
+        <td>{{ p.inception_date }}</td>
+        <td>{{ p.expiry_date }}</td>
+        <td><span class="status-pill {{ p.status }}">{{ p.status }}</span></td>
+        <td>
+          {% if p.status == 'active' %}
+          <form method="POST" action="/crm/policies/{{ p.id }}/renew" style="display:inline;">
+            <button type="submit" class="btn btn-sm btn-primary">Renew</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No policies yet.</div>
+  {% endif %}
+</div>
+
+<!-- Invoices -->
+<div class="card">
+  <div class="card-title">Invoices</div>
+  {% if invoices %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Invoice #</th>
+        <th>Date</th>
+        <th>Total</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for inv in invoices %}
+      <tr>
+        <td class="text-bold">{{ inv.invoice_number }}</td>
+        <td>{{ inv.issue_date }}</td>
+        <td>{{ inv.total | zar }}</td>
+        <td><span class="status-pill {{ inv.status }}">{{ inv.status }}</span></td>
+        <td><a href="/crm/invoices/{{ inv.id }}" class="btn btn-sm">View</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">No invoices yet. <a href="/crm/clients/{{ client.id }}/invoices/new">Create an invoice</a>.</div>
+  {% endif %}
+</div>
+{% endblock %}

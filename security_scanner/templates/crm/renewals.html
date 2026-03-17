@@ -1,0 +1,61 @@
+{% extends "crm/_base_crm.html" %}
+
+{% block title %}Upcoming Renewals{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Upcoming Renewals</h1>
+</div>
+
+<!-- Filter tabs -->
+<div class="filter-tabs">
+  <a href="/crm/policies/renewals?days=30" class="filter-tab {% if active_days == 30 %}active{% endif %}">30 Days</a>
+  <a href="/crm/policies/renewals?days=60" class="filter-tab {% if active_days == 60 %}active{% endif %}">60 Days</a>
+  <a href="/crm/policies/renewals?days=90" class="filter-tab {% if active_days == 90 %}active{% endif %}">90 Days</a>
+</div>
+
+{% if renewals %}
+<div class="card mb-0" style="padding: 0; overflow: hidden;">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Policy #</th>
+        <th>Client</th>
+        <th>Cover</th>
+        <th>Premium</th>
+        <th>Inception</th>
+        <th>Expiry</th>
+        <th>Days Left</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in renewals %}
+      <tr>
+        <td class="text-bold">{{ r.policy_number }}</td>
+        <td><a href="/crm/clients/{{ r.client_id }}">{{ r.company_name }}</a></td>
+        <td style="font-family: monospace;">{{ r.cover_limit | zar }}</td>
+        <td style="font-family: monospace;">{{ r.annual_premium | zar }}</td>
+        <td>{{ r.inception_date }}</td>
+        <td>{{ r.expiry_date }}</td>
+        <td>
+          <span class="{% if r.days_left <= 14 %}text-red text-bold{% elif r.days_left <= 30 %}text-green{% endif %}">
+            {{ r.days_left }}
+          </span>
+        </td>
+        <td>
+          <form method="POST" action="/crm/policies/{{ r.id }}/renew" style="display:inline;">
+            <button type="submit" class="btn btn-sm btn-primary">Renew</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <div class="empty-state">No policies expiring within the next {{ active_days }} days.</div>
+</div>
+{% endif %}
+{% endblock %}

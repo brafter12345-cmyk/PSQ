@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}CRM{% endblock %} — PHISHIELD</title>
+  <style>
+    :root {
+      --bg: #0f1117; --surface: #1a1d27; --surface2: #222636; --border: #2e3347;
+      --text: #e2e8f0; --muted: #7c85a2; --low: #22c55e; --medium: #f59e0b;
+      --high: #f97316; --critical: #ef4444; --blue: #3b82f6; --radius: 12px;
+      --purple: #8b5cf6; --cyan: #06b6d4;
+      --sidebar-w: 220px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; line-height: 1.6; }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0;
+      width: var(--sidebar-w); background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      padding: 20px 0; z-index: 100;
+    }
+    .sidebar-logo {
+      font-size: 1.1rem; font-weight: 800; color: var(--blue);
+      padding: 0 20px 24px; letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border); margin-bottom: 8px;
+    }
+    .sidebar-nav { list-style: none; padding: 8px 0; flex: 1; }
+    .sidebar-nav li a {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 20px; color: var(--muted);
+      text-decoration: none; font-size: 0.9rem; font-weight: 500;
+      border-left: 3px solid transparent;
+      transition: all 0.15s ease;
+    }
+    .sidebar-nav li a:hover {
+      color: var(--text); background: var(--surface2);
+    }
+    .sidebar-nav li a.active {
+      color: var(--blue); border-left-color: var(--blue);
+      background: rgba(59, 130, 246, 0.08);
+    }
+    .sidebar-nav li a .nav-icon { width: 18px; text-align: center; font-size: 1rem; }
+    .sidebar-divider {
+      height: 1px; background: var(--border); margin: 8px 16px;
+    }
+
+    /* ── Main ── */
+    .main {
+      margin-left: var(--sidebar-w);
+      padding: 28px 32px;
+      min-height: 100vh;
+    }
+    .page-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 24px; flex-wrap: wrap; gap: 12px;
+    }
+    .page-title { font-size: 1.4rem; font-weight: 700; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px; margin-bottom: 20px;
+    }
+    .card-title {
+      font-size: 0.95rem; font-weight: 700; margin-bottom: 14px;
+      padding-bottom: 10px; border-bottom: 1px solid var(--border);
+    }
+
+    /* ── Stat grid ── */
+    .stat-grid {
+      display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap;
+    }
+    .stat-card {
+      flex: 1; min-width: 180px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 18px 20px;
+    }
+    .stat-number {
+      font-size: 1.6rem; font-weight: 800; line-height: 1.2;
+    }
+    .stat-label {
+      font-size: 0.78rem; color: var(--muted); margin-top: 4px;
+      text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600;
+    }
+
+    /* ── Tables ── */
+    .data-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+    .data-table thead th {
+      text-align: left; padding: 10px 12px;
+      font-size: 0.75rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      color: var(--muted); border-bottom: 1px solid var(--border);
+    }
+    .data-table tbody td {
+      padding: 10px 12px; border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    .data-table tbody tr:hover { background: var(--surface2); }
+    .data-table tbody tr:last-child td { border-bottom: none; }
+    .data-table a { color: var(--blue); text-decoration: none; }
+    .data-table a:hover { text-decoration: underline; }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: 6px; padding: 8px 18px;
+      border: 1px solid var(--border); border-radius: 8px;
+      background: var(--surface2); color: var(--text);
+      font-size: 0.85rem; font-weight: 600; cursor: pointer;
+      text-decoration: none; transition: all 0.15s ease;
+      font-family: inherit; line-height: 1.4;
+    }
+    .btn:hover { border-color: var(--muted); }
+    .btn-primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .btn-primary:hover { background: #2563eb; border-color: #2563eb; }
+    .btn-success { background: var(--low); border-color: var(--low); color: #fff; }
+    .btn-success:hover { background: #16a34a; border-color: #16a34a; }
+    .btn-danger { background: var(--critical); border-color: var(--critical); color: #fff; }
+    .btn-danger:hover { background: #dc2626; border-color: #dc2626; }
+    .btn-sm { padding: 4px 12px; font-size: 0.78rem; border-radius: 6px; }
+
+    /* ── Badge / Pills ── */
+    .stage-pill {
+      display: inline-block; padding: 2px 10px;
+      border-radius: 999px; font-size: 0.72rem;
+      font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .stage-pill.lead { background: rgba(59,130,246,0.15); color: var(--blue); }
+    .stage-pill.scanned { background: rgba(245,158,11,0.15); color: var(--medium); }
+    .stage-pill.quoted { background: rgba(139,92,246,0.15); color: var(--purple); }
+    .stage-pill.bound { background: rgba(34,197,94,0.15); color: var(--low); }
+    .stage-pill.renewal { background: rgba(6,182,212,0.15); color: var(--cyan); }
+
+    .status-pill {
+      display: inline-block; padding: 2px 10px;
+      border-radius: 999px; font-size: 0.72rem;
+      font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .status-pill.active, .status-pill.accepted, .status-pill.paid {
+      background: rgba(34,197,94,0.15); color: var(--low);
+    }
+    .status-pill.pending, .status-pill.draft {
+      background: rgba(245,158,11,0.15); color: var(--medium);
+    }
+    .status-pill.declined, .status-pill.cancelled, .status-pill.overdue {
+      background: rgba(239,68,68,0.15); color: var(--critical);
+    }
+    .status-pill.expired {
+      background: rgba(124,133,162,0.15); color: var(--muted);
+    }
+    .status-pill.partial {
+      background: rgba(6,182,212,0.15); color: var(--cyan);
+    }
+
+    /* ── Forms ── */
+    .form-group { margin-bottom: 16px; }
+    .form-label {
+      display: block; font-size: 0.8rem; font-weight: 600;
+      color: var(--muted); margin-bottom: 6px;
+      text-transform: uppercase; letter-spacing: 0.3px;
+    }
+    .form-input {
+      width: 100%; padding: 9px 12px;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text); font-size: 0.88rem;
+      font-family: inherit; transition: border-color 0.15s;
+    }
+    .form-input:focus {
+      outline: none; border-color: var(--blue);
+    }
+    select.form-input { cursor: pointer; }
+    textarea.form-input { resize: vertical; min-height: 80px; }
+    .form-row {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    }
+    .form-actions {
+      padding-top: 16px; border-top: 1px solid var(--border);
+      display: flex; gap: 10px; margin-top: 8px;
+    }
+
+    /* ── Filter tabs ── */
+    .filter-tabs {
+      display: flex; gap: 4px; margin-bottom: 20px;
+      border-bottom: 1px solid var(--border); padding-bottom: 0;
+    }
+    .filter-tab {
+      padding: 8px 16px; font-size: 0.82rem; font-weight: 600;
+      color: var(--muted); text-decoration: none;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+    }
+    .filter-tab:hover { color: var(--text); }
+    .filter-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+    /* ── Utilities ── */
+    .text-muted { color: var(--muted); }
+    .text-green { color: var(--low); }
+    .text-red { color: var(--critical); }
+    .text-blue { color: var(--blue); }
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+    .text-bold { font-weight: 700; }
+    .mb-0 { margin-bottom: 0; }
+    .mt-12 { margin-top: 12px; }
+    .gap-8 { gap: 8px; }
+    .flex { display: flex; }
+    .flex-wrap { flex-wrap: wrap; }
+    .items-center { align-items: center; }
+    .justify-between { justify-content: space-between; }
+    .inline-form { display: inline-flex; align-items: center; gap: 6px; }
+    .domain-badge {
+      background: var(--surface2); border: 1px solid var(--border);
+      padding: 3px 12px; border-radius: 999px; font-size: 0.82rem;
+      font-weight: 600; font-family: monospace;
+    }
+    .info-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .info-item-label {
+      font-size: 0.72rem; color: var(--muted); text-transform: uppercase;
+      letter-spacing: 0.3px; font-weight: 600;
+    }
+    .info-item-value { font-size: 0.92rem; font-weight: 600; margin-top: 2px; }
+    .empty-state {
+      text-align: center; padding: 32px 20px; color: var(--muted);
+      font-size: 0.88rem;
+    }
+    .section-title {
+      font-size: 0.95rem; font-weight: 700; margin-bottom: 14px;
+    }
+    .actions-bar {
+      display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px;
+    }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+    @media (max-width: 900px) {
+      .sidebar { width: 60px; overflow: hidden; }
+      .sidebar-logo { font-size: 0; padding: 0 10px 20px; }
+      .sidebar-nav li a span { display: none; }
+      .main { margin-left: 60px; padding: 20px 16px; }
+      .form-row, .two-col { grid-template-columns: 1fr; }
+      .stat-grid { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="sidebar-logo">PHISHIELD CRM</div>
+    <ul class="sidebar-nav">
+      <li><a href="/crm/" class="{% if request.path == '/crm/' %}active{% endif %}">
+        <span class="nav-icon">&#9634;</span><span>Dashboard</span>
+      </a></li>
+      <li><a href="/crm/clients" class="{% if '/crm/clients' in request.path %}active{% endif %}">
+        <span class="nav-icon">&#9823;</span><span>Clients</span>
+      </a></li>
+      <li><a href="/crm/policies/renewals" class="{% if '/crm/policies/renewals' in request.path %}active{% endif %}">
+        <span class="nav-icon">&#8635;</span><span>Renewals</span>
+      </a></li>
+      <div class="sidebar-divider"></div>
+      <li><a href="/">
+        <span class="nav-icon">&#9881;</span><span>Scanner</span>
+      </a></li>
+    </ul>
+  </nav>
+
+  <main class="main">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <div class="card" style="border-left: 3px solid {% if category == 'error' %}var(--critical){% else %}var(--low){% endif %}; margin-bottom: 16px; padding: 12px 16px; font-size: 0.88rem;">
+      {{ message }}
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

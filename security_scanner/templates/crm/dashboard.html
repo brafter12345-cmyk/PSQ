@@ -1,0 +1,133 @@
+{% extends "crm/_base_crm.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">Dashboard</h1>
+</div>
+
+<!-- Stats -->
+<div class="stat-grid">
+  <div class="stat-card">
+    <div class="stat-number">{{ pipeline.total }}</div>
+    <div class="stat-label">Total Clients</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number">{{ pipeline.bound }}</div>
+    <div class="stat-label">Active Policies</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number">{{ revenue.month | zar }}</div>
+    <div class="stat-label">Revenue This Month</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-number {% if overdue|length > 0 %}text-red{% endif %}">{{ overdue|length }}</div>
+    <div class="stat-label">Overdue Invoices</div>
+  </div>
+</div>
+
+<!-- Pipeline Funnel -->
+<div class="card">
+  <div class="card-title">Pipeline</div>
+  {% set stages = [
+    ('lead', 'Lead', pipeline.lead, 'var(--blue)'),
+    ('scanned', 'Scanned', pipeline.scanned, 'var(--medium)'),
+    ('quoted', 'Quoted', pipeline.quoted, 'var(--purple)'),
+    ('bound', 'Bound', pipeline.bound, 'var(--low)'),
+    ('renewal', 'Renewal', pipeline.renewal, 'var(--cyan)')
+  ] %}
+  <div style="display: flex; border-radius: 8px; overflow: hidden; height: 36px; background: var(--surface2);">
+    {% for key, label, count, color in stages %}
+    {% if count > 0 and pipeline.total > 0 %}
+    <div style="width: {{ (count / pipeline.total * 100) | round(1) }}%; background: {{ color }}; display: flex; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 700; color: #fff; min-width: 40px;" title="{{ label }}: {{ count }}">
+      {{ count }}
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+  <div style="display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap;">
+    {% for key, label, count, color in stages %}
+    <div style="display: flex; align-items: center; gap: 6px; font-size: 0.78rem;">
+      <span style="width: 10px; height: 10px; border-radius: 50%; background: {{ color }}; display: inline-block;"></span>
+      <span class="text-muted">{{ label }}</span>
+      <span class="text-bold">{{ count }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Two-col: Renewals + Overdue -->
+<div class="two-col">
+  <!-- Upcoming Renewals -->
+  <div class="card">
+    <div class="card-title">Upcoming Renewals</div>
+    {% if renewals %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Policy #</th>
+          <th>Client</th>
+          <th>Expiry</th>
+          <th>Days Left</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in renewals %}
+        <tr>
+          <td>{{ r.policy_number }}</td>
+          <td><a href="/crm/clients/{{ r.client_id }}">{{ r.company_name }}</a></td>
+          <td>{{ r.expiry_date }}</td>
+          <td>
+            {% set days = (r.expiry_date | string | default('') ) %}
+            <span class="{% if r.days_left is defined and r.days_left <= 14 %}text-red{% elif r.days_left is defined and r.days_left <= 30 %}text-green{% endif %}">
+              {{ r.days_left if r.days_left is defined else '—' }}
+            </span>
+          </td>
+          <td>
+            <form method="POST" action="/crm/policies/{{ r.id }}/renew" style="display:inline;">
+              <button type="submit" class="btn btn-sm btn-primary">Renew</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No upcoming renewals</div>
+    {% endif %}
+  </div>
+
+  <!-- Overdue Invoices -->
+  <div class="card">
+    <div class="card-title">Overdue Invoices</div>
+    {% if overdue %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Invoice #</th>
+          <th>Client</th>
+          <th>Amount</th>
+          <th>Due Date</th>
+          <th>Overdue</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inv in overdue %}
+        <tr>
+          <td><a href="/crm/invoices/{{ inv.id }}">{{ inv.invoice_number }}</a></td>
+          <td><a href="/crm/clients/{{ inv.client_id }}">{{ inv.company_name }}</a></td>
+          <td>{{ inv.total | zar }}</td>
+          <td>{{ inv.due_date }}</td>
+          <td class="text-red">{{ inv.days_overdue if inv.days_overdue is defined else '—' }} days</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No overdue invoices</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
