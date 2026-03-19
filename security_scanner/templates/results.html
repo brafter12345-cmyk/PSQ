@@ -334,11 +334,11 @@
         <div class="stat-lbl">Breaches</div>
       </div>
       <div class="stat">
-        <div class="stat-val {% if cats.exposed_admin.critical_count > 0 %}color-red{% elif cats.exposed_admin.high_count > 0 %}color-amber{% else %}color-green{% endif %}">{{ (cats.exposed_admin.critical_count | default(0)) + (cats.exposed_admin.high_count | default(0)) }}</div>
+        <div class="stat-val {% if cats.exposed_admin.get('critical_count', 0) > 0 %}color-red{% elif cats.exposed_admin.get('high_count', 0) > 0 %}color-amber{% else %}color-green{% endif %}">{{ (cats.exposed_admin.critical_count | default(0)) + (cats.exposed_admin.high_count | default(0)) }}</div>
         <div class="stat-lbl">Exposed Panels</div>
       </div>
       <div class="stat">
-        <div class="stat-val {% if cats.high_risk_protocols.critical_count > 0 %}color-red{% else %}color-green{% endif %}">{{ cats.high_risk_protocols.critical_count | default(0) }}</div>
+        <div class="stat-val {% if cats.high_risk_protocols.get('critical_count', 0) > 0 %}color-red{% else %}color-green{% endif %}">{{ cats.high_risk_protocols.critical_count | default(0) }}</div>
         <div class="stat-lbl">DB/Service Leaks</div>
       </div>
       <div class="stat">
