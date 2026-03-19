@@ -1,0 +1,1946 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>My Life Planner ✨</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+  <style>
+    /* ===== Design Tokens ===== */
+    :root {
+      --bg-primary: #0a0e1a;
+      --bg-gradient: linear-gradient(135deg, #0a0e1a 0%, #0d1b2a 40%, #1b2838 100%);
+      --card-bg: rgba(255,255,255,0.04);
+      --card-border: rgba(255,255,255,0.07);
+      --card-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      --glass-blur: blur(24px);
+      --accent: #00b4d8;
+      --accent-glow: rgba(0,180,216,0.3);
+      --accent-dark: #0077b6;
+      --accent-light: #48cae4;
+      --accent-gradient: linear-gradient(135deg, #0077b6, #00b4d8, #48cae4);
+      --success: #2ec4b6;
+      --success-glow: rgba(46,196,182,0.2);
+      --warning: #ffb703;
+      --danger: #e63946;
+      --pink: #f72585;
+      --purple: #7209b7;
+      --text-primary: #e0e6ed;
+      --text-secondary: rgba(224,230,237,0.6);
+      --text-heading: #ffffff;
+      --text-muted: rgba(224,230,237,0.35);
+      --font-main: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --radius-sm: 10px;
+      --radius-md: 14px;
+      --radius-lg: 22px;
+      --ease: cubic-bezier(0.4,0,0.2,1);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 15px; scroll-behavior: smooth; }
+    body {
+      font-family: var(--font-main);
+      background: var(--bg-gradient);
+      color: var(--text-primary);
+      min-height: 100vh;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ===== Header ===== */
+    .site-header {
+      background: linear-gradient(135deg, #001d3d 0%, #003566 50%, #00497a 100%);
+      padding: 18px 24px;
+      border-bottom: 1px solid rgba(0,180,216,0.15);
+      position: relative;
+    }
+    .site-header::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--accent-gradient);
+      opacity: 0.7;
+    }
+    .header-inner {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .header-left { display: flex; align-items: center; gap: 14px; }
+    .header-icon {
+      width: 44px; height: 44px;
+      background: var(--accent-gradient);
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+    .header-title h1 { font-size: 1.3rem; font-weight: 800; color: var(--text-heading); }
+    .header-title p { font-size: 0.8rem; color: var(--text-secondary); }
+    .header-right { display: flex; gap: 20px; align-items: center; }
+    .header-stat {
+      text-align: center;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-sm);
+      padding: 8px 16px;
+    }
+    .header-stat .stat-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); }
+    .header-stat .stat-value { font-size: 1rem; font-weight: 700; color: var(--accent); }
+    .header-stat .stat-value.pink { color: var(--pink); }
+
+    /* ===== Nav Tabs ===== */
+    .nav-tabs {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 20px 24px 0;
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-bottom: none;
+      border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+      padding: 10px 20px;
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s var(--ease);
+      display: flex; align-items: center; gap: 7px;
+      font-family: var(--font-main);
+    }
+    .tab-btn:hover { color: var(--text-primary); background: rgba(255,255,255,0.07); }
+    .tab-btn.active {
+      background: rgba(0,180,216,0.1);
+      border-color: rgba(0,180,216,0.3);
+      color: var(--accent);
+    }
+    .tab-icon { font-size: 1rem; }
+
+    /* ===== Main Content ===== */
+    .main-wrapper {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px 40px;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* ===== Cards ===== */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      backdrop-filter: var(--glass-blur);
+      box-shadow: var(--card-shadow);
+      margin-bottom: 16px;
+    }
+    .card-header {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 18px;
+    }
+    .card-icon { font-size: 1.3rem; }
+    .card-title { font-size: 1rem; font-weight: 700; color: var(--text-heading); }
+    .card-subtitle { font-size: 0.78rem; color: var(--text-secondary); margin-top: 2px; }
+    .section-label {
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; }
+    @media(max-width: 700px) {
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      .nav-tabs { gap: 4px; }
+      .tab-btn { padding: 8px 12px; font-size: 0.78rem; }
+    }
+
+    /* ===== Weekly Schedule ===== */
+    .week-grid {
+      display: grid;
+      grid-template-columns: 60px repeat(7,1fr);
+      gap: 2px;
+      font-size: 0.72rem;
+    }
+    .wg-header {
+      background: rgba(0,180,216,0.08);
+      border: 1px solid rgba(0,180,216,0.15);
+      border-radius: 8px;
+      padding: 8px 4px;
+      text-align: center;
+      font-weight: 700;
+      color: var(--text-heading);
+    }
+    .wg-time {
+      color: var(--text-muted);
+      font-size: 0.65rem;
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-end;
+      padding-right: 8px;
+      padding-top: 4px;
+    }
+    .wg-cell {
+      min-height: 20px;
+      border-radius: 4px;
+      position: relative;
+    }
+    .wg-block {
+      border-radius: 6px;
+      padding: 3px 5px;
+      font-weight: 600;
+      font-size: 0.65rem;
+      line-height: 1.2;
+      text-align: center;
+    }
+    .block-teaching { background: rgba(0,180,216,0.25); border: 1px solid rgba(0,180,216,0.5); color: var(--accent-light); }
+    .block-gym { background: rgba(46,196,182,0.2); border: 1px solid rgba(46,196,182,0.4); color: var(--success); }
+    .block-self { background: rgba(247,37,133,0.15); border: 1px solid rgba(247,37,133,0.35); color: #f9a8d4; }
+    .block-book { background: rgba(114,9,183,0.2); border: 1px solid rgba(114,9,183,0.4); color: #c084fc; }
+    .block-wedding { background: rgba(255,183,3,0.15); border: 1px solid rgba(255,183,3,0.35); color: var(--warning); }
+    .block-sleep { background: rgba(30,30,60,0.6); border: 1px solid rgba(100,100,200,0.2); color: #94a3b8; }
+    .block-free { background: rgba(255,255,255,0.02); }
+
+    /* ===== Day Schedule ===== */
+    .day-timeline { display: flex; flex-direction: column; gap: 8px; }
+    .time-slot {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--card-border);
+      background: rgba(255,255,255,0.02);
+      transition: all 0.2s var(--ease);
+    }
+    .time-slot:hover { background: rgba(255,255,255,0.05); }
+    .time-slot.teaching { border-color: rgba(0,180,216,0.3); background: rgba(0,180,216,0.06); }
+    .time-slot.gym { border-color: rgba(46,196,182,0.3); background: rgba(46,196,182,0.05); }
+    .time-slot.self-care { border-color: rgba(247,37,133,0.25); background: rgba(247,37,133,0.04); }
+    .time-slot.book { border-color: rgba(114,9,183,0.3); background: rgba(114,9,183,0.05); }
+    .time-slot.wedding { border-color: rgba(255,183,3,0.25); background: rgba(255,183,3,0.04); }
+    .time-slot.sleep { border-color: rgba(100,100,200,0.2); background: rgba(20,20,50,0.4); }
+    .slot-time { font-size: 0.72rem; color: var(--text-secondary); min-width: 90px; font-weight: 600; margin-top: 2px; }
+    .slot-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; flex-shrink: 0; }
+    .slot-dot.cyan { background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+    .slot-dot.green { background: var(--success); }
+    .slot-dot.pink { background: var(--pink); }
+    .slot-dot.purple { background: #9b5de5; }
+    .slot-dot.yellow { background: var(--warning); }
+    .slot-dot.dark { background: #475569; }
+    .slot-dot.gray { background: #64748b; }
+    .slot-info { flex: 1; }
+    .slot-title { font-weight: 600; font-size: 0.88rem; color: var(--text-heading); }
+    .slot-detail { font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px; }
+    .slot-check { margin-left: auto; }
+    .slot-check input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; margin-top: 2px; }
+
+    /* ===== Day Selector ===== */
+    .day-selector { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+    .day-btn {
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--card-border);
+      background: var(--card-bg);
+      color: var(--text-secondary);
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s var(--ease);
+      font-family: var(--font-main);
+    }
+    .day-btn:hover { border-color: rgba(0,180,216,0.3); color: var(--text-primary); }
+    .day-btn.active { background: rgba(0,180,216,0.12); border-color: rgba(0,180,216,0.4); color: var(--accent); }
+
+    /* ===== Habit Tracker ===== */
+    .habit-grid { overflow-x: auto; }
+    .habit-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    .habit-table th {
+      padding: 8px 12px;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      text-align: center;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .habit-table th:first-child { text-align: left; }
+    .habit-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.03);
+      text-align: center;
+      vertical-align: middle;
+    }
+    .habit-table td:first-child { text-align: left; color: var(--text-primary); font-weight: 500; }
+    .habit-table tr:hover td { background: rgba(255,255,255,0.02); }
+    .habit-emoji { font-size: 1rem; margin-right: 6px; }
+    .habit-cb { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; }
+    .habit-row-progress { height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; margin-top: 4px; }
+    .habit-row-fill { height: 100%; border-radius: 2px; background: var(--accent-gradient); transition: width 0.4s var(--ease); }
+    .streak-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(255,183,3,0.12);
+      border: 1px solid rgba(255,183,3,0.25);
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 0.72rem;
+      color: var(--warning);
+      font-weight: 600;
+    }
+
+    /* ===== Book Writing ===== */
+    .tip-card {
+      background: rgba(114,9,183,0.08);
+      border: 1px solid rgba(114,9,183,0.2);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .tip-card h4 { font-size: 0.88rem; font-weight: 700; color: #c084fc; margin-bottom: 6px; }
+    .tip-card p { font-size: 0.8rem; color: var(--text-secondary); line-height: 1.7; }
+    .writing-prompt {
+      background: rgba(0,180,216,0.05);
+      border: 1px solid rgba(0,180,216,0.15);
+      border-left: 3px solid var(--accent);
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      padding: 14px 16px;
+      font-size: 0.85rem;
+      color: var(--text-primary);
+      font-style: italic;
+      margin-bottom: 12px;
+      cursor: pointer;
+    }
+    .writing-prompt:hover { background: rgba(0,180,216,0.09); }
+    .word-counter {
+      display: flex; align-items: center; gap: 12px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-md);
+      padding: 16px;
+    }
+    .word-counter input[type=number] {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      color: var(--text-heading);
+      font-size: 1.1rem;
+      font-weight: 700;
+      width: 100px;
+      padding: 8px 12px;
+      text-align: center;
+      font-family: var(--font-main);
+    }
+    .word-counter input:focus { outline: none; border-color: var(--accent); }
+    .wc-label { font-size: 0.8rem; color: var(--text-secondary); }
+    .wc-total { font-size: 1.3rem; font-weight: 800; color: var(--accent); }
+    .progress-bar-wrap { background: rgba(255,255,255,0.06); border-radius: 20px; height: 8px; margin-top: 8px; overflow: hidden; }
+    .progress-bar-fill { height: 100%; border-radius: 20px; background: var(--accent-gradient); transition: width 0.5s var(--ease); }
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 20px;
+      border-radius: var(--radius-sm);
+      font-size: 0.83rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s var(--ease);
+      font-family: var(--font-main);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border: none;
+    }
+    .btn-primary {
+      background: var(--accent-gradient);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(0,180,216,0.3);
+    }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(0,180,216,0.45); }
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--card-border);
+      color: var(--text-secondary);
+    }
+    .btn-outline:hover { border-color: rgba(0,180,216,0.4); color: var(--accent); }
+
+    /* ===== Wedding Planner ===== */
+    .countdown-box {
+      background: linear-gradient(135deg, rgba(255,183,3,0.08), rgba(255,183,3,0.03));
+      border: 1px solid rgba(255,183,3,0.25);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    .countdown-box h2 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.12em; color: var(--warning); margin-bottom: 12px; }
+    .countdown-nums { display: flex; justify-content: center; gap: 20px; }
+    .cd-unit { text-align: center; }
+    .cd-num { font-size: 2.4rem; font-weight: 900; color: var(--warning); line-height: 1; }
+    .cd-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); }
+    .wedding-category {
+      margin-bottom: 4px;
+    }
+    .category-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.2s var(--ease);
+    }
+    .category-header:hover { background: rgba(255,255,255,0.07); }
+    .category-header h4 { font-size: 0.88rem; font-weight: 700; color: var(--text-heading); display: flex; align-items: center; gap: 8px; }
+    .category-progress { font-size: 0.75rem; color: var(--text-secondary); }
+    .category-body { padding: 4px 0; display: none; }
+    .category-body.open { display: block; }
+    .wedding-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 14px;
+      border-radius: var(--radius-sm);
+      transition: background 0.15s;
+    }
+    .wedding-item:hover { background: rgba(255,255,255,0.03); }
+    .wedding-item input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--warning); cursor: pointer; flex-shrink: 0; }
+    .wedding-item label { font-size: 0.82rem; color: var(--text-primary); cursor: pointer; flex: 1; }
+    .wedding-item.done label { text-decoration: line-through; color: var(--text-muted); }
+    .priority-badge {
+      font-size: 0.6rem; padding: 2px 7px; border-radius: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .priority-high { background: rgba(230,57,70,0.15); color: var(--danger); border: 1px solid rgba(230,57,70,0.3); }
+    .priority-med { background: rgba(255,183,3,0.12); color: var(--warning); border: 1px solid rgba(255,183,3,0.25); }
+    .priority-low { background: rgba(46,196,182,0.1); color: var(--success); border: 1px solid rgba(46,196,182,0.2); }
+
+    /* ===== Wellness / Cycle ===== */
+    .cycle-phases { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 20px; }
+    @media(max-width:700px) { .cycle-phases { grid-template-columns: repeat(2,1fr); } }
+    .phase-card {
+      border-radius: var(--radius-md);
+      padding: 14px;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s var(--ease);
+    }
+    .phase-card:hover { transform: translateY(-2px); }
+    .phase-card.active-phase { border-color: var(--accent) !important; box-shadow: 0 0 20px rgba(0,180,216,0.2); }
+    .phase-menstrual { background: rgba(230,57,70,0.1); border-color: rgba(230,57,70,0.2); }
+    .phase-follicular { background: rgba(255,183,3,0.08); border-color: rgba(255,183,3,0.2); }
+    .phase-ovulation { background: rgba(46,196,182,0.1); border-color: rgba(46,196,182,0.2); }
+    .phase-luteal { background: rgba(114,9,183,0.1); border-color: rgba(114,9,183,0.2); }
+    .phase-card h4 { font-size: 0.82rem; font-weight: 700; margin-bottom: 4px; }
+    .phase-card .phase-days { font-size: 0.7rem; color: var(--text-muted); margin-bottom: 8px; }
+    .phase-card p { font-size: 0.72rem; color: var(--text-secondary); line-height: 1.6; }
+    .phase-menstrual h4 { color: #fb7185; }
+    .phase-follicular h4 { color: var(--warning); }
+    .phase-ovulation h4 { color: var(--success); }
+    .phase-luteal h4 { color: #c084fc; }
+    .wellness-tip {
+      background: rgba(0,180,216,0.05);
+      border: 1px solid rgba(0,180,216,0.12);
+      border-radius: var(--radius-md);
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+    .wellness-tip h4 { font-size: 0.85rem; font-weight: 700; color: var(--accent-light); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+    .wellness-tip ul { padding-left: 18px; }
+    .wellness-tip li { font-size: 0.78rem; color: var(--text-secondary); margin-bottom: 4px; line-height: 1.6; }
+    .sleep-tip {
+      background: rgba(20,20,50,0.5);
+      border: 1px solid rgba(100,100,200,0.2);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      display: flex; gap: 12px; align-items: flex-start;
+      margin-bottom: 8px;
+    }
+    .sleep-tip .st-icon { font-size: 1.3rem; flex-shrink: 0; margin-top: 2px; }
+    .sleep-tip h5 { font-size: 0.83rem; font-weight: 700; color: #94a3b8; margin-bottom: 4px; }
+    .sleep-tip p { font-size: 0.76rem; color: var(--text-muted); line-height: 1.6; }
+
+    /* ===== Info Pills ===== */
+    .pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+    .pill-cyan { background: rgba(0,180,216,0.12); color: var(--accent); border: 1px solid rgba(0,180,216,0.25); }
+    .pill-green { background: rgba(46,196,182,0.12); color: var(--success); border: 1px solid rgba(46,196,182,0.25); }
+    .pill-pink { background: rgba(247,37,133,0.1); color: #f9a8d4; border: 1px solid rgba(247,37,133,0.25); }
+    .pill-yellow { background: rgba(255,183,3,0.1); color: var(--warning); border: 1px solid rgba(255,183,3,0.25); }
+
+    /* ===== Misc ===== */
+    .divider { height: 1px; background: var(--card-border); margin: 16px 0; }
+    .text-accent { color: var(--accent); }
+    .text-pink { color: var(--pink); }
+    .text-warning { color: var(--warning); }
+    .text-success { color: var(--success); }
+    .text-muted { color: var(--text-muted); }
+    .mt-12 { margin-top: 12px; }
+    .mt-16 { margin-top: 16px; }
+    .flex-between { display: flex; justify-content: space-between; align-items: center; }
+    .tag { display: inline-block; background: rgba(0,180,216,0.1); border: 1px solid rgba(0,180,216,0.2); border-radius: 6px; padding: 2px 8px; font-size: 0.7rem; color: var(--accent); font-weight: 600; }
+
+    /* ===== Schedule Overview Legend ===== */
+    .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.72rem; color: var(--text-secondary); }
+    .legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+    /* Today highlight */
+    .today-card {
+      background: linear-gradient(135deg, rgba(0,180,216,0.06), rgba(0,119,182,0.04));
+      border-color: rgba(0,180,216,0.2);
+    }
+
+    /* Prompt refresh button */
+    #refreshPrompt {
+      background: transparent;
+      border: 1px solid rgba(114,9,183,0.3);
+      color: #c084fc;
+      border-radius: 8px;
+      padding: 6px 14px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      font-family: var(--font-main);
+      transition: all 0.2s;
+    }
+    #refreshPrompt:hover { background: rgba(114,9,183,0.12); }
+
+    /* Scroll override for week view */
+    .week-scroll { overflow-x: auto; padding-bottom: 8px; }
+
+    /* ===== Period Tracker ===== */
+    .period-status-bar {
+      display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 16px;
+    }
+    @media(max-width:600px){ .period-status-bar { grid-template-columns: repeat(2,1fr); } }
+    .period-stat {
+      background: rgba(247,37,133,0.07);
+      border: 1px solid rgba(247,37,133,0.18);
+      border-radius: var(--radius-md);
+      padding: 12px;
+      text-align: center;
+    }
+    .period-stat .ps-val { font-size: 1.5rem; font-weight: 800; color: #f9a8d4; line-height: 1.1; }
+    .period-stat .ps-lbl { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-top: 3px; }
+    .cycle-bar-wrap { margin: 12px 0; }
+    .cycle-bar-track {
+      height: 10px; border-radius: 10px;
+      background: rgba(255,255,255,0.06);
+      position: relative; overflow: hidden;
+    }
+    .cycle-bar-segment {
+      position: absolute; height: 100%; top: 0;
+      transition: width 0.4s var(--ease);
+    }
+    .seg-menstrual  { background: rgba(230,57,70,0.7);  left: 0; }
+    .seg-follicular { background: rgba(255,183,3,0.6);  }
+    .seg-ovulation  { background: rgba(46,196,182,0.7); }
+    .seg-luteal     { background: rgba(114,9,183,0.55); }
+    .cycle-bar-marker {
+      position: absolute; top: -4px; width: 4px; height: 18px;
+      background: #fff; border-radius: 2px; transform: translateX(-50%);
+      box-shadow: 0 0 8px rgba(255,255,255,0.6);
+      transition: left 0.4s var(--ease);
+    }
+    .cycle-bar-labels {
+      display: flex; justify-content: space-between;
+      font-size: 0.62rem; color: var(--text-muted); margin-top: 4px;
+    }
+    .flow-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+    .flow-btn {
+      padding: 6px 14px; border-radius: 20px; font-size: 0.75rem; font-weight: 600;
+      border: 1px solid rgba(247,37,133,0.25); background: rgba(247,37,133,0.05);
+      color: #f9a8d4; cursor: pointer; font-family: var(--font-main);
+      transition: all 0.15s var(--ease);
+    }
+    .flow-btn:hover, .flow-btn.active { background: rgba(247,37,133,0.2); border-color: rgba(247,37,133,0.5); }
+    .symptom-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .symptom-label { font-size: 0.78rem; color: var(--text-secondary); min-width: 70px; }
+    .mood-btns { display: flex; gap: 6px; }
+    .mood-btn {
+      width: 34px; height: 34px; border-radius: 50%; font-size: 1.1rem;
+      border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s; font-family: var(--font-main);
+    }
+    .mood-btn:hover, .mood-btn.active { background: rgba(247,37,133,0.15); border-color: rgba(247,37,133,0.4); transform: scale(1.15); }
+    .energy-slider { -webkit-appearance: none; width: 100%; height: 4px; border-radius: 4px; background: rgba(255,255,255,0.1); outline: none; }
+    .energy-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%; background: var(--pink); cursor: pointer; box-shadow: 0 0 8px rgba(247,37,133,0.5); }
+    .period-history { max-height: 180px; overflow-y: auto; }
+    .history-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 12px; border-radius: var(--radius-sm);
+      background: rgba(247,37,133,0.04); border: 1px solid rgba(247,37,133,0.1);
+      margin-bottom: 6px; font-size: 0.78rem;
+    }
+    .history-item .hi-date { color: #f9a8d4; font-weight: 600; }
+    .history-item .hi-len  { color: var(--text-muted); }
+    .prediction-card {
+      background: rgba(114,9,183,0.07); border: 1px solid rgba(114,9,183,0.18);
+      border-radius: var(--radius-md); padding: 14px; margin-bottom: 10px;
+    }
+    .prediction-card h5 { font-size: 0.8rem; font-weight: 700; color: #c084fc; margin-bottom: 6px; }
+    .prediction-card p  { font-size: 0.78rem; color: var(--text-secondary); }
+  </style>
+</head>
+<body>
+
+<!-- ===== HEADER ===== -->
+<header class="site-header">
+  <div class="header-inner">
+    <div class="header-left">
+      <div class="header-icon">🌸</div>
+      <div class="header-title">
+        <h1>My Life Planner</h1>
+        <p id="headerDate">Loading...</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="header-stat">
+        <div class="stat-label">Wedding Countdown</div>
+        <div class="stat-value pink" id="weddingDays">—</div>
+      </div>
+      <div class="header-stat">
+        <div class="stat-label">Today's Date</div>
+        <div class="stat-value" id="todayDate">—</div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- ===== TABS ===== -->
+<div class="nav-tabs">
+  <button class="tab-btn active" onclick="switchTab('week')"><span class="tab-icon">📅</span> Week View</button>
+  <button class="tab-btn" onclick="switchTab('today')"><span class="tab-icon">⏰</span> Daily Planner</button>
+  <button class="tab-btn" onclick="switchTab('habits')"><span class="tab-icon">✅</span> Habit Tracker</button>
+  <button class="tab-btn" onclick="switchTab('book')"><span class="tab-icon">📖</span> Book Writing</button>
+  <button class="tab-btn" onclick="switchTab('wedding')"><span class="tab-icon">💍</span> Wedding</button>
+  <button class="tab-btn" onclick="switchTab('wellness')"><span class="tab-icon">🌙</span> Wellness</button>
+</div>
+
+<div class="main-wrapper">
+
+  <!-- ============================== -->
+  <!-- TAB: WEEK VIEW                 -->
+  <!-- ============================== -->
+  <div class="tab-content active" id="tab-week">
+    <div class="card today-card" style="border-radius:0 var(--radius-lg) var(--radius-lg) var(--radius-lg);">
+      <div class="card-header">
+        <span class="card-icon">📅</span>
+        <div>
+          <div class="card-title">Weekly Overview</div>
+          <div class="card-subtitle">Your teaching schedule + suggested life blocks</div>
+        </div>
+      </div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot block-teaching" style="width:14px;height:14px;border-radius:3px;background:rgba(0,180,216,0.3)"></div> Teaching</div>
+        <div class="legend-item"><div class="legend-dot" style="width:14px;height:14px;border-radius:3px;background:rgba(46,196,182,0.3)"></div> Gym / Walk</div>
+        <div class="legend-item"><div class="legend-dot" style="width:14px;height:14px;border-radius:3px;background:rgba(247,37,133,0.25)"></div> Self-care</div>
+        <div class="legend-item"><div class="legend-dot" style="width:14px;height:14px;border-radius:3px;background:rgba(114,9,183,0.3)"></div> Book Writing</div>
+        <div class="legend-item"><div class="legend-dot" style="width:14px;height:14px;border-radius:3px;background:rgba(255,183,3,0.25)"></div> Wedding Planning</div>
+        <div class="legend-item"><div class="legend-dot" style="width:14px;height:14px;border-radius:3px;background:rgba(30,30,60,0.8)"></div> Sleep</div>
+      </div>
+
+      <div class="week-scroll">
+        <!-- Simplified visual overview per day -->
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:10px;min-width:700px;">
+
+          <!-- Monday -->
+          <div>
+            <div style="text-align:center;font-weight:700;font-size:0.78rem;color:var(--accent);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(0,180,216,0.2);">MON</div>
+            <div class="wg-block block-sleep" style="margin-bottom:4px">😴 Sleep<br>22:30–06:30</div>
+            <div class="wg-block block-self" style="margin-bottom:4px">🛁 Self-care<br>06:30–07:30</div>
+            <div class="wg-block block-gym" style="margin-bottom:4px">🏃 Gym<br>07:30–08:30</div>
+            <div class="wg-block block-book" style="margin-bottom:4px">📖 Book<br>09:00–11:00</div>
+            <div class="wg-block block-wedding" style="margin-bottom:4px">💍 Wedding<br>11:00–13:30</div>
+            <div class="wg-block block-teaching" style="margin-bottom:4px">🎓 Teaching<br>14:00–16:00</div>
+            <div class="wg-block block-wedding" style="margin-bottom:4px">💍 Break<br>16:00–19:00</div>
+            <div class="wg-block block-teaching" style="margin-bottom:4px">🎓 Teaching<br>19:00–21:00</div>
+            <div class="wg-block block-sleep" style="margin-bottom:4px">🌙 Wind-down<br>21:00–22:30</div>
+          </div>
+
+          <!-- Tuesday -->
+          <div>
+            <div style="text-align:center;font-weight:700;font-size:0.78rem;color:var(--accent);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(0,180,216,0.2);">TUE</div>
+            <div class="wg-block block-sleep" style="margin-bottom:4px">😴 Sleep<br>22:30–06:30</div>
+            <div class="wg-block block-self" style="margin-bottom:4px">🛁 Self-care<br>06:30–07:30</div>
+            <div class="wg-block block-gym" style="margin-bottom:4px">🏃 Gym<br>07:30–08:30</div>
+            <div class="wg-block block-book" style="margin-bottom:4px">📖 Book<br>08:30–11:00</div>
+            <div class="wg-block block-teaching" style="margin-bottom:4px">🎓 Teaching<br>11:00–12:00</div>
+            <div class="wg-block block-wedding" style="margin-bottom:4px">💍 Wedding<br>12:00–14:00</div>
+            <div class="wg-block block-book" style="margin-bottom:4px">📖 Book<br>14:00–17:00</div>
+            <div class="wg-block block-teaching" style="margin-bottom:4px">🎓 Teaching<br>17:00–21:00</div>
+            <div class="wg-block block-sleep" style="margin-bottom:4px">🌙 Wind-down<br>21:00–22:30</div>
+          </div>
+
+          <!-- Wednesday -->
+          <div>
+            <div style="text-align:center;font-weight:700;font-size:0.78rem;color:var(--accent);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(0,180,216,0.2);">WED</div>
+            <div class="wg-block block-sleep" style="margin-bottom:4px">😴 Sleep<br>22:30–06:30</div>
+            <div class="wg-block block-self" style="margin-bottom:4px">🛁 Self-care<br>06:30–07:30</div>
+            <div class="wg-block block-gym" style="margin-bottom:4px">🏃 Gym<br>07:30–08:30</div>
+            <div class="wg-block block-book" style="margin-bottom:4px">📖 Book<br>09:00–11:00</div>
+            <div class="wg-block block-teaching" style="margin-bottom:4px">🎓 Teaching<br>11:00–17:00</div>
+            <div class="wg-block block-self" style="margin-bottom:4px">🛁 Chores<br>17:00–18:00</div>
+            <div class="wg-block block-wedding" style="margin-bottom:4px">💍 Wedding<br>18:00–20:00</div>
+            <div class="wg-block block-sleep" style="margin-bottom:4px">🌙 Wind-down<br>20:30–22:00</div>
+          </div>
+
+          <!-- Thursday -->
+          <div>
+            <div style="text-align:center;font-weight:700;font-size:0.78rem;color:var(--accent);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(0,180,216,0.2);">THU</div>
+            <div class="wg-block block-sleep" style="margin-bottom:4px">😴 Sleep<br>22:30–06:45</div>
+            <div class="wg-block block-teaching" style="margin-bottom:4px">🎓 Teaching<br>07:45–08:30</div>
+            <div class="wg-block block-self" style="margin-bottom:4px">🛁 Self-care<br>08:30–09:30</div>
+            <div class="wg-block block-gym" style="margin-bottom:4px">🏃 Gym<br>09:30–10:30</div>
+            <div class="wg-block block-book" style="margin-bottom:4px">📖 Book<br>10:30–13:00</div>
+            <div class="wg-block block-wedding" style="margin-bottom:4px">💍 Wedding<br>13:00–17:00</div>
+            <div class="wg-block block-teaching" style="margin-bottom:4px">🎓 Teaching<br>17:00–21:00</div>
+            <div class="wg-block block-sleep" style="margin-bottom:4px">🌙 Wind-down<br>21:00–22:30</div>
+          </div>
+
+          <!-- Friday -->
+          <div>
+            <div style="text-align:center;font-weight:700;font-size:0.78rem;color:var(--accent);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(0,180,216,0.2);">FRI</div>
+            <div class="wg-block block-sleep" style="margin-bottom:4px">😴 Sleep<br>22:30–07:00</div>
+            <div class="wg-block block-self" style="margin-bottom:4px">🛁 Self-care<br>07:00–08:00</div>
+            <div class="wg-block block-gym" style="margin-bottom:4px">🏃 Gym<br>08:00–09:00</div>
+            <div class="wg-block block-free" style="margin-bottom:4px;border:1px solid rgba(255,255,255,0.06)">☕ Prep<br>09:00–10:00</div>
+            <div class="wg-block block-teaching" style="margin-bottom:4px">🎓 Teaching<br>10:00–13:00</div>
+            <div class="wg-block block-free" style="margin-bottom:4px;border:1px solid rgba(255,255,255,0.06)">🍽 Lunch & Rest<br>13:00–15:00</div>
+            <div class="wg-block block-wedding" style="margin-bottom:4px">💍 Wedding<br>15:00–18:00</div>
+            <div class="wg-block block-book" style="margin-bottom:4px">📖 Book<br>18:00–19:30</div>
+            <div class="wg-block block-sleep" style="margin-bottom:4px">🌙 Wind-down<br>21:00–22:30</div>
+          </div>
+
+          <!-- Saturday -->
+          <div>
+            <div style="text-align:center;font-weight:700;font-size:0.78rem;color:var(--success);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(46,196,182,0.2);">SAT</div>
+            <div class="wg-block block-sleep" style="margin-bottom:4px">😴 Sleep<br>22:30–08:00</div>
+            <div class="wg-block block-self" style="margin-bottom:4px">☕ Slow Morning<br>08:00–09:30</div>
+            <div class="wg-block block-gym" style="margin-bottom:4px">🚶 Walk<br>09:30–10:30</div>
+            <div class="wg-block block-wedding" style="margin-bottom:4px">💍 Wedding<br>10:30–12:30</div>
+            <div class="wg-block block-book" style="margin-bottom:4px">📖 Book (opt)<br>12:30–14:00</div>
+            <div class="wg-block block-free" style="margin-bottom:4px;border:1px solid rgba(255,255,255,0.06)">🌿 REST<br>14:00–18:00</div>
+            <div class="wg-block block-free" style="margin-bottom:4px;border:1px solid rgba(255,255,255,0.06)">🎉 Social<br>18:00–21:00</div>
+            <div class="wg-block block-sleep" style="margin-bottom:4px">🌙 Wind-down<br>21:00–22:30</div>
+          </div>
+
+          <!-- Sunday -->
+          <div>
+            <div style="text-align:center;font-weight:700;font-size:0.78rem;color:#94a3b8;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(148,163,184,0.2);">SUN</div>
+            <div class="wg-block block-sleep" style="margin-bottom:4px">😴 Long Sleep<br>22:30–08:30</div>
+            <div class="wg-block block-self" style="margin-bottom:4px">☕ Slow Brunch<br>08:30–10:30</div>
+            <div class="wg-block block-free" style="margin-bottom:4px;border:1px solid rgba(255,255,255,0.06)">🧘 Rest & Reset<br>10:30–13:00</div>
+            <div class="wg-block block-free" style="margin-bottom:4px;border:1px solid rgba(255,255,255,0.06)">📝 Week Prep<br>13:00–14:30</div>
+            <div class="wg-block block-free" style="margin-bottom:4px;border:1px solid rgba(255,255,255,0.06)">🌿 Free Time<br>14:30–21:00</div>
+            <div class="wg-block block-sleep" style="margin-bottom:4px">🌙 Wind-down<br>21:00–22:30</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;">
+        <span class="pill pill-cyan">📚 ~22h teaching/week</span>
+        <span class="pill pill-green">🏃 7h gym/walking</span>
+        <span class="pill pill-pink">💍 ~12h wedding planning</span>
+        <span class="pill pill-yellow">📖 ~10h book writing</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== -->
+  <!-- TAB: DAILY PLANNER             -->
+  <!-- ============================== -->
+  <div class="tab-content" id="tab-today">
+    <div class="card" style="border-radius:0 var(--radius-lg) var(--radius-lg) var(--radius-lg);">
+      <div class="day-selector">
+        <button class="day-btn" onclick="loadDay('mon',this)">Monday</button>
+        <button class="day-btn" onclick="loadDay('tue',this)">Tuesday</button>
+        <button class="day-btn" onclick="loadDay('wed',this)">Wednesday</button>
+        <button class="day-btn" onclick="loadDay('thu',this)">Thursday</button>
+        <button class="day-btn" onclick="loadDay('fri',this)">Friday</button>
+        <button class="day-btn" onclick="loadDay('sat',this)">Saturday</button>
+        <button class="day-btn" onclick="loadDay('sun',this)">Sunday</button>
+      </div>
+      <div id="daySchedule" class="day-timeline"></div>
+    </div>
+  </div>
+
+  <!-- ============================== -->
+  <!-- TAB: HABIT TRACKER             -->
+  <!-- ============================== -->
+  <div class="tab-content" id="tab-habits">
+    <div class="card" style="border-radius:0 var(--radius-lg) var(--radius-lg) var(--radius-lg);">
+      <div class="card-header">
+        <span class="card-icon">✅</span>
+        <div>
+          <div class="card-title">Weekly Habit Tracker</div>
+          <div class="card-subtitle">Check off each habit daily — streaks build momentum!</div>
+        </div>
+        <div style="margin-left:auto"><span class="streak-badge">🔥 <span id="streakCount">0</span> day streak</span></div>
+      </div>
+      <div class="habit-grid">
+        <table class="habit-table">
+          <thead>
+            <tr>
+              <th>Habit</th>
+              <th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th><th>Sun</th>
+              <th>Progress</th>
+            </tr>
+          </thead>
+          <tbody id="habitBody"></tbody>
+        </table>
+      </div>
+      <div class="divider"></div>
+      <div class="flex-between">
+        <div style="font-size:0.8rem;color:var(--text-secondary)">Weekly completion: <strong id="weeklyPct" style="color:var(--accent)">0%</strong></div>
+        <button class="btn btn-outline" onclick="resetHabits()" style="padding:6px 14px;font-size:0.72rem;">Reset Week</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================== -->
+  <!-- TAB: BOOK WRITING              -->
+  <!-- ============================== -->
+  <div class="tab-content" id="tab-book">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;" class="book-layout">
+      <div>
+        <div class="card" style="border-radius:var(--radius-lg);margin-bottom:16px;">
+          <div class="card-header">
+            <span class="card-icon">📖</span>
+            <div>
+              <div class="card-title">Daily Word Count</div>
+              <div class="card-subtitle">Track your progress — every word counts!</div>
+            </div>
+          </div>
+          <div class="word-counter">
+            <div>
+              <div class="section-label">Today's words</div>
+              <input type="number" id="todayWords" placeholder="0" min="0" oninput="updateWordCount()"/>
+            </div>
+            <div style="flex:1">
+              <div class="section-label">Total written</div>
+              <div class="wc-total" id="totalWords">0</div>
+              <div style="font-size:0.7rem;color:var(--text-muted)">Goal: 50,000 words</div>
+              <div class="progress-bar-wrap mt-12">
+                <div class="progress-bar-fill" id="wordProgress" style="width:0%"></div>
+              </div>
+            </div>
+          </div>
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-primary" onclick="saveWords()">+ Save Today</button>
+            <button class="btn btn-outline" onclick="resetWords()">Reset</button>
+          </div>
+          <div class="divider"></div>
+          <div style="display:flex;gap:16px;flex-wrap:wrap;">
+            <div style="text-align:center;flex:1">
+              <div class="section-label">Daily target</div>
+              <div style="font-size:1.2rem;font-weight:800;color:var(--success)">200</div>
+              <div style="font-size:0.7rem;color:var(--text-muted)">words/day</div>
+            </div>
+            <div style="text-align:center;flex:1">
+              <div class="section-label">Best day</div>
+              <div style="font-size:1.2rem;font-weight:800;color:var(--warning)" id="bestDay">—</div>
+              <div style="font-size:0.7rem;color:var(--text-muted)">words</div>
+            </div>
+            <div style="text-align:center;flex:1">
+              <div class="section-label">Days written</div>
+              <div style="font-size:1.2rem;font-weight:800;color:var(--accent)" id="daysWritten">0</div>
+              <div style="font-size:0.7rem;color:var(--text-muted)">sessions</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="border-radius:var(--radius-lg);">
+          <div class="card-header">
+            <span class="card-icon">✨</span>
+            <div>
+              <div class="card-title">Today's Writing Prompt</div>
+              <div class="card-subtitle">Click to get a new one!</div>
+            </div>
+            <button id="refreshPrompt" onclick="newPrompt()">🔄 New</button>
+          </div>
+          <div class="writing-prompt" id="writingPrompt" onclick="newPrompt()">Loading prompt...</div>
+          <div style="margin-top:8px;">
+            <div class="section-label">Quick technique</div>
+            <div id="quickTechnique" style="font-size:0.8rem;color:var(--text-secondary);line-height:1.7;"></div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card" style="border-radius:var(--radius-lg);margin-bottom:16px;">
+          <div class="card-header">
+            <span class="card-icon">🧠</span>
+            <div><div class="card-title">Writer's Block Busters</div></div>
+          </div>
+          <div class="tip-card">
+            <h4>🎯 The 2-Minute Rule</h4>
+            <p>Open your doc and write for just 2 minutes. No pressure, no editing. Most times you'll keep going once you start. The hardest part is starting — remove that barrier.</p>
+          </div>
+          <div class="tip-card">
+            <h4>🔄 Write Badly on Purpose</h4>
+            <p>Give yourself permission to write terrible first drafts. Say "I'm going to write the worst paragraph ever" — this removes perfectionism pressure and often unlocks creativity.</p>
+          </div>
+          <div class="tip-card">
+            <h4>🗣 Voice to Text</h4>
+            <p>Talk through your story ideas as if explaining to a friend. Use your phone's voice memo or Google Docs voice typing. Conversation mode bypasses the "blank page" paralysis.</p>
+          </div>
+          <div class="tip-card">
+            <h4>🌊 Change Your Environment</h4>
+            <p>Write in a coffee shop, garden, or different room. Novel environments stimulate novel thinking. Even a 10-minute walk before writing sessions significantly boosts creativity.</p>
+          </div>
+          <div class="tip-card">
+            <h4>📍 End Mid-Sentence</h4>
+            <p>Stop writing mid-sentence (not at chapter ends). This gives you an easy re-entry point next session — your brain naturally wants to complete unfinished thoughts.</p>
+          </div>
+        </div>
+
+        <div class="card" style="border-radius:var(--radius-lg);">
+          <div class="card-header"><span class="card-icon">🛠</span><div><div class="card-title">Recommended Tools</div></div></div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div class="wellness-tip" style="padding:12px;">
+              <h4 style="margin-bottom:4px;">📝 Scrivener / Notion</h4>
+              <p style="font-size:0.76rem;color:var(--text-secondary);">Organise chapters, notes & research in one place. Better than Word for long-form writing.</p>
+            </div>
+            <div class="wellness-tip" style="padding:12px;">
+              <h4 style="margin-bottom:4px;">🎵 Brain.fm</h4>
+              <p style="font-size:0.76rem;color:var(--text-secondary);">AI-generated focus music scientifically designed to boost deep work concentration.</p>
+            </div>
+            <div class="wellness-tip" style="padding:12px;">
+              <h4 style="margin-bottom:4px;">⏱ Forest App</h4>
+              <p style="font-size:0.76rem;color:var(--text-secondary);">Gamified Pomodoro timer. Grow a virtual tree during focus sessions — keeps you off your phone.</p>
+            </div>
+            <div class="wellness-tip" style="padding:12px;">
+              <h4 style="margin-bottom:4px;">🤖 Claude / ChatGPT</h4>
+              <p style="font-size:0.76rem;color:var(--text-secondary);">Brainstorm plot points, get unstuck, or develop characters. Treat it as a creative writing partner, not a ghost-writer.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <style>@media(max-width:700px){.book-layout{grid-template-columns:1fr!important;}}</style>
+  </div>
+
+  <!-- ============================== -->
+  <!-- TAB: WEDDING                   -->
+  <!-- ============================== -->
+  <div class="tab-content" id="tab-wedding">
+    <div class="countdown-box">
+      <h2>💍 Wedding Countdown</h2>
+      <div class="countdown-nums">
+        <div class="cd-unit"><div class="cd-num" id="cdDays">—</div><div class="cd-label">Days</div></div>
+        <div class="cd-unit"><div class="cd-num" id="cdHours">—</div><div class="cd-label">Hours</div></div>
+        <div class="cd-unit"><div class="cd-num" id="cdMins">—</div><div class="cd-label">Minutes</div></div>
+        <div class="cd-unit"><div class="cd-num" id="cdSecs" style="color:var(--accent-light);font-size:1.8rem">—</div><div class="cd-label">Seconds</div></div>
+      </div>
+      <div style="margin-top:12px;font-size:0.8rem;color:var(--text-muted)">Saturday, 29 August 2026 — you've got this! 🌸</div>
+    </div>
+
+    <div class="card" style="border-radius:var(--radius-lg);">
+      <div class="flex-between" style="margin-bottom:16px;">
+        <div>
+          <div class="card-title">Wedding Checklist</div>
+          <div class="card-subtitle" id="weddingProgress">0 of 0 tasks completed</div>
+        </div>
+        <div>
+          <div class="progress-bar-wrap" style="width:200px;height:6px;">
+            <div class="progress-bar-fill" id="weddingProgressBar" style="width:0%;background:linear-gradient(135deg,#f72585,#ffb703)"></div>
+          </div>
+        </div>
+      </div>
+      <div id="weddingChecklist"></div>
+    </div>
+  </div>
+
+  <!-- ============================== -->
+  <!-- TAB: WELLNESS                  -->
+  <!-- ============================== -->
+  <div class="tab-content" id="tab-wellness">
+
+    <!-- PERIOD TRACKER (full width) -->
+    <div class="card" style="border-radius:var(--radius-lg);margin-bottom:16px;">
+      <div class="card-header">
+        <span class="card-icon">🩸</span>
+        <div>
+          <div class="card-title">Period Tracker</div>
+          <div class="card-subtitle" id="ptSubtitle">Loading...</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:8px;align-items:center;">
+          <label style="font-size:0.72rem;color:var(--text-muted);">Period started:</label>
+          <input type="date" id="ptStartDate" style="background:rgba(255,255,255,0.06);border:1px solid rgba(247,37,133,0.3);border-radius:8px;color:#f9a8d4;padding:5px 10px;font-size:0.8rem;font-family:var(--font-main);cursor:pointer;" onchange="logPeriodStart(this.value)"/>
+          <button class="btn btn-primary" onclick="logPeriodStart(document.getElementById('ptStartDate').value)" style="padding:6px 14px;font-size:0.75rem;background:linear-gradient(135deg,#c9184a,#f72585);">Log Period</button>
+        </div>
+      </div>
+
+      <!-- Status bar -->
+      <div class="period-status-bar">
+        <div class="period-stat"><div class="ps-val" id="ptCycleDay">—</div><div class="ps-lbl">Cycle Day</div></div>
+        <div class="period-stat"><div class="ps-val" id="ptPhaseLabel">—</div><div class="ps-lbl">Current Phase</div></div>
+        <div class="period-stat"><div class="ps-val" id="ptNextPeriod">—</div><div class="ps-lbl">Next Period</div></div>
+        <div class="period-stat"><div class="ps-val" id="ptOvulation">—</div><div class="ps-lbl">Ovulation Est.</div></div>
+      </div>
+
+      <!-- Cycle bar -->
+      <div class="cycle-bar-wrap">
+        <div style="font-size:0.68rem;color:var(--text-muted);margin-bottom:5px;">Your cycle at a glance:</div>
+        <div class="cycle-bar-track" id="cycleBarTrack">
+          <div class="cycle-bar-segment seg-menstrual"  id="segMenstrual"></div>
+          <div class="cycle-bar-segment seg-follicular" id="segFollicular"></div>
+          <div class="cycle-bar-segment seg-ovulation"  id="segOvulation"></div>
+          <div class="cycle-bar-segment seg-luteal"     id="segLuteal"></div>
+          <div class="cycle-bar-marker" id="cycleMarker"></div>
+        </div>
+        <div class="cycle-bar-labels">
+          <span>🔴 Period</span><span>🌱 Follicular</span><span>✨ Ovulation</span><span>🌙 Luteal</span>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:4px;" class="pt-bottom-grid">
+        <!-- Daily symptoms -->
+        <div>
+          <div class="section-label" style="margin-bottom:10px;">Today's Symptoms</div>
+          <div class="symptom-row">
+            <div class="symptom-label">🩸 Flow</div>
+            <div class="flow-btns">
+              <button class="flow-btn" id="flow-none"   onclick="setFlow('none')">None</button>
+              <button class="flow-btn" id="flow-light"  onclick="setFlow('light')">Light</button>
+              <button class="flow-btn" id="flow-medium" onclick="setFlow('medium')">Medium</button>
+              <button class="flow-btn" id="flow-heavy"  onclick="setFlow('heavy')">Heavy</button>
+            </div>
+          </div>
+          <div class="symptom-row">
+            <div class="symptom-label">😣 Cramps</div>
+            <div class="flow-btns">
+              <button class="flow-btn" id="cramps-none"     onclick="setCramps('none')">None</button>
+              <button class="flow-btn" id="cramps-mild"     onclick="setCramps('mild')">Mild</button>
+              <button class="flow-btn" id="cramps-moderate" onclick="setCramps('moderate')">Moderate</button>
+              <button class="flow-btn" id="cramps-severe"   onclick="setCramps('severe')">Severe</button>
+            </div>
+          </div>
+          <div class="symptom-row">
+            <div class="symptom-label">😊 Mood</div>
+            <div class="mood-btns">
+              <button class="mood-btn" id="mood-😊" onclick="setMood('😊')" title="Happy">😊</button>
+              <button class="mood-btn" id="mood-😔" onclick="setMood('😔')" title="Sad">😔</button>
+              <button class="mood-btn" id="mood-😤" onclick="setMood('😤')" title="Irritable">😤</button>
+              <button class="mood-btn" id="mood-😴" onclick="setMood('😴')" title="Tired">😴</button>
+              <button class="mood-btn" id="mood-😰" onclick="setMood('😰')" title="Anxious">😰</button>
+              <button class="mood-btn" id="mood-🥰" onclick="setMood('🥰')" title="Loved">🥰</button>
+            </div>
+          </div>
+          <div class="symptom-row" style="align-items:flex-start;flex-direction:column;gap:4px;">
+            <div class="symptom-label">⚡ Energy</div>
+            <div style="width:100%;display:flex;align-items:center;gap:10px;">
+              <span style="font-size:0.7rem;color:var(--text-muted);">Low</span>
+              <input type="range" class="energy-slider" id="energySlider" min="1" max="5" value="3" oninput="setEnergy(this.value)"/>
+              <span style="font-size:0.7rem;color:var(--text-muted);">High</span>
+              <span id="energyVal" style="font-size:0.8rem;font-weight:700;color:#f9a8d4;min-width:14px;">3</span>
+            </div>
+          </div>
+          <button class="btn btn-outline" onclick="saveTodaySymptoms()" style="margin-top:8px;padding:6px 16px;font-size:0.75rem;border-color:rgba(247,37,133,0.3);color:#f9a8d4;">Save Today's Log</button>
+        </div>
+
+        <!-- History + Settings -->
+        <div>
+          <div style="margin-bottom:14px;">
+            <div class="section-label" style="margin-bottom:8px;">Cycle Settings</div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;">
+              <div>
+                <div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:4px;">Cycle length (days)</div>
+                <input type="number" id="cycleLength" value="28" min="21" max="35" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;color:var(--text-heading);font-size:0.9rem;font-weight:700;width:70px;padding:6px 10px;text-align:center;font-family:var(--font-main);" onchange="recalcCycle()"/>
+              </div>
+              <div>
+                <div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:4px;">Period length (days)</div>
+                <input type="number" id="periodLength" value="5" min="2" max="10" style="background:rgba(255,255,255,0.06);border:1px solid var(--card-border);border-radius:8px;color:var(--text-heading);font-size:0.9rem;font-weight:700;width:70px;padding:6px 10px;text-align:center;font-family:var(--font-main);" onchange="recalcCycle()"/>
+              </div>
+            </div>
+          </div>
+          <div class="section-label" style="margin-bottom:8px;">Period History</div>
+          <div class="period-history" id="periodHistory">
+            <div style="font-size:0.78rem;color:var(--text-muted);text-align:center;padding:12px;">No periods logged yet.</div>
+          </div>
+        </div>
+      </div>
+      <style>@media(max-width:700px){.pt-bottom-grid{grid-template-columns:1fr!important;}}</style>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;" class="wellness-layout">
+      <div>
+        <div class="card" style="border-radius:var(--radius-lg);margin-bottom:16px;">
+          <div class="card-header">
+            <span class="card-icon">🌸</span>
+            <div>
+              <div class="card-title">Cycle Phase Guide</div>
+              <div class="card-subtitle" id="phaseAutoNote">Auto-detected from your period data</div>
+            </div>
+          </div>
+          <div style="margin-bottom:12px;font-size:0.8rem;color:var(--text-secondary);">
+            Your current phase is highlighted — tap any phase for tips:
+          </div>
+          <div class="cycle-phases">
+            <div class="phase-card phase-menstrual" onclick="selectPhase('menstrual',this)">
+              <h4>🔴 Menstrual</h4>
+              <div class="phase-days">Days 1–5</div>
+              <p>Rest, gentle movement, comfort food is okay.</p>
+            </div>
+            <div class="phase-card phase-follicular" onclick="selectPhase('follicular',this)">
+              <h4>🌱 Follicular</h4>
+              <div class="phase-days">Days 6–13</div>
+              <p>Rising energy. Great for new projects & planning.</p>
+            </div>
+            <div class="phase-card phase-ovulation" onclick="selectPhase('ovulation',this)">
+              <h4>✨ Ovulation</h4>
+              <div class="phase-days">Days 14–16</div>
+              <p>Peak energy & communication. Best for big tasks!</p>
+            </div>
+            <div class="phase-card phase-luteal" onclick="selectPhase('luteal',this)">
+              <h4>🌙 Luteal</h4>
+              <div class="phase-days">Days 17–28</div>
+              <p>Declutter, complete tasks, practice extra self-care.</p>
+            </div>
+          </div>
+          <div id="phaseTips" style="margin-top:12px;"></div>
+        </div>
+
+        <div class="card" style="border-radius:var(--radius-lg);">
+          <div class="card-header"><span class="card-icon">🏃</span><div><div class="card-title">Exercise Recommendations</div></div></div>
+          <div class="wellness-tip">
+            <h4>🔴 During Period (Days 1–5)</h4>
+            <ul>
+              <li>Gentle yoga, stretching, or slow walks</li>
+              <li>Avoid high-intensity — your body is working hard</li>
+              <li>Warmth & light movement eases cramps</li>
+              <li>Magnesium supplements help with pain</li>
+            </ul>
+          </div>
+          <div class="wellness-tip">
+            <h4>🌱 Follicular (Days 6–13)</h4>
+            <ul>
+              <li>Increase intensity — try new gym classes</li>
+              <li>Great time for strength training</li>
+              <li>Energy builds daily — push yourself</li>
+            </ul>
+          </div>
+          <div class="wellness-tip">
+            <h4>✨ Ovulation (Days 14–16)</h4>
+            <ul>
+              <li>Peak physical performance — HIIT, cardio, weights</li>
+              <li>Coordination & reaction time are at their best</li>
+              <li>Perfect for outdoor runs or new challenges</li>
+            </ul>
+          </div>
+          <div class="wellness-tip">
+            <h4>🌙 Luteal (Days 17–28)</h4>
+            <ul>
+              <li>Moderate intensity — Pilates, swimming, yoga</li>
+              <li>Reduce caffeine to help with PMS</li>
+              <li>Prioritise rest & don't guilt-trip lighter sessions</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card" style="border-radius:var(--radius-lg);margin-bottom:16px;">
+          <div class="card-header"><span class="card-icon">🌙</span><div><div class="card-title">Sleep Optimisation</div><div class="card-subtitle">For an overactive mind</div></div></div>
+          <div class="sleep-tip">
+            <div class="st-icon">🌡</div>
+            <div><h5>Cool Your Room</h5><p>Keep your bedroom 16–19°C. Body temperature drops during sleep onset — a cool room accelerates this. Try a fan even in winter.</p></div>
+          </div>
+          <div class="sleep-tip">
+            <div class="st-icon">📵</div>
+            <div><h5>Screen-Free Last Hour</h5><p>Blue light suppresses melatonin. Switch to a book, podcast, or journaling 60 minutes before bed. Use "Night Mode" if you must use your phone.</p></div>
+          </div>
+          <div class="sleep-tip">
+            <div class="st-icon">📝</div>
+            <div><h5>Brain Dump Journal</h5><p>For an overactive mind: write every thought, worry, or to-do in a notebook at 21:30. This "downloads" your brain so it doesn't replay thoughts at midnight.</p></div>
+          </div>
+          <div class="sleep-tip">
+            <div class="st-icon">🫁</div>
+            <div><h5>4-7-8 Breathing</h5><p>Inhale 4 counts, hold 7, exhale 8. Repeat 4×. Activates the parasympathetic nervous system and physically slows your racing thoughts.</p></div>
+          </div>
+          <div class="sleep-tip">
+            <div class="st-icon">🍵</div>
+            <div><h5>Magnesium Glycinate</h5><p>Take 200–400mg 30 min before bed. Clinically shown to improve sleep quality, reduce anxiety, and help with overactive minds. Also helps with PMS.</p></div>
+          </div>
+          <div class="sleep-tip">
+            <div class="st-icon">🕯</div>
+            <div><h5>Wind-Down Ritual</h5><p>21:00–22:30: dim lights, herbal tea (chamomile/valerian), gentle stretching or bath. The same ritual every night signals your brain that sleep is coming.</p></div>
+          </div>
+        </div>
+
+        <div class="card" style="border-radius:var(--radius-lg);">
+          <div class="card-header"><span class="card-icon">💊</span><div><div class="card-title">Helpful Supplements & Aids</div></div></div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <div class="sleep-tip">
+              <div class="st-icon">🧠</div>
+              <div><h5>Omega-3 (Fish Oil)</h5><p>Improves mood, focus, and reduces brain inflammation. Take with breakfast. Especially helpful during luteal phase for mood stability.</p></div>
+            </div>
+            <div class="sleep-tip">
+              <div class="st-icon">☀</div>
+              <div><h5>Vitamin D3 + K2</h5><p>Many people are deficient (especially indoors). Boosts mood, immune function, and energy — directly impacts motivation levels.</p></div>
+            </div>
+            <div class="sleep-tip">
+              <div class="st-icon">🌿</div>
+              <div><h5>Ashwagandha</h5><p>Adaptogenic herb proven to reduce cortisol (stress hormone). Take in the morning for sustained calm energy. Great for high-demand weeks.</p></div>
+            </div>
+            <div class="sleep-tip">
+              <div class="st-icon">🫐</div>
+              <div><h5>Lion's Mane Mushroom</h5><p>Supports nerve growth factor — improves memory, focus and may boost creative output. Ideal for writing sessions.</p></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <style>@media(max-width:700px){.wellness-layout{grid-template-columns:1fr!important;}}</style>
+  </div>
+
+</div><!-- /main-wrapper -->
+
+<script>
+// ===== TABS =====
+function switchTab(id) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + id).classList.add('active');
+  event.currentTarget.classList.add('active');
+  if (id === 'today') autoSelectToday();
+}
+
+// ===== HEADER =====
+function initHeader() {
+  const now = new Date();
+  const opts = { weekday:'long', year:'numeric', month:'long', day:'numeric' };
+  document.getElementById('headerDate').textContent = now.toLocaleDateString('en-ZA', opts);
+  document.getElementById('todayDate').textContent = now.toLocaleDateString('en-ZA', {day:'2-digit',month:'short'});
+}
+
+function getLastSaturdayOfAugust(year) {
+  const d = new Date(year, 7, 31); // start at Aug 31
+  while (d.getDay() !== 6) d.setDate(d.getDate() - 1);
+  d.setHours(15, 0, 0, 0);
+  return d;
+}
+
+function tickCountdown() {
+  const wedding = getLastSaturdayOfAugust(2026);
+  const diff = wedding - new Date();
+  if (diff <= 0) {
+    ['cdDays','cdHours','cdMins','cdSecs'].forEach(id => document.getElementById(id).textContent = '0');
+    document.getElementById('weddingDays').textContent = '🎉 Today!';
+    return;
+  }
+  const days = Math.floor(diff / (1000*60*60*24));
+  const h    = Math.floor((diff % (1000*60*60*24)) / (1000*60*60));
+  const m    = Math.floor((diff % (1000*60*60)) / (1000*60));
+  const s    = Math.floor((diff % (1000*60)) / 1000);
+  document.getElementById('cdDays').textContent  = days;
+  document.getElementById('cdHours').textContent = String(h).padStart(2,'0');
+  document.getElementById('cdMins').textContent  = String(m).padStart(2,'0');
+  document.getElementById('cdSecs').textContent  = String(s).padStart(2,'0');
+  document.getElementById('weddingDays').textContent = days + ' days';
+}
+
+// ===== DAILY SCHEDULES =====
+const schedules = {
+  mon: [
+    {time:'22:30 – 06:30', title:'Sleep 😴', detail:'8 hours rest', type:'sleep', dot:'dark'},
+    {time:'06:30 – 07:30', title:'Self-care 🛁', detail:'Shower, get dressed, morning routine', type:'self-care', dot:'pink', check:true},
+    {time:'07:30 – 08:30', title:'Gym / Walk 🏃', detail:'1 hour movement — gym, run or brisk walk', type:'gym', dot:'green', check:true},
+    {time:'09:00 – 11:00', title:'Book Writing 📖', detail:'Deep focus session — 2 Pomodoro blocks (25min on, 5min off)', type:'book', dot:'purple', check:true},
+    {time:'11:00 – 13:30', title:'Wedding Planning 💍', detail:'Research vendors, send emails, make bookings', type:'wedding', dot:'yellow', check:true},
+    {time:'13:30 – 14:00', title:'Lunch & Prep 🍽', detail:'Eat, hydrate, prepare for teaching', type:'', dot:'gray'},
+    {time:'14:00 – 16:00', title:'TEACHING 🎓', detail:'Online English lessons', type:'teaching', dot:'cyan'},
+    {time:'16:00 – 18:00', title:'Break / Errands 🌿', detail:'Rest, chores, admin, or light wedding tasks', type:'', dot:'gray', check:true},
+    {time:'18:00 – 19:00', title:'Dinner 🍽', detail:'Sit down and eat properly — no screens, enjoy the meal', type:'wedding', dot:'yellow', check:true},
+    {time:'19:00 – 21:00', title:'TEACHING 🎓', detail:'Online English lessons', type:'teaching', dot:'cyan'},
+    {time:'21:00 – 22:30', title:'Wind-down 🌙', detail:'Journal, 4-7-8 breathing, herbal tea, no screens', type:'sleep', dot:'dark'},
+  ],
+  tue: [
+    {time:'22:30 – 06:30', title:'Sleep 😴', detail:'8 hours rest', type:'sleep', dot:'dark'},
+    {time:'06:30 – 07:30', title:'Self-care 🛁', detail:'Shower, get dressed, morning routine', type:'self-care', dot:'pink', check:true},
+    {time:'07:30 – 08:30', title:'Gym / Walk 🏃', detail:'1 hour movement', type:'gym', dot:'green', check:true},
+    {time:'08:30 – 11:00', title:'Book Writing 📖', detail:'Prime morning focus — longest block of the week! Use it!', type:'book', dot:'purple', check:true},
+    {time:'11:00 – 12:00', title:'TEACHING 🎓', detail:'Online English lessons', type:'teaching', dot:'cyan'},
+    {time:'12:00 – 14:00', title:'Lunch & Wedding Tasks 💍', detail:'Light vendor research, Pinterest boards, meal prep', type:'wedding', dot:'yellow', check:true},
+    {time:'14:00 – 17:00', title:'Book Writing 📖', detail:'Second writing session — review morning output or new scenes', type:'book', dot:'purple', check:true},
+    {time:'17:00 – 18:45', title:'TEACHING 🎓', detail:'Online English lessons', type:'teaching', dot:'cyan'},
+    {time:'18:45 – 19:00', title:'Dinner 🍽 (quick!)', detail:'15-min break — something prepped ahead, eat fast, recharge', type:'', dot:'gray', check:true},
+    {time:'19:00 – 21:00', title:'TEACHING 🎓', detail:'Online English lessons (continued)', type:'teaching', dot:'cyan'},
+    {time:'21:00 – 22:30', title:'Wind-down 🌙', detail:'Gentle stretching, journal, herbal tea', type:'sleep', dot:'dark'},
+  ],
+  wed: [
+    {time:'22:30 – 06:30', title:'Sleep 😴', detail:'8 hours rest', type:'sleep', dot:'dark'},
+    {time:'06:30 – 07:30', title:'Self-care 🛁', detail:'Shower, get dressed, morning routine', type:'self-care', dot:'pink', check:true},
+    {time:'07:30 – 08:30', title:'Gym / Walk 🏃', detail:'1 hour — your only free time before teaching!', type:'gym', dot:'green', check:true},
+    {time:'09:00 – 11:00', title:'Book Writing 📖', detail:'Pre-teaching writing sprint', type:'book', dot:'purple', check:true},
+    {time:'11:00 – 17:00', title:'TEACHING 🎓', detail:'Online English lessons (long teaching day)', type:'teaching', dot:'cyan'},
+    {time:'17:00 – 18:00', title:'Decompress & Chores 🌿', detail:'Light chores, dinner prep, breath', type:'self-care', dot:'pink', check:true},
+    {time:'18:00 – 19:00', title:'Dinner 🍽', detail:'Proper sit-down meal — you earned it after a big teaching day', type:'', dot:'gray', check:true},
+    {time:'19:00 – 20:30', title:'Wedding Planning 💍', detail:'Focused wedding task block', type:'wedding', dot:'yellow', check:true},
+    {time:'20:30 – 22:00', title:'Wind-down 🌙', detail:'Early rest — you deserve it!', type:'sleep', dot:'dark'},
+  ],
+  thu: [
+    {time:'22:30 – 06:45', title:'Sleep 😴', detail:'~8 hours rest', type:'sleep', dot:'dark'},
+    {time:'07:45 – 08:30', title:'TEACHING 🎓', detail:'Early morning lesson', type:'teaching', dot:'cyan'},
+    {time:'08:30 – 09:30', title:'Self-care 🛁', detail:'Shower, breakfast, decompress', type:'self-care', dot:'pink', check:true},
+    {time:'09:30 – 10:30', title:'Gym / Walk 🏃', detail:'1 hour — great after early lesson!', type:'gym', dot:'green', check:true},
+    {time:'10:30 – 13:00', title:'Book Writing 📖', detail:'Peak morning energy for deep creative work', type:'book', dot:'purple', check:true},
+    {time:'13:00 – 17:00', title:'Wedding Planning 💍', detail:'Long afternoon block — perfect for calls, venue visits, admin', type:'wedding', dot:'yellow', check:true},
+    {time:'17:00 – 18:45', title:'TEACHING 🎓', detail:'Online English lessons', type:'teaching', dot:'cyan'},
+    {time:'18:45 – 19:00', title:'Dinner 🍽 (quick!)', detail:'15-min break — something prepped ahead, eat fast, recharge', type:'', dot:'gray', check:true},
+    {time:'19:00 – 21:00', title:'TEACHING 🎓', detail:'Online English lessons (continued)', type:'teaching', dot:'cyan'},
+    {time:'21:00 – 22:30', title:'Wind-down 🌙', detail:'Brain dump, breathe, unwind', type:'sleep', dot:'dark'},
+  ],
+  fri: [
+    {time:'22:30 – 07:00', title:'Sleep 😴', detail:'~8.5 hours — slightly later start!', type:'sleep', dot:'dark'},
+    {time:'07:00 – 08:00', title:'Self-care 🛁', detail:'Shower, get dressed, enjoy breakfast', type:'self-care', dot:'pink', check:true},
+    {time:'08:00 – 09:00', title:'Gym / Walk 🏃', detail:'Start Friday with movement!', type:'gym', dot:'green', check:true},
+    {time:'09:00 – 10:00', title:'Prep & Coffee ☕', detail:'Review lesson plans, get in the zone', type:'', dot:'gray'},
+    {time:'10:00 – 13:00', title:'TEACHING 🎓', detail:'Online English lessons', type:'teaching', dot:'cyan'},
+    {time:'13:00 – 15:00', title:'Lunch & Rest 🍽', detail:'Friday lunch — treat yourself, proper rest', type:'', dot:'gray'},
+    {time:'15:00 – 18:00', title:'Wedding Planning 💍', detail:'Weekend admin, vendor follow-ups, checklists', type:'wedding', dot:'yellow', check:true},
+    {time:'18:00 – 19:00', title:'Dinner 🍽', detail:'Sit down and enjoy dinner — ideally with your fiancé!', type:'', dot:'gray', check:true},
+    {time:'19:00 – 20:30', title:'Book Writing 📖', detail:'Optional — write if energy allows', type:'book', dot:'purple', check:true},
+    {time:'20:30 – 22:30', title:'Free / Social 🎉', detail:"It's Friday! Rest, connect with your fiancé, enjoy yourself", type:'', dot:'gray'},
+    {time:'22:30', title:'Sleep 😴', detail:'Wind down by 22:00', type:'sleep', dot:'dark'},
+  ],
+  sat: [
+    {time:'22:30 – 08:00', title:'Sleep 😴', detail:'Long rest — let yourself sleep in!', type:'sleep', dot:'dark'},
+    {time:'08:00 – 09:30', title:'Slow Morning ☕', detail:'Breakfast in bed, read, ease into the day', type:'', dot:'gray'},
+    {time:'09:30 – 10:30', title:'Walk / Light Gym 🚶', detail:'Gentle movement — no pressure to perform', type:'gym', dot:'green', check:true},
+    {time:'10:30 – 12:30', title:'Wedding Planning 💍', detail:'Focused 2-hour wedding sprint', type:'wedding', dot:'yellow', check:true},
+    {time:'12:30 – 14:00', title:'Book Writing 📖', detail:'Optional — write only if inspired', type:'book', dot:'purple', check:true},
+    {time:'14:00 – 18:00', title:'REST 🌿', detail:'Zero obligations. Do whatever feeds your soul.', type:'', dot:'gray'},
+    {time:'18:00 – 19:00', title:'Dinner 🍽', detail:'Proper dinner — cook something nice or go out!', type:'', dot:'gray', check:true},
+    {time:'19:00 – 21:00', title:'Social / Fun 🎉', detail:'Friends, date night, or something enjoyable', type:'', dot:'gray'},
+    {time:'21:00 – 22:30', title:'Wind-down 🌙', detail:'Prepare for a good Sunday rest', type:'sleep', dot:'dark'},
+  ],
+  sun: [
+    {time:'22:30 – 08:30', title:'Sleep 😴', detail:'Full 9–10 hour rest day', type:'sleep', dot:'dark'},
+    {time:'08:30 – 10:30', title:'Slow Brunch 🍳', detail:'No alarm. Lazy morning with good food.', type:'', dot:'gray'},
+    {time:'10:30 – 13:00', title:'Rest & Recharge 🧘', detail:'Walk in nature, read, bath, or absolutely nothing', type:'', dot:'gray'},
+    {time:'13:00 – 14:30', title:'Week Planning 📝', detail:"Review next week's schedule, set 3 top priorities, prep teaching", type:'', dot:'gray'},
+    {time:'14:30 – 18:00', title:'Free Time 🌿', detail:'Completely unstructured — your brain needs it!', type:'', dot:'gray'},
+    {time:'18:00 – 19:00', title:'Dinner 🍽', detail:'Sunday dinner — cook a proper meal to start the week right', type:'', dot:'gray', check:true},
+    {time:'19:00 – 21:00', title:'Free Time 🌿', detail:'Relax, watch something, or prep for the week ahead', type:'', dot:'gray'},
+    {time:'21:00 – 22:30', title:'Wind-down 🌙', detail:'Journal, breathe, prep for Monday', type:'sleep', dot:'dark'},
+  ],
+};
+
+function loadDay(dayKey, btn) {
+  document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const slots = schedules[dayKey];
+  const saved = JSON.parse(localStorage.getItem('dayChecks_' + dayKey) || '{}');
+  let html = '';
+  let checkIdx = 0;
+  slots.forEach((s, i) => {
+    const cls = s.type ? s.type : '';
+    const checkId = `chk_${dayKey}_${i}`;
+    const checked = saved[i] ? 'checked' : '';
+    html += `<div class="time-slot ${cls}">
+      <div class="slot-time">${s.time}</div>
+      <div class="slot-dot ${s.dot}"></div>
+      <div class="slot-info">
+        <div class="slot-title">${s.title}</div>
+        <div class="slot-detail">${s.detail}</div>
+      </div>`;
+    if (s.check) {
+      html += `<div class="slot-check"><input type="checkbox" id="${checkId}" ${checked} onchange="saveDayCheck('${dayKey}',${i},this.checked)"></div>`;
+    }
+    html += `</div>`;
+  });
+  document.getElementById('daySchedule').innerHTML = html;
+}
+
+function saveDayCheck(day, idx, val) {
+  const key = 'dayChecks_' + day;
+  const saved = JSON.parse(localStorage.getItem(key) || '{}');
+  saved[idx] = val;
+  localStorage.setItem(key, JSON.stringify(saved));
+}
+
+function autoSelectToday() {
+  const days = ['sun','mon','tue','wed','thu','fri','sat'];
+  const dayName = days[new Date().getDay()];
+  const btns = document.querySelectorAll('.day-btn');
+  const dayMap = {mon:0,tue:1,wed:2,thu:3,fri:4,sat:5,sun:6};
+  const idx = dayMap[dayName];
+  if (btns[idx]) loadDay(dayName, btns[idx]);
+  else loadDay('mon', btns[0]);
+}
+
+// ===== HABITS =====
+const habits = [
+  {emoji:'🏃', name:'Gym / Walk (1h)', key:'gym'},
+  {emoji:'🛁', name:'Shower & Self-care', key:'selfcare'},
+  {emoji:'📖', name:'Book Writing', key:'book'},
+  {emoji:'💍', name:'Wedding Task', key:'wedding'},
+  {emoji:'🌙', name:'Wind-down Routine', key:'wind'},
+  {emoji:'💊', name:'Supplements', key:'supps'},
+  {emoji:'💧', name:'Drink 2L Water', key:'water'},
+];
+const dayLabels = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+function initHabits() {
+  const tbody = document.getElementById('habitBody');
+  const saved = JSON.parse(localStorage.getItem('habits') || '{}');
+  let html = '';
+  habits.forEach(h => {
+    html += `<tr><td><span class="habit-emoji">${h.emoji}</span>${h.name}</td>`;
+    let count = 0;
+    dayLabels.forEach((d, di) => {
+      const key = `${h.key}_${di}`;
+      const checked = saved[key] ? 'checked' : '';
+      if (saved[key]) count++;
+      html += `<td><input type="checkbox" class="habit-cb" ${checked} onchange="saveHabit('${h.key}',${di},this.checked)"></td>`;
+    });
+    const pct = Math.round((count/7)*100);
+    html += `<td style="min-width:80px">
+      <div style="font-size:0.7rem;color:var(--text-secondary);text-align:center">${count}/7</div>
+      <div class="habit-row-progress"><div class="habit-row-fill" style="width:${pct}%"></div></div>
+    </td></tr>`;
+  });
+  tbody.innerHTML = html;
+  updateHabitStats();
+}
+
+function saveHabit(key, di, val) {
+  const saved = JSON.parse(localStorage.getItem('habits') || '{}');
+  saved[`${key}_${di}`] = val;
+  localStorage.setItem('habits', JSON.stringify(saved));
+  initHabits();
+}
+
+function updateHabitStats() {
+  const saved = JSON.parse(localStorage.getItem('habits') || '{}');
+  const total = habits.length * 7;
+  const done = Object.values(saved).filter(Boolean).length;
+  document.getElementById('weeklyPct').textContent = Math.round((done/total)*100) + '%';
+  // Simple streak: count consecutive days where ALL habits done
+  let streak = 0;
+  for (let di = 6; di >= 0; di--) {
+    const allDone = habits.every(h => saved[`${h.key}_${di}`]);
+    if (allDone) streak++; else break;
+  }
+  document.getElementById('streakCount').textContent = streak;
+}
+
+function resetHabits() {
+  if (confirm('Reset this week\'s habit tracker?')) {
+    localStorage.removeItem('habits');
+    initHabits();
+  }
+}
+
+// ===== BOOK WRITING =====
+const prompts = [
+  "Write a scene where your protagonist discovers something that changes everything they believed about their world.",
+  "Describe a conversation between two characters who secretly love each other but can't say it yet.",
+  "Your character wakes up in an unfamiliar place. What are the first three things they notice?",
+  "Write the moment your villain realises they might be wrong.",
+  "Describe a meal that holds an important memory for your protagonist. What does it taste like? What does it remind them of?",
+  "Write the scene just before everything goes wrong.",
+  "Your character receives a letter from their past self. What does it say?",
+  "Describe a setting using only the five senses — no adjectives like 'beautiful' or 'sad'.",
+  "Write a scene from your antagonist's point of view. Make us sympathise with them.",
+  "Your protagonist has one hour left. What do they do?",
+  "Write the last line of your book first. Then write the scene that leads to it.",
+  "Describe your character's bedroom — it should reveal everything about who they are.",
+];
+const techniques = [
+  "Try the Pomodoro method: 25 minutes writing, 5 minutes rest. Set a timer now.",
+  "Write with music that matches your scene's mood — no lyrics, just orchestral.",
+  "Read your last paragraph aloud before continuing. Your ear catches what your eye misses.",
+  "Write the scene you're most excited about, even if it's out of order.",
+  "Set a micro-goal: 200 words. That's it. You can always write more.",
+  "Change your font and colour — small novelty boosts creativity.",
+  "Write your character doing something mundane — it reveals personality naturally.",
+  "Try 'yes, and...' improv technique: accept every story element and build on it.",
+];
+
+let currentPromptIdx = 0;
+function newPrompt() {
+  currentPromptIdx = Math.floor(Math.random() * prompts.length);
+  document.getElementById('writingPrompt').textContent = '"' + prompts[currentPromptIdx] + '"';
+  document.getElementById('quickTechnique').textContent = techniques[Math.floor(Math.random() * techniques.length)];
+}
+
+function updateWordCount() {
+  const today = parseInt(document.getElementById('todayWords').value) || 0;
+  const saved = JSON.parse(localStorage.getItem('wordData') || '{"total":0,"days":0,"best":0}');
+  const display = saved.total + today;
+  document.getElementById('totalWords').textContent = display.toLocaleString();
+  document.getElementById('wordProgress').style.width = Math.min(100, (display/50000)*100) + '%';
+}
+
+function saveWords() {
+  const today = parseInt(document.getElementById('todayWords').value) || 0;
+  if (today <= 0) return;
+  const saved = JSON.parse(localStorage.getItem('wordData') || '{"total":0,"days":0,"best":0}');
+  saved.total += today;
+  saved.days += 1;
+  if (today > saved.best) saved.best = today;
+  localStorage.setItem('wordData', JSON.stringify(saved));
+  document.getElementById('todayWords').value = '';
+  loadWordStats();
+  updateWordCount();
+}
+
+function loadWordStats() {
+  const saved = JSON.parse(localStorage.getItem('wordData') || '{"total":0,"days":0,"best":0}');
+  document.getElementById('totalWords').textContent = saved.total.toLocaleString();
+  document.getElementById('wordProgress').style.width = Math.min(100, (saved.total/50000)*100) + '%';
+  document.getElementById('bestDay').textContent = saved.best > 0 ? saved.best.toLocaleString() : '—';
+  document.getElementById('daysWritten').textContent = saved.days;
+}
+
+function resetWords() {
+  if (confirm('Reset word count data?')) {
+    localStorage.removeItem('wordData');
+    loadWordStats();
+  }
+}
+
+// ===== WEDDING CHECKLIST =====
+const weddingData = [
+  { category: '📍 Venue', icon: '🏛', items: [
+    {text:'Book wedding venue', priority:'high'},
+    {text:'Book reception venue (if different)', priority:'high'},
+    {text:'Confirm capacity & layout', priority:'high'},
+    {text:'Visit venue for walkthrough', priority:'med'},
+    {text:'Confirm parking & accessibility', priority:'low'},
+  ]},
+  { category: '💐 Flowers & Décor', icon: '🌸', items: [
+    {text:'Decide on floral theme/colour palette', priority:'high'},
+    {text:'Meet with florist', priority:'high'},
+    {text:'Book florist', priority:'high'},
+    {text:'Order centrepieces', priority:'med'},
+    {text:'Source décor items', priority:'med'},
+  ]},
+  { category: '🍽 Catering', icon: '🍽', items: [
+    {text:'Decide on catering style (sit-down, buffet)', priority:'high'},
+    {text:'Book caterer', priority:'high'},
+    {text:'Plan menu & tastings', priority:'high'},
+    {text:'Confirm dietary requirements', priority:'med'},
+    {text:'Book wedding cake', priority:'med'},
+  ]},
+  { category: '👗 Attire', icon: '👗', items: [
+    {text:'Choose wedding dress', priority:'high'},
+    {text:'First fitting', priority:'high'},
+    {text:'Final fitting', priority:'high'},
+    {text:'Choose bridesmaids dresses', priority:'med'},
+    {text:'Accessories (shoes, jewellery, veil)', priority:'med'},
+    {text:'Groom & groomsmen attire', priority:'high'},
+  ]},
+  { category: '📸 Photography & Video', icon: '📷', items: [
+    {text:'Research photographers', priority:'high'},
+    {text:'Book photographer', priority:'high'},
+    {text:'Book videographer', priority:'med'},
+    {text:'Plan shot list', priority:'low'},
+    {text:'Book photo booth (optional)', priority:'low'},
+  ]},
+  { category: '🎵 Entertainment', icon: '🎵', items: [
+    {text:'Book band or DJ', priority:'high'},
+    {text:'Plan first dance song', priority:'med'},
+    {text:'Build playlist / setlist', priority:'low'},
+    {text:'Ceremony music (entrance, exit)', priority:'med'},
+  ]},
+  { category: '💌 Invitations & Admin', icon: '📬', items: [
+    {text:'Finalise guest list', priority:'high'},
+    {text:'Design & print invitations', priority:'high'},
+    {text:'Send invitations', priority:'high'},
+    {text:'Track RSVPs', priority:'high'},
+    {text:'Arrange marriage licence', priority:'high'},
+    {text:'Plan seating chart', priority:'med'},
+    {text:'Order thank-you cards', priority:'low'},
+  ]},
+  { category: '✈ Honeymoon', icon: '🌍', items: [
+    {text:'Decide on honeymoon destination', priority:'high'},
+    {text:'Book flights', priority:'high'},
+    {text:'Book accommodation', priority:'high'},
+    {text:'Check passports & visas', priority:'high'},
+    {text:'Travel insurance', priority:'med'},
+  ]},
+];
+
+function initWedding() {
+  const saved = JSON.parse(localStorage.getItem('wedding') || '{}');
+  let html = '';
+  let totalItems = 0, doneItems = 0;
+
+  weddingData.forEach((cat, ci) => {
+    let catDone = 0;
+    html += `<div class="wedding-category">
+      <div class="category-header" onclick="toggleCategory(${ci})">
+        <h4>${cat.icon} ${cat.category}</h4>
+        <span class="category-progress" id="catProg_${ci}">Loading...</span>
+      </div>
+      <div class="category-body" id="catBody_${ci}">`;
+
+    cat.items.forEach((item, ii) => {
+      const key = `c${ci}_i${ii}`;
+      const checked = saved[key] || false;
+      if (checked) { catDone++; doneItems++; }
+      totalItems++;
+      const done = checked ? 'done' : '';
+      html += `<div class="wedding-item ${done}" id="wi_${ci}_${ii}">
+        <input type="checkbox" id="wc_${ci}_${ii}" ${checked ? 'checked' : ''} onchange="saveWeddingItem(${ci},${ii},this.checked)">
+        <label for="wc_${ci}_${ii}">${item.text}</label>
+        <span class="priority-badge priority-${item.priority}">${item.priority}</span>
+      </div>`;
+    });
+    html += `</div></div>`;
+  });
+
+  document.getElementById('weddingChecklist').innerHTML = html;
+
+  // Update category progresses
+  weddingData.forEach((cat, ci) => {
+    let done = 0;
+    cat.items.forEach((_, ii) => { if (saved[`c${ci}_i${ii}`]) done++; });
+    document.getElementById(`catProg_${ci}`).textContent = `${done}/${cat.items.length}`;
+  });
+
+  document.getElementById('weddingProgress').textContent = `${doneItems} of ${totalItems} tasks completed`;
+  document.getElementById('weddingProgressBar').style.width = Math.round((doneItems/totalItems)*100) + '%';
+}
+
+function saveWeddingItem(ci, ii, val) {
+  const saved = JSON.parse(localStorage.getItem('wedding') || '{}');
+  saved[`c${ci}_i${ii}`] = val;
+  localStorage.setItem('wedding', JSON.stringify(saved));
+  const el = document.getElementById(`wi_${ci}_${ii}`);
+  if (val) el.classList.add('done'); else el.classList.remove('done');
+  initWedding();
+}
+
+function toggleCategory(ci) {
+  const body = document.getElementById(`catBody_${ci}`);
+  body.classList.toggle('open');
+}
+
+// ===== CYCLE PHASE TIPS =====
+const phaseTipsData = {
+  menstrual: `
+    <div class="wellness-tip">
+      <h4>🔴 Menstrual Phase Tips</h4>
+      <ul>
+        <li><strong>Teaching:</strong> Speak slowly and clearly — your voice may feel lower. Drink warm ginger tea before lessons.</li>
+        <li><strong>Book writing:</strong> Journaling and emotional scenes flow naturally now. Lean into raw, honest writing.</li>
+        <li><strong>Wedding planning:</strong> Avoid big financial decisions. Focus on research only.</li>
+        <li><strong>Exercise:</strong> Gentle yoga, walks, or stretching. Give yourself permission to rest.</li>
+        <li><strong>Aids:</strong> Magnesium, heating pad, chamomile tea, iron-rich foods (spinach, lentils).</li>
+        <li><strong>Sleep:</strong> You'll need extra rest. Go to bed 30 min earlier if possible.</li>
+      </ul>
+    </div>`,
+  follicular: `
+    <div class="wellness-tip">
+      <h4>🌱 Follicular Phase Tips</h4>
+      <ul>
+        <li><strong>Teaching:</strong> Peak communication phase — try new activities, be creative with lessons.</li>
+        <li><strong>Book writing:</strong> Excellent time to draft new chapters, develop characters, brainstorm plot.</li>
+        <li><strong>Wedding planning:</strong> Make appointments, visit venues, send important emails.</li>
+        <li><strong>Exercise:</strong> Increase intensity — your body recovers quickly. Try new gym classes.</li>
+        <li><strong>Aids:</strong> B vitamins, probiotics, light foods — your digestion is strongest now.</li>
+        <li><strong>Sleep:</strong> Easier to fall asleep and wake energised. Ideal to establish your sleep routine.</li>
+      </ul>
+    </div>`,
+  ovulation: `
+    <div class="wellness-tip">
+      <h4>✨ Ovulation Phase Tips</h4>
+      <ul>
+        <li><strong>Teaching:</strong> You're naturally magnetic and expressive — your best teaching days!</li>
+        <li><strong>Book writing:</strong> Write dialogue, action scenes, emotionally climactic moments.</li>
+        <li><strong>Wedding planning:</strong> Best time to negotiate, meet vendors, and make decisions.</li>
+        <li><strong>Exercise:</strong> Max effort workouts — your pain tolerance is highest, recovery is fast.</li>
+        <li><strong>Aids:</strong> Collagen, zinc, and antioxidants to support peak performance.</li>
+        <li><strong>Sleep:</strong> Sleep is lighter — you may feel like you need less. Don't skip it though!</li>
+      </ul>
+    </div>`,
+  luteal: `
+    <div class="wellness-tip">
+      <h4>🌙 Luteal Phase Tips</h4>
+      <ul>
+        <li><strong>Teaching:</strong> Energy drops in second half — prep lessons in advance, use structured formats.</li>
+        <li><strong>Book writing:</strong> Great for editing, revising, and refining rather than new drafts.</li>
+        <li><strong>Wedding planning:</strong> Perfect for ticking off admin, sending confirmations, budgeting.</li>
+        <li><strong>Exercise:</strong> Moderate movement — Pilates, swimming, yoga. Honour your body's needs.</li>
+        <li><strong>Aids:</strong> Reduce caffeine, increase magnesium, avoid sugar spikes, eat complex carbs.</li>
+        <li><strong>Sleep:</strong> May experience insomnia or vivid dreams. Start wind-down 2 hours early.</li>
+      </ul>
+    </div>`,
+};
+
+function selectPhase(phase, el) {
+  document.querySelectorAll('.phase-card').forEach(c => c.classList.remove('active-phase'));
+  el.classList.add('active-phase');
+  document.getElementById('phaseTips').innerHTML = phaseTipsData[phase];
+  localStorage.setItem('currentPhase', phase);
+}
+
+// ===== PERIOD TRACKER =====
+const PT_KEY = 'periodData';
+const SYM_KEY = 'symptoms';
+
+function todayStr() {
+  return new Date().toISOString().slice(0,10);
+}
+
+function getPeriodData() {
+  return JSON.parse(localStorage.getItem(PT_KEY) || '{"periods":[],"cycleLength":28,"periodLength":5}');
+}
+
+function savePeriodData(d) {
+  localStorage.setItem(PT_KEY, JSON.stringify(d));
+}
+
+function logPeriodStart(dateStr) {
+  if (!dateStr) return;
+  const d = getPeriodData();
+  // avoid duplicates
+  if (!d.periods.find(p => p.start === dateStr)) {
+    d.periods.unshift({ start: dateStr });
+    d.periods.sort((a,b) => b.start.localeCompare(a.start)); // newest first
+  }
+  savePeriodData(d);
+  initPeriodTracker();
+}
+
+function recalcCycle() {
+  const d = getPeriodData();
+  d.cycleLength  = parseInt(document.getElementById('cycleLength').value)  || 28;
+  d.periodLength = parseInt(document.getElementById('periodLength').value) || 5;
+  savePeriodData(d);
+  initPeriodTracker();
+}
+
+function calcPhaseFromDay(cycleDay, cycleLength, periodLength) {
+  const follStart = periodLength + 1;
+  const ovStart   = Math.round(cycleLength * 0.46);
+  const ovEnd     = ovStart + 2;
+  const lutStart  = ovEnd + 1;
+  if (cycleDay <= periodLength) return 'menstrual';
+  if (cycleDay < ovStart)       return 'follicular';
+  if (cycleDay <= ovEnd)        return 'ovulation';
+  return 'luteal';
+}
+
+function formatDateShort(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  return d.toLocaleDateString('en-ZA', { day:'numeric', month:'short' });
+}
+
+function daysUntil(dateStr) {
+  const diff = new Date(dateStr + 'T12:00:00') - new Date(todayStr() + 'T12:00:00');
+  return Math.round(diff / 86400000);
+}
+
+function initPeriodTracker() {
+  const d = getPeriodData();
+  const today = todayStr();
+
+  // Set default date input to today if no periods logged
+  const startInput = document.getElementById('ptStartDate');
+  if (startInput && !startInput.value) startInput.value = today;
+
+  // Sync settings inputs
+  document.getElementById('cycleLength').value  = d.cycleLength;
+  document.getElementById('periodLength').value = d.periodLength;
+
+  if (!d.periods.length) {
+    document.getElementById('ptSubtitle').textContent   = 'Log your first period to get started';
+    document.getElementById('ptCycleDay').textContent   = '—';
+    document.getElementById('ptPhaseLabel').textContent = '—';
+    document.getElementById('ptNextPeriod').textContent = '—';
+    document.getElementById('ptOvulation').textContent  = '—';
+    renderCycleBar(0, d.cycleLength, d.periodLength);
+    renderHistory(d);
+    return;
+  }
+
+  const latest = d.periods[0].start;
+  const latestDate = new Date(latest + 'T12:00:00');
+  const todayDate  = new Date(today  + 'T12:00:00');
+  const cycleDay   = Math.round((todayDate - latestDate) / 86400000) + 1;
+
+  if (cycleDay < 1 || cycleDay > d.cycleLength + 7) {
+    document.getElementById('ptSubtitle').textContent = 'Check period start date — may be from a previous cycle';
+  } else {
+    document.getElementById('ptSubtitle').textContent = `Day ${cycleDay} of your cycle — started ${formatDateShort(latest)}`;
+  }
+
+  const phase = calcPhaseFromDay(cycleDay, d.cycleLength, d.periodLength);
+  const phaseLabels = { menstrual:'🔴 Period', follicular:'🌱 Follicular', ovulation:'✨ Ovulation', luteal:'🌙 Luteal' };
+
+  document.getElementById('ptCycleDay').textContent   = cycleDay;
+  document.getElementById('ptPhaseLabel').textContent = phaseLabels[phase];
+
+  // Next period
+  const nextPeriodDate = new Date(latestDate);
+  nextPeriodDate.setDate(nextPeriodDate.getDate() + d.cycleLength);
+  const nextStr = nextPeriodDate.toISOString().slice(0,10);
+  const daysLeft = daysUntil(nextStr);
+  document.getElementById('ptNextPeriod').textContent = daysLeft > 0 ? `in ${daysLeft}d` : (daysLeft === 0 ? 'Today!' : `${Math.abs(daysLeft)}d ago`);
+
+  // Ovulation estimate
+  const ovDay = Math.round(d.cycleLength * 0.46);
+  const ovDate = new Date(latestDate);
+  ovDate.setDate(ovDate.getDate() + ovDay - 1);
+  const ovStr = ovDate.toISOString().slice(0,10);
+  const ovLeft = daysUntil(ovStr);
+  document.getElementById('ptOvulation').textContent = ovLeft > 0 ? `in ${ovLeft}d` : (ovLeft === 0 ? 'Today!' : 'Passed');
+
+  renderCycleBar(cycleDay, d.cycleLength, d.periodLength);
+  renderHistory(d);
+
+  // Auto-select the phase card
+  const card = document.querySelector(`.phase-${phase}`);
+  if (card) selectPhase(phase, card);
+}
+
+function renderCycleBar(cycleDay, cycleLength, periodLength) {
+  const ovStart = Math.round(cycleLength * 0.46);
+  const ovLen   = 3;
+  const lutStart = ovStart + ovLen;
+  const follLen = ovStart - periodLength - 1;
+  const lutLen  = cycleLength - lutStart + 1;
+
+  const pct = n => (n / cycleLength * 100).toFixed(2) + '%';
+
+  document.getElementById('segMenstrual').style.width  = pct(periodLength);
+  document.getElementById('segMenstrual').style.left   = '0';
+  document.getElementById('segFollicular').style.width = pct(follLen);
+  document.getElementById('segFollicular').style.left  = pct(periodLength);
+  document.getElementById('segOvulation').style.width  = pct(ovLen);
+  document.getElementById('segOvulation').style.left   = pct(ovStart - 1);
+  document.getElementById('segLuteal').style.width     = pct(lutLen);
+  document.getElementById('segLuteal').style.left      = pct(lutStart - 1);
+
+  const markerPct = cycleDay > 0 ? Math.min(((cycleDay - 0.5) / cycleLength) * 100, 100) : 0;
+  document.getElementById('cycleMarker').style.left = markerPct.toFixed(2) + '%';
+}
+
+function renderHistory(d) {
+  const container = document.getElementById('periodHistory');
+  if (!d.periods.length) {
+    container.innerHTML = '<div style="font-size:0.78rem;color:var(--text-muted);text-align:center;padding:12px;">No periods logged yet.</div>';
+    return;
+  }
+  container.innerHTML = d.periods.map((p, i) => {
+    const next = d.periods[i + 1];
+    let cycleLen = '—';
+    if (next) {
+      const diff = Math.round((new Date(p.start+'T12:00:00') - new Date(next.start+'T12:00:00')) / 86400000);
+      cycleLen = diff + 'd cycle';
+    }
+    return `<div class="history-item">
+      <span class="hi-date">🩸 ${formatDateShort(p.start)}</span>
+      <span class="hi-len">${cycleLen}</span>
+      <button onclick="removePeriod('${p.start}')" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.8rem;padding:0 4px;">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function removePeriod(dateStr) {
+  const d = getPeriodData();
+  d.periods = d.periods.filter(p => p.start !== dateStr);
+  savePeriodData(d);
+  initPeriodTracker();
+}
+
+// ===== SYMPTOM LOGGING =====
+let todaySymptoms = { flow: null, cramps: null, mood: null, energy: 3 };
+
+function setFlow(val) {
+  todaySymptoms.flow = val;
+  document.querySelectorAll('[id^="flow-"]').forEach(b => b.classList.remove('active'));
+  const el = document.getElementById('flow-' + val);
+  if (el) el.classList.add('active');
+}
+
+function setCramps(val) {
+  todaySymptoms.cramps = val;
+  document.querySelectorAll('[id^="cramps-"]').forEach(b => b.classList.remove('active'));
+  const el = document.getElementById('cramps-' + val);
+  if (el) el.classList.add('active');
+}
+
+function setMood(val) {
+  todaySymptoms.mood = val;
+  document.querySelectorAll('.mood-btn').forEach(b => b.classList.remove('active'));
+  const el = document.getElementById('mood-' + val);
+  if (el) el.classList.add('active');
+}
+
+function setEnergy(val) {
+  todaySymptoms.energy = parseInt(val);
+  document.getElementById('energyVal').textContent = val;
+}
+
+function saveTodaySymptoms() {
+  const all = JSON.parse(localStorage.getItem(SYM_KEY) || '{}');
+  all[todayStr()] = { ...todaySymptoms };
+  localStorage.setItem(SYM_KEY, JSON.stringify(all));
+  const btn = document.querySelector('[onclick="saveTodaySymptoms()"]');
+  if (btn) { btn.textContent = '✓ Saved!'; setTimeout(() => btn.textContent = "Save Today's Log", 1500); }
+}
+
+function loadTodaySymptoms() {
+  const all = JSON.parse(localStorage.getItem(SYM_KEY) || '{}');
+  const t = all[todayStr()];
+  if (!t) return;
+  if (t.flow)   setFlow(t.flow);
+  if (t.cramps) setCramps(t.cramps);
+  if (t.mood)   setMood(t.mood);
+  if (t.energy) { setEnergy(t.energy); document.getElementById('energySlider').value = t.energy; }
+}
+
+// ===== INIT =====
+document.addEventListener('DOMContentLoaded', () => {
+  initHeader();
+  tickCountdown();
+  initHabits();
+  initWedding();
+  newPrompt();
+  loadWordStats();
+
+  // Auto select today in daily planner
+  autoSelectToday();
+
+  // Period tracker — pre-seed today as day 1 if never logged
+  const d = getPeriodData();
+  if (!d.periods.length) {
+    d.periods = [{ start: todayStr() }];
+    savePeriodData(d);
+  }
+  document.getElementById('ptStartDate').value = todayStr();
+  initPeriodTracker();
+  loadTodaySymptoms();
+
+  // Restore cycle phase (initPeriodTracker will auto-set it, but fallback)
+  const savedPhase = localStorage.getItem('currentPhase');
+  if (savedPhase && !getPeriodData().periods.length) {
+    const card = document.querySelector(`.phase-${savedPhase}`);
+    if (card) selectPhase(savedPhase, card);
+  }
+
+  // Tick countdown every second
+  setInterval(tickCountdown, 1000);
+});
+</script>
+</body>
+</html>
