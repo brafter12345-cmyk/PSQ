@@ -1411,33 +1411,36 @@ function generatePDF() {
     // Audit trail as table
     const colX = [margin + 2, margin + 14, margin + contentW - 25];
     // Table header
+    const rowH = 8;
     doc.setFillColor(235, 240, 248);
-    doc.rect(margin, y - 1, contentW, 6, 'F');
+    doc.rect(margin, y, contentW, rowH, 'F');
     doc.setFontSize(7);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(80, 80, 80);
-    doc.text('STEP', colX[0], y + 3);
-    doc.text('DESCRIPTION', colX[1], y + 3);
-    doc.text('VALUE', colX[2] + 20, y + 3, { align: 'right' });
-    y += 8;
+    const headerTextY = y + rowH * 0.6;
+    doc.text('STEP', colX[0], headerTextY);
+    doc.text('DESCRIPTION', colX[1], headerTextY);
+    doc.text('VALUE', colX[2] + 20, headerTextY, { align: 'right' });
+    y += rowH + 1;
 
     // Table rows
     calc.breakdown.forEach((b, idx) => {
-      checkPage(7);
+      checkPage(rowH + 2);
       if (idx % 2 === 0) {
         doc.setFillColor(248, 250, 252);
-        doc.rect(margin, y - 3, contentW, 6, 'F');
+        doc.rect(margin, y, contentW, rowH, 'F');
       }
+      const textY = y + rowH * 0.55;
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(0, 100, 160);
-      doc.text(String(b.step), colX[0], y);
+      doc.text(String(b.step), colX[0], textY);
       doc.setTextColor(50, 50, 50);
-      doc.text(b.desc, colX[1], y);
+      doc.text(b.desc, colX[1], textY);
       doc.setFont('helvetica', 'bold');
       doc.setTextColor(30, 30, 30);
-      doc.text(formatR(b.value), colX[2] + 20, y, { align: 'right' });
-      y += 6;
+      doc.text(formatR(b.value), colX[2] + 20, textY, { align: 'right' });
+      y += rowH;
     });
     addSpacer(4);
 
