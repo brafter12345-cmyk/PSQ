@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Phishield SME Rating Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="sme-rating.css"/>
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="logo-area">
+        <div class="shield-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <div>
+          <h1><span class="brand-accent">Phishield</span></h1>
+          <p class="header-tagline">SME Rating Engine (Internal)</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ===== PROGRESS BAR ===== -->
+  <div class="main-container">
+    <div class="progress-wrapper">
+      <div class="progress-track">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <div class="progress-steps">
+        <button class="progress-step active" id="pStep1" data-step="1">
+          <span class="ps-dot"><span class="ps-num">1</span></span>
+          <span class="ps-label">Client</span>
+        </button>
+        <button class="progress-step" id="pStep2" data-step="2">
+          <span class="ps-dot"><span class="ps-num">2</span></span>
+          <span class="ps-label">Coverage</span>
+        </button>
+        <button class="progress-step" id="pStep3" data-step="3">
+          <span class="ps-dot"><span class="ps-num">3</span></span>
+          <span class="ps-label">Compare</span>
+        </button>
+        <button class="progress-step" id="pStep4" data-step="4">
+          <span class="ps-dot"><span class="ps-num">4</span></span>
+          <span class="ps-label">Adjust</span>
+        </button>
+        <button class="progress-step" id="pStep5" data-step="5">
+          <span class="ps-dot"><span class="ps-num">5</span></span>
+          <span class="ps-label">Summary</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ===== FLOATING QUOTE TICKER ===== -->
+    <div class="quote-ticker" id="quoteTicker">
+      <div class="ticker-label">Estimated Monthly</div>
+      <div class="ticker-amount" id="tickerAmount">--</div>
+    </div>
+
+    <!-- ===== STEP 1: CLIENT & INDUSTRY ===== -->
+    <section class="step-panel active" id="step-1" data-step="1">
+      <div class="glass-card">
+        <div class="step-header">
+          <h2>Client &amp; Industry</h2>
+          <p>Capture the client's details, industry classification and underwriting questions.</p>
+        </div>
+
+        <!-- Company Name -->
+        <div class="form-group">
+          <label class="field-label" for="company-name">Company Name</label>
+          <input class="form-input" id="company-name" type="text" placeholder="e.g. Acme Trading (Pty) Ltd" aria-label="Company Name"/>
+        </div>
+
+        <!-- Industry -->
+        <div class="form-group">
+          <label class="field-label" for="industry-select">Industry</label>
+          <select class="form-select" id="industry-select" required aria-label="Select industry">
+            <option value="" disabled selected>Select industry</option>
+            <optgroup label="Agriculture">
+            </optgroup>
+            <optgroup label="Mining">
+            </optgroup>
+            <optgroup label="Construction">
+            </optgroup>
+            <optgroup label="Manufacturing">
+            </optgroup>
+            <optgroup label="Transportation">
+            </optgroup>
+            <optgroup label="Wholesale Trade">
+            </optgroup>
+            <optgroup label="Retail Trade">
+            </optgroup>
+            <optgroup label="Finance/Insurance/Real Estate">
+            </optgroup>
+            <optgroup label="Services">
+            </optgroup>
+            <optgroup label="Healthcare">
+            </optgroup>
+            <optgroup label="Public Administration">
+            </optgroup>
+          </select>
+        </div>
+
+        <!-- Turnover -->
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="field-label" for="turnover-prev">Previous Financial Year Turnover (R)</label>
+            <input class="form-input" id="turnover-prev" type="text" inputmode="numeric" placeholder="e.g. 12,000,000" aria-label="Previous year turnover"/>
+          </div>
+          <div class="form-group">
+            <label class="field-label" for="turnover-current">Current Year Estimated Revenue (R)</label>
+            <input class="form-input" id="turnover-current" type="text" inputmode="numeric" placeholder="e.g. 15,000,000" aria-label="Current year estimated revenue"/>
+          </div>
+        </div>
+
+        <!-- Turnover Info Panel -->
+        <div class="turnover-info" id="turnover-info" style="display:none;" aria-live="polite">
+          <div class="turnover-info-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+          </div>
+          <div class="turnover-info-text">
+            <div class="turnover-actual">Actual Turnover: <strong id="turnover-actual-value">--</strong></div>
+            <div class="turnover-bracket">Matched Bracket: <strong id="turnover-bracket-value">--</strong></div>
+          </div>
+        </div>
+
+        <!-- Employee Count -->
+        <div class="form-group">
+          <label class="field-label" for="employee-count">Number of Employees</label>
+          <input class="form-input" id="employee-count" type="number" min="1" placeholder="e.g. 25" aria-label="Number of employees"/>
+        </div>
+
+        <!-- Underwriting Questions -->
+        <div class="uw-questions" id="uw-questions">
+          <h3 class="uw-header">Underwriting Assessment</h3>
+
+          <!-- Q1 -->
+          <div class="uw-question" data-uw="q1">
+            <div class="uw-question-text">1. Does Your Business have an active, comprehensive, paid for internet security software installed on all computer systems?</div>
+            <div class="toggle-group">
+              <button type="button" class="toggle-btn" data-value="yes" aria-label="Q1 Yes">Y</button>
+              <button type="button" class="toggle-btn" data-value="no" aria-label="Q1 No">N</button>
+            </div>
+          </div>
+
+          <!-- Q2: Data Back-Up -->
+          <div class="uw-question" data-uw="q2">
+            <div class="uw-question-text">2. Data Back-Up</div>
+            <div class="uw-sub-question" data-uw="q2-1">
+              <div class="uw-question-text">2.1 Do you back up your data on a weekly basis?</div>
+              <div class="toggle-group">
+                <button type="button" class="toggle-btn" data-value="yes" aria-label="Q2.1 Yes">Y</button>
+                <button type="button" class="toggle-btn" data-value="no" aria-label="Q2.1 No">N</button>
+              </div>
+            </div>
+            <div class="uw-sub-question" data-uw="q2-2">
+              <div class="uw-question-text">2.2 Do you perform recovery testing at least once per year?</div>
+              <div class="toggle-group">
+                <button type="button" class="toggle-btn" data-value="yes" aria-label="Q2.2 Yes">Y</button>
+                <button type="button" class="toggle-btn" data-value="no" aria-label="Q2.2 No">N</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Q3 -->
+          <div class="uw-question" data-uw="q3">
+            <div class="uw-question-text">3. Is your data stored separately from your main computer e.g. via the cloud or on an offline hard disk?</div>
+            <div class="toggle-group">
+              <button type="button" class="toggle-btn" data-value="yes" aria-label="Q3 Yes">Y</button>
+              <button type="button" class="toggle-btn" data-value="no" aria-label="Q3 No">N</button>
+            </div>
+          </div>
+
+          <!-- Q4 -->
+          <div class="uw-question" data-uw="q4">
+            <div class="uw-question-text">4. Do you regularly update and patch your computers so that they always have the latest security patches installed?</div>
+            <div class="toggle-group">
+              <button type="button" class="toggle-btn" data-value="yes" aria-label="Q4 Yes">Y</button>
+              <button type="button" class="toggle-btn" data-value="no" aria-label="Q4 No">N</button>
+            </div>
+          </div>
+
+          <!-- Q5 -->
+          <div class="uw-question" data-uw="q5">
+            <div class="uw-question-text">5. Are all the emails received and sent by your workplace computers and network checked for viruses/malware via an email filter?</div>
+            <div class="toggle-group">
+              <button type="button" class="toggle-btn" data-value="yes" aria-label="Q5 Yes">Y</button>
+              <button type="button" class="toggle-btn" data-value="no" aria-label="Q5 No">N</button>
+            </div>
+          </div>
+
+          <!-- Q6 -->
+          <div class="uw-question" data-uw="q6">
+            <div class="uw-question-text">6. Are your employees regularly advised about the secure use of their workplace computer, especially regarding the dangers of using the internet/email?</div>
+            <div class="toggle-group">
+              <button type="button" class="toggle-btn" data-value="yes" aria-label="Q6 Yes">Y</button>
+              <button type="button" class="toggle-btn" data-value="no" aria-label="Q6 No">N</button>
+            </div>
+          </div>
+
+          <!-- Funds Protect Checkbox -->
+          <div class="uw-fp-checkbox" id="uw-fp-checkbox">
+            <label>
+              <input type="checkbox" id="fp-over-250k"/>
+              <span>For Funds Protect cover limits above R250 000, complete the questions 7 and 8:</span>
+            </label>
+          </div>
+
+          <!-- Q7: FP Dependent (hidden by default) -->
+          <div class="uw-question uw-fp-dependent" data-uw="q7" id="uw-q7" style="display:none;">
+            <div class="uw-question-text">7. Do you have documented procedures in place for the following:</div>
+            <div class="uw-sub-question" data-uw="q7-1">
+              <div class="uw-question-text">7.1 vetting of new vendors/customers/payees?</div>
+              <div class="toggle-group">
+                <button type="button" class="toggle-btn" data-value="yes" aria-label="Q7.1 Yes">Y</button>
+                <button type="button" class="toggle-btn" data-value="no" aria-label="Q7.1 No">N</button>
+              </div>
+            </div>
+            <div class="uw-sub-question" data-uw="q7-2">
+              <div class="uw-question-text">7.2 to verify new beneficiaries loaded onto your business&#x2019;s banking profiles for funds transfers?</div>
+              <div class="toggle-group">
+                <button type="button" class="toggle-btn" data-value="yes" aria-label="Q7.2 Yes">Y</button>
+                <button type="button" class="toggle-btn" data-value="no" aria-label="Q7.2 No">N</button>
+              </div>
+            </div>
+            <div class="uw-sub-question" data-uw="q7-3">
+              <div class="uw-question-text">7.3 to verify requests to amend existing beneficiary payment details?</div>
+              <div class="toggle-group">
+                <button type="button" class="toggle-btn" data-value="yes" aria-label="Q7.3 Yes">Y</button>
+                <button type="button" class="toggle-btn" data-value="no" aria-label="Q7.3 No">N</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Q8: FP Dependent (hidden by default) -->
+          <div class="uw-question uw-fp-dependent" data-uw="q8" id="uw-q8" style="display:none;">
+            <div class="uw-question-text">8. Do you utilise account verification services offered by your bank or third-party provider?</div>
+            <div class="toggle-group">
+              <button type="button" class="toggle-btn" data-value="yes" aria-label="Q8 Yes">Y</button>
+              <button type="button" class="toggle-btn" data-value="no" aria-label="Q8 No">N</button>
+            </div>
+          </div>
+
+          <!-- Q9 -->
+          <div class="uw-question" data-uw="q9">
+            <div class="uw-question-text">9. Have you been covered for cyber liability risks in the last 12 months prior to the inception date of this policy?</div>
+            <div class="toggle-group">
+              <button type="button" class="toggle-btn" data-value="yes" aria-label="Q9 Yes">Y</button>
+              <button type="button" class="toggle-btn" data-value="no" aria-label="Q9 No">N</button>
+            </div>
+          </div>
+
+          <!-- Condition of Cover Banner -->
+          <div class="condition-of-cover-banner" id="condition-of-cover-banner" style="display:none;" aria-live="polite"></div>
+
+          <!-- UW Outcome -->
+          <div class="uw-outcome" id="uw-outcome" aria-live="polite"></div>
+        </div>
+
+        <!-- Prior Claim -->
+        <div class="prior-claim-section" id="prior-claim-section">
+          <label class="prior-claim-label">
+            <input type="checkbox" id="prior-claim-check"/>
+            <span>Prior claim in previous term</span>
+          </label>
+          <div class="prior-claim-warning" id="prior-claim-warning" style="display:none;" aria-live="polite">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span>Additional underwriting required. Refer to senior underwriter.</span>
+          </div>
+        </div>
+
+        <!-- Quote Type Toggle -->
+        <div class="form-group">
+          <label class="field-label">Quote Type</label>
+          <div class="toggle-group" id="quote-type-toggle">
+            <button type="button" class="toggle-btn active" data-value="new" aria-label="New Business">New Business</button>
+            <button type="button" class="toggle-btn" data-value="renewal" aria-label="Renewal">Renewal</button>
+            <button type="button" class="toggle-btn" data-value="competing" aria-label="Competing Quote">Competing Quote</button>
+          </div>
+        </div>
+
+        <!-- Renewal Section (hidden) -->
+        <div class="renewal-section" id="renewal-section" style="display:none;">
+          <div class="form-group">
+            <label class="field-label" for="renewal-cover-limit">Current Cover Limit</label>
+            <select class="form-select" id="renewal-cover-limit" aria-label="Current cover limit">
+              <option value="" disabled selected>Select current cover limit</option>
+              <option value="1000000">R1,000,000</option>
+              <option value="2500000">R2,500,000</option>
+              <option value="5000000">R5,000,000</option>
+              <option value="7500000">R7,500,000</option>
+              <option value="10000000">R10,000,000</option>
+              <option value="15000000">R15,000,000</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="field-label" for="renewal-premium">Current Annual Premium (R)</label>
+            <input class="form-input" id="renewal-premium" type="text" inputmode="numeric" placeholder="e.g. 18,500" aria-label="Current annual premium"/>
+          </div>
+          <div class="market-badge" aria-label="Market condition">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 6l-9.5 9.5-5-5L1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+            <span>Softening market for 2026</span>
+          </div>
+        </div>
+
+        <!-- Competing Section (hidden) -->
+        <div class="competing-section" id="competing-section" style="display:none;">
+          <div class="form-group">
+            <label class="field-label" for="competitor-name">Competitor Name</label>
+            <input class="form-input" id="competitor-name" type="text" placeholder="e.g. Industry / Guardrisk" aria-label="Competitor name"/>
+          </div>
+          <div class="form-group">
+            <label class="field-label" for="competitor-cover-limit">Competitor Cover Limit</label>
+            <select class="form-select" id="competitor-cover-limit" aria-label="Competitor cover limit">
+              <option value="" disabled selected>Select competitor cover limit</option>
+              <option value="1000000">R1,000,000</option>
+              <option value="2500000">R2,500,000</option>
+              <option value="5000000">R5,000,000</option>
+              <option value="7500000">R7,500,000</option>
+              <option value="10000000">R10,000,000</option>
+              <option value="15000000">R15,000,000</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="field-label" for="competitor-premium">Competitor Premium (R)</label>
+            <input class="form-input" id="competitor-premium" type="text" inputmode="numeric" placeholder="e.g. 22,000" aria-label="Competitor premium"/>
+          </div>
+        </div>
+
+        <!-- Blocker Overlay -->
+        <div class="blocker-overlay" id="blocker-overlay" style="display:none;">
+          <div class="blocker-content">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            <h3>Refer for Underwriting</h3>
+            <p>This risk does not meet standard acceptance criteria. Please refer to a senior underwriter.</p>
+          </div>
+        </div>
+
+        <!-- Navigation -->
+        <div class="btn-row">
+          <div></div>
+          <button type="button" class="btn btn-primary" id="nextBtn1" disabled aria-label="Continue to Coverage">
+            Continue to Coverage
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-arrow"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== STEP 2: COVERAGE RECOMMENDATIONS & SELECTION ===== -->
+    <section class="step-panel" id="step-2" data-step="2">
+      <div class="glass-card">
+        <div class="step-header">
+          <h2>Coverage Recommendations &amp; Selection</h2>
+          <p>Review recommended cover options or select a custom limit.</p>
+        </div>
+
+        <!-- Micro SME Badge -->
+        <div class="micro-badge" id="micro-badge" style="display:none;" aria-label="Micro SME rates applied">
+          <div class="micro-badge-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <div class="micro-badge-text">
+            <strong>Micro SME Rates Applied</strong>
+            <span>Turnover and cover limit qualify for Micro SME pricing.</span>
+          </div>
+        </div>
+
+        <!-- Recommended Cover Options -->
+        <div class="coverage-section">
+          <label class="field-label">Recommended Cover Options</label>
+          <div class="cover-recommendations" id="cover-recommendations" aria-label="Recommended cover options">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+        <!-- Manual Selection Toggle -->
+        <div class="manual-selection-toggle">
+          <button type="button" class="btn btn-ghost" id="custom-cover-toggle" aria-label="Select custom cover limit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Select Custom Cover Limit
+          </button>
+        </div>
+
+        <!-- Custom Selection Section (hidden) -->
+        <div class="custom-selection" id="custom-selection" style="display:none;">
+          <div class="coverage-section">
+            <label class="field-label">Cover Limit</label>
+            <div class="card-selector" id="cover-selector">
+              <button type="button" class="sel-card" data-cover-index="0" aria-label="R1M cover">
+                <span class="cover-badge"></span>
+                <span class="sc-value">R1M</span>
+              </button>
+              <button type="button" class="sel-card" data-cover-index="1" aria-label="R2.5M cover">
+                <span class="cover-badge"></span>
+                <span class="sc-value">R2.5M</span>
+              </button>
+              <button type="button" class="sel-card" data-cover-index="2" aria-label="R5M cover">
+                <span class="cover-badge"></span>
+                <span class="sc-value">R5M</span>
+              </button>
+              <button type="button" class="sel-card" data-cover-index="3" aria-label="R7.5M cover">
+                <span class="cover-badge"></span>
+                <span class="sc-value">R7.5M</span>
+              </button>
+              <button type="button" class="sel-card" data-cover-index="4" aria-label="R10M cover">
+                <span class="cover-badge"></span>
+                <span class="sc-value">R10M</span>
+              </button>
+              <button type="button" class="sel-card" data-cover-index="5" aria-label="R15M cover">
+                <span class="cover-badge"></span>
+                <span class="sc-value">R15M</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Funds Protect Cover -->
+        <div class="coverage-section">
+          <label class="field-label">Funds Protect Cover</label>
+          <div class="card-selector" id="fp-selector" aria-label="Funds Protect cover options">
+            <!-- Populated by JS based on selected cover limit -->
+          </div>
+          <p class="field-hint">Base FP included. Upgrade options shown above.</p>
+        </div>
+
+        <!-- Pricing Display -->
+        <div class="pricing-display" id="pricingDisplay">
+          <div class="pd-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="pd-icon"><circle cx="12" cy="12" r="10"/><path d="M12 6v12M8 10h8M8 14h8"/></svg>
+            <span>Estimated Premium</span>
+          </div>
+          <div class="pd-amounts">
+            <div class="pd-amount-item">
+              <div class="pd-label">Annual</div>
+              <div class="pd-value" id="pdAnnual">
+                <span class="pd-currency">R</span><span class="pd-number" id="pdAnnualNum">--</span>
+              </div>
+              <div class="pd-sub">/year</div>
+            </div>
+            <div class="pd-divider"></div>
+            <div class="pd-amount-item">
+              <div class="pd-label">Monthly</div>
+              <div class="pd-value" id="pdMonthly">
+                <span class="pd-currency">R</span><span class="pd-number" id="pdMonthlyNum">--</span>
+              </div>
+              <div class="pd-sub">/month</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Navigation -->
+        <div class="btn-row">
+          <button type="button" class="btn btn-ghost" id="backBtn2" aria-label="Back to Client">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-arrow flip"><polyline points="9 18 15 12 9 6"/></svg>
+            Back
+          </button>
+          <button type="button" class="btn btn-primary" id="nextBtn2" aria-label="Continue to Compare">
+            Continue to Compare
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-arrow"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== STEP 3: COMPETITOR QUOTES & BENCHMARKING ===== -->
+    <section class="step-panel" id="step-3" data-step="3">
+      <div class="glass-card">
+        <div class="step-header">
+          <h2>Competitor Quotes &amp; Benchmarking</h2>
+          <p>Compare Phishield pricing against competitor quotes and Industry benchmarks.</p>
+        </div>
+
+        <!-- Number of cover limits requested -->
+        <div class="form-group">
+          <label class="field-label" for="num-cover-limits">Number of cover limits to quote</label>
+          <select class="form-select" id="num-cover-limits" aria-label="Number of cover limits">
+            <option value="1" selected>1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+        </div>
+
+        <!-- Existing quote toggle -->
+        <div class="form-group">
+          <label class="field-label">Does the client have existing quote(s) for comparison?</label>
+          <div class="toggle-group" id="existing-quote-toggle">
+            <button type="button" class="toggle-btn active" data-value="no" aria-label="No existing quotes">No</button>
+            <button type="button" class="toggle-btn" data-value="yes" aria-label="Yes existing quotes">Yes</button>
+          </div>
+        </div>
+
+        <!-- Competitor Rows Container -->
+        <div class="competitor-rows" id="competitor-rows">
+          <!-- Template row (cloned per requested cover limit) -->
+          <div class="competitor-row" data-row-index="0">
+            <div class="form-grid">
+              <div class="form-group">
+                <label class="field-label">Requested Cover Limit</label>
+                <select class="form-select competitor-cover-select" aria-label="Requested cover limit">
+                  <option value="" disabled selected>Select cover limit</option>
+                  <option value="1000000">R1,000,000</option>
+                  <option value="2500000">R2,500,000</option>
+                  <option value="5000000">R5,000,000</option>
+                  <option value="7500000">R7,500,000</option>
+                  <option value="10000000">R10,000,000</option>
+                  <option value="15000000">R15,000,000</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="field-label">Competitor Overall Limit (R)</label>
+                <input class="form-input competitor-limit-input" type="text" inputmode="numeric" placeholder="e.g. 5,000,000" aria-label="Competitor overall limit"/>
+              </div>
+              <div class="form-group">
+                <label class="field-label">Competitor Premium (R)</label>
+                <input class="form-input competitor-premium-input" type="text" inputmode="numeric" placeholder="e.g. 22,000" aria-label="Competitor premium"/>
+              </div>
+            </div>
+            <div class="competitor-status" aria-live="polite"></div>
+          </div>
+        </div>
+
+        <!-- Industry Benchmark Section -->
+        <div class="comparison-table" id="comparison-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Cover Limit</th>
+                <th>Phishield (with FP)</th>
+                <th>Phishield (ex-FP)</th>
+                <th>Industry Benchmark</th>
+                <th>Delta</th>
+              </tr>
+            </thead>
+            <tbody id="comparison-tbody">
+              <!-- Rows populated by JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Navigation -->
+        <div class="btn-row">
+          <button type="button" class="btn btn-ghost" id="backBtn3" aria-label="Back to Coverage">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-arrow flip"><polyline points="9 18 15 12 9 6"/></svg>
+            Back
+          </button>
+          <button type="button" class="btn btn-primary" id="nextBtn3" aria-label="Continue to Adjustments">
+            Continue to Adjust
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-arrow"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== STEP 4: ADJUSTMENTS & LIVE COMPARISON ===== -->
+    <section class="step-panel" id="step-4" data-step="4">
+      <div class="glass-card">
+        <div class="step-header">
+          <h2>Adjustments &amp; Comparison</h2>
+          <p>Apply discounts or overrides and compare against benchmarks.</p>
+        </div>
+
+        <!-- Discount Section -->
+        <div class="discount-section">
+          <div class="discount-group" data-discount="posture">
+            <label class="field-label" for="posture-discount">Posture Discount (%)</label>
+            <div class="discount-input-row">
+              <input class="form-input" id="posture-discount" type="text" inputmode="numeric" placeholder="e.g. 15" aria-label="Posture discount percentage"/>
+              <span class="discount-computed" id="posture-discount-value">R0</span>
+            </div>
+          </div>
+          <div class="discount-group" data-discount="discretionary">
+            <label class="field-label" for="discretionary-discount">Discretionary Discount (%)</label>
+            <div class="discount-input-row">
+              <input class="form-input" id="discretionary-discount" type="text" inputmode="numeric" placeholder="e.g. 5" aria-label="Discretionary discount percentage"/>
+              <span class="discount-computed" id="discretionary-discount-value">R0</span>
+            </div>
+          </div>
+          <div class="discount-warning" id="discount-warning" style="display:none;" aria-live="polite">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span>Combined discount exceeds 35%. Senior underwriter approval required.</span>
+          </div>
+        </div>
+
+        <!-- Manual Override -->
+        <div class="form-group">
+          <label class="field-label" for="manual-override">Manual Premium Override (R) <span class="field-hint-inline">Optional</span></label>
+          <input class="form-input" id="manual-override" type="text" inputmode="numeric" placeholder="Leave blank to use calculated premium" aria-label="Manual premium override"/>
+        </div>
+
+        <!-- Live Comparison Panel -->
+        <div class="comparison-panel" id="comparison-panel">
+          <div class="comparison-panel-header">
+            <label class="field-label">Compare Against</label>
+            <div class="toggle-group" id="compare-toggle">
+              <button type="button" class="toggle-btn active" data-value="itoo" aria-label="Compare against Industry">Industry</button>
+              <button type="button" class="toggle-btn" data-value="competitor" aria-label="Compare against Competitor">Competitor Quote(s)</button>
+            </div>
+          </div>
+
+          <div class="comparison-bars" id="comparison-bars" aria-label="Premium comparison visualization">
+            <!-- Per cover limit comparison bars populated by JS -->
+            <div class="comparison-bar" data-compare-index="0">
+              <div class="comparison-bar-label"></div>
+              <div class="comparison-bar-track">
+                <div class="bar-target-line" aria-label="Benchmark premium"></div>
+                <div class="bar-fill" aria-label="Phishield premium"></div>
+              </div>
+              <div class="bar-delta" aria-live="polite"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Navigation -->
+        <div class="btn-row">
+          <button type="button" class="btn btn-ghost" id="backBtn4" aria-label="Back to Compare">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-arrow flip"><polyline points="9 18 15 12 9 6"/></svg>
+            Back
+          </button>
+          <button type="button" class="btn btn-primary" id="nextBtn4" aria-label="Continue to Summary">
+            Continue to Summary
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="btn-arrow"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== STEP 5: QUOTE SUMMARY & EXPORT ===== -->
+    <section class="step-panel" id="step-5" data-step="5">
+      <div class="glass-card">
+        <div class="step-header">
+          <h2>Quote Summary</h2>
+          <p>Review the full quote breakdown before exporting.</p>
+        </div>
+
+        <!-- Quote Reference -->
+        <div class="quote-ref" id="quote-ref" aria-label="Quote reference number">
+          CPB-<span id="quote-ref-date">YYYYMMDD</span>-<span id="quote-ref-seq">NNNN</span>
+        </div>
+
+        <!-- Market Condition (if renewal) -->
+        <div class="market-badge summary-market-badge" id="summary-market-badge" style="display:none;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M23 6l-9.5 9.5-5-5L1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          <span>Softening market for 2026</span>
+        </div>
+
+        <!-- Client Summary -->
+        <div class="summary-section" id="client-summary">
+          <h3>Client Details</h3>
+          <div class="summary-grid">
+            <div class="summary-item">
+              <div class="summary-label">Company</div>
+              <div class="summary-value" id="sum-company">--</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Industry</div>
+              <div class="summary-value" id="sum-industry">--</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Turnover</div>
+              <div class="summary-value" id="sum-turnover">--</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Revenue Bracket</div>
+              <div class="summary-value" id="sum-bracket">--</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Quote Type</div>
+              <div class="summary-value" id="sum-quote-type">--</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Underwriting Summary -->
+        <div class="summary-section" id="uw-summary">
+          <h3>Underwriting</h3>
+          <div class="summary-grid">
+            <div class="summary-item">
+              <div class="summary-label">UW Outcome</div>
+              <div class="summary-value" id="sum-uw-outcome">--</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Loadings</div>
+              <div class="summary-value" id="sum-uw-loadings">--</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Conditions of Cover</div>
+              <div class="summary-value" id="sum-uw-conditions">--</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Prior Claim Note -->
+        <div class="prior-claim-note" id="sum-prior-claim" style="display:none;" aria-live="polite">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span>Prior claim flagged. Additional underwriting review applied.</span>
+        </div>
+
+        <!-- Per Cover Limit Breakdown -->
+        <div class="quote-breakdowns" id="quote-breakdowns">
+          <!-- For each cover limit quoted, JS populates: -->
+          <!--
+          <div class="quote-breakdown-card" data-breakdown-index="0">
+            <h4>Cover Limit: R5,000,000</h4>
+            <table class="audit-trail">
+              <thead>
+                <tr><th>Step</th><th>Description</th><th>Value</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>1</td><td>Base premium</td><td>R12,500</td></tr>
+                ...
+              </tbody>
+            </table>
+            <div class="breakdown-finals">
+              <div class="breakdown-final-item">
+                <span>With FP</span><strong>R14,200</strong>
+              </div>
+              <div class="breakdown-final-item">
+                <span>Excl FP</span><strong>R12,500</strong>
+              </div>
+              <div class="breakdown-final-item">
+                <span>Monthly</span><strong>R1,183</strong>
+              </div>
+            </div>
+            <div class="breakdown-comparison">
+              <span>Industry: R16,800</span>
+              <span>Competitor: R15,200</span>
+              <span>Delta: -R1,000 (-6.6%)</span>
+            </div>
+          </div>
+          -->
+        </div>
+
+        <!-- Export Buttons -->
+        <div class="btn-row">
+          <button type="button" class="btn btn-primary btn-print" id="btn-print" aria-label="Print quote">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Print Quote
+          </button>
+          <button type="button" class="btn btn-ghost btn-clipboard" id="btn-clipboard" aria-label="Copy to clipboard">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+            Copy to Clipboard
+          </button>
+        </div>
+
+        <p class="footer-note-internal">Internal use only. Premiums are indicative and subject to final underwriting approval.</p>
+      </div>
+    </section>
+
+    <p class="footer-note">Phishield SME Rating Engine &copy; 2026. Internal tool — not for distribution.</p>
+  </div>
+
+  <script src="sme-data.js"></script>
+  <script src="sme-rating.js"></script>
+</body>
+</html>
