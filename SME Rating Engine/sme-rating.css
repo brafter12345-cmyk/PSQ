@@ -507,6 +507,11 @@ body::before {
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 .uw-question:last-child { border-bottom: none; }
+/* Compound questions (Q2, Q7) — stack vertically since they contain sub-questions */
+.uw-question:has(.uw-sub-question) {
+  flex-direction: column;
+  align-items: stretch;
+}
 .uw-question-text {
   flex: 1;
   font-size: 0.88rem;
@@ -1805,8 +1810,16 @@ body::before {
 
 /* ===== 28e. UW Sub-question Indentation ===== */
 .uw-sub-question {
-  padding-left: 20px;
-  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0 10px 24px;
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
+}
+.uw-sub-question .uw-question-text {
+  font-size: 0.84rem;
+  color: var(--text-secondary);
 }
 
 /* ===== 29. Action Buttons ===== */
