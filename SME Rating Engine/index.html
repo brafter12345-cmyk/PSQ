@@ -759,6 +759,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
             Copy to Clipboard
           </button>
+          <button type="button" class="btn btn-primary btn-download-pdf" id="btn-download-pdf" aria-label="Download PDF">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download PDF
+          </button>
         </div>
 
         <p class="footer-note-internal">Internal use only. Premiums are indicative and subject to final underwriting approval.</p>
@@ -768,6 +772,7 @@
     <p class="footer-note">Phishield SME Rating Engine &copy; 2026. Internal tool — not for distribution.</p>
   </div>
 
+  <script src="jspdf.min.js"></script>
   <script src="sme-data.js"></script>
   <script src="sme-rating.js"></script>
 </body>

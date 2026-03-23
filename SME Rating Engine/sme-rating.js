@@ -1252,6 +1252,167 @@ function buildClipboardText() {
 }
 
 
+/* ===== PDF Generation ===== */
+function generatePDF() {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF('p', 'mm', 'a4');
+  const pageW = 210;
+  const margin = 15;
+  const contentW = pageW - margin * 2;
+  let y = 15;
+
+  function addLine(text, size, style, color) {
+    if (y > 270) { doc.addPage(); y = 15; }
+    doc.setFontSize(size || 10);
+    doc.setFont('helvetica', style || 'normal');
+    doc.setTextColor(...(color || [51, 51, 51]));
+    const lines = doc.splitTextToSize(text, contentW);
+    doc.text(lines, margin, y);
+    y += lines.length * (size || 10) * 0.45 + 2;
+  }
+
+  function addSpacer(h) { y += h || 4; }
+
+  function addRule() {
+    doc.setDrawColor(200, 200, 200);
+    doc.line(margin, y, pageW - margin, y);
+    y += 3;
+  }
+
+  // Header
+  doc.setFillColor(0, 30, 61);
+  doc.rect(0, 0, pageW, 22, 'F');
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 180, 216);
+  doc.text('Phishield', margin, 10);
+  doc.setFontSize(8);
+  doc.setTextColor(180, 190, 200);
+  doc.text('SME Rating Engine — Quote Output', margin, 16);
+  doc.setFontSize(8);
+  doc.text(new Date().toLocaleDateString('en-ZA'), pageW - margin, 16, { align: 'right' });
+  y = 28;
+
+  // Quote Reference
+  addLine('Quote Reference: ' + state.quoteRef, 12, 'bold', [0, 0, 0]);
+  addSpacer(2);
+  addRule();
+
+  // Client Details
+  addLine('CLIENT DETAILS', 10, 'bold', [0, 120, 180]);
+  addSpacer(1);
+  addLine('Company: ' + state.companyName, 9);
+  if (state.industryIndex >= 0) {
+    addLine('Industry: ' + INDUSTRIES[state.industryIndex].main + ' — ' + INDUSTRIES[state.industryIndex].sub, 9);
+  }
+  addLine('Actual Turnover: ' + formatR(state.actualTurnover), 9);
+  addLine('Revenue Bracket: ' + (state.revenueBandIndex >= 0 ? REVENUE_BANDS[state.revenueBandIndex].label : '--'), 9);
+  const qtLabels = { new: 'New Business', renewal: 'Renewal', competing: 'Competing Quote' };
+  addLine('Quote Type: ' + (qtLabels[state.quoteType] || '--'), 9);
+  if (state.quoteType === 'renewal') {
+    addLine('Market Condition: ' + MARKET_CONDITION_LABEL, 9, 'italic', [100, 100, 100]);
+  }
+  addSpacer(2);
+  addRule();
+
+  // Underwriting
+  addLine('UNDERWRITING', 10, 'bold', [0, 120, 180]);
+  addSpacer(1);
+  const outcomeLabels = { standard: 'Standard Rates', caution: 'Proceed with Caution', loading: Math.round(state.uwLoadingPct * 100) + '% Loading', decline: 'Declined', refer: 'Refer to Senior UW' };
+  addLine('Outcome: ' + (outcomeLabels[state.uwOutcome] || '--'), 9);
+  addLine('Loading: ' + (state.uwLoadingPct > 0 ? Math.round(state.uwLoadingPct * 100) + '%' : 'None'), 9);
+  if (state.uwFPConditions && state.uwFPConditions.length > 0) {
+    addLine('Conditions of Cover:', 9, 'bold', [200, 150, 0]);
+    state.uwFPConditions.forEach(c => addLine('  • ' + c, 8, 'normal', [180, 130, 0]));
+  }
+  if (state.priorClaim) {
+    addLine('** Prior claim flagged — additional underwriting required **', 9, 'bold', [200, 50, 50]);
+  }
+  addSpacer(2);
+  addRule();
+
+  // Endorsements
+  if (state.endorsements) {
+    addLine('ENDORSEMENTS / NOTES', 10, 'bold', [0, 120, 180]);
+    addSpacer(1);
+    addLine(state.endorsements, 9, 'italic', [80, 80, 80]);
+    addSpacer(2);
+    addRule();
+  }
+
+  // Per cover limit breakdowns
+  const covers = state.selectedCovers.length > 0 ? state.selectedCovers : state.recommendedCovers;
+  const allCovers = [...covers];
+  state.competitorRows.forEach(row => {
+    if (row && row.requestedCoverIndex >= 0 && !allCovers.includes(row.requestedCoverIndex)) {
+      allCovers.push(row.requestedCoverIndex);
+    }
+  });
+
+  allCovers.forEach(ci => {
+    const calc = calculatePremium(ci, state);
+    if (!calc) return;
+
+    addLine('COVER LIMIT: ' + COVER_LIMITS[ci].label + (calc.isMicro ? '  (Micro SME)' : ''), 11, 'bold', [0, 0, 0]);
+    addSpacer(2);
+
+    // Audit trail table
+    addLine('Calculation Breakdown:', 9, 'bold', [80, 80, 80]);
+    addSpacer(1);
+    calc.breakdown.forEach(b => {
+      const stepStr = String(b.step).padEnd(6);
+      addLine(stepStr + b.desc + '   →   ' + formatR(b.value), 8, 'normal', [60, 60, 60]);
+    });
+    addSpacer(3);
+
+    // Final premiums
+    doc.setFillColor(240, 248, 255);
+    doc.rect(margin, y - 1, contentW, 18, 'F');
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 0, 0);
+    doc.text('Annual (with FP):', margin + 3, y + 5);
+    doc.setTextColor(0, 120, 180);
+    doc.text(formatR(calc.annual), margin + 45, y + 5);
+    doc.setTextColor(0, 0, 0);
+    doc.text('Annual (excl FP):', margin + 75, y + 5);
+    doc.text(formatR(calc.annualExFP), margin + 117, y + 5);
+    doc.text('Monthly:', margin + 140, y + 5);
+    doc.setTextColor(0, 120, 180);
+    doc.text(formatR(calc.monthly), margin + 160, y + 5);
+    y += 12;
+
+    // Comparison
+    const itoo = getItooBenchmark(state.actualTurnover, ci);
+    const compRow = state.competitorRows.find(r => r && r.requestedCoverIndex === ci);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    const compParts = [];
+    if (itoo) compParts.push('Industry Benchmark: ' + formatR(itoo.premium));
+    if (compRow && compRow.competitorPremium > 0) compParts.push('Competitor: ' + formatR(compRow.competitorPremium));
+    if (compParts.length > 0) doc.text(compParts.join('   |   '), margin + 3, y + 4);
+    y += 10;
+
+    addRule();
+  });
+
+  // Footer
+  addSpacer(4);
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'italic');
+  doc.setTextColor(150, 150, 150);
+  doc.text('Internal use only. Premiums are indicative and subject to final underwriting approval.', margin, y);
+  y += 4;
+  doc.text('Phishield SME Rating Engine © 2026. Not for distribution.', margin, y);
+
+  // Save with structured filename
+  const companySlug = state.companyName.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_');
+  const coverLabels = allCovers.map(ci => COVER_LIMITS[ci].label.replace(/\./g, '')).join('_');
+  const filename = companySlug + '_' + coverLabels + '.pdf';
+  doc.save(filename);
+}
+
 /* ===== INITIALIZATION ===== */
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -1501,6 +1662,10 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
       setTimeout(() => { btn.innerHTML = origHTML; }, 2000);
     });
+  });
+
+  $('btn-download-pdf').addEventListener('click', () => {
+    generatePDF();
   });
 
   // ─── Progress Step Clicks (backward navigation only) ─────────
