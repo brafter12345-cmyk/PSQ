@@ -20,3 +20,13 @@ services:
       - type: rewrite
         source: /*
         destination: /planner.html
+
+  - type: web
+    name: sme-rating-engine
+    runtime: static
+    staticPublishPath: "./SME Rating Engine"
+    pullRequestPreviewsEnabled: false
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
