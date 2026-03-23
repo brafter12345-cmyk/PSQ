@@ -580,6 +580,27 @@ body::before {
   color: var(--text-secondary);
 }
 
+/* FP checkbox */
+.uw-fp-checkbox {
+  padding: 16px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.uw-fp-checkbox label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  line-height: 1.5;
+}
+.uw-fp-checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+
 /* FP-dependent questions */
 .uw-fp-dependent {
   display: none;
