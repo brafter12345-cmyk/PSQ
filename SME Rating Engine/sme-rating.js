@@ -1521,21 +1521,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   $('renewal-premium').addEventListener('focus', () => stripCurrencyInput($('renewal-premium')));
 
-  // Competing inputs
-  $('competitor-name').addEventListener('input', () => {
-    state.competitorName = $('competitor-name').value.trim();
-  });
-
-  $('competitor-cover-limit').addEventListener('change', () => {
-    const val = parseInt($('competitor-cover-limit').value, 10);
-    state.competitorCoverIndex = COVER_LIMITS.findIndex(cl => cl.value === val);
-  });
-
-  $('competitor-premium').addEventListener('blur', () => {
-    formatCurrencyInput($('competitor-premium'));
-    state.competitorPremium = parseCurrency($('competitor-premium').value);
-  });
-  $('competitor-premium').addEventListener('focus', () => stripCurrencyInput($('competitor-premium')));
+  // Competing inputs (competitor name now in Step 3)
+  if ($('competitor-name-step3')) {
+    $('competitor-name-step3').addEventListener('input', () => {
+      state.competitorName = $('competitor-name-step3').value.trim();
+    });
+  }
 
   // ─── Step 1 Next Button ─────────────────────────────────────
 

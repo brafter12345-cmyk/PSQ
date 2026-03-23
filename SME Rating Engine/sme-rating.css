@@ -1127,10 +1127,42 @@ body::before {
   gap: 10px;
 }
 .competitor-row {
-  display: flex;
-  gap: 10px;
-  align-items: center;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
   animation: fadeSlideUp 0.3s var(--ease);
+}
+.competitor-row-header {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+.step3-section {
+  margin-bottom: 20px;
+}
+.section-label {
+  font-size: 0.85rem !important;
+  color: var(--accent) !important;
+  margin-bottom: 14px !important;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(0, 180, 216, 0.15);
+}
+.info-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(0, 180, 216, 0.06);
+  border: 1px solid rgba(0, 180, 216, 0.12);
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  margin-top: 8px;
 }
 .competitor-row .form-select {
   flex: 1;
@@ -1194,6 +1226,11 @@ body::before {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.84rem;
+  margin-top: 8px;
+  margin-bottom: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 .comparison-table thead th {
   padding: 14px 16px;

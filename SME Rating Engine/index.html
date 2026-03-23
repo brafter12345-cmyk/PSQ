@@ -308,27 +308,11 @@
           </div>
         </div>
 
-        <!-- Competing Section (hidden) -->
+        <!-- Competing Quote Note (competitor details captured in Step 3) -->
         <div class="competing-section" id="competing-section" style="display:none;">
-          <div class="form-group">
-            <label class="field-label" for="competitor-name">Competitor Name</label>
-            <input class="form-input" id="competitor-name" type="text" placeholder="e.g. Industry / Guardrisk" aria-label="Competitor name"/>
-          </div>
-          <div class="form-group">
-            <label class="field-label" for="competitor-cover-limit">Competitor Cover Limit</label>
-            <select class="form-select" id="competitor-cover-limit" aria-label="Competitor cover limit">
-              <option value="" disabled selected>Select competitor cover limit</option>
-              <option value="1000000">R1,000,000</option>
-              <option value="2500000">R2,500,000</option>
-              <option value="5000000">R5,000,000</option>
-              <option value="7500000">R7,500,000</option>
-              <option value="10000000">R10,000,000</option>
-              <option value="15000000">R15,000,000</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="field-label" for="competitor-premium">Competitor Premium (R)</label>
-            <input class="form-input" id="competitor-premium" type="text" inputmode="numeric" placeholder="e.g. 22,000" aria-label="Competitor premium"/>
+          <div class="info-banner">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            <span>Competitor quote details will be captured in the Compare step.</span>
           </div>
         </div>
 
@@ -476,57 +460,68 @@
           <p>Compare Phishield pricing against competitor quotes and Industry benchmarks.</p>
         </div>
 
-        <!-- Number of cover limits requested -->
-        <div class="form-group">
-          <label class="field-label" for="num-cover-limits">Number of cover limits to quote</label>
-          <select class="form-select" id="num-cover-limits" aria-label="Number of cover limits">
-            <option value="1" selected>1</option>
-            <option value="2">2</option>
-            <option value="3">3</option>
-            <option value="4">4</option>
-          </select>
-        </div>
-
-        <!-- Existing quote toggle -->
-        <div class="form-group">
-          <label class="field-label">Does the client have existing quote(s) for comparison?</label>
-          <div class="toggle-group" id="existing-quote-toggle">
-            <button type="button" class="toggle-btn active" data-value="no" aria-label="No existing quotes">No</button>
-            <button type="button" class="toggle-btn" data-value="yes" aria-label="Yes existing quotes">Yes</button>
-          </div>
-        </div>
-
-        <!-- Competitor Rows Container -->
-        <div class="competitor-rows" id="competitor-rows">
-          <!-- Template row (cloned per requested cover limit) -->
-          <div class="competitor-row" data-row-index="0">
-            <div class="form-grid">
-              <div class="form-group">
-                <label class="field-label">Requested Cover Limit</label>
-                <select class="form-select competitor-cover-select" aria-label="Requested cover limit">
-                  <option value="" disabled selected>Select cover limit</option>
-                  <option value="1000000">R1,000,000</option>
-                  <option value="2500000">R2,500,000</option>
-                  <option value="5000000">R5,000,000</option>
-                  <option value="7500000">R7,500,000</option>
-                  <option value="10000000">R10,000,000</option>
-                  <option value="15000000">R15,000,000</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label class="field-label">Competitor Overall Limit (R)</label>
-                <input class="form-input competitor-limit-input" type="text" inputmode="numeric" placeholder="e.g. 5,000,000" aria-label="Competitor overall limit"/>
-              </div>
-              <div class="form-group">
-                <label class="field-label">Competitor Premium (R)</label>
-                <input class="form-input competitor-premium-input" type="text" inputmode="numeric" placeholder="e.g. 22,000" aria-label="Competitor premium"/>
-              </div>
+        <!-- Competitor Quote Section -->
+        <div class="step3-section">
+          <label class="field-label section-label">Competitor Comparison</label>
+          <div class="form-grid" style="margin-bottom: 16px;">
+            <div class="form-group">
+              <label class="field-label" for="competitor-name-step3">Competitor / Provider Name</label>
+              <input class="form-input" id="competitor-name-step3" type="text" placeholder="e.g. Guardrisk / Chubb" aria-label="Competitor name"/>
             </div>
-            <div class="competitor-status" aria-live="polite"></div>
+            <div class="form-group">
+              <label class="field-label" for="num-cover-limits">Number of cover limits to compare</label>
+              <select class="form-select" id="num-cover-limits" aria-label="Number of cover limits">
+                <option value="1" selected>1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label class="field-label">Does the client have existing quote(s) for comparison?</label>
+            <div class="toggle-group" id="existing-quote-toggle">
+              <button type="button" class="toggle-btn active" data-value="no" aria-label="No existing quotes">No</button>
+              <button type="button" class="toggle-btn" data-value="yes" aria-label="Yes existing quotes">Yes</button>
+            </div>
+          </div>
+
+          <!-- Competitor Rows Container -->
+          <div class="competitor-rows" id="competitor-rows">
+            <div class="competitor-row" data-row-index="0">
+              <div class="competitor-row-header">Quote Option 1</div>
+              <div class="form-grid">
+                <div class="form-group">
+                  <label class="field-label">Requested Cover Limit</label>
+                  <select class="form-select competitor-cover-select" aria-label="Requested cover limit">
+                    <option value="" disabled selected>Select cover limit</option>
+                    <option value="1000000">R1,000,000</option>
+                    <option value="2500000">R2,500,000</option>
+                    <option value="5000000">R5,000,000</option>
+                    <option value="7500000">R7,500,000</option>
+                    <option value="10000000">R10,000,000</option>
+                    <option value="15000000">R15,000,000</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="field-label">Competitor Overall Limit (R)</label>
+                  <input class="form-input competitor-limit-input" type="text" inputmode="numeric" placeholder="e.g. 5,000,000" aria-label="Competitor overall limit"/>
+                </div>
+                <div class="form-group">
+                  <label class="field-label">Competitor Premium (R)</label>
+                  <input class="form-input competitor-premium-input" type="text" inputmode="numeric" placeholder="e.g. 22,000" aria-label="Competitor premium"/>
+                </div>
+              </div>
+              <div class="competitor-status" aria-live="polite"></div>
+            </div>
           </div>
         </div>
 
         <!-- Industry Benchmark Section -->
+        <div class="step3-section" style="margin-top: 28px;">
+          <label class="field-label section-label">Industry Benchmark Comparison</label>
+        </div>
         <div class="comparison-table" id="comparison-table">
           <table>
             <thead>
