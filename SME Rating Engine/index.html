@@ -594,6 +594,12 @@
           <input class="form-input" id="manual-override" type="text" inputmode="numeric" placeholder="Leave blank to use calculated premium" aria-label="Manual premium override"/>
         </div>
 
+        <!-- Endorsements -->
+        <div class="form-group" style="margin-top: 24px;">
+          <label class="field-label">Endorsements / Underwriter Notes</label>
+          <textarea class="form-input endorsements-textarea" id="endorsements" rows="4" placeholder="Enter any endorsements, special conditions, or notes to be included on the quote output..."></textarea>
+        </div>
+
         <!-- Live Comparison Panel -->
         <div class="comparison-panel" id="comparison-panel">
           <div class="comparison-panel-header">
@@ -700,6 +706,12 @@
         <div class="prior-claim-note" id="sum-prior-claim" style="display:none;" aria-live="polite">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           <span>Prior claim flagged. Additional underwriting review applied.</span>
+        </div>
+
+        <!-- Endorsements -->
+        <div class="summary-section" id="sum-endorsements-section" style="display:none;">
+          <h3>Endorsements / Notes</h3>
+          <div class="summary-endorsements" id="sum-endorsements"></div>
         </div>
 
         <!-- Per Cover Limit Breakdown -->

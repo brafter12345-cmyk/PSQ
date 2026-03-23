@@ -64,6 +64,7 @@ const state = {
   postureDiscount: 0,
   discretionaryDiscount: 0,
   manualOverride: null,
+  endorsements: '',
   compareTarget: 'itoo',
   // Computed
   calculations: {},
@@ -1113,6 +1114,19 @@ function populateSummary() {
   // Prior claim
   $('sum-prior-claim').style.display = state.priorClaim ? 'flex' : 'none';
 
+  // Endorsements
+  state.endorsements = ($('endorsements') ? $('endorsements').value : '').trim();
+  const endSection = $('sum-endorsements-section');
+  const endContent = $('sum-endorsements');
+  if (endSection && endContent) {
+    if (state.endorsements) {
+      endContent.textContent = state.endorsements;
+      endSection.style.display = 'block';
+    } else {
+      endSection.style.display = 'none';
+    }
+  }
+
   // Per cover limit breakdowns
   renderQuoteBreakdowns();
 }
@@ -1224,6 +1238,13 @@ function buildClipboardText() {
     if (!calc) return;
     lines.push(`${COVER_LIMITS[ci].label}: ${formatR(calc.annual)}/yr (${formatR(calc.monthly)}/mo) | Ex-FP: ${formatR(calc.annualExFP)}`);
   });
+
+  if (state.endorsements) {
+    lines.push('');
+    lines.push('ENDORSEMENTS / NOTES');
+    lines.push('-'.repeat(30));
+    lines.push(state.endorsements);
+  }
 
   lines.push('');
   lines.push('Internal use only. Subject to final underwriting approval.');
