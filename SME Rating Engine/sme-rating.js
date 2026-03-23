@@ -1257,90 +1257,142 @@ function generatePDF() {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageW = 210;
-  const margin = 15;
+  const margin = 18;
   const contentW = pageW - margin * 2;
   let y = 15;
+  const lineH = 5; // standard line height
 
-  function addLine(text, size, style, color) {
-    if (y > 270) { doc.addPage(); y = 15; }
-    doc.setFontSize(size || 10);
+  function checkPage(needed) {
+    if (y + (needed || 10) > 280) { doc.addPage(); y = 15; }
+  }
+
+  function addText(text, size, style, color, x) {
+    checkPage(size * 0.5);
+    doc.setFontSize(size || 9);
     doc.setFont('helvetica', style || 'normal');
     doc.setTextColor(...(color || [51, 51, 51]));
-    const lines = doc.splitTextToSize(text, contentW);
-    doc.text(lines, margin, y);
-    y += lines.length * (size || 10) * 0.45 + 2;
+    const lines = doc.splitTextToSize(String(text), contentW - (x ? x - margin : 0));
+    doc.text(lines, x || margin, y);
+    y += lines.length * lineH + 1;
   }
 
-  function addSpacer(h) { y += h || 4; }
+  function addSpacer(h) { y += h || 3; }
 
   function addRule() {
-    doc.setDrawColor(200, 200, 200);
+    doc.setDrawColor(200, 210, 220);
     doc.line(margin, y, pageW - margin, y);
-    y += 3;
+    y += 4;
   }
 
-  // Header
-  doc.setFillColor(0, 30, 61);
-  doc.rect(0, 0, pageW, 22, 'F');
-  doc.setFontSize(14);
+  function addSection(title) {
+    addSpacer(2);
+    doc.setFillColor(0, 40, 80);
+    doc.rect(margin, y - 1, contentW, 7, 'F');
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text(title, margin + 3, y + 4);
+    y += 10;
+  }
+
+  function addField(label, value, labelW) {
+    checkPage(8);
+    const lw = labelW || 42;
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(120, 120, 120);
+    doc.text(label, margin + 2, y);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 30, 30);
+    doc.text(String(value), margin + lw, y);
+    y += lineH + 1;
+  }
+
+  // ── Header Bar ──
+  doc.setFillColor(0, 25, 50);
+  doc.rect(0, 0, pageW, 20, 'F');
+  doc.setFillColor(0, 180, 216);
+  doc.rect(0, 20, pageW, 0.8, 'F');
+  doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(0, 180, 216);
-  doc.text('Phishield', margin, 10);
+  doc.text('Phishield', margin, 12);
   doc.setFontSize(8);
-  doc.setTextColor(180, 190, 200);
-  doc.text('SME Rating Engine — Quote Output', margin, 16);
-  doc.setFontSize(8);
-  doc.text(new Date().toLocaleDateString('en-ZA'), pageW - margin, 16, { align: 'right' });
-  y = 28;
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(160, 175, 190);
+  doc.text('SME Rating Engine \u2014 Quote Output', margin + 40, 12);
+  doc.text(new Date().toLocaleDateString('en-ZA', { year: 'numeric', month: 'long', day: 'numeric' }), pageW - margin, 12, { align: 'right' });
+  y = 26;
 
-  // Quote Reference
-  addLine('Quote Reference: ' + state.quoteRef, 12, 'bold', [0, 0, 0]);
-  addSpacer(2);
+  // ── Quote Reference ──
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text('Quote Ref: ' + state.quoteRef, margin, y);
+  y += 8;
   addRule();
 
-  // Client Details
-  addLine('CLIENT DETAILS', 10, 'bold', [0, 120, 180]);
-  addSpacer(1);
-  addLine('Company: ' + state.companyName, 9);
+  // ── Client Details ──
+  addSection('CLIENT DETAILS');
+  addField('Company:', state.companyName);
   if (state.industryIndex >= 0) {
-    addLine('Industry: ' + INDUSTRIES[state.industryIndex].main + ' — ' + INDUSTRIES[state.industryIndex].sub, 9);
+    addField('Industry:', INDUSTRIES[state.industryIndex].main + ' \u2014 ' + INDUSTRIES[state.industryIndex].sub);
   }
-  addLine('Actual Turnover: ' + formatR(state.actualTurnover), 9);
-  addLine('Revenue Bracket: ' + (state.revenueBandIndex >= 0 ? REVENUE_BANDS[state.revenueBandIndex].label : '--'), 9);
+  addField('Actual Turnover:', formatR(state.actualTurnover));
+  addField('Revenue Bracket:', state.revenueBandIndex >= 0 ? REVENUE_BANDS[state.revenueBandIndex].label : '--');
   const qtLabels = { new: 'New Business', renewal: 'Renewal', competing: 'Competing Quote' };
-  addLine('Quote Type: ' + (qtLabels[state.quoteType] || '--'), 9);
+  addField('Quote Type:', qtLabels[state.quoteType] || '--');
   if (state.quoteType === 'renewal') {
-    addLine('Market Condition: ' + MARKET_CONDITION_LABEL, 9, 'italic', [100, 100, 100]);
+    addField('Market Condition:', MARKET_CONDITION_LABEL);
+  }
+  if (state.competitorName) {
+    addField('Competitor:', state.competitorName);
   }
   addSpacer(2);
-  addRule();
 
-  // Underwriting
-  addLine('UNDERWRITING', 10, 'bold', [0, 120, 180]);
-  addSpacer(1);
+  // ── Underwriting ──
+  addSection('UNDERWRITING');
   const outcomeLabels = { standard: 'Standard Rates', caution: 'Proceed with Caution', loading: Math.round(state.uwLoadingPct * 100) + '% Loading', decline: 'Declined', refer: 'Refer to Senior UW' };
-  addLine('Outcome: ' + (outcomeLabels[state.uwOutcome] || '--'), 9);
-  addLine('Loading: ' + (state.uwLoadingPct > 0 ? Math.round(state.uwLoadingPct * 100) + '%' : 'None'), 9);
+  addField('Outcome:', outcomeLabels[state.uwOutcome] || '--');
+  addField('Loading:', state.uwLoadingPct > 0 ? Math.round(state.uwLoadingPct * 100) + '%' : 'None');
   if (state.uwFPConditions && state.uwFPConditions.length > 0) {
-    addLine('Conditions of Cover:', 9, 'bold', [200, 150, 0]);
-    state.uwFPConditions.forEach(c => addLine('  • ' + c, 8, 'normal', [180, 130, 0]));
+    addField('Conditions of Cover:', '');
+    state.uwFPConditions.forEach(c => {
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(180, 130, 0);
+      doc.text('\u2022 ' + c, margin + 6, y);
+      y += lineH;
+    });
+  } else {
+    addField('Conditions of Cover:', 'None');
   }
   if (state.priorClaim) {
-    addLine('** Prior claim flagged — additional underwriting required **', 9, 'bold', [200, 50, 50]);
+    addSpacer(2);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(200, 50, 50);
+    doc.text('\u26A0 Prior claim flagged \u2014 additional underwriting required', margin + 2, y);
+    y += lineH + 2;
   }
   addSpacer(2);
-  addRule();
 
-  // Endorsements
+  // ── Endorsements ──
   if (state.endorsements) {
-    addLine('ENDORSEMENTS / NOTES', 10, 'bold', [0, 120, 180]);
-    addSpacer(1);
-    addLine(state.endorsements, 9, 'italic', [80, 80, 80]);
-    addSpacer(2);
-    addRule();
+    addSection('ENDORSEMENTS / NOTES');
+    const endorseLines = doc.splitTextToSize(state.endorsements, contentW - 6);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(80, 80, 80);
+    endorseLines.forEach(line => {
+      checkPage(6);
+      doc.text(line, margin + 3, y);
+      y += lineH;
+    });
+    addSpacer(3);
   }
 
-  // Per cover limit breakdowns
+  // ── Per Cover Limit Breakdowns ──
   const covers = state.selectedCovers.length > 0 ? state.selectedCovers : state.recommendedCovers;
   const allCovers = [...covers];
   state.competitorRows.forEach(row => {
@@ -1353,60 +1405,118 @@ function generatePDF() {
     const calc = calculatePremium(ci, state);
     if (!calc) return;
 
-    addLine('COVER LIMIT: ' + COVER_LIMITS[ci].label + (calc.isMicro ? '  (Micro SME)' : ''), 11, 'bold', [0, 0, 0]);
-    addSpacer(2);
+    checkPage(60);
+    addSection('COVER LIMIT: ' + COVER_LIMITS[ci].label + (calc.isMicro ? '  (Micro SME)' : ''));
 
-    // Audit trail table
-    addLine('Calculation Breakdown:', 9, 'bold', [80, 80, 80]);
-    addSpacer(1);
-    calc.breakdown.forEach(b => {
-      const stepStr = String(b.step).padEnd(6);
-      addLine(stepStr + b.desc + '   →   ' + formatR(b.value), 8, 'normal', [60, 60, 60]);
-    });
-    addSpacer(3);
-
-    // Final premiums
-    doc.setFillColor(240, 248, 255);
-    doc.rect(margin, y - 1, contentW, 18, 'F');
-    doc.setFontSize(9);
+    // Audit trail as table
+    const colX = [margin + 2, margin + 14, margin + contentW - 25];
+    // Table header
+    doc.setFillColor(235, 240, 248);
+    doc.rect(margin, y - 1, contentW, 6, 'F');
+    doc.setFontSize(7);
     doc.setFont('helvetica', 'bold');
-    doc.setTextColor(0, 0, 0);
-    doc.text('Annual (with FP):', margin + 3, y + 5);
-    doc.setTextColor(0, 120, 180);
-    doc.text(formatR(calc.annual), margin + 45, y + 5);
-    doc.setTextColor(0, 0, 0);
-    doc.text('Annual (excl FP):', margin + 75, y + 5);
-    doc.text(formatR(calc.annualExFP), margin + 117, y + 5);
-    doc.text('Monthly:', margin + 140, y + 5);
-    doc.setTextColor(0, 120, 180);
-    doc.text(formatR(calc.monthly), margin + 160, y + 5);
-    y += 12;
+    doc.setTextColor(80, 80, 80);
+    doc.text('STEP', colX[0], y + 3);
+    doc.text('DESCRIPTION', colX[1], y + 3);
+    doc.text('VALUE', colX[2] + 20, y + 3, { align: 'right' });
+    y += 8;
 
-    // Comparison
-    const itoo = getItooBenchmark(state.actualTurnover, ci);
-    const compRow = state.competitorRows.find(r => r && r.requestedCoverIndex === ci);
-    doc.setFontSize(8);
+    // Table rows
+    calc.breakdown.forEach((b, idx) => {
+      checkPage(7);
+      if (idx % 2 === 0) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(margin, y - 3, contentW, 6, 'F');
+      }
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(0, 100, 160);
+      doc.text(String(b.step), colX[0], y);
+      doc.setTextColor(50, 50, 50);
+      doc.text(b.desc, colX[1], y);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(30, 30, 30);
+      doc.text(formatR(b.value), colX[2] + 20, y, { align: 'right' });
+      y += 6;
+    });
+    addSpacer(4);
+
+    // Final premiums box
+    checkPage(22);
+    doc.setFillColor(235, 245, 255);
+    doc.rect(margin, y, contentW, 16, 'F');
+    doc.setDrawColor(0, 150, 200);
+    doc.rect(margin, y, contentW, 16, 'S');
+
+    const thirdW = contentW / 3;
+    const boxY = y + 5;
+
+    // Annual (with FP)
+    doc.setFontSize(7);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(100, 100, 100);
-    const compParts = [];
-    if (itoo) compParts.push('Industry Benchmark: ' + formatR(itoo.premium));
-    if (compRow && compRow.competitorPremium > 0) compParts.push('Competitor: ' + formatR(compRow.competitorPremium));
-    if (compParts.length > 0) doc.text(compParts.join('   |   '), margin + 3, y + 4);
-    y += 10;
+    doc.text('ANNUAL (WITH FP)', margin + thirdW * 0.5, boxY, { align: 'center' });
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 100, 170);
+    doc.text(formatR(calc.annual), margin + thirdW * 0.5, boxY + 7, { align: 'center' });
 
+    // Annual (excl FP)
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('ANNUAL (EXCL FP)', margin + thirdW * 1.5, boxY, { align: 'center' });
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(50, 50, 50);
+    doc.text(formatR(calc.annualExFP), margin + thirdW * 1.5, boxY + 7, { align: 'center' });
+
+    // Monthly
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('MONTHLY', margin + thirdW * 2.5, boxY, { align: 'center' });
+    doc.setFontSize(12);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(0, 100, 170);
+    doc.text(formatR(calc.monthly), margin + thirdW * 2.5, boxY + 7, { align: 'center' });
+
+    y += 20;
+
+    // Comparison row
+    const itoo = getItooBenchmark(state.actualTurnover, ci);
+    const compRow = state.competitorRows.find(r => r && r.requestedCoverIndex === ci);
+    if (itoo || (compRow && compRow.competitorPremium > 0)) {
+      checkPage(10);
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(100, 100, 100);
+      let compText = '';
+      if (itoo) compText += 'Industry Benchmark: ' + formatR(itoo.premium);
+      if (compRow && compRow.competitorPremium > 0) compText += '    |    Competitor: ' + formatR(compRow.competitorPremium);
+      if (itoo) {
+        const d = calc.annualExFP - itoo.premium;
+        const pct = Math.round(d / itoo.premium * 100);
+        compText += '    |    Delta: ' + (d <= 0 ? '' : '+') + formatR(Math.abs(d)) + ' (' + (d <= 0 ? '' : '+') + pct + '%)';
+      }
+      doc.text(compText, margin + 2, y);
+      y += 6;
+    }
+
+    addSpacer(4);
     addRule();
   });
 
-  // Footer
-  addSpacer(4);
+  // ── Footer ──
+  addSpacer(6);
   doc.setFontSize(7);
   doc.setFont('helvetica', 'italic');
   doc.setTextColor(150, 150, 150);
   doc.text('Internal use only. Premiums are indicative and subject to final underwriting approval.', margin, y);
   y += 4;
-  doc.text('Phishield SME Rating Engine © 2026. Not for distribution.', margin, y);
+  doc.text('Phishield SME Rating Engine \u00A9 2026. Not for distribution.', margin, y);
 
-  // Save with structured filename
+  // Save
   const companySlug = state.companyName.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_');
   const coverLabels = allCovers.map(ci => COVER_LIMITS[ci].label.replace(/\./g, '')).join('_');
   const filename = companySlug + '_' + coverLabels + '.pdf';
