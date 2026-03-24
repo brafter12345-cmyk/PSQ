@@ -1543,7 +1543,7 @@ function updateComparisonBars() {
         <span class="bar-status ${statusClass}">${statusText}</span>
       </div>
       <div class="comparison-bar-values">
-        <span class="bar-value-phishield">Phishield (ex-FP): <strong>${formatR(phishieldPremium)}</strong></span>
+        <span class="bar-value-phishield">Phishield ${state.competitorHasFP ? '(with FP)' : '(ex-FP)'}: <strong>${formatR(phishieldPremium)}</strong></span>
         <span class="bar-value-target">${targetLabel}: <strong>${formatR(targetPremium)}</strong></span>
       </div>
       <div class="comparison-bar-track">
@@ -1551,7 +1551,7 @@ function updateComparisonBars() {
         <div class="bar-fill" style="width: ${phishieldPct}%; background: ${barColor};" title="Phishield ${state.competitorHasFP ? '(with FP)' : '(ex-FP)'}: ${formatR(phishieldPremium)}"></div>
       </div>
       <div class="bar-delta ${statusClass}">
-        Difference: ${delta <= 0 ? '' : '+'}${formatR(Math.abs(delta))} (${delta <= 0 ? '' : '+'}${deltaPct}%) &nbsp;|&nbsp; FP benefit included: ${formatR(item.fpCost)}
+        Difference: ${delta <= 0 ? '' : '+'}${formatR(Math.abs(delta))} (${delta <= 0 ? '' : '+'}${deltaPct}%)${state.competitorHasFP ? '' : ' &nbsp;|&nbsp; FP benefit included: ' + formatR(item.fpCost)}
       </div>
     `;
     container.appendChild(barDiv);
@@ -2670,6 +2670,7 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.classList.add('active');
       state.competitorHasFP = btn.dataset.value === 'yes';
       updateComparisonTable();
+      updateComparisonBars();
     });
   });
 
