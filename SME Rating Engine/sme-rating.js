@@ -1928,9 +1928,12 @@ function renderBreakdownCard(container, ci, calc, itoo, compRow, label, optRef) 
   const itooStr = itoo ? formatR(itoo.premium) : '--';
   const compStr = (compRow && compRow.competitorPremium > 0) ? formatR(compRow.competitorPremium) : '--';
 
+  const compareAmount = state.competitorHasFP ? calc.annual : calc.annualExFP;
+  const compareLabel = state.competitorHasFP ? 'with FP' : 'excl FP';
+
   let deltaStr = '--';
   if (itoo) {
-    const d = calc.annualExFP - itoo.premium;
+    const d = compareAmount - itoo.premium;
     deltaStr = `${d <= 0 ? '' : '+'}${formatR(Math.abs(d))} (${d <= 0 ? '' : '+'}${Math.round(d / itoo.premium * 100)}%)`;
   }
 
@@ -1963,7 +1966,7 @@ function renderBreakdownCard(container, ci, calc, itoo, compRow, label, optRef) 
     <div class="breakdown-comparison">
       <div class="bc-item"><span class="bc-label">Industry Benchmark</span><strong>${itooStr}</strong></div>
       <div class="bc-item"><span class="bc-label">Competitor</span><strong>${compStr}</strong></div>
-      <div class="bc-item"><span class="bc-label">Delta vs Industry</span><strong class="${itoo && calc.annualExFP <= itoo.premium ? 'text-success' : 'text-danger'}">${deltaStr}</strong></div>
+      <div class="bc-item"><span class="bc-label">Delta vs Industry (${compareLabel})</span><strong class="${itoo && compareAmount <= itoo.premium ? 'text-success' : 'text-danger'}">${deltaStr}</strong></div>
     </div>
   `;
 
@@ -2303,9 +2306,10 @@ function generatePDF(optionOverride) {
       if (itoo) compText += 'Industry Benchmark: ' + formatR(itoo.premium);
       if (compRow && compRow.competitorPremium > 0) compText += '    |    Competitor: ' + formatR(compRow.competitorPremium);
       if (itoo) {
-        const d = calc.annualExFP - itoo.premium;
+        const pdfCompareAmt = state.competitorHasFP ? calc.annual : calc.annualExFP;
+        const d = pdfCompareAmt - itoo.premium;
         const pct = Math.round(d / itoo.premium * 100);
-        compText += '    |    Delta: ' + (d <= 0 ? '' : '+') + formatR(Math.abs(d)) + ' (' + (d <= 0 ? '' : '+') + pct + '%)';
+        compText += '    |    Delta (' + (state.competitorHasFP ? 'with FP' : 'ex-FP') + '): ' + (d <= 0 ? '' : '+') + formatR(Math.abs(d)) + ' (' + (d <= 0 ? '' : '+') + pct + '%)';
       }
       doc.text(compText, margin + 2, y);
       y += 6;
