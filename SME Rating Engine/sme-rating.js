@@ -1362,6 +1362,26 @@ function updateCompetitorRowStatus(row, index) {
   }
 }
 
+/* ===== Benchmark Helper (IToo or Existing Policy for renewals) ===== */
+function getBenchmark(coverIndex) {
+  // For renewals: use the existing policy premium as benchmark
+  if (state.quoteType === 'renewal' && state.renewalPremium > 0) {
+    return { premium: state.renewalPremium, label: 'Existing Policy', deductible: 0 };
+  }
+  // For all other quote types: use IToo industry benchmark
+  const itoo = getItooBenchmark(state.actualTurnover, coverIndex);
+  if (itoo) return { premium: itoo.premium, label: 'Industry Benchmark', deductible: itoo.deductible };
+  return null;
+}
+
+function getBenchmarkColumnLabel() {
+  return state.quoteType === 'renewal' ? 'Existing Policy' : 'Industry Benchmark';
+}
+
+function getDeltaLabel() {
+  return state.quoteType === 'renewal' ? 'Delta vs Existing' : 'Delta vs Industry';
+}
+
 /* ===== Comparison Table (Step 3) ===== */
 function updateComparisonTable() {
   const tbody = $('comparison-tbody');
@@ -1371,11 +1391,15 @@ function updateComparisonTable() {
   const useFullPremium = state.competitorHasFP;
   const compLabel = useFullPremium ? 'Phishield (with FP)' : 'Phishield (ex-FP)';
 
-  // Update the comparison column header
+  // Update the comparison column headers
+  const benchmarkLabel = getBenchmarkColumnLabel();
+  const deltaLabel = getDeltaLabel();
   const thead = tbody.closest('table')?.querySelector('thead');
   if (thead) {
     const headers = thead.querySelectorAll('th');
     if (headers.length >= 3) headers[2].textContent = compLabel;
+    if (headers.length >= 4) headers[3].textContent = benchmarkLabel;
+    if (headers.length >= 5) headers[4].textContent = deltaLabel;
   }
 
   // If we have quoteOptions, show a row per option in the comparison table
@@ -1386,18 +1410,18 @@ function updateComparisonTable() {
       if (!calc) return;
 
       const phishieldCompare = useFullPremium ? calc.annual : calc.annualExFP;
-      const itoo = getItooBenchmark(state.actualTurnover, ci);
+      const benchmark = getBenchmark(ci);
       const tr = document.createElement('tr');
-      const itooStr = itoo ? formatR(itoo.premium) : '--';
-      const delta = itoo ? phishieldCompare - itoo.premium : null;
-      const deltaStr = delta !== null ? `${delta >= 0 ? '+' : ''}${formatR(Math.abs(delta))} (${delta >= 0 ? '+' : '-'}${Math.abs(Math.round(delta / itoo.premium * 100))}%)` : '--';
-      const deltaClass = delta !== null ? (delta <= 0 ? 'delta-green' : (delta / itoo.premium <= 0.05 ? 'delta-amber' : 'delta-red')) : '';
+      const benchStr = benchmark ? formatR(benchmark.premium) : '--';
+      const delta = benchmark ? phishieldCompare - benchmark.premium : null;
+      const deltaStr = delta !== null ? `${delta >= 0 ? '+' : ''}${formatR(Math.abs(delta))} (${delta >= 0 ? '+' : '-'}${Math.abs(Math.round(delta / benchmark.premium * 100))}%)` : '--';
+      const deltaClass = delta !== null ? (delta <= 0 ? 'delta-green' : (Math.abs(delta / benchmark.premium) <= 0.05 ? 'delta-amber' : 'delta-red')) : '';
 
       tr.innerHTML = `
         <td>${opt.label}</td>
         <td>${formatR(calc.annual)}</td>
         <td>${formatR(phishieldCompare)}</td>
-        <td>${itooStr}</td>
+        <td>${benchStr}</td>
         <td class="${deltaClass}">${deltaStr}</td>
       `;
       tbody.appendChild(tr);
@@ -1419,20 +1443,20 @@ function updateComparisonTable() {
     if (!calc) return;
 
     const phishieldCompare = useFullPremium ? calc.annual : calc.annualExFP;
-    const itoo = getItooBenchmark(state.actualTurnover, coverIdx);
+    const benchmark = getBenchmark(coverIdx);
     const compPremium = parseCurrency(row.querySelector('.competitor-premium-input').value);
 
     const tr = document.createElement('tr');
-    const itooStr = itoo ? formatR(itoo.premium) : '--';
-    const delta = itoo ? phishieldCompare - itoo.premium : null;
-    const deltaStr = delta !== null ? `${delta >= 0 ? '+' : ''}${formatR(Math.abs(delta))} (${delta >= 0 ? '+' : '-'}${Math.abs(Math.round(delta / itoo.premium * 100))}%)` : '--';
-    const deltaClass = delta !== null ? (delta <= 0 ? 'delta-green' : (delta / itoo.premium <= 0.05 ? 'delta-amber' : 'delta-red')) : '';
+    const benchStr = benchmark ? formatR(benchmark.premium) : '--';
+    const delta = benchmark ? phishieldCompare - benchmark.premium : null;
+    const deltaStr = delta !== null ? `${delta >= 0 ? '+' : ''}${formatR(Math.abs(delta))} (${delta >= 0 ? '+' : '-'}${Math.abs(Math.round(delta / benchmark.premium * 100))}%)` : '--';
+    const deltaClass = delta !== null ? (delta <= 0 ? 'delta-green' : (Math.abs(delta / benchmark.premium) <= 0.05 ? 'delta-amber' : 'delta-red')) : '';
 
     tr.innerHTML = `
       <td>${COVER_LIMITS[coverIdx].label}</td>
       <td>${formatR(calc.annual)}</td>
       <td>${formatR(phishieldCompare)}</td>
-      <td>${itooStr}</td>
+      <td>${benchStr}</td>
       <td class="${deltaClass}">${deltaStr}</td>
     `;
     tbody.appendChild(tr);
@@ -1504,10 +1528,10 @@ function updateComparisonBars() {
     let targetLabel = '';
 
     if (state.compareTarget === 'itoo') {
-      const itoo = getItooBenchmark(state.actualTurnover, item.coverIndex);
-      if (itoo) {
-        targetPremium = itoo.premium;
-        targetLabel = 'Industry';
+      const benchmark = getBenchmark(item.coverIndex);
+      if (benchmark) {
+        targetPremium = benchmark.premium;
+        targetLabel = benchmark.label;
       }
     } else {
       const compRow = state.competitorRows.find(r => r && r.requestedCoverIndex === item.coverIndex);
@@ -1890,11 +1914,11 @@ function renderQuoteBreakdowns() {
       });
       if (!calc) return;
 
-      const itoo = getItooBenchmark(state.actualTurnover, ci);
+      const benchmark = getBenchmark(ci);
       const compRow = state.competitorRows.find(r => r && r.requestedCoverIndex === ci);
       const optRef = getOptionQuoteRef(opt);
 
-      renderBreakdownCard(container, ci, calc, itoo, compRow, opt.label, optRef);
+      renderBreakdownCard(container, ci, calc, benchmark, compRow, opt.label, optRef);
     });
   } else {
     // Legacy single-cover mode
@@ -1909,14 +1933,14 @@ function renderQuoteBreakdowns() {
     allCovers.forEach(ci => {
       const calc = calculatePremium(ci, state);
       if (!calc) return;
-      const itoo = getItooBenchmark(state.actualTurnover, ci);
+      const benchmark = getBenchmark(ci);
       const compRow = state.competitorRows.find(r => r && r.requestedCoverIndex === ci);
-      renderBreakdownCard(container, ci, calc, itoo, compRow, COVER_LIMITS[ci].label, null);
+      renderBreakdownCard(container, ci, calc, benchmark, compRow, COVER_LIMITS[ci].label, null);
     });
   }
 }
 
-function renderBreakdownCard(container, ci, calc, itoo, compRow, label, optRef) {
+function renderBreakdownCard(container, ci, calc, benchmark, compRow, label, optRef) {
   const card = document.createElement('div');
   card.className = 'quote-breakdown-card';
 
@@ -1925,16 +1949,17 @@ function renderBreakdownCard(container, ci, calc, itoo, compRow, label, optRef) 
     trailRows += `<tr><td>${b.step}</td><td>${b.desc}</td><td>${formatR(b.value)}</td></tr>`;
   });
 
-  const itooStr = itoo ? formatR(itoo.premium) : '--';
+  const benchLabel = benchmark ? benchmark.label : getBenchmarkColumnLabel();
+  const benchStr = benchmark ? formatR(benchmark.premium) : '--';
   const compStr = (compRow && compRow.competitorPremium > 0) ? formatR(compRow.competitorPremium) : '--';
 
   const compareAmount = state.competitorHasFP ? calc.annual : calc.annualExFP;
   const compareLabel = state.competitorHasFP ? 'with FP' : 'excl FP';
 
   let deltaStr = '--';
-  if (itoo) {
-    const d = compareAmount - itoo.premium;
-    deltaStr = `${d <= 0 ? '' : '+'}${formatR(Math.abs(d))} (${d <= 0 ? '' : '+'}${Math.round(d / itoo.premium * 100)}%)`;
+  if (benchmark) {
+    const d = compareAmount - benchmark.premium;
+    deltaStr = `${d <= 0 ? '' : '+'}${formatR(Math.abs(d))} (${d <= 0 ? '' : '+'}${Math.round(d / benchmark.premium * 100)}%)`;
   }
 
   const refHtml = optRef ? `<div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:8px;">Ref: ${optRef}</div>` : '';
@@ -1964,9 +1989,9 @@ function renderBreakdownCard(container, ci, calc, itoo, compRow, label, optRef) 
       </div>
     </div>
     <div class="breakdown-comparison">
-      <div class="bc-item"><span class="bc-label">Industry Benchmark</span><strong>${itooStr}</strong></div>
+      <div class="bc-item"><span class="bc-label">${benchLabel}</span><strong>${benchStr}</strong></div>
       <div class="bc-item"><span class="bc-label">Competitor</span><strong>${compStr}</strong></div>
-      <div class="bc-item"><span class="bc-label">Delta vs Industry (${compareLabel})</span><strong class="${itoo && compareAmount <= itoo.premium ? 'text-success' : 'text-danger'}">${deltaStr}</strong></div>
+      <div class="bc-item"><span class="bc-label">${getDeltaLabel()} (${compareLabel})</span><strong class="${benchmark && compareAmount <= benchmark.premium ? 'text-success' : 'text-danger'}">${deltaStr}</strong></div>
     </div>
   `;
 
@@ -2295,20 +2320,20 @@ function generatePDF(optionOverride) {
     y += 20;
 
     // Comparison row
-    const itoo = getItooBenchmark(state.actualTurnover, ci);
+    const pdfBenchmark = getBenchmark(ci);
     const compRow = state.competitorRows.find(r => r && r.requestedCoverIndex === ci);
-    if (itoo || (compRow && compRow.competitorPremium > 0)) {
+    if (pdfBenchmark || (compRow && compRow.competitorPremium > 0)) {
       checkPage(10);
       doc.setFontSize(7);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(100, 100, 100);
       let compText = '';
-      if (itoo) compText += 'Industry Benchmark: ' + formatR(itoo.premium);
+      if (pdfBenchmark) compText += pdfBenchmark.label + ': ' + formatR(pdfBenchmark.premium);
       if (compRow && compRow.competitorPremium > 0) compText += '    |    Competitor: ' + formatR(compRow.competitorPremium);
-      if (itoo) {
+      if (pdfBenchmark) {
         const pdfCompareAmt = state.competitorHasFP ? calc.annual : calc.annualExFP;
-        const d = pdfCompareAmt - itoo.premium;
-        const pct = Math.round(d / itoo.premium * 100);
+        const d = pdfCompareAmt - pdfBenchmark.premium;
+        const pct = Math.round(d / pdfBenchmark.premium * 100);
         compText += '    |    Delta (' + (state.competitorHasFP ? 'with FP' : 'ex-FP') + '): ' + (d <= 0 ? '' : '+') + formatR(Math.abs(d)) + ' (' + (d <= 0 ? '' : '+') + pct + '%)';
       }
       doc.text(compText, margin + 2, y);
@@ -2691,6 +2716,13 @@ document.addEventListener('DOMContentLoaded', () => {
       $('apply-all-toggle').style.display = 'none';
       $('step4-option-tabs').classList.add('hidden');
     }
+    // Update benchmark toggle label for renewals
+    const benchToggleBtn = $('compare-toggle').querySelector('[data-value="itoo"]');
+    if (benchToggleBtn) {
+      benchToggleBtn.textContent = state.quoteType === 'renewal' ? 'Existing Policy' : 'Industry';
+      benchToggleBtn.setAttribute('aria-label', state.quoteType === 'renewal' ? 'Compare against Existing Policy' : 'Compare against Industry');
+    }
+
     renderUWConditionsPanel();
     updateDiscounts();
     updateComparisonBars();
