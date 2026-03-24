@@ -309,14 +309,16 @@ function calculatePremium(coverIndex, overrideState, optionOverrides) {
     breakdown.push({ step: 4, desc: 'Funds Protect cost', value: selectedFPCost });
 
     let totalPremium = adjustedBase + selectedFPCost;
-    const annualExFP = adjustedBase;
+    let annualExFP = adjustedBase;
     breakdown.push({ step: 5, desc: 'Total before discounts', value: totalPremium });
 
-    // Apply discounts
+    // Apply discounts (to both total and ex-FP)
     const postureD = (optionOverrides && optionOverrides.postureDiscount !== undefined) ? optionOverrides.postureDiscount : (s.postureDiscount || 0);
     const discretionaryD = (optionOverrides && optionOverrides.discretionaryDiscount !== undefined) ? optionOverrides.discretionaryDiscount : (s.discretionaryDiscount || 0);
     if (postureD > 0 || discretionaryD > 0) {
-      totalPremium = totalPremium * (1 - postureD) * (1 - discretionaryD);
+      const discountMultiplier = (1 - postureD) * (1 - discretionaryD);
+      totalPremium = totalPremium * discountMultiplier;
+      annualExFP = annualExFP * discountMultiplier;
       breakdown.push({ step: 6, desc: `Discounts (posture ${Math.round(postureD * 100)}%, discretionary ${Math.round(discretionaryD * 100)}%)`, value: totalPremium });
     }
 
@@ -390,14 +392,16 @@ function calculatePremium(coverIndex, overrideState, optionOverrides) {
   breakdown.push({ step: 4, desc: 'Funds Protect cost', value: selectedFPCost });
 
   let totalPremium = adjustedBase + selectedFPCost;
-  const annualExFP = adjustedBase;
+  let annualExFP = adjustedBase;
   breakdown.push({ step: 5, desc: 'Total before discounts', value: totalPremium });
 
-  // 6. Discounts
+  // 6. Discounts (applied to both total and ex-FP)
   const postureD = (optionOverrides && optionOverrides.postureDiscount !== undefined) ? optionOverrides.postureDiscount : (s.postureDiscount || 0);
   const discretionaryD = (optionOverrides && optionOverrides.discretionaryDiscount !== undefined) ? optionOverrides.discretionaryDiscount : (s.discretionaryDiscount || 0);
   if (postureD > 0 || discretionaryD > 0) {
-    totalPremium = totalPremium * (1 - postureD) * (1 - discretionaryD);
+    const discountMultiplier = (1 - postureD) * (1 - discretionaryD);
+    totalPremium = totalPremium * discountMultiplier;
+    annualExFP = annualExFP * discountMultiplier;
     breakdown.push({ step: 6, desc: `Discounts (posture ${Math.round(postureD * 100)}%, discretionary ${Math.round(discretionaryD * 100)}%)`, value: totalPremium });
   }
 
