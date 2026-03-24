@@ -1750,10 +1750,10 @@ function generateQuoteRef() {
     // Single option — use base ref as quote ref
     if (state.quoteOptions.length === 1) {
       const opt = state.quoteOptions[0];
-      const coverLabel = COVER_LIMITS[opt.coverIndex].label.replace(/[\s,.]/g, '');
+      const coverLabel = COVER_LIMITS[opt.coverIndex].label.replace(/[\s,]/g, '');
       const coverKey = COVER_LIMITS[opt.coverIndex].key;
       const availFP = getAvailableFPOptions(coverKey);
-      const fpLabel = (opt.fpIndex >= 0 && opt.fpIndex < availFP.length) ? availFP[opt.fpIndex].label.replace(/[\s,.]/g, '') : 'BaseFP';
+      const fpLabel = (opt.fpIndex >= 0 && opt.fpIndex < availFP.length) ? availFP[opt.fpIndex].label.replace(/[\s,]/g, '') : 'BaseFP';
       state.quoteRef = `${state.baseRef}-${coverLabel}-FP${fpLabel}`;
     } else {
       state.quoteRef = state.baseRef;
@@ -1769,10 +1769,10 @@ function generateQuoteRef() {
 
 /* ===== Generate per-option quote ref ===== */
 function getOptionQuoteRef(opt) {
-  const coverLabel = COVER_LIMITS[opt.coverIndex].label.replace(/[\s,.]/g, '');
+  const coverLabel = COVER_LIMITS[opt.coverIndex].label.replace(/[\s,]/g, '');
   const coverKey = COVER_LIMITS[opt.coverIndex].key;
   const availFP = getAvailableFPOptions(coverKey);
-  const fpLabel = (opt.fpIndex >= 0 && opt.fpIndex < availFP.length) ? availFP[opt.fpIndex].label.replace(/[\s,.]/g, '') : 'BaseFP';
+  const fpLabel = (opt.fpIndex >= 0 && opt.fpIndex < availFP.length) ? availFP[opt.fpIndex].label.replace(/[\s,]/g, '') : 'BaseFP';
   return `${state.baseRef}-${coverLabel}-FP${fpLabel}`;
 }
 
@@ -2332,13 +2332,13 @@ function generatePDF(optionOverride) {
   const companySlug = state.companyName.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_');
   let coverLabels;
   if (optionOverride) {
-    const cl = COVER_LIMITS[optionOverride.coverIndex].label.replace(/[\s,.]/g, '');
+    const cl = COVER_LIMITS[optionOverride.coverIndex].label.replace(/[\s,]/g, '');
     const ck = COVER_LIMITS[optionOverride.coverIndex].key;
     const afp = getAvailableFPOptions(ck);
-    const fpL = (optionOverride.fpIndex >= 0 && optionOverride.fpIndex < afp.length) ? afp[optionOverride.fpIndex].label.replace(/[\s,.]/g, '') : 'BaseFP';
+    const fpL = (optionOverride.fpIndex >= 0 && optionOverride.fpIndex < afp.length) ? afp[optionOverride.fpIndex].label.replace(/[\s,]/g, '') : 'BaseFP';
     coverLabels = cl + '_FP' + fpL;
   } else {
-    coverLabels = pdfCovers.map(({ coverIndex: ci2 }) => COVER_LIMITS[ci2].label.replace(/\./g, '')).join('_');
+    coverLabels = pdfCovers.map(({ coverIndex: ci2 }) => COVER_LIMITS[ci2].label).join('_');
   }
   const filename = companySlug + '_' + coverLabels + '.pdf';
   doc.save(filename);
