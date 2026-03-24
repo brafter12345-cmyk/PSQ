@@ -2116,6 +2116,14 @@ body::before {
 
 
 /* ===== 32. Footer ===== */
+.footer-note-internal {
+  text-align: center;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
 .footer-note {
   text-align: center;
   margin-top: 28px;

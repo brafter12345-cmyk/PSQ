@@ -1617,12 +1617,15 @@ function generatePDF() {
   addField('Loading:', state.uwLoadingPct > 0 ? Math.round(state.uwLoadingPct * 100) + '%' : 'None');
   if (state.uwFPConditions && state.uwFPConditions.length > 0) {
     addField('Conditions of Cover:', '');
-    state.uwFPConditions.forEach(c => {
+    state.uwFPConditions.forEach((c, idx) => {
+      checkPage(20);
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(180, 130, 0);
-      doc.text('\u2022 ' + c, margin + 6, y);
-      y += lineH;
+      const bulletText = (idx + 1) + '. ' + c;
+      const wrappedLines = doc.splitTextToSize(bulletText, contentW - 10);
+      doc.text(wrappedLines, margin + 4, y);
+      y += wrappedLines.length * (lineH - 0.5) + 3;
     });
   } else {
     addField('Conditions of Cover:', 'None');
