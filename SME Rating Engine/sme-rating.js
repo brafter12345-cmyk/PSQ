@@ -2402,11 +2402,14 @@ async function saveQuoteToBackend(coverLabel, pdfBase64, optionQuoteRef) {
     uwLoadingPct: state.uwLoadingPct,
     uwConditions: state.fpConditions || [],
     endorsements: state.endorsements || '',
-    coverSelections: Object.keys(state.calculations).map(ci => ({
-      coverIndex: parseInt(ci),
-      coverLabel: COVER_LIMITS[parseInt(ci)].label,
-      ...state.calculations[ci],
-    })),
+    coverSelections: Object.keys(state.calculations).map(key => {
+      const calc = state.calculations[key];
+      // key may be option ID (e.g. "opt-1") or cover index (e.g. "3")
+      const opt = state.quoteOptions.find(o => o.id === key);
+      const ci = opt ? opt.coverIndex : parseInt(key);
+      const coverLabel = (ci >= 0 && ci < COVER_LIMITS.length) ? COVER_LIMITS[ci].label : key;
+      return { coverIndex: ci, coverLabel, ...calc };
+    }),
     postureDiscount: state.postureDiscount,
     discretionaryDiscount: state.discretionaryDiscount,
     competitorName: state.competitorName || '',
