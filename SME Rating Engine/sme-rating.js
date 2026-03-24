@@ -36,6 +36,7 @@ const state = {
   actualTurnover: 0,
   revenueBandIndex: -1,
   employeeCount: 0,
+  websiteAddress: '',
   uwAnswers: {},
   uwOutcome: null,
   uwLoadingPct: 0,
@@ -1725,6 +1726,8 @@ function populateSummary() {
   $('sum-turnover').textContent = state.actualTurnover > 0 ? formatR(state.actualTurnover) : '--';
   $('sum-bracket').textContent = state.revenueBandIndex >= 0 ? REVENUE_BANDS[state.revenueBandIndex].label : '--';
 
+  if ($('sum-website')) $('sum-website').textContent = state.websiteAddress || '--';
+
   const quoteTypeLabels = { new: 'New Business', renewal: 'Renewal', competing: 'Competing Quote' };
   $('sum-quote-type').textContent = quoteTypeLabels[state.quoteType] || '--';
 
@@ -2063,6 +2066,7 @@ function generatePDF(optionOverride) {
   }
   addField('Actual Turnover:', formatR(state.actualTurnover));
   addField('Revenue Bracket:', state.revenueBandIndex >= 0 ? REVENUE_BANDS[state.revenueBandIndex].label : '--');
+  if (state.websiteAddress) addField('Website:', state.websiteAddress);
   const qtLabels = { new: 'New Business', renewal: 'Renewal', competing: 'Competing Quote' };
   addField('Quote Type:', qtLabels[state.quoteType] || '--');
   if (state.quoteType === 'renewal') {
@@ -2299,6 +2303,7 @@ async function saveQuoteToBackend(coverLabel, pdfBase64, optionQuoteRef) {
     actualTurnover: state.actualTurnover,
     revenueBand: state.revenueBandIndex >= 0 ? REVENUE_BANDS[state.revenueBandIndex].label : '',
     employeeCount: state.employeeCount,
+    websiteAddress: state.websiteAddress,
     quoteType: state.quoteType,
     marketCondition: MARKET_CONDITION,
     priorClaim: state.priorClaim,
@@ -2423,6 +2428,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Employee count
   $('employee-count').addEventListener('input', () => {
     state.employeeCount = parseInt($('employee-count').value, 10) || 0;
+  });
+
+  // Website address
+  $('website-address').addEventListener('input', () => {
+    state.websiteAddress = $('website-address').value.trim();
   });
 
   // UW toggle buttons

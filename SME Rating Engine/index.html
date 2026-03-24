@@ -111,10 +111,16 @@
           </div>
         </div>
 
-        <!-- Employee Count -->
-        <div class="form-group">
-          <label class="field-label" for="employee-count">Number of Employees</label>
-          <input class="form-input" id="employee-count" type="number" min="1" placeholder="e.g. 25" aria-label="Number of employees"/>
+        <!-- Employee Count + Website -->
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="field-label" for="employee-count">Number of Employees</label>
+            <input class="form-input" id="employee-count" type="number" min="1" placeholder="e.g. 25" aria-label="Number of employees"/>
+          </div>
+          <div class="form-group">
+            <label class="field-label" for="website-address">Website Address</label>
+            <input class="form-input" id="website-address" type="text" placeholder="e.g. www.company.co.za" aria-label="Website address"/>
+          </div>
         </div>
 
         <!-- Underwriting Questions -->
@@ -693,6 +699,10 @@
             <div class="summary-item">
               <div class="summary-label">Revenue Bracket</div>
               <div class="summary-value" id="sum-bracket">--</div>
+            </div>
+            <div class="summary-item">
+              <div class="summary-label">Website</div>
+              <div class="summary-value" id="sum-website">--</div>
             </div>
             <div class="summary-item">
               <div class="summary-label">Quote Type</div>
