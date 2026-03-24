@@ -132,8 +132,8 @@ function getBaseFPCost(coverLimitKey) {
 // Modifier of 1.0 = no change (industry average).
 // Other industries not listed here use 1.0 across all bands.
 const INDUSTRY_MODIFIERS = {
-  "Software and Technology": [1.10, 1.25, 1.35, 1.45, 1.55, 1.67],
-  "Finance":                 [1.00, 1.06, 1.12, 1.20, 1.30, 1.40],
+  "Software and Technology": [1.35, 1.35, 1.35, 1.41, 1.51, 1.63],
+  "Finance":                 [1.28, 1.28, 1.28, 1.30, 1.36, 1.46],
 };
 
 // Map finance sub-industries to the "Finance" modifier key
