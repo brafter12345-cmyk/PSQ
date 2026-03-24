@@ -1519,11 +1519,84 @@ function generatePDF() {
   y += 4;
   doc.text('Phishield SME Rating Engine \u00A9 2026. Not for distribution.', margin, y);
 
-  // Save
+  // Save locally
   const companySlug = state.companyName.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_');
   const coverLabels = allCovers.map(ci => COVER_LIMITS[ci].label.replace(/\./g, '')).join('_');
   const filename = companySlug + '_' + coverLabels + '.pdf';
   doc.save(filename);
+
+  // Also save to backend (if available)
+  try {
+    const pdfBase64 = doc.output('datauristring').split(',')[1];
+    saveQuoteToBackend(coverLabels, pdfBase64);
+  } catch (e) {
+    console.log('Backend save skipped:', e.message);
+  }
+}
+
+/* ===== BACKEND SAVE ===== */
+
+async function saveQuoteToBackend(coverLabel, pdfBase64) {
+  const industry = state.industryIndex >= 0 ? INDUSTRIES[state.industryIndex] : {};
+
+  const payload = {
+    quoteRef: state.quoteRef,
+    companyName: state.companyName,
+    industryMain: industry.main || '',
+    industrySub: industry.sub || '',
+    turnoverPrev: state.turnoverPrev,
+    turnoverCurrent: state.turnoverCurrent,
+    actualTurnover: state.actualTurnover,
+    revenueBand: state.revenueBandIndex >= 0 ? REVENUE_BANDS[state.revenueBandIndex].label : '',
+    employeeCount: state.employeeCount,
+    quoteType: state.quoteType,
+    marketCondition: MARKET_CONDITION,
+    priorClaim: state.priorClaim,
+    uwAnswers: state.uwAnswers,
+    uwOutcome: state.uwOutcome,
+    uwLoadingPct: state.uwLoadingPct,
+    uwConditions: state.fpConditions || [],
+    endorsements: state.endorsements || '',
+    coverSelections: Object.keys(state.calculations).map(ci => ({
+      coverIndex: parseInt(ci),
+      coverLabel: COVER_LIMITS[parseInt(ci)].label,
+      ...state.calculations[ci],
+    })),
+    postureDiscount: state.postureDiscount,
+    discretionaryDiscount: state.discretionaryDiscount,
+    competitorName: state.competitorName || '',
+    competitorData: state.competitorRows || [],
+    renewalCoverLimit: state.renewalCoverIndex >= 0 ? COVER_LIMITS[state.renewalCoverIndex].label : '',
+    renewalPremium: state.renewalPremium || 0,
+    coverLabel: coverLabel,
+    pdfBase64: pdfBase64 || null,
+  };
+
+  try {
+    const res = await fetch('/api/quotes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (res.ok) {
+      const result = await res.json();
+      console.log('Quote saved to backend:', result.quoteRef, result.id);
+
+      // Show save confirmation
+      const btn = $('btn-download-pdf');
+      if (btn) {
+        const orig = btn.innerHTML;
+        btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="btn-icon"><path d="M20 6L9 17l-5-5"/></svg> SAVED';
+        setTimeout(() => { btn.innerHTML = orig; }, 2000);
+      }
+    } else {
+      console.warn('Backend save failed:', res.status);
+    }
+  } catch (e) {
+    // Backend not available (local file:// or offline) — silently skip
+    console.log('Backend not available, quote saved locally only.');
+  }
 }
 
 /* ===== INITIALIZATION ===== */

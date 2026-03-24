@@ -2,4 +2,10 @@
 __pycache__/
 *.pyc
 scans.db
+quotes.db
 .env
+node_modules/
+quote_pdfs/
+*.db-journal
+*.db-wal
+~$*
