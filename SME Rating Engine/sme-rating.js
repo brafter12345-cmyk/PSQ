@@ -2564,6 +2564,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
       $('renewal-section').style.display = state.quoteType === 'renewal' ? 'block' : 'none';
       $('competing-section').style.display = state.quoteType === 'competing' ? 'block' : 'none';
+
+      // Renewal: existing policy always includes FP equivalent
+      if (state.quoteType === 'renewal') {
+        state.competitorHasFP = true;
+        const fpToggle = $('competitor-fp-toggle');
+        if (fpToggle) {
+          fpToggle.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+          fpToggle.querySelector('[data-value="yes"]').classList.add('active');
+        }
+      } else {
+        state.competitorHasFP = false;
+        const fpToggle = $('competitor-fp-toggle');
+        if (fpToggle) {
+          fpToggle.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+          fpToggle.querySelector('[data-value="no"]').classList.add('active');
+        }
+      }
     });
   });
 
