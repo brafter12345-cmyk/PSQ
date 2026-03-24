@@ -2556,17 +2556,12 @@ document.addEventListener('DOMContentLoaded', () => {
       $('num-cover-limits').value = state.quoteOptions.length;
       state.numRequestedCovers = state.quoteOptions.length;
 
-      // Show step 3 tabs
+      // Show quote options summary bar (not tabs — all options compared together)
       const s3Tabs = $('step3-option-tabs');
       s3Tabs.classList.remove('hidden');
-      s3Tabs.innerHTML = '';
-      state.quoteOptions.forEach((opt, idx) => {
-        const tab = document.createElement('button');
-        tab.type = 'button';
-        tab.className = 'option-tab' + (idx === 0 ? ' active' : '');
-        tab.textContent = opt.label;
-        s3Tabs.appendChild(tab);
-      });
+      s3Tabs.innerHTML = '<span class="options-summary-label">Quoting:</span> ' +
+        state.quoteOptions.map(opt => '<span class="options-summary-item">' + opt.label + '</span>').join('');
+      s3Tabs.className = 'options-summary-bar';
     } else {
       $('step3-option-tabs').classList.add('hidden');
     }
