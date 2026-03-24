@@ -493,10 +493,10 @@ function renderUWOutcome() {
   // Check FP-dependent conditions of cover (Q7/Q8 answered No)
   let fpConditions = [];
   if (state.fpOver250k) {
-    if (state.uwAnswers['q7-1'] === false) fpConditions.push('Q7.1: Vetting of new vendors/customers/payees');
-    if (state.uwAnswers['q7-2'] === false) fpConditions.push('Q7.2: Verify new beneficiaries on banking profiles');
-    if (state.uwAnswers['q7-3'] === false) fpConditions.push('Q7.3: Verify requests to amend beneficiary details');
-    if (state.uwAnswers['q8'] === false) fpConditions.push('Q8: Account verification services');
+    if (state.uwAnswers['q7-1'] === false) fpConditions.push('The Insured must implement documented procedures for the vetting of all new vendors, customers, and payees before processing any payments or financial transactions.');
+    if (state.uwAnswers['q7-2'] === false) fpConditions.push('The Insured must implement documented procedures to verify all new beneficiaries loaded onto the business\'s banking profiles before authorising any funds transfers.');
+    if (state.uwAnswers['q7-3'] === false) fpConditions.push('The Insured must implement documented procedures to verify and validate any requests to amend existing beneficiary payment details before processing changes.');
+    if (state.uwAnswers['q8'] === false) fpConditions.push('The Insured must utilise account verification services offered by their bank or a third-party provider to confirm the legitimacy of beneficiary accounts before processing payments.');
   }
   state.uwFPConditions = fpConditions;
 
