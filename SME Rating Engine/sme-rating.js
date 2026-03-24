@@ -1169,6 +1169,92 @@ function updateComparisonBars() {
   });
 }
 
+/* ===== Step 4: UW Conditions Panel ===== */
+function renderUWConditionsPanel() {
+  const panel = $('uw-conditions-panel');
+  const content = $('uw-conditions-content');
+  if (!panel || !content) return;
+
+  let html = '';
+  let hasConditions = false;
+
+  // 1. UW Outcome & Loading
+  if (state.uwOutcome && state.uwOutcome !== 'standard') {
+    hasConditions = true;
+    const outcomeLabel = state.uwOutcome === 'caution' ? 'Proceed with Caution'
+      : state.uwOutcome === 'loading' ? `${Math.round(state.uwLoadingPct * 100)}% Loading Applied`
+      : state.uwOutcome === 'refer' ? 'Referral Required'
+      : state.uwOutcome;
+    html += `<div class="uw-cond-section">
+      <div class="uw-cond-label">Underwriting Outcome</div>
+      <div class="uw-cond-value">${outcomeLabel} (${state.uwNoCount || 0} concern${state.uwNoCount !== 1 ? 's' : ''} noted)</div>
+    </div>`;
+  }
+
+  // 2. FP Conditions of Cover (Q7/Q8 No answers)
+  // Check FP limit from selected covers
+  let effectiveFPOver250k = state.fpOver250k;
+  if (state.selectedCovers.length > 0) {
+    const ci = state.selectedCovers[0];
+    const coverKey = COVER_LIMITS[ci].key;
+    const baseFP = BASE_FP_BY_COVER[coverKey];
+    if (baseFP > 250_000) effectiveFPOver250k = true;
+    // Also check selected FP tier
+    if (state.fpSelections && state.fpSelections[ci] !== undefined) {
+      const fpIdx = state.fpSelections[ci];
+      const availFP = getAvailableFPOptions(coverKey);
+      if (fpIdx >= 0 && fpIdx < availFP.length && availFP[fpIdx].limit > 250_000) {
+        effectiveFPOver250k = true;
+      }
+    }
+  }
+
+  // Auto-sync FP checkbox and Q7/Q8 visibility if needed
+  if (effectiveFPOver250k && !state.fpOver250k) {
+    state.fpOver250k = true;
+    const checkbox = $('fp-over-250k');
+    if (checkbox) checkbox.checked = true;
+    toggleFPQuestions(true);
+    evaluateUW(); // Re-evaluate with Q7/Q8 now active
+  }
+
+  if (effectiveFPOver250k && state.uwFPConditions && state.uwFPConditions.length > 0) {
+    hasConditions = true;
+    html += `<div class="uw-cond-section">
+      <div class="uw-cond-label">Conditions of Cover (FP &gt; R250,000)</div>
+      <div class="uw-cond-value">The following requirements are conditions of cover:</div>
+      <ul>${state.uwFPConditions.map(c => '<li>' + c + '</li>').join('')}</ul>
+    </div>`;
+  } else if (effectiveFPOver250k) {
+    // FP > R250k but Q7/Q8 not yet answered
+    const q7Answered = state.uwAnswers['q7-1'] !== undefined;
+    const q8Answered = state.uwAnswers['q8'] !== undefined;
+    if (!q7Answered || !q8Answered) {
+      hasConditions = true;
+      html += `<div class="uw-cond-section">
+        <div class="uw-cond-label">FP Cover &gt; R250,000</div>
+        <div class="uw-cond-value" style="color: var(--warning);">Q7 and Q8 require answers — FP cover exceeds R250,000 threshold. Please complete underwriting questions on Step 1.</div>
+      </div>`;
+    }
+  }
+
+  // 3. Prior claim
+  if (state.priorClaim) {
+    hasConditions = true;
+    html += `<div class="uw-cond-section">
+      <div class="uw-cond-label">Prior Claim</div>
+      <div class="uw-cond-value">Additional underwriting required based on prior claims history.</div>
+    </div>`;
+  }
+
+  if (hasConditions) {
+    content.innerHTML = html;
+    panel.style.display = 'block';
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
 /* ===== Step 4: Discount Logic ===== */
 function updateDiscounts() {
   const posture = parseFloat($('posture-discount').value) || 0;
@@ -1246,8 +1332,38 @@ function populateSummary() {
   };
   $('sum-uw-outcome').textContent = outcomeLabels[state.uwOutcome] || '--';
   $('sum-uw-loadings').textContent = state.uwLoadingPct > 0 ? `${Math.round(state.uwLoadingPct * 100)}%` : 'None';
-  $('sum-uw-conditions').textContent = (state.uwFPConditions && state.uwFPConditions.length > 0)
-    ? state.uwFPConditions.join('; ')
+
+  // Build comprehensive conditions list
+  let allConditions = [];
+  // FP conditions of cover
+  if (state.uwFPConditions && state.uwFPConditions.length > 0) {
+    allConditions = allConditions.concat(state.uwFPConditions);
+  }
+  // Check if FP > R250k but Q7/Q8 unanswered (auto-detected from cover selection)
+  if (state.selectedCovers.length > 0) {
+    const ci = state.selectedCovers[0];
+    const coverKey = COVER_LIMITS[ci].key;
+    const baseFP = BASE_FP_BY_COVER[coverKey];
+    let fpExceeds = baseFP > 250_000;
+    if (state.fpSelections && state.fpSelections[ci] !== undefined) {
+      const fpIdx = state.fpSelections[ci];
+      const availFP = getAvailableFPOptions(coverKey);
+      if (fpIdx >= 0 && fpIdx < availFP.length && availFP[fpIdx].limit > 250_000) fpExceeds = true;
+    }
+    if (fpExceeds && (!state.uwFPConditions || state.uwFPConditions.length === 0)) {
+      // FP exceeds but no conditions captured — Q7/Q8 all Yes or unanswered
+      if (state.uwAnswers['q7-1'] === undefined && state.uwAnswers['q8'] === undefined) {
+        allConditions.push('FP > R250k: Q7 and Q8 pending completion');
+      }
+    }
+  }
+  // Prior claim
+  if (state.priorClaim) {
+    allConditions.push('Prior claim: additional underwriting required');
+  }
+
+  $('sum-uw-conditions').textContent = allConditions.length > 0
+    ? allConditions.join('; ')
     : 'None';
 
   // Prior claim
@@ -1912,6 +2028,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (firstRow) setupCompetitorRowEvents(firstRow, 0);
 
   $('nextBtn3').addEventListener('click', () => {
+    renderUWConditionsPanel();
     updateDiscounts();
     updateComparisonBars();
     goToStep(4);

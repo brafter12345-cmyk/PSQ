@@ -1881,6 +1881,48 @@ body::before {
 .text-danger { color: var(--danger) !important; }
 .text-right { text-align: right; }
 
+/* ===== 28c. UW Conditions Panel (Step 4) ===== */
+.uw-conditions-panel {
+  margin-top: 24px;
+  margin-bottom: 8px;
+}
+.uw-conditions-content {
+  padding: 16px 20px;
+  background: linear-gradient(135deg, rgba(255, 183, 3, 0.06), rgba(255, 183, 3, 0.02));
+  border: 1px solid rgba(255, 183, 3, 0.15);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+.uw-conditions-content .uw-cond-section {
+  margin-bottom: 12px;
+}
+.uw-conditions-content .uw-cond-section:last-child {
+  margin-bottom: 0;
+}
+.uw-conditions-content .uw-cond-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--warning);
+  margin-bottom: 4px;
+}
+.uw-conditions-content .uw-cond-value {
+  color: var(--text-primary);
+}
+.uw-conditions-content ul {
+  margin: 4px 0 0 16px;
+  padding: 0;
+}
+.uw-conditions-content li {
+  margin-bottom: 2px;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+}
+
 /* ===== 28d. Endorsements ===== */
 .endorsements-textarea {
   resize: vertical;
