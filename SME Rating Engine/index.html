@@ -395,13 +395,18 @@
           <p class="field-hint">Base FP included. Upgrade options shown above.</p>
         </div>
 
-        <!-- Pricing Display -->
+        <!-- Funds Protect Tabs (for multi-cover: one tab per option) -->
+        <div class="option-tabs hidden" id="fp-option-tabs" aria-label="FP selection tabs">
+          <!-- Populated by JS when 2+ options selected -->
+        </div>
+
+        <!-- Pricing Display (single option mode) -->
         <div class="pricing-display" id="pricingDisplay">
           <div class="pd-header">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="pd-icon"><circle cx="12" cy="12" r="10"/><path d="M12 6v12M8 10h8M8 14h8"/></svg>
             <span>Estimated Premium</span>
           </div>
-          <div class="pd-amounts">
+          <div class="pd-amounts" id="pd-single-amounts">
             <div class="pd-amount-item">
               <div class="pd-label">Annual</div>
               <div class="pd-value" id="pdAnnual">
@@ -417,6 +422,17 @@
               </div>
               <div class="pd-sub">/month</div>
             </div>
+          </div>
+          <!-- Multi-option pricing table (shown when 2+ options) -->
+          <div id="multi-pricing-container" style="display:none;">
+            <table class="multi-pricing-table" id="multi-pricing-table">
+              <thead>
+                <tr><th>Option</th><th>Annual</th><th>Monthly</th></tr>
+              </thead>
+              <tbody id="multi-pricing-tbody">
+                <!-- Rows populated by JS -->
+              </tbody>
+            </table>
           </div>
         </div>
 
@@ -442,66 +458,74 @@
           <p>Compare Phishield pricing against competitor quotes and Industry benchmarks.</p>
         </div>
 
-        <!-- Competitor Quote Section -->
-        <div class="step3-section">
-          <label class="field-label section-label">Competitor Comparison</label>
-          <div class="form-grid" style="margin-bottom: 16px;">
-            <div class="form-group">
-              <label class="field-label" for="competitor-name-step3">Competitor / Provider Name</label>
-              <input class="form-input" id="competitor-name-step3" type="text" placeholder="e.g. Guardrisk / Chubb" aria-label="Competitor name"/>
-            </div>
-            <div class="form-group">
-              <label class="field-label" for="num-cover-limits">Number of cover limits to compare</label>
-              <select class="form-select" id="num-cover-limits" aria-label="Number of cover limits">
-                <option value="1" selected>1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-              </select>
-            </div>
-          </div>
+        <!-- Option Tabs for Step 3 (hidden for single option) -->
+        <div class="option-tabs hidden" id="step3-option-tabs" aria-label="Quote option tabs">
+          <!-- Populated by JS -->
+        </div>
 
-          <div class="form-group" style="margin-bottom: 16px;">
-            <label class="field-label">Does the client have existing quote(s) for comparison?</label>
-            <div class="toggle-group" id="existing-quote-toggle">
-              <button type="button" class="toggle-btn active" data-value="no" aria-label="No existing quotes">No</button>
-              <button type="button" class="toggle-btn" data-value="yes" aria-label="Yes existing quotes">Yes</button>
-            </div>
-          </div>
-
-          <!-- Competitor Rows Container -->
-          <div class="competitor-rows" id="competitor-rows">
-            <div class="competitor-row" data-row-index="0">
-              <div class="competitor-row-header">Quote Option 1</div>
-              <div class="form-grid">
-                <div class="form-group">
-                  <label class="field-label">Requested Cover Limit</label>
-                  <select class="form-select competitor-cover-select" aria-label="Requested cover limit">
-                    <option value="" disabled selected>Select cover limit</option>
-                    <option value="1000000">R1,000,000</option>
-                    <option value="2500000">R2,500,000</option>
-                    <option value="5000000">R5,000,000</option>
-                    <option value="7500000">R7,500,000</option>
-                    <option value="10000000">R10,000,000</option>
-                    <option value="15000000">R15,000,000</option>
-                  </select>
-                </div>
-                <div class="form-group">
-                  <label class="field-label">Competitor Overall Limit (R)</label>
-                  <input class="form-input competitor-limit-input" type="text" inputmode="numeric" placeholder="e.g. 5,000,000" aria-label="Competitor overall limit"/>
-                </div>
-                <div class="form-group">
-                  <label class="field-label">Competitor Premium (R)</label>
-                  <input class="form-input competitor-premium-input" type="text" inputmode="numeric" placeholder="e.g. 22,000" aria-label="Competitor premium"/>
-                </div>
+        <!-- Step 3 Tab Panels Container -->
+        <div id="step3-tab-panels">
+          <!-- For single option or per-tab content -->
+          <div class="step3-section">
+            <label class="field-label section-label">Competitor Comparison</label>
+            <div class="form-grid" style="margin-bottom: 16px;">
+              <div class="form-group">
+                <label class="field-label" for="competitor-name-step3">Competitor / Provider Name</label>
+                <input class="form-input" id="competitor-name-step3" type="text" placeholder="e.g. Guardrisk / Chubb" aria-label="Competitor name"/>
               </div>
-              <div class="competitor-status" aria-live="polite"></div>
+              <div class="form-group">
+                <label class="field-label" for="num-cover-limits">Number of cover limits to compare</label>
+                <select class="form-select" id="num-cover-limits" aria-label="Number of cover limits">
+                  <option value="1" selected>1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group" style="margin-bottom: 16px;">
+              <label class="field-label">Does the client have existing quote(s) for comparison?</label>
+              <div class="toggle-group" id="existing-quote-toggle">
+                <button type="button" class="toggle-btn active" data-value="no" aria-label="No existing quotes">No</button>
+                <button type="button" class="toggle-btn" data-value="yes" aria-label="Yes existing quotes">Yes</button>
+              </div>
+            </div>
+
+            <!-- Competitor Rows Container -->
+            <div class="competitor-rows" id="competitor-rows">
+              <div class="competitor-row" data-row-index="0">
+                <div class="competitor-row-header">Quote Option 1</div>
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label class="field-label">Requested Cover Limit</label>
+                    <select class="form-select competitor-cover-select" aria-label="Requested cover limit">
+                      <option value="" disabled selected>Select cover limit</option>
+                      <option value="1000000">R1,000,000</option>
+                      <option value="2500000">R2,500,000</option>
+                      <option value="5000000">R5,000,000</option>
+                      <option value="7500000">R7,500,000</option>
+                      <option value="10000000">R10,000,000</option>
+                      <option value="15000000">R15,000,000</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="field-label">Competitor Overall Limit (R)</label>
+                    <input class="form-input competitor-limit-input" type="text" inputmode="numeric" placeholder="e.g. 5,000,000" aria-label="Competitor overall limit"/>
+                  </div>
+                  <div class="form-group">
+                    <label class="field-label">Competitor Premium (R)</label>
+                    <input class="form-input competitor-premium-input" type="text" inputmode="numeric" placeholder="e.g. 22,000" aria-label="Competitor premium"/>
+                  </div>
+                </div>
+                <div class="competitor-status" aria-live="polite"></div>
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- Industry Benchmark Section -->
-        <div class="step3-section" style="margin-top: 28px;">
+        <!-- All Options Summary (shown when 2+ options) -->
+        <div class="step3-section" id="step3-all-options-summary" style="margin-top: 28px;">
           <label class="field-label section-label">Industry Benchmark Comparison</label>
         </div>
         <div class="comparison-table" id="comparison-table">
@@ -543,8 +567,19 @@
           <p>Apply discounts or overrides and compare against benchmarks.</p>
         </div>
 
+        <!-- Apply to All Toggle (hidden for single option) -->
+        <label class="apply-all-toggle" id="apply-all-toggle" style="display:none;">
+          <input type="checkbox" id="apply-all-check" checked/>
+          <span>Apply discounts to all quote options</span>
+        </label>
+
+        <!-- Option Tabs for Step 4 (hidden for single option) -->
+        <div class="option-tabs hidden" id="step4-option-tabs" aria-label="Adjustment tabs">
+          <!-- Populated by JS -->
+        </div>
+
         <!-- Discount Section -->
-        <div class="discount-section">
+        <div class="discount-section" id="step4-discount-section">
           <div class="discount-group" data-discount="posture">
             <label class="field-label" for="posture-discount">Posture Discount (%)</label>
             <div class="discount-input-row">
@@ -742,9 +777,15 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
             Copy to Clipboard
           </button>
+          <!-- Single PDF download (shown for 1 option) -->
           <button type="button" class="btn btn-primary btn-download-pdf" id="btn-download-pdf" aria-label="Download PDF">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Download PDF
+          </button>
+          <!-- Multi PDF download (shown for 2+ options) -->
+          <button type="button" class="btn btn-download-all" id="btn-download-all-pdfs" style="display:none;" aria-label="Download All PDFs">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Download All PDFs
           </button>
         </div>
 

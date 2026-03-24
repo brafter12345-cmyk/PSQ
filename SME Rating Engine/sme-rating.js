@@ -50,10 +50,12 @@ const state = {
   competitorName: '',
   competitorCoverIndex: -1,
   competitorPremium: 0,
-  // Step 2
-  selectedCovers: [],
+  // Step 2 — Multi-cover quote options
+  quoteOptions: [],           // [{id, coverIndex, fpIndex, label, postureDiscount, discretionaryDiscount, manualOverride, competitorRows}]
+  activeOptionTab: null,      // Currently active option tab ID
+  selectedCovers: [],         // Backward compat: derived from quoteOptions
   isMicroSME: false,
-  fpSelections: {},
+  fpSelections: {},           // Backward compat: derived from quoteOptions
   recommendedCovers: [],
   isCustomSelection: false,
   // Step 3
@@ -66,12 +68,84 @@ const state = {
   manualOverride: null,
   endorsements: '',
   compareTarget: 'itoo',
+  applyDiscountsToAll: true,
   // Computed
-  calculations: {},
+  calculations: {},           // Keyed by option ID (not cover index)
   quoteRef: '',
+  baseRef: '',                // Shared base ref: CPB-YYYYMMDD-NNNN
   isBlocked: false,
   blockReason: '',
 };
+
+/* ===== Multi-Cover Helper: Generate Option ID ===== */
+let _optionCounter = 0;
+function generateOptionId() {
+  return 'opt-' + (++_optionCounter);
+}
+
+/* ===== Multi-Cover: Build option label ===== */
+function buildOptionLabel(coverIndex, fpIndex) {
+  const coverLabel = COVER_LIMITS[coverIndex].label;
+  const coverKey = COVER_LIMITS[coverIndex].key;
+  const availFP = getAvailableFPOptions(coverKey);
+  const fpLabel = (fpIndex >= 0 && fpIndex < availFP.length) ? availFP[fpIndex].label : 'Base FP';
+  return coverLabel + ' / FP ' + fpLabel;
+}
+
+/* ===== Multi-Cover: Sync selectedCovers & fpSelections from quoteOptions ===== */
+function syncFromQuoteOptions() {
+  state.selectedCovers = state.quoteOptions.map(opt => opt.coverIndex);
+  state.fpSelections = {};
+  state.quoteOptions.forEach(opt => {
+    // Use the last fpIndex for each coverIndex (backward compat)
+    state.fpSelections[opt.coverIndex] = opt.fpIndex;
+  });
+}
+
+/* ===== Multi-Cover: Add option ===== */
+function addQuoteOption(coverIndex, fpIndex) {
+  if (state.quoteOptions.length >= 4) return null;
+  fpIndex = fpIndex || 0;
+  const opt = {
+    id: generateOptionId(),
+    coverIndex: coverIndex,
+    fpIndex: fpIndex,
+    label: buildOptionLabel(coverIndex, fpIndex),
+    postureDiscount: 0,
+    discretionaryDiscount: 0,
+    manualOverride: null,
+    competitorRows: [],
+  };
+  state.quoteOptions.push(opt);
+  syncFromQuoteOptions();
+  return opt;
+}
+
+/* ===== Multi-Cover: Remove option ===== */
+function removeQuoteOption(optionId) {
+  state.quoteOptions = state.quoteOptions.filter(o => o.id !== optionId);
+  syncFromQuoteOptions();
+}
+
+/* ===== Multi-Cover: Find option by ID ===== */
+function getOption(optionId) {
+  return state.quoteOptions.find(o => o.id === optionId);
+}
+
+/* ===== Multi-Cover: Is cover already in options? ===== */
+function isCoverInOptions(coverIndex) {
+  return state.quoteOptions.some(o => o.coverIndex === coverIndex);
+}
+
+/* ===== Multi-Cover: Count of options with same cover ===== */
+function coverInstanceCount(coverIndex) {
+  return state.quoteOptions.filter(o => o.coverIndex === coverIndex).length;
+}
+
+/* ===== Multi-Cover: Check if multi mode ===== */
+function isMultiMode() {
+  return state.quoteOptions.length >= 2;
+}
 
 /* ===== Currency Input Helpers ===== */
 function parseCurrency(str) {
@@ -187,8 +261,9 @@ function getEffectiveBandIndex(bandIndex, coverIndex) {
 }
 
 /* ===== Premium Calculation Pipeline ===== */
-function calculatePremium(coverIndex, overrideState) {
+function calculatePremium(coverIndex, overrideState, optionOverrides) {
   const s = overrideState || state;
+  // optionOverrides: { fpIndex, postureDiscount, discretionaryDiscount } for per-option calc
   const bandIndex = s.revenueBandIndex;
   if (bandIndex < 0 || coverIndex < 0 || coverIndex >= COVER_LIMITS.length) {
     return null;
@@ -221,11 +296,12 @@ function calculatePremium(coverIndex, overrideState) {
 
     // FP cost — use selected FP or base
     let selectedFPCost = fpCost;
-    if (s.fpSelections && s.fpSelections[coverIndex] !== undefined) {
-      const fpIdx = s.fpSelections[coverIndex];
+    const microFpIdx = (optionOverrides && optionOverrides.fpIndex !== undefined) ? optionOverrides.fpIndex
+      : (s.fpSelections && s.fpSelections[coverIndex] !== undefined) ? s.fpSelections[coverIndex] : undefined;
+    if (microFpIdx !== undefined) {
       const availFP = getAvailableFPOptions(coverKey);
-      if (fpIdx >= 0 && fpIdx < availFP.length) {
-        selectedFPCost = availFP[fpIdx].cost;
+      if (microFpIdx >= 0 && microFpIdx < availFP.length) {
+        selectedFPCost = availFP[microFpIdx].cost;
       }
     }
     breakdown.push({ step: 4, desc: 'Funds Protect cost', value: selectedFPCost });
@@ -235,8 +311,8 @@ function calculatePremium(coverIndex, overrideState) {
     breakdown.push({ step: 5, desc: 'Total before discounts', value: totalPremium });
 
     // Apply discounts
-    const postureD = s.postureDiscount || 0;
-    const discretionaryD = s.discretionaryDiscount || 0;
+    const postureD = (optionOverrides && optionOverrides.postureDiscount !== undefined) ? optionOverrides.postureDiscount : (s.postureDiscount || 0);
+    const discretionaryD = (optionOverrides && optionOverrides.discretionaryDiscount !== undefined) ? optionOverrides.discretionaryDiscount : (s.discretionaryDiscount || 0);
     if (postureD > 0 || discretionaryD > 0) {
       totalPremium = totalPremium * (1 - postureD) * (1 - discretionaryD);
       breakdown.push({ step: 6, desc: `Discounts (posture ${Math.round(postureD * 100)}%, discretionary ${Math.round(discretionaryD * 100)}%)`, value: totalPremium });
@@ -301,11 +377,12 @@ function calculatePremium(coverIndex, overrideState) {
 
   // 5. FP cost
   let selectedFPCost = getBaseFPCost(coverKey);
-  if (s.fpSelections && s.fpSelections[coverIndex] !== undefined) {
-    const fpIdx = s.fpSelections[coverIndex];
+  const stdFpIdx = (optionOverrides && optionOverrides.fpIndex !== undefined) ? optionOverrides.fpIndex
+    : (s.fpSelections && s.fpSelections[coverIndex] !== undefined) ? s.fpSelections[coverIndex] : undefined;
+  if (stdFpIdx !== undefined) {
     const availFP = getAvailableFPOptions(coverKey);
-    if (fpIdx >= 0 && fpIdx < availFP.length) {
-      selectedFPCost = availFP[fpIdx].cost;
+    if (stdFpIdx >= 0 && stdFpIdx < availFP.length) {
+      selectedFPCost = availFP[stdFpIdx].cost;
     }
   }
   breakdown.push({ step: 4, desc: 'Funds Protect cost', value: selectedFPCost });
@@ -315,8 +392,8 @@ function calculatePremium(coverIndex, overrideState) {
   breakdown.push({ step: 5, desc: 'Total before discounts', value: totalPremium });
 
   // 6. Discounts
-  const postureD = s.postureDiscount || 0;
-  const discretionaryD = s.discretionaryDiscount || 0;
+  const postureD = (optionOverrides && optionOverrides.postureDiscount !== undefined) ? optionOverrides.postureDiscount : (s.postureDiscount || 0);
+  const discretionaryD = (optionOverrides && optionOverrides.discretionaryDiscount !== undefined) ? optionOverrides.discretionaryDiscount : (s.discretionaryDiscount || 0);
   if (postureD > 0 || discretionaryD > 0) {
     totalPremium = totalPremium * (1 - postureD) * (1 - discretionaryD);
     breakdown.push({ step: 6, desc: `Discounts (posture ${Math.round(postureD * 100)}%, discretionary ${Math.round(discretionaryD * 100)}%)`, value: totalPremium });
@@ -350,35 +427,84 @@ function getItooBenchmark(actualTurnover, coverIndex) {
 function updatePricing() {
   if (state.selectedCovers.length === 0 && state.revenueBandIndex < 0) return;
 
-  // Calculate for all selected covers
+  // Calculate for all quote options (multi-mode) or selected covers (legacy/single)
   state.calculations = {};
-  const covers = state.selectedCovers.length > 0 ? state.selectedCovers : state.recommendedCovers;
-  covers.forEach(ci => {
-    const calc = calculatePremium(ci, state);
-    if (calc) state.calculations[ci] = calc;
-  });
 
-  // Update pricing display with primary selected cover
-  const primaryCoverIdx = covers[0];
-  const calc = state.calculations[primaryCoverIdx];
+  if (state.quoteOptions.length > 0) {
+    // Multi-cover mode: calculate per option
+    state.quoteOptions.forEach(opt => {
+      const calc = calculatePremium(opt.coverIndex, state, {
+        fpIndex: opt.fpIndex,
+        postureDiscount: opt.postureDiscount || 0,
+        discretionaryDiscount: opt.discretionaryDiscount || 0,
+      });
+      if (calc) state.calculations[opt.id] = calc;
+    });
+  } else {
+    // Legacy single-cover mode
+    const covers = state.selectedCovers.length > 0 ? state.selectedCovers : state.recommendedCovers;
+    covers.forEach(ci => {
+      const calc = calculatePremium(ci, state);
+      if (calc) state.calculations[ci] = calc;
+    });
+  }
 
   const pdAnnualNum = $('pdAnnualNum');
   const pdMonthlyNum = $('pdMonthlyNum');
+  const singleAmounts = $('pd-single-amounts');
+  const multiContainer = $('multi-pricing-container');
 
-  if (calc) {
-    animateNumber(pdAnnualNum, calc.annual);
-    animateNumber(pdMonthlyNum, calc.monthly);
+  if (isMultiMode()) {
+    // Multi-option: show table, hide single amounts
+    singleAmounts.style.display = 'none';
+    multiContainer.style.display = 'block';
 
-    // Ticker
+    const tbody = $('multi-pricing-tbody');
+    tbody.innerHTML = '';
+    state.quoteOptions.forEach(opt => {
+      const calc = state.calculations[opt.id];
+      if (!calc) return;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${opt.label}</td><td>${formatR(calc.annual)}</td><td>${formatR(calc.monthly)}</td>`;
+      tbody.appendChild(tr);
+    });
+
+    // Ticker: show first option's monthly + count
+    const firstOpt = state.quoteOptions[0];
+    const firstCalc = state.calculations[firstOpt.id];
     const ticker = $('quoteTicker');
     const tickerAmount = $('tickerAmount');
-    if (state.currentStep >= 2) {
+    if (firstCalc && state.currentStep >= 2) {
       ticker.classList.add('visible');
-      tickerAmount.textContent = formatR(calc.monthly) + '/mo';
+      tickerAmount.innerHTML = formatR(firstCalc.monthly) + '/mo <span class="ticker-options-count">' + state.quoteOptions.length + ' options</span>';
     }
   } else {
-    pdAnnualNum.textContent = '--';
-    pdMonthlyNum.textContent = '--';
+    // Single-option mode
+    singleAmounts.style.display = 'flex';
+    multiContainer.style.display = 'none';
+
+    let primaryCalc = null;
+    if (state.quoteOptions.length === 1) {
+      primaryCalc = state.calculations[state.quoteOptions[0].id];
+    } else {
+      const covers = state.selectedCovers.length > 0 ? state.selectedCovers : state.recommendedCovers;
+      primaryCalc = state.calculations[covers[0]];
+    }
+
+    if (primaryCalc) {
+      animateNumber(pdAnnualNum, primaryCalc.annual);
+      animateNumber(pdMonthlyNum, primaryCalc.monthly);
+
+      const ticker = $('quoteTicker');
+      const tickerAmount = $('tickerAmount');
+      if (state.currentStep >= 2) {
+        ticker.classList.add('visible');
+        tickerAmount.textContent = formatR(primaryCalc.monthly) + '/mo';
+      }
+    } else {
+      pdAnnualNum.textContent = '--';
+      pdMonthlyNum.textContent = '--';
+    }
   }
 }
 
@@ -799,6 +925,7 @@ function renderRecommendations() {
     const microLabel = calc.isMicro ? '<span class="micro-label">Micro SME</span>' : '';
 
     card.innerHTML = `
+      <div class="check-overlay">&#10003;</div>
       <div class="rec-card-header">
         <span class="rec-card-cover">${COVER_LIMITS[ci].label}</span>
         ${badgeText ? `<span class="rec-badge ${isRec ? 'rec' : 'upgrade'}">${badgeText}</span>` : ''}
@@ -809,29 +936,69 @@ function renderRecommendations() {
         <div class="rec-price-monthly">${formatR(calc.monthly)}/mo</div>
         <div class="rec-fp-note">FP incl: ${formatR(calc.fpCost)}</div>
       </div>
+      <button type="button" class="duplicate-btn" title="Add another option with this cover limit">+</button>
     `;
 
-    card.addEventListener('click', () => {
-      container.querySelectorAll('.cover-rec-card').forEach(c => c.classList.remove('active'));
-      card.classList.add('active');
-      state.selectedCovers = [ci];
+    // Multi-toggle: click to add/remove from quoteOptions
+    card.addEventListener('click', (e) => {
+      // Ignore if clicking the duplicate button
+      if (e.target.closest('.duplicate-btn')) return;
+
+      if (isCoverInOptions(ci)) {
+        // Remove all instances of this cover
+        state.quoteOptions = state.quoteOptions.filter(o => o.coverIndex !== ci);
+        syncFromQuoteOptions();
+        card.classList.remove('selected', 'active');
+      } else {
+        // Add this cover as a new option (max 4)
+        if (state.quoteOptions.length >= 4) return;
+        addQuoteOption(ci, 0);
+        card.classList.add('selected', 'active');
+      }
+
       state.isCustomSelection = false;
 
       // Update micro badge
       state.isMicroSME = calc.isMicro;
       $('micro-badge').style.display = calc.isMicro ? 'flex' : 'none';
 
-      renderFPSelector(ci);
+      // Deselect custom cards
+      $$('#cover-selector .sel-card').forEach(c => c.classList.remove('active'));
+
+      renderFPSelectorMulti();
+      updatePricing();
+    });
+
+    // Duplicate button: add another instance of same cover
+    const dupBtn = card.querySelector('.duplicate-btn');
+    dupBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (state.quoteOptions.length >= 4) return;
+      addQuoteOption(ci, 0);
+      renderFPSelectorMulti();
       updatePricing();
     });
 
     container.appendChild(card);
   });
 
-  // Auto-select first recommended
-  if (recommended.length > 0 && state.selectedCovers.length === 0) {
+  // Auto-select first recommended if no options yet
+  if (recommended.length > 0 && state.quoteOptions.length === 0) {
     const firstCard = container.querySelector('.cover-rec-card');
-    if (firstCard) firstCard.click();
+    if (firstCard) {
+      // Simulate a click to add the first recommended
+      const ci = parseInt(firstCard.dataset.coverIndex, 10);
+      addQuoteOption(ci, 0);
+      firstCard.classList.add('selected', 'active');
+
+      const calcFirst = calculatePremium(ci, state);
+      if (calcFirst) {
+        state.isMicroSME = calcFirst.isMicro;
+        $('micro-badge').style.display = calcFirst.isMicro ? 'flex' : 'none';
+      }
+      renderFPSelectorMulti();
+      updatePricing();
+    }
   }
 }
 
@@ -861,6 +1028,11 @@ function renderCoverBadges() {
     } else if (avail === 'request-only') {
       badge.textContent = 'Request Only';
       badge.classList.add('req');
+    }
+
+    // Mark active if cover is in quoteOptions
+    if (isCoverInOptions(idx)) {
+      card.classList.add('active');
     }
   });
 }
@@ -914,6 +1086,107 @@ function renderFPSelector(coverIndex) {
   if (baseFP > 250_000) {
     state.fpOver250k = true;
     $('fp-over-250k').checked = true;
+    toggleFPQuestions(true);
+  }
+}
+
+/* ===== Render FP Selector Multi-Option ===== */
+function renderFPSelectorMulti() {
+  const tabsContainer = $('fp-option-tabs');
+  const fpContainer = $('fp-selector');
+
+  if (state.quoteOptions.length === 0) {
+    tabsContainer.classList.add('hidden');
+    fpContainer.innerHTML = '';
+    return;
+  }
+
+  if (state.quoteOptions.length === 1) {
+    // Single option — no tabs, just render FP for the single option
+    tabsContainer.classList.add('hidden');
+    const opt = state.quoteOptions[0];
+    renderFPSelectorForOption(opt);
+    return;
+  }
+
+  // Multi-option: show tabs
+  tabsContainer.classList.remove('hidden');
+  tabsContainer.innerHTML = '';
+
+  state.quoteOptions.forEach((opt, idx) => {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = 'option-tab' + (idx === 0 ? ' active' : '');
+    tab.dataset.optionId = opt.id;
+    // Label: cover label + instance number if duplicated
+    const instanceNum = coverInstanceCount(opt.coverIndex) > 1
+      ? ' (' + (state.quoteOptions.filter((o, i) => o.coverIndex === opt.coverIndex && i <= idx).length) + ')'
+      : '';
+    tab.textContent = COVER_LIMITS[opt.coverIndex].label + instanceNum;
+
+    tab.addEventListener('click', () => {
+      tabsContainer.querySelectorAll('.option-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      state.activeOptionTab = opt.id;
+      renderFPSelectorForOption(opt);
+    });
+
+    tabsContainer.appendChild(tab);
+  });
+
+  // Show first option's FP
+  state.activeOptionTab = state.quoteOptions[0].id;
+  renderFPSelectorForOption(state.quoteOptions[0]);
+}
+
+/* ===== Render FP Selector for a specific option ===== */
+function renderFPSelectorForOption(opt) {
+  const container = $('fp-selector');
+  container.innerHTML = '';
+
+  const coverKey = COVER_LIMITS[opt.coverIndex].key;
+  const options = getAvailableFPOptions(coverKey);
+
+  options.forEach((fp, idx) => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'sel-card fp-card';
+    card.dataset.fpIndex = idx;
+    card.innerHTML = `
+      <span class="sc-value">${fp.label}</span>
+      <span class="sc-sub">${formatR(fp.cost)}/yr</span>
+    `;
+
+    if (idx === opt.fpIndex) card.classList.add('active');
+
+    card.addEventListener('click', () => {
+      container.querySelectorAll('.fp-card').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+      opt.fpIndex = idx;
+      opt.label = buildOptionLabel(opt.coverIndex, idx);
+
+      // Also update backward compat
+      state.fpSelections[opt.coverIndex] = idx;
+
+      // Check if FP > R250k
+      const wasOver250k = state.fpOver250k;
+      state.fpOver250k = fp.limit > 250_000;
+      if (state.fpOver250k !== wasOver250k) {
+        toggleFPQuestions(state.fpOver250k);
+      }
+
+      updatePricing();
+    });
+
+    container.appendChild(card);
+  });
+
+  // Check auto-activate FP > R250k
+  const baseFP = BASE_FP_BY_COVER[coverKey];
+  if (baseFP > 250_000) {
+    state.fpOver250k = true;
+    const checkbox = $('fp-over-250k');
+    if (checkbox) checkbox.checked = true;
     toggleFPQuestions(true);
   }
 }
@@ -1045,6 +1318,33 @@ function updateComparisonTable() {
   const tbody = $('comparison-tbody');
   tbody.innerHTML = '';
 
+  // If we have quoteOptions, show a row per option in the comparison table
+  if (state.quoteOptions.length > 0) {
+    state.quoteOptions.forEach(opt => {
+      const ci = opt.coverIndex;
+      const calc = calculatePremium(ci, state, { fpIndex: opt.fpIndex, postureDiscount: opt.postureDiscount || 0, discretionaryDiscount: opt.discretionaryDiscount || 0 });
+      if (!calc) return;
+
+      const itoo = getItooBenchmark(state.actualTurnover, ci);
+      const tr = document.createElement('tr');
+      const itooStr = itoo ? formatR(itoo.premium) : '--';
+      const delta = itoo ? calc.annualExFP - itoo.premium : null;
+      const deltaStr = delta !== null ? `${delta >= 0 ? '+' : ''}${formatR(Math.abs(delta))} (${delta >= 0 ? '+' : '-'}${Math.abs(Math.round(delta / itoo.premium * 100))}%)` : '--';
+      const deltaClass = delta !== null ? (delta <= 0 ? 'delta-green' : (delta / itoo.premium <= 0.05 ? 'delta-amber' : 'delta-red')) : '';
+
+      tr.innerHTML = `
+        <td>${opt.label}</td>
+        <td>${formatR(calc.annual)}</td>
+        <td>${formatR(calc.annualExFP)}</td>
+        <td>${itooStr}</td>
+        <td class="${deltaClass}">${deltaStr}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+    return;
+  }
+
+  // Legacy: competitor rows
   const rows = $('competitor-rows').querySelectorAll('.competitor-row');
   rows.forEach((row, idx) => {
     const select = row.querySelector('.competitor-cover-select');
@@ -1082,46 +1382,73 @@ function updateComparisonBars() {
   const container = $('comparison-bars');
   container.innerHTML = '';
 
-  // Gather all cover limits being quoted
-  const coverIndices = [];
-  const rows = $('competitor-rows').querySelectorAll('.competitor-row');
-  rows.forEach(row => {
-    const val = parseInt(row.querySelector('.competitor-cover-select').value, 10);
-    if (val) {
-      const idx = COVER_LIMITS.findIndex(cl => cl.value === val);
-      if (idx >= 0 && !coverIndices.includes(idx)) coverIndices.push(idx);
-    }
-  });
+  // Build list of items to compare
+  const compareItems = []; // [{label, coverIndex, calc, fpCost, manualOverride}]
 
-  // Fallback to selected covers
-  if (coverIndices.length === 0) {
-    state.selectedCovers.forEach(ci => {
-      if (!coverIndices.includes(ci)) coverIndices.push(ci);
+  if (state.quoteOptions.length > 0) {
+    state.quoteOptions.forEach(opt => {
+      const calc = calculatePremium(opt.coverIndex, state, {
+        fpIndex: opt.fpIndex,
+        postureDiscount: opt.postureDiscount || 0,
+        discretionaryDiscount: opt.discretionaryDiscount || 0,
+      });
+      if (calc) {
+        compareItems.push({
+          label: opt.label,
+          coverIndex: opt.coverIndex,
+          calc: calc,
+          fpCost: calc.fpCost,
+          manualOverride: opt.manualOverride,
+        });
+      }
+    });
+  } else {
+    // Legacy: gather from competitor rows and selected covers
+    const coverIndices = [];
+    const rows = $('competitor-rows').querySelectorAll('.competitor-row');
+    rows.forEach(row => {
+      const val = parseInt(row.querySelector('.competitor-cover-select').value, 10);
+      if (val) {
+        const idx = COVER_LIMITS.findIndex(cl => cl.value === val);
+        if (idx >= 0 && !coverIndices.includes(idx)) coverIndices.push(idx);
+      }
+    });
+    if (coverIndices.length === 0) {
+      state.selectedCovers.forEach(ci => {
+        if (!coverIndices.includes(ci)) coverIndices.push(ci);
+      });
+    }
+    coverIndices.forEach(ci => {
+      const calc = calculatePremium(ci, state);
+      if (calc) {
+        compareItems.push({
+          label: COVER_LIMITS[ci].label,
+          coverIndex: ci,
+          calc: calc,
+          fpCost: calc.fpCost,
+          manualOverride: state.manualOverride,
+        });
+      }
     });
   }
 
-  coverIndices.forEach(ci => {
-    let calc = calculatePremium(ci, state);
-    if (!calc) return;
-
-    // Apply manual override if set
-    let phishieldPremium = calc.annualExFP;
-    if (state.manualOverride && state.manualOverride > 0) {
-      phishieldPremium = state.manualOverride;
+  compareItems.forEach(item => {
+    let phishieldPremium = item.calc.annualExFP;
+    if (item.manualOverride && item.manualOverride > 0) {
+      phishieldPremium = item.manualOverride;
     }
 
     let targetPremium = 0;
     let targetLabel = '';
 
     if (state.compareTarget === 'itoo') {
-      const itoo = getItooBenchmark(state.actualTurnover, ci);
+      const itoo = getItooBenchmark(state.actualTurnover, item.coverIndex);
       if (itoo) {
         targetPremium = itoo.premium;
         targetLabel = 'Industry';
       }
     } else {
-      // Find competitor premium for this cover
-      const compRow = state.competitorRows.find(r => r && r.requestedCoverIndex === ci);
+      const compRow = state.competitorRows.find(r => r && r.requestedCoverIndex === item.coverIndex);
       if (compRow && compRow.competitorPremium > 0) {
         targetPremium = compRow.competitorPremium;
         targetLabel = 'Competitor';
@@ -1150,7 +1477,7 @@ function updateComparisonBars() {
     barDiv.className = 'comparison-bar';
     barDiv.innerHTML = `
       <div class="comparison-bar-header">
-        <span class="comparison-bar-label">${COVER_LIMITS[ci].label} Cover</span>
+        <span class="comparison-bar-label">${item.label} Cover</span>
         <span class="bar-status ${statusClass}">${statusText}</span>
       </div>
       <div class="comparison-bar-values">
@@ -1162,7 +1489,7 @@ function updateComparisonBars() {
         <div class="bar-fill" style="width: ${phishieldPct}%; background: ${barColor};" title="Phishield (ex-FP): ${formatR(phishieldPremium)}"></div>
       </div>
       <div class="bar-delta ${statusClass}">
-        Difference: ${delta <= 0 ? '' : '+'}${formatR(Math.abs(delta))} (${delta <= 0 ? '' : '+'}${deltaPct}%) &nbsp;|&nbsp; FP benefit included: ${formatR(calc.fpCost)}
+        Difference: ${delta <= 0 ? '' : '+'}${formatR(Math.abs(delta))} (${delta <= 0 ? '' : '+'}${deltaPct}%) &nbsp;|&nbsp; FP benefit included: ${formatR(item.fpCost)}
       </div>
     `;
     container.appendChild(barDiv);
@@ -1192,9 +1519,22 @@ function renderUWConditionsPanel() {
   }
 
   // 2. FP Conditions of Cover (Q7/Q8 No answers)
-  // Check FP limit from selected covers
+  // Check FP limit from selected covers / quote options
   let effectiveFPOver250k = state.fpOver250k;
-  if (state.selectedCovers.length > 0) {
+  if (state.quoteOptions.length > 0) {
+    // Check all options for any FP > 250k
+    state.quoteOptions.forEach(opt => {
+      const coverKey = COVER_LIMITS[opt.coverIndex].key;
+      const baseFP = BASE_FP_BY_COVER[coverKey];
+      if (baseFP > 250_000) effectiveFPOver250k = true;
+      if (opt.fpIndex !== undefined) {
+        const availFP = getAvailableFPOptions(coverKey);
+        if (opt.fpIndex >= 0 && opt.fpIndex < availFP.length && availFP[opt.fpIndex].limit > 250_000) {
+          effectiveFPOver250k = true;
+        }
+      }
+    });
+  } else if (state.selectedCovers.length > 0) {
     const ci = state.selectedCovers[0];
     const coverKey = COVER_LIMITS[ci].key;
     const baseFP = BASE_FP_BY_COVER[coverKey];
@@ -1263,6 +1603,24 @@ function updateDiscounts() {
   state.postureDiscount = Math.min(posture, 100) / 100;
   state.discretionaryDiscount = Math.min(discretionary, 100) / 100;
 
+  // Apply to quoteOptions
+  if (state.quoteOptions.length > 0) {
+    if (state.applyDiscountsToAll) {
+      // Apply same discounts to all options
+      state.quoteOptions.forEach(opt => {
+        opt.postureDiscount = state.postureDiscount;
+        opt.discretionaryDiscount = state.discretionaryDiscount;
+      });
+    } else {
+      // Apply to active tab's option only
+      const activeOpt = getOption(state.activeOptionTab);
+      if (activeOpt) {
+        activeOpt.postureDiscount = state.postureDiscount;
+        activeOpt.discretionaryDiscount = state.discretionaryDiscount;
+      }
+    }
+  }
+
   // Combined discount check
   const combined = 1 - (1 - state.postureDiscount) * (1 - state.discretionaryDiscount);
   const warning = $('discount-warning');
@@ -1273,21 +1631,45 @@ function updateDiscounts() {
   }
 
   // Update computed values
-  const covers = state.selectedCovers.length > 0 ? state.selectedCovers : state.recommendedCovers;
-  if (covers.length > 0) {
-    const calc = calculatePremium(covers[0], state);
+  if (state.quoteOptions.length > 0) {
+    const opt = state.quoteOptions[0];
+    const calc = calculatePremium(opt.coverIndex, state, {
+      fpIndex: opt.fpIndex,
+      postureDiscount: opt.postureDiscount || 0,
+      discretionaryDiscount: opt.discretionaryDiscount || 0,
+    });
     if (calc) {
-      const baseBeforeDisc = calc.annual / ((1 - state.postureDiscount) * (1 - state.discretionaryDiscount)) || calc.annual;
-      const postureAmt = baseBeforeDisc * state.postureDiscount;
-      const discAmt = (baseBeforeDisc - postureAmt) * state.discretionaryDiscount;
+      const pd = opt.postureDiscount || 0;
+      const dd = opt.discretionaryDiscount || 0;
+      const baseBeforeDisc = calc.annual / ((1 - pd) * (1 - dd)) || calc.annual;
+      const postureAmt = baseBeforeDisc * pd;
+      const discAmt = (baseBeforeDisc - postureAmt) * dd;
       $('posture-discount-value').textContent = formatR(postureAmt);
       $('discretionary-discount-value').textContent = formatR(discAmt);
+    }
+  } else {
+    const covers = state.selectedCovers.length > 0 ? state.selectedCovers : state.recommendedCovers;
+    if (covers.length > 0) {
+      const calc = calculatePremium(covers[0], state);
+      if (calc) {
+        const baseBeforeDisc = calc.annual / ((1 - state.postureDiscount) * (1 - state.discretionaryDiscount)) || calc.annual;
+        const postureAmt = baseBeforeDisc * state.postureDiscount;
+        const discAmt = (baseBeforeDisc - postureAmt) * state.discretionaryDiscount;
+        $('posture-discount-value').textContent = formatR(postureAmt);
+        $('discretionary-discount-value').textContent = formatR(discAmt);
+      }
     }
   }
 
   // Manual override
   const overrideVal = parseCurrency($('manual-override').value);
   state.manualOverride = overrideVal > 0 ? overrideVal : null;
+  if (state.quoteOptions.length > 0 && state.applyDiscountsToAll) {
+    state.quoteOptions.forEach(opt => { opt.manualOverride = state.manualOverride; });
+  } else if (state.quoteOptions.length > 0) {
+    const activeOpt = getOption(state.activeOptionTab);
+    if (activeOpt) activeOpt.manualOverride = state.manualOverride;
+  }
 
   updatePricing();
   updateComparisonBars();
@@ -1300,9 +1682,36 @@ function generateQuoteRef() {
     String(now.getMonth() + 1).padStart(2, '0') +
     String(now.getDate()).padStart(2, '0');
   const seq = String(Math.floor(Math.random() * 10000)).padStart(4, '0');
-  state.quoteRef = `CPB-${dateStr}-${seq}`;
+  state.baseRef = `CPB-${dateStr}-${seq}`;
+
+  if (state.quoteOptions.length <= 1) {
+    // Single option — use base ref as quote ref
+    if (state.quoteOptions.length === 1) {
+      const opt = state.quoteOptions[0];
+      const coverLabel = COVER_LIMITS[opt.coverIndex].label.replace(/[\s,.]/g, '');
+      const coverKey = COVER_LIMITS[opt.coverIndex].key;
+      const availFP = getAvailableFPOptions(coverKey);
+      const fpLabel = (opt.fpIndex >= 0 && opt.fpIndex < availFP.length) ? availFP[opt.fpIndex].label.replace(/[\s,.]/g, '') : 'BaseFP';
+      state.quoteRef = `${state.baseRef}-${coverLabel}-FP${fpLabel}`;
+    } else {
+      state.quoteRef = state.baseRef;
+    }
+  } else {
+    // Multi-option: base ref shown, per-option refs generated in PDF
+    state.quoteRef = state.baseRef;
+  }
+
   $('quote-ref-date').textContent = dateStr;
   $('quote-ref-seq').textContent = seq;
+}
+
+/* ===== Generate per-option quote ref ===== */
+function getOptionQuoteRef(opt) {
+  const coverLabel = COVER_LIMITS[opt.coverIndex].label.replace(/[\s,.]/g, '');
+  const coverKey = COVER_LIMITS[opt.coverIndex].key;
+  const availFP = getAvailableFPOptions(coverKey);
+  const fpLabel = (opt.fpIndex >= 0 && opt.fpIndex < availFP.length) ? availFP[opt.fpIndex].label.replace(/[\s,.]/g, '') : 'BaseFP';
+  return `${state.baseRef}-${coverLabel}-FP${fpLabel}`;
 }
 
 function populateSummary() {
@@ -1389,80 +1798,112 @@ function populateSummary() {
 
   // Per cover limit breakdowns
   renderQuoteBreakdowns();
+
+  // Show/hide multi vs single PDF buttons
+  const singlePdfBtn = $('btn-download-pdf');
+  const multiPdfBtn = $('btn-download-all-pdfs');
+  if (isMultiMode()) {
+    singlePdfBtn.style.display = 'none';
+    multiPdfBtn.style.display = 'inline-flex';
+  } else {
+    singlePdfBtn.style.display = 'inline-flex';
+    multiPdfBtn.style.display = 'none';
+  }
 }
 
 function renderQuoteBreakdowns() {
   const container = $('quote-breakdowns');
   container.innerHTML = '';
 
-  const covers = state.selectedCovers.length > 0 ? state.selectedCovers : state.recommendedCovers;
+  if (state.quoteOptions.length > 0) {
+    // Multi-option: one breakdown card per option
+    state.quoteOptions.forEach(opt => {
+      const ci = opt.coverIndex;
+      const calc = calculatePremium(ci, state, {
+        fpIndex: opt.fpIndex,
+        postureDiscount: opt.postureDiscount || 0,
+        discretionaryDiscount: opt.discretionaryDiscount || 0,
+      });
+      if (!calc) return;
 
-  // Also include competitor row covers
-  const allCovers = [...covers];
-  state.competitorRows.forEach(row => {
-    if (row && row.requestedCoverIndex >= 0 && !allCovers.includes(row.requestedCoverIndex)) {
-      allCovers.push(row.requestedCoverIndex);
-    }
-  });
+      const itoo = getItooBenchmark(state.actualTurnover, ci);
+      const compRow = state.competitorRows.find(r => r && r.requestedCoverIndex === ci);
+      const optRef = getOptionQuoteRef(opt);
 
-  allCovers.forEach(ci => {
-    const calc = calculatePremium(ci, state);
-    if (!calc) return;
-
-    const itoo = getItooBenchmark(state.actualTurnover, ci);
-    const compRow = state.competitorRows.find(r => r && r.requestedCoverIndex === ci);
-
-    const card = document.createElement('div');
-    card.className = 'quote-breakdown-card';
-
-    // Audit trail rows
-    let trailRows = '';
-    calc.breakdown.forEach(b => {
-      trailRows += `<tr><td>${b.step}</td><td>${b.desc}</td><td>${formatR(b.value)}</td></tr>`;
+      renderBreakdownCard(container, ci, calc, itoo, compRow, opt.label, optRef);
+    });
+  } else {
+    // Legacy single-cover mode
+    const covers = state.selectedCovers.length > 0 ? state.selectedCovers : state.recommendedCovers;
+    const allCovers = [...covers];
+    state.competitorRows.forEach(row => {
+      if (row && row.requestedCoverIndex >= 0 && !allCovers.includes(row.requestedCoverIndex)) {
+        allCovers.push(row.requestedCoverIndex);
+      }
     });
 
-    // Comparison row
-    const itooStr = itoo ? formatR(itoo.premium) : '--';
-    const compStr = (compRow && compRow.competitorPremium > 0) ? formatR(compRow.competitorPremium) : '--';
+    allCovers.forEach(ci => {
+      const calc = calculatePremium(ci, state);
+      if (!calc) return;
+      const itoo = getItooBenchmark(state.actualTurnover, ci);
+      const compRow = state.competitorRows.find(r => r && r.requestedCoverIndex === ci);
+      renderBreakdownCard(container, ci, calc, itoo, compRow, COVER_LIMITS[ci].label, null);
+    });
+  }
+}
 
-    let deltaStr = '--';
-    if (itoo) {
-      const d = calc.annualExFP - itoo.premium;
-      deltaStr = `${d <= 0 ? '' : '+'}${formatR(Math.abs(d))} (${d <= 0 ? '' : '+'}${Math.round(d / itoo.premium * 100)}%)`;
-    }
+function renderBreakdownCard(container, ci, calc, itoo, compRow, label, optRef) {
+  const card = document.createElement('div');
+  card.className = 'quote-breakdown-card';
 
-    card.innerHTML = `
-      <div class="breakdown-header">
-        <h4>Cover Limit: ${COVER_LIMITS[ci].label}</h4>
-        ${calc.isMicro ? '<span class="micro-label">Micro SME</span>' : ''}
-      </div>
-      <table class="audit-trail">
-        <thead><tr><th>Step</th><th>Description</th><th class="text-right">Value</th></tr></thead>
-        <tbody>${trailRows}</tbody>
-      </table>
-      <div class="breakdown-finals">
-        <div class="breakdown-final-item">
-          <span class="bf-label">Annual (with FP)</span>
-          <strong class="bf-value accent">${formatR(calc.annual)}</strong>
-        </div>
-        <div class="breakdown-final-item">
-          <span class="bf-label">Annual (excl FP)</span>
-          <strong class="bf-value">${formatR(calc.annualExFP)}</strong>
-        </div>
-        <div class="breakdown-final-item">
-          <span class="bf-label">Monthly</span>
-          <strong class="bf-value accent">${formatR(calc.monthly)}</strong>
-        </div>
-      </div>
-      <div class="breakdown-comparison">
-        <div class="bc-item"><span class="bc-label">Industry Benchmark</span><strong>${itooStr}</strong></div>
-        <div class="bc-item"><span class="bc-label">Competitor</span><strong>${compStr}</strong></div>
-        <div class="bc-item"><span class="bc-label">Delta vs Industry</span><strong class="${itoo && calc.annualExFP <= itoo.premium ? 'text-success' : 'text-danger'}">${deltaStr}</strong></div>
-      </div>
-    `;
-
-    container.appendChild(card);
+  let trailRows = '';
+  calc.breakdown.forEach(b => {
+    trailRows += `<tr><td>${b.step}</td><td>${b.desc}</td><td>${formatR(b.value)}</td></tr>`;
   });
+
+  const itooStr = itoo ? formatR(itoo.premium) : '--';
+  const compStr = (compRow && compRow.competitorPremium > 0) ? formatR(compRow.competitorPremium) : '--';
+
+  let deltaStr = '--';
+  if (itoo) {
+    const d = calc.annualExFP - itoo.premium;
+    deltaStr = `${d <= 0 ? '' : '+'}${formatR(Math.abs(d))} (${d <= 0 ? '' : '+'}${Math.round(d / itoo.premium * 100)}%)`;
+  }
+
+  const refHtml = optRef ? `<div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:8px;">Ref: ${optRef}</div>` : '';
+
+  card.innerHTML = `
+    ${refHtml}
+    <div class="breakdown-header">
+      <h4>${label}</h4>
+      ${calc.isMicro ? '<span class="micro-label">Micro SME</span>' : ''}
+    </div>
+    <table class="audit-trail">
+      <thead><tr><th>Step</th><th>Description</th><th class="text-right">Value</th></tr></thead>
+      <tbody>${trailRows}</tbody>
+    </table>
+    <div class="breakdown-finals">
+      <div class="breakdown-final-item">
+        <span class="bf-label">Annual (with FP)</span>
+        <strong class="bf-value accent">${formatR(calc.annual)}</strong>
+      </div>
+      <div class="breakdown-final-item">
+        <span class="bf-label">Annual (excl FP)</span>
+        <strong class="bf-value">${formatR(calc.annualExFP)}</strong>
+      </div>
+      <div class="breakdown-final-item">
+        <span class="bf-label">Monthly</span>
+        <strong class="bf-value accent">${formatR(calc.monthly)}</strong>
+      </div>
+    </div>
+    <div class="breakdown-comparison">
+      <div class="bc-item"><span class="bc-label">Industry Benchmark</span><strong>${itooStr}</strong></div>
+      <div class="bc-item"><span class="bc-label">Competitor</span><strong>${compStr}</strong></div>
+      <div class="bc-item"><span class="bc-label">Delta vs Industry</span><strong class="${itoo && calc.annualExFP <= itoo.premium ? 'text-success' : 'text-danger'}">${deltaStr}</strong></div>
+    </div>
+  `;
+
+  container.appendChild(card);
 }
 
 /* ===== Clipboard Export ===== */
@@ -1492,12 +1933,21 @@ function buildClipboardText() {
   lines.push('PREMIUMS');
   lines.push('-'.repeat(30));
 
-  const covers = state.selectedCovers.length > 0 ? state.selectedCovers : state.recommendedCovers;
-  covers.forEach(ci => {
-    const calc = state.calculations[ci] || calculatePremium(ci, state);
-    if (!calc) return;
-    lines.push(`${COVER_LIMITS[ci].label}: ${formatR(calc.annual)}/yr (${formatR(calc.monthly)}/mo) | Ex-FP: ${formatR(calc.annualExFP)}`);
-  });
+  if (state.quoteOptions.length > 0) {
+    state.quoteOptions.forEach(opt => {
+      const calc = state.calculations[opt.id] || calculatePremium(opt.coverIndex, state, { fpIndex: opt.fpIndex, postureDiscount: opt.postureDiscount || 0, discretionaryDiscount: opt.discretionaryDiscount || 0 });
+      if (!calc) return;
+      const optRef = getOptionQuoteRef(opt);
+      lines.push(`${opt.label} [${optRef}]: ${formatR(calc.annual)}/yr (${formatR(calc.monthly)}/mo) | Ex-FP: ${formatR(calc.annualExFP)}`);
+    });
+  } else {
+    const covers = state.selectedCovers.length > 0 ? state.selectedCovers : state.recommendedCovers;
+    covers.forEach(ci => {
+      const calc = state.calculations[ci] || calculatePremium(ci, state);
+      if (!calc) return;
+      lines.push(`${COVER_LIMITS[ci].label}: ${formatR(calc.annual)}/yr (${formatR(calc.monthly)}/mo) | Ex-FP: ${formatR(calc.annualExFP)}`);
+    });
+  }
 
   if (state.endorsements) {
     lines.push('');
@@ -1512,8 +1962,20 @@ function buildClipboardText() {
 }
 
 
+/* ===== Generate All PDFs (Multi-Option) ===== */
+function generateAllPDFs() {
+  if (state.quoteOptions.length === 0) {
+    generatePDF();
+    return;
+  }
+
+  state.quoteOptions.forEach(opt => {
+    generatePDF(opt);
+  });
+}
+
 /* ===== PDF Generation ===== */
-function generatePDF() {
+function generatePDF(optionOverride) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageW = 210;
@@ -1585,10 +2047,11 @@ function generatePDF() {
   y = 26;
 
   // ── Quote Reference ──
+  const pdfQuoteRef = optionOverride ? getOptionQuoteRef(optionOverride) : state.quoteRef;
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(0, 0, 0);
-  doc.text('Quote Ref: ' + state.quoteRef, margin, y);
+  doc.text('Quote Ref: ' + pdfQuoteRef, margin, y);
   y += 8;
   addRule();
 
@@ -1656,20 +2119,34 @@ function generatePDF() {
   }
 
   // ── Per Cover Limit Breakdowns ──
-  const covers = state.selectedCovers.length > 0 ? state.selectedCovers : state.recommendedCovers;
-  const allCovers = [...covers];
-  state.competitorRows.forEach(row => {
-    if (row && row.requestedCoverIndex >= 0 && !allCovers.includes(row.requestedCoverIndex)) {
-      allCovers.push(row.requestedCoverIndex);
-    }
-  });
+  let pdfCovers = [];
+  if (optionOverride) {
+    // Single option PDF: only this option's cover
+    pdfCovers = [{ coverIndex: optionOverride.coverIndex, opt: optionOverride }];
+  } else if (state.quoteOptions.length > 0) {
+    pdfCovers = state.quoteOptions.map(o => ({ coverIndex: o.coverIndex, opt: o }));
+  } else {
+    const covers = state.selectedCovers.length > 0 ? state.selectedCovers : state.recommendedCovers;
+    const allCovers = [...covers];
+    state.competitorRows.forEach(row => {
+      if (row && row.requestedCoverIndex >= 0 && !allCovers.includes(row.requestedCoverIndex)) {
+        allCovers.push(row.requestedCoverIndex);
+      }
+    });
+    pdfCovers = allCovers.map(ci => ({ coverIndex: ci, opt: null }));
+  }
 
-  allCovers.forEach(ci => {
-    const calc = calculatePremium(ci, state);
+  pdfCovers.forEach(({ coverIndex: ci, opt }) => {
+    const calc = opt ? calculatePremium(ci, state, {
+      fpIndex: opt.fpIndex,
+      postureDiscount: opt.postureDiscount || 0,
+      discretionaryDiscount: opt.discretionaryDiscount || 0,
+    }) : calculatePremium(ci, state);
     if (!calc) return;
 
     checkPage(60);
-    addSection('COVER LIMIT: ' + COVER_LIMITS[ci].label + (calc.isMicro ? '  (Micro SME)' : ''));
+    const sectionLabel = opt ? opt.label : COVER_LIMITS[ci].label;
+    addSection('COVER LIMIT: ' + sectionLabel + (calc.isMicro ? '  (Micro SME)' : ''));
 
     // Audit trail as table
     const colX = [margin + 2, margin + 14, margin + contentW - 25];
@@ -1784,14 +2261,23 @@ function generatePDF() {
 
   // Save locally
   const companySlug = state.companyName.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_');
-  const coverLabels = allCovers.map(ci => COVER_LIMITS[ci].label.replace(/\./g, '')).join('_');
+  let coverLabels;
+  if (optionOverride) {
+    const cl = COVER_LIMITS[optionOverride.coverIndex].label.replace(/[\s,.]/g, '');
+    const ck = COVER_LIMITS[optionOverride.coverIndex].key;
+    const afp = getAvailableFPOptions(ck);
+    const fpL = (optionOverride.fpIndex >= 0 && optionOverride.fpIndex < afp.length) ? afp[optionOverride.fpIndex].label.replace(/[\s,.]/g, '') : 'BaseFP';
+    coverLabels = cl + '_FP' + fpL;
+  } else {
+    coverLabels = pdfCovers.map(({ coverIndex: ci2 }) => COVER_LIMITS[ci2].label.replace(/\./g, '')).join('_');
+  }
   const filename = companySlug + '_' + coverLabels + '.pdf';
   doc.save(filename);
 
   // Also save to backend (if available)
   try {
     const pdfBase64 = doc.output('datauristring').split(',')[1];
-    saveQuoteToBackend(coverLabels, pdfBase64);
+    saveQuoteToBackend(coverLabels, pdfBase64, optionOverride ? pdfQuoteRef : null);
   } catch (e) {
     console.log('Backend save skipped:', e.message);
   }
@@ -1799,11 +2285,12 @@ function generatePDF() {
 
 /* ===== BACKEND SAVE ===== */
 
-async function saveQuoteToBackend(coverLabel, pdfBase64) {
+async function saveQuoteToBackend(coverLabel, pdfBase64, optionQuoteRef) {
   const industry = state.industryIndex >= 0 ? INDUSTRIES[state.industryIndex] : {};
 
   const payload = {
-    quoteRef: state.quoteRef,
+    quoteRef: optionQuoteRef || state.quoteRef,
+    baseRef: state.baseRef,
     companyName: state.companyName,
     industryMain: industry.main || '',
     industrySub: industry.sub || '',
@@ -1860,6 +2347,48 @@ async function saveQuoteToBackend(coverLabel, pdfBase64) {
     // Backend not available (local file:// or offline) — silently skip
     console.log('Backend not available, quote saved locally only.');
   }
+}
+
+/* ===== Step 4: Render Option Tabs ===== */
+function renderStep4Tabs() {
+  const tabsContainer = $('step4-option-tabs');
+  if (state.quoteOptions.length < 2) {
+    tabsContainer.classList.add('hidden');
+    return;
+  }
+
+  tabsContainer.classList.remove('hidden');
+  tabsContainer.innerHTML = '';
+
+  state.quoteOptions.forEach((opt, idx) => {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = 'option-tab' + (idx === 0 ? ' active' : '');
+    tab.dataset.optionId = opt.id;
+
+    const instanceNum = coverInstanceCount(opt.coverIndex) > 1
+      ? ' (' + (state.quoteOptions.filter((o, i) => o.coverIndex === opt.coverIndex && i <= idx).length) + ')'
+      : '';
+    tab.textContent = COVER_LIMITS[opt.coverIndex].label + instanceNum;
+
+    tab.addEventListener('click', () => {
+      tabsContainer.querySelectorAll('.option-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      state.activeOptionTab = opt.id;
+
+      // Load this option's discounts into the fields
+      $('posture-discount').value = opt.postureDiscount ? Math.round(opt.postureDiscount * 100) : '';
+      $('discretionary-discount').value = opt.discretionaryDiscount ? Math.round(opt.discretionaryDiscount * 100) : '';
+      $('manual-override').value = opt.manualOverride ? opt.manualOverride : '';
+
+      updateDiscounts();
+      updateComparisonBars();
+    });
+
+    tabsContainer.appendChild(tab);
+  });
+
+  state.activeOptionTab = state.quoteOptions[0].id;
 }
 
 /* ===== INITIALIZATION ===== */
@@ -1979,36 +2508,71 @@ document.addEventListener('DOMContentLoaded', () => {
     state.isCustomSelection = isHidden;
   });
 
-  // Custom cover selector cards
+  // Custom cover selector cards — multi-toggle
   $$('#cover-selector .sel-card').forEach(card => {
     card.addEventListener('click', () => {
       if (card.classList.contains('unavailable')) return;
 
       const ci = parseInt(card.dataset.coverIndex, 10);
 
-      // Toggle selection
-      $$('#cover-selector .sel-card').forEach(c => c.classList.remove('active'));
-      card.classList.add('active');
-      state.selectedCovers = [ci];
+      if (isCoverInOptions(ci)) {
+        // Remove this cover from options
+        state.quoteOptions = state.quoteOptions.filter(o => o.coverIndex !== ci);
+        syncFromQuoteOptions();
+        card.classList.remove('active');
+      } else {
+        if (state.quoteOptions.length >= 4) return;
+        addQuoteOption(ci, 0);
+        card.classList.add('active');
+      }
 
       // Check micro
       state.isMicroSME = checkMicroSME(state.industryIndex, state.revenueBandIndex, ci);
       $('micro-badge').style.display = state.isMicroSME ? 'flex' : 'none';
 
-      // Deselect recommendation cards
-      $$('.cover-rec-card').forEach(c => c.classList.remove('active'));
+      // Sync recommendation card highlighting
+      $$('.cover-rec-card').forEach(c => {
+        const rci = parseInt(c.dataset.coverIndex, 10);
+        if (isCoverInOptions(rci)) {
+          c.classList.add('selected', 'active');
+        } else {
+          c.classList.remove('selected', 'active');
+        }
+      });
 
-      renderFPSelector(ci);
+      renderFPSelectorMulti();
       updatePricing();
     });
   });
 
   $('nextBtn2').addEventListener('click', () => {
-    if (state.selectedCovers.length === 0 && state.recommendedCovers.length === 0) {
+    if (state.quoteOptions.length === 0 && state.selectedCovers.length === 0 && state.recommendedCovers.length === 0) {
       // Need at least one cover selected
       return;
     }
+
+    // For multi-mode, auto-set the number of competitor rows to match options
+    if (isMultiMode()) {
+      $('num-cover-limits').value = state.quoteOptions.length;
+      state.numRequestedCovers = state.quoteOptions.length;
+
+      // Show step 3 tabs
+      const s3Tabs = $('step3-option-tabs');
+      s3Tabs.classList.remove('hidden');
+      s3Tabs.innerHTML = '';
+      state.quoteOptions.forEach((opt, idx) => {
+        const tab = document.createElement('button');
+        tab.type = 'button';
+        tab.className = 'option-tab' + (idx === 0 ? ' active' : '');
+        tab.textContent = opt.label;
+        s3Tabs.appendChild(tab);
+      });
+    } else {
+      $('step3-option-tabs').classList.add('hidden');
+    }
+
     updateCompetitorRows();
+    updateComparisonTable();
     goToStep(3);
   });
 
@@ -2036,6 +2600,14 @@ document.addEventListener('DOMContentLoaded', () => {
   if (firstRow) setupCompetitorRowEvents(firstRow, 0);
 
   $('nextBtn3').addEventListener('click', () => {
+    // Show/hide apply-all toggle and option tabs based on multi-mode
+    if (isMultiMode()) {
+      $('apply-all-toggle').style.display = 'flex';
+      renderStep4Tabs();
+    } else {
+      $('apply-all-toggle').style.display = 'none';
+      $('step4-option-tabs').classList.add('hidden');
+    }
     renderUWConditionsPanel();
     updateDiscounts();
     updateComparisonBars();
@@ -2053,6 +2625,15 @@ document.addEventListener('DOMContentLoaded', () => {
     updateDiscounts();
   });
   $('manual-override').addEventListener('focus', () => stripCurrencyInput($('manual-override')));
+
+  // Apply-all checkbox
+  $('apply-all-check').addEventListener('change', () => {
+    state.applyDiscountsToAll = $('apply-all-check').checked;
+    if (state.applyDiscountsToAll) {
+      // Sync current values to all options
+      updateDiscounts();
+    }
+  });
 
   // Compare toggle
   $('compare-toggle').querySelectorAll('.toggle-btn').forEach(btn => {
@@ -2086,7 +2667,15 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   $('btn-download-pdf').addEventListener('click', () => {
-    generatePDF();
+    if (state.quoteOptions.length === 1) {
+      generatePDF(state.quoteOptions[0]);
+    } else {
+      generatePDF();
+    }
+  });
+
+  $('btn-download-all-pdfs').addEventListener('click', () => {
+    generateAllPDFs();
   });
 
   // ─── Progress Step Clicks (backward navigation only) ─────────

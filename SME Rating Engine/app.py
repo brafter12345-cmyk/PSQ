@@ -45,6 +45,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS quotes (
                 id                  TEXT PRIMARY KEY,
                 quote_ref           TEXT UNIQUE NOT NULL,
+                base_ref            TEXT,
                 company_name        TEXT NOT NULL,
                 industry_main       TEXT,
                 industry_sub        TEXT,
@@ -86,6 +87,16 @@ def init_db():
         conn.execute("CREATE INDEX IF NOT EXISTS idx_quote_ref  ON quotes(quote_ref)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_created_at ON quotes(created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_status     ON quotes(status)")
+
+        # Add base_ref column if not exists (migration for existing DBs)
+        try:
+            conn.execute("SELECT base_ref FROM quotes LIMIT 1")
+        except sqlite3.OperationalError:
+            conn.execute("ALTER TABLE quotes ADD COLUMN base_ref TEXT")
+            print("Migrated: added base_ref column to quotes table")
+
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_base_ref   ON quotes(base_ref)")
+
     print(f"Database ready at {DB_PATH}")
 
 
@@ -133,6 +144,7 @@ def save_quote():
     now = datetime.now(timezone.utc).isoformat()
 
     quote_ref = data.get("quoteRef", "")
+    base_ref = data.get("baseRef", quote_ref)  # Shared base ref across multi-cover options
     company = data.get("companyName", "Unknown")
 
     # Handle PDF if provided (base64-encoded)
@@ -159,7 +171,7 @@ def save_quote():
     with get_db() as conn:
         conn.execute("""
             INSERT INTO quotes (
-                id, quote_ref, company_name, industry_main, industry_sub,
+                id, quote_ref, base_ref, company_name, industry_main, industry_sub,
                 turnover_prev, turnover_current, actual_turnover, revenue_band,
                 employee_count, quote_type, market_condition, prior_claim,
                 uw_answers, uw_outcome, uw_loading_pct, uw_conditions, endorsements,
@@ -169,7 +181,7 @@ def save_quote():
                 renewal_cover_limit, renewal_premium,
                 pdf_filename, status, created_by, created_at, updated_at
             ) VALUES (
-                ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?,
                 ?, ?, ?, ?,
                 ?, ?, ?, ?,
                 ?, ?, ?, ?, ?,
@@ -182,6 +194,7 @@ def save_quote():
         """, (
             quote_id,
             quote_ref,
+            base_ref,
             company,
             data.get("industryMain", ""),
             data.get("industrySub", ""),
@@ -243,11 +256,15 @@ def list_quotes():
     status = request.args.get("status", "")
     from_date = request.args.get("from", "")
     to_date = request.args.get("to", "")
+    base_ref = request.args.get("base_ref", "")
     limit = int(request.args.get("limit", 100))
 
-    query = "SELECT id, quote_ref, company_name, industry_sub, actual_turnover, revenue_band, cover_selections, status, created_at FROM quotes WHERE 1=1"
+    query = "SELECT id, quote_ref, base_ref, company_name, industry_sub, actual_turnover, revenue_band, cover_selections, status, created_at FROM quotes WHERE 1=1"
     params = []
 
+    if base_ref:
+        query += " AND base_ref = ?"
+        params.append(base_ref)
     if company:
         query += " AND company_name LIKE ?"
         params.append(f"%{company}%")

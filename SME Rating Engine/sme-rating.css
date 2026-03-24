@@ -2504,4 +2504,236 @@ body::before {
   .renewal-section.visible {
     display: block !important;
   }
+
+  /* Multi-cover tabs => show all panels */
+  .option-tabs { display: none !important; }
+  .option-tab-panel { display: block !important; }
+  .multi-pricing-table { page-break-inside: avoid; }
+}
+
+
+/* ===== 37. Multi-Cover Quote Options ===== */
+
+/* Option Tabs */
+.option-tabs {
+  display: flex;
+  gap: 0;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  padding: 4px 4px 0;
+  margin-bottom: 0;
+  overflow-x: auto;
+}
+.option-tabs.hidden { display: none; }
+.option-tab {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 7px 7px 0 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s var(--ease);
+  outline: none;
+  white-space: nowrap;
+  position: relative;
+}
+.option-tab:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+.option-tab.active {
+  background: rgba(0, 180, 216, 0.08);
+  color: var(--accent);
+}
+.option-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px 2px 0 0;
+}
+.option-tab-panel {
+  display: none;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: none;
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  animation: fadeSlideUp 0.2s var(--ease);
+}
+.option-tab-panel.active { display: block; }
+
+/* Single option: no tabs, direct display */
+.option-tab-panel.single-mode {
+  display: block;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+}
+
+/* Multi-Pricing Table (Step 2) */
+.multi-pricing-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+  margin-top: 12px;
+  margin-bottom: 8px;
+}
+.multi-pricing-table thead th {
+  padding: 10px 14px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  text-align: left;
+}
+.multi-pricing-table thead th:last-child,
+.multi-pricing-table thead th:nth-child(2),
+.multi-pricing-table thead th:nth-child(3) {
+  text-align: right;
+}
+.multi-pricing-table tbody td {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  color: var(--text-primary);
+}
+.multi-pricing-table tbody td:nth-child(2),
+.multi-pricing-table tbody td:nth-child(3) {
+  text-align: right;
+  font-weight: 700;
+}
+.multi-pricing-table tbody td:nth-child(2) { color: var(--accent); }
+.multi-pricing-table tbody td:nth-child(3) { color: var(--text-heading); }
+.multi-pricing-table tbody tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.015);
+}
+.multi-pricing-table tbody tr:hover td {
+  background: rgba(0, 180, 216, 0.04);
+}
+
+/* Cover Recommendation Card: multi-select checkmark overlay */
+.cover-rec-card.selected {
+  border-color: var(--accent);
+  background: rgba(0, 180, 216, 0.08);
+  box-shadow: 0 0 16px rgba(0, 180, 216, 0.1);
+}
+.cover-rec-card .check-overlay {
+  display: none;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 900;
+}
+.cover-rec-card.selected .check-overlay {
+  display: flex;
+}
+.cover-rec-card {
+  position: relative;
+}
+
+/* Duplicate "+" button */
+.duplicate-btn {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 180, 216, 0.3);
+  background: rgba(0, 180, 216, 0.1);
+  color: var(--accent);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s var(--ease);
+  line-height: 1;
+  padding: 0;
+  font-family: inherit;
+}
+.duplicate-btn:hover {
+  background: rgba(0, 180, 216, 0.2);
+  border-color: var(--accent);
+  transform: scale(1.1);
+}
+.cover-rec-card.selected .duplicate-btn { display: flex; }
+
+/* Apply-all toggle */
+.apply-all-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: rgba(0, 180, 216, 0.06);
+  border: 1px solid rgba(0, 180, 216, 0.12);
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+  cursor: pointer;
+}
+.apply-all-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.apply-all-toggle:hover {
+  background: rgba(0, 180, 216, 0.1);
+}
+
+/* Options count badge in ticker */
+.ticker-options-count {
+  font-size: 0.7rem;
+  padding: 2px 8px;
+  background: rgba(0, 180, 216, 0.15);
+  border-radius: 10px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* Download all PDFs button */
+.btn-download-all {
+  background: var(--accent-gradient);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 180, 216, 0.25);
+  padding: 12px 24px;
+  font-size: 0.82rem;
+}
+.btn-download-all:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 24px rgba(0, 180, 216, 0.35);
+}
+.btn-download-all svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* Responsive additions for multi-cover */
+@media (max-width: 700px) {
+  .option-tabs { flex-wrap: nowrap; }
+  .option-tab { padding: 8px 14px; font-size: 0.75rem; }
+  .multi-pricing-table { font-size: 0.76rem; }
+  .multi-pricing-table thead th,
+  .multi-pricing-table tbody td { padding: 8px 10px; }
 }
