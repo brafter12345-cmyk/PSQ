@@ -98,12 +98,18 @@ def index():
     return send_from_directory(str(BASE_DIR), "index.html")
 
 
-@app.route("/<path:filename>")
-def static_files(filename):
-    # Don't serve the database or PDF storage as static files
-    if filename.startswith(("quotes.db", "quote_pdfs/", "app.py", "__pycache__")):
-        abort(404)
-    return send_from_directory(str(BASE_DIR), filename)
+@app.errorhandler(404)
+def not_found(e):
+    """Serve static files as fallback for unmatched routes."""
+    path = request.path.lstrip("/")
+    if not path or path.startswith(("api/", "health")):
+        return jsonify({"error": "Not found"}), 404
+    if path.startswith(("quotes.db", "quote_pdfs/", "app.py", "__pycache__", "requirements.txt")):
+        return jsonify({"error": "Not found"}), 404
+    filepath = BASE_DIR / path
+    if filepath.exists() and filepath.is_file():
+        return send_from_directory(str(BASE_DIR), path)
+    return jsonify({"error": "Not found"}), 404
 
 
 # ---------------------------------------------------------------------------
