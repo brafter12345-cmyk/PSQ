@@ -1215,7 +1215,9 @@ function toggleFPQuestions(show) {
 function updateCompetitorRows() {
   const container = $('competitor-rows');
   const existingRows = container.querySelectorAll('.competitor-row');
-  const count = state.numRequestedCovers;
+
+  // In multi-mode, sync count from quoteOptions
+  const count = isMultiMode() ? state.quoteOptions.length : state.numRequestedCovers;
 
   // Add/remove rows
   if (existingRows.length < count) {
@@ -1237,6 +1239,45 @@ function updateCompetitorRows() {
     for (let i = existingRows.length - 1; i >= count; i--) {
       existingRows[i].remove();
     }
+  }
+
+  // In multi-mode, auto-map each row to its corresponding quote option
+  if (isMultiMode()) {
+    const rows = container.querySelectorAll('.competitor-row');
+    rows.forEach((row, idx) => {
+      if (idx < state.quoteOptions.length) {
+        const opt = state.quoteOptions[idx];
+        const coverValue = COVER_LIMITS[opt.coverIndex].value;
+        const select = row.querySelector('.competitor-cover-select');
+
+        // Auto-set dropdown to the quote option's cover limit
+        if (select) {
+          select.value = coverValue.toString();
+          select.dispatchEvent(new Event('change'));
+        }
+
+        // Update the row label with sequential number and cover info
+        const labelEl = row.querySelector('.competitor-row-header');
+        if (labelEl) {
+          labelEl.textContent = 'QUOTE OPTION ' + (idx + 1) + ': ' + opt.label;
+        } else {
+          // Create label if it doesn't exist
+          const label = document.createElement('div');
+          label.className = 'competitor-row-header';
+          label.textContent = 'QUOTE OPTION ' + (idx + 1) + ': ' + opt.label;
+          row.insertBefore(label, row.firstChild);
+        }
+      }
+    });
+  } else {
+    // Single mode: update labels with sequential numbers
+    const rows = container.querySelectorAll('.competitor-row');
+    rows.forEach((row, idx) => {
+      const labelEl = row.querySelector('.competitor-row-header');
+      if (labelEl) {
+        labelEl.textContent = 'QUOTE OPTION ' + (idx + 1);
+      }
+    });
   }
 
   // Toggle competitor inputs based on existing quotes flag
@@ -2567,6 +2608,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (isMultiMode()) {
       $('num-cover-limits').value = state.quoteOptions.length;
       state.numRequestedCovers = state.quoteOptions.length;
+      // Hide the manual count selector in multi-mode (auto-synced)
+      $('num-cover-limits').closest('.form-group').style.display = 'none';
 
       // Show quote options summary bar (not tabs — all options compared together)
       const s3Tabs = $('step3-option-tabs');
