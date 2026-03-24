@@ -997,9 +997,9 @@ function updateComparisonBars() {
     const delta = phishieldPremium - targetPremium;
     const deltaPct = Math.round((delta / targetPremium) * 100);
 
-    let barColor = 'var(--green)';
+    let barColor = 'var(--success, #2ec4b6)';
     if (delta > 0) {
-      barColor = Math.abs(deltaPct) <= 5 ? 'var(--amber, #f59e0b)' : 'var(--red, #ef4444)';
+      barColor = Math.abs(deltaPct) <= 5 ? 'var(--warning, #ffb703)' : 'var(--danger, #e63946)';
     }
 
     const statusText = delta <= 0
