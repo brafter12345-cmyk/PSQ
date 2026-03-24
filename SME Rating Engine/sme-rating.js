@@ -70,7 +70,7 @@ const state = {
   manualOverride: null,
   endorsements: '',
   compareTarget: 'itoo',
-  applyDiscountsToAll: true,
+  applyDiscountsToAll: false,
   // Computed
   calculations: {},           // Keyed by option ID (not cover index)
   quoteRef: '',

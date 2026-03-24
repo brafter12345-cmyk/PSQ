@@ -1397,10 +1397,22 @@ body::before {
 
 /* ===== 22. Discount Inputs ===== */
 .discount-group {
+  margin-bottom: 14px;
+}
+.discount-input-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-top: 8px;
+}
+.discount-input-row .form-input {
+  width: 120px;
+  flex-shrink: 0;
+}
+.discount-computed {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--accent);
 }
 .discount-label {
   flex: 1;
