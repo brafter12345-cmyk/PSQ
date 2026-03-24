@@ -152,13 +152,14 @@ const FINANCE_SUB_INDUSTRIES = [
 // Update annually with new competitor data.
 const ITOO_BENCHMARKS = [
   // { bracket, deductible, premiums: [R1M, R2.5M, R5M, R7.5M, R10M, R15M] }
-  { bracket: "R10M-R25M",   min: 10_000_001, max: 25_000_000,  deductible: 5000,   premiums: [5375,  8485,  11805, 14985, 18165, 27225] },
-  { bracket: "R25M-R50M",   min: 25_000_001, max: 50_000_000,  deductible: 10000,  premiums: [7225,  11365, 16405, 19975, 23625, 31565] },
-  { bracket: "R50M-R100M",  min: 50_000_001, max: 100_000_000, deductible: 15000,  premiums: [8775,  13895, 19970, 24350, 28745, 38405] },
-  { bracket: "R100M-R150M", min: 100_000_001,max: 150_000_000, deductible: 25000,  premiums: [9805,  15485, 22305, 27175, 32050, 42825] },
-  { bracket: "R150M-R200M", min: 150_000_001,max: 200_000_000, deductible: 50000,  premiums: [10485, 16550, 23795, 29005, 34175, 45685] },
-  { bracket: "R200M-R250M", min: 200_000_001,max: 250_000_000, deductible: 75000,  premiums: [11765, 18585, 26775, 32615, 39270, 51395] },
-  { bracket: "R250M+",      min: 250_000_001,max: Infinity,    deductible: 100000, premiums: [13425, 21205, 30910, 37215, 43905, 58680] },
+  // IToo table is keyed by "Turnover to" (upper limit). Each row covers up to that amount.
+  { bracket: "Up to R10M",    min: 0,           max: 10_000_000,  deductible: 5000,   premiums: [5375,  8485,  11805, 14985, 18165, 27225] },
+  { bracket: "R10M-R25M",    min: 10_000_001,  max: 25_000_000,  deductible: 10000,  premiums: [7225,  11365, 16405, 19975, 23625, 31565] },
+  { bracket: "R25M-R50M",    min: 25_000_001,  max: 50_000_000,  deductible: 15000,  premiums: [8775,  13895, 19970, 24350, 28745, 38405] },
+  { bracket: "R50M-R100M",   min: 50_000_001,  max: 100_000_000, deductible: 25000,  premiums: [9805,  15485, 22305, 27175, 32050, 42825] },
+  { bracket: "R100M-R150M",  min: 100_000_001, max: 150_000_000, deductible: 50000,  premiums: [10485, 16550, 23795, 29005, 34175, 45685] },
+  { bracket: "R150M-R200M",  min: 150_000_001, max: 200_000_000, deductible: 75000,  premiums: [11765, 18585, 26775, 32615, 39270, 51395] },
+  { bracket: "R200M-R250M",  min: 200_000_001, max: 250_000_000, deductible: 100000, premiums: [13425, 21205, 30910, 37215, 43905, 58680] },
 ];
 
 // ─── Industries ────────────────────────────────────────────────────────────────
