@@ -983,23 +983,25 @@ function renderRecommendations() {
     container.appendChild(card);
   });
 
-  // Auto-select first recommended if no options yet
+  // Auto-select ALL recommended options if no options yet
   if (recommended.length > 0 && state.quoteOptions.length === 0) {
-    const firstCard = container.querySelector('.cover-rec-card');
-    if (firstCard) {
-      // Simulate a click to add the first recommended
-      const ci = parseInt(firstCard.dataset.coverIndex, 10);
+    const allCards = container.querySelectorAll('.cover-rec-card.recommended');
+    allCards.forEach(card => {
+      const ci = parseInt(card.dataset.coverIndex, 10);
       addQuoteOption(ci, 0);
-      firstCard.classList.add('selected', 'active');
+      card.classList.add('selected', 'active');
+    });
 
-      const calcFirst = calculatePremium(ci, state);
-      if (calcFirst) {
-        state.isMicroSME = calcFirst.isMicro;
-        $('micro-badge').style.display = calcFirst.isMicro ? 'flex' : 'none';
+    // Check micro for first option
+    if (state.quoteOptions.length > 0) {
+      const firstCalc = calculatePremium(state.quoteOptions[0].coverIndex, state);
+      if (firstCalc) {
+        state.isMicroSME = firstCalc.isMicro;
+        $('micro-badge').style.display = firstCalc.isMicro ? 'flex' : 'none';
       }
-      renderFPSelectorMulti();
-      updatePricing();
     }
+    renderFPSelectorMulti();
+    updatePricing();
   }
 }
 
