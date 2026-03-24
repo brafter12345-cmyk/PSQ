@@ -232,10 +232,7 @@ function checkMicroSME(industryIndex, bandIndex, coverIndex) {
   const isSoftTech = industry.sub === 'Software and Technology';
   const isFinance = industry.main === 'Finance, Insurance, And Real Estate';
 
-  if (isSoftTech || isFinance) {
-    return bandIndex === 0 && isSmallCover; // Only R0-R10M
-  }
-  // General: turnover < R50M AND cover <= R5M
+  // All industries (including S&T and Finance): turnover < R50M AND cover <= R5M
   return bandIndex <= 2 && isSmallCover;
 }
 
