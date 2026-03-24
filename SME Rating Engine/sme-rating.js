@@ -62,6 +62,7 @@ const state = {
   // Step 3
   numRequestedCovers: 1,
   hasExistingQuotes: false,
+  competitorHasFP: false,
   competitorRows: [],
   // Step 4
   postureDiscount: 0,
@@ -1362,6 +1363,17 @@ function updateComparisonTable() {
   const tbody = $('comparison-tbody');
   tbody.innerHTML = '';
 
+  // Determine which Phishield figure to compare: ex-FP (default) or with FP (if competitor includes FP)
+  const useFullPremium = state.competitorHasFP;
+  const compLabel = useFullPremium ? 'Phishield (with FP)' : 'Phishield (ex-FP)';
+
+  // Update the comparison column header
+  const thead = tbody.closest('table')?.querySelector('thead');
+  if (thead) {
+    const headers = thead.querySelectorAll('th');
+    if (headers.length >= 3) headers[2].textContent = compLabel;
+  }
+
   // If we have quoteOptions, show a row per option in the comparison table
   if (state.quoteOptions.length > 0) {
     state.quoteOptions.forEach(opt => {
@@ -1369,17 +1381,18 @@ function updateComparisonTable() {
       const calc = calculatePremium(ci, state, { fpIndex: opt.fpIndex, postureDiscount: opt.postureDiscount || 0, discretionaryDiscount: opt.discretionaryDiscount || 0 });
       if (!calc) return;
 
+      const phishieldCompare = useFullPremium ? calc.annual : calc.annualExFP;
       const itoo = getItooBenchmark(state.actualTurnover, ci);
       const tr = document.createElement('tr');
       const itooStr = itoo ? formatR(itoo.premium) : '--';
-      const delta = itoo ? calc.annualExFP - itoo.premium : null;
+      const delta = itoo ? phishieldCompare - itoo.premium : null;
       const deltaStr = delta !== null ? `${delta >= 0 ? '+' : ''}${formatR(Math.abs(delta))} (${delta >= 0 ? '+' : '-'}${Math.abs(Math.round(delta / itoo.premium * 100))}%)` : '--';
       const deltaClass = delta !== null ? (delta <= 0 ? 'delta-green' : (delta / itoo.premium <= 0.05 ? 'delta-amber' : 'delta-red')) : '';
 
       tr.innerHTML = `
         <td>${opt.label}</td>
         <td>${formatR(calc.annual)}</td>
-        <td>${formatR(calc.annualExFP)}</td>
+        <td>${formatR(phishieldCompare)}</td>
         <td>${itooStr}</td>
         <td class="${deltaClass}">${deltaStr}</td>
       `;
@@ -1401,19 +1414,20 @@ function updateComparisonTable() {
     const calc = calculatePremium(coverIdx, state);
     if (!calc) return;
 
+    const phishieldCompare = useFullPremium ? calc.annual : calc.annualExFP;
     const itoo = getItooBenchmark(state.actualTurnover, coverIdx);
     const compPremium = parseCurrency(row.querySelector('.competitor-premium-input').value);
 
     const tr = document.createElement('tr');
     const itooStr = itoo ? formatR(itoo.premium) : '--';
-    const delta = itoo ? calc.annualExFP - itoo.premium : null;
+    const delta = itoo ? phishieldCompare - itoo.premium : null;
     const deltaStr = delta !== null ? `${delta >= 0 ? '+' : ''}${formatR(Math.abs(delta))} (${delta >= 0 ? '+' : '-'}${Math.abs(Math.round(delta / itoo.premium * 100))}%)` : '--';
     const deltaClass = delta !== null ? (delta <= 0 ? 'delta-green' : (delta / itoo.premium <= 0.05 ? 'delta-amber' : 'delta-red')) : '';
 
     tr.innerHTML = `
       <td>${COVER_LIMITS[coverIdx].label}</td>
       <td>${formatR(calc.annual)}</td>
-      <td>${formatR(calc.annualExFP)}</td>
+      <td>${formatR(phishieldCompare)}</td>
       <td>${itooStr}</td>
       <td class="${deltaClass}">${deltaStr}</td>
     `;
@@ -1477,7 +1491,7 @@ function updateComparisonBars() {
   }
 
   compareItems.forEach(item => {
-    let phishieldPremium = item.calc.annualExFP;
+    let phishieldPremium = state.competitorHasFP ? item.calc.annual : item.calc.annualExFP;
     if (item.manualOverride && item.manualOverride > 0) {
       phishieldPremium = item.manualOverride;
     }
@@ -1530,7 +1544,7 @@ function updateComparisonBars() {
       </div>
       <div class="comparison-bar-track">
         <div class="bar-target-line" style="left: ${targetPct}%;" title="${targetLabel}: ${formatR(targetPremium)}"></div>
-        <div class="bar-fill" style="width: ${phishieldPct}%; background: ${barColor};" title="Phishield (ex-FP): ${formatR(phishieldPremium)}"></div>
+        <div class="bar-fill" style="width: ${phishieldPct}%; background: ${barColor};" title="Phishield ${state.competitorHasFP ? '(with FP)' : '(ex-FP)'}: ${formatR(phishieldPremium)}"></div>
       </div>
       <div class="bar-delta ${statusClass}">
         Difference: ${delta <= 0 ? '' : '+'}${formatR(Math.abs(delta))} (${delta <= 0 ? '' : '+'}${deltaPct}%) &nbsp;|&nbsp; FP benefit included: ${formatR(item.fpCost)}
@@ -2642,6 +2656,16 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.classList.add('active');
       state.hasExistingQuotes = btn.dataset.value === 'yes';
       updateCompetitorRows();
+    });
+  });
+
+  // Competitor FP toggle
+  $('competitor-fp-toggle').querySelectorAll('.toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      $('competitor-fp-toggle').querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.competitorHasFP = btn.dataset.value === 'yes';
+      updateComparisonTable();
     });
   });
 
