@@ -530,47 +530,186 @@ function checkNextBtn1() {
   btn.disabled = !(hasCompany && hasIndustry && hasTurnover && q1Answered);
 }
 
-/* ===== Populate Industry Dropdown ===== */
-function populateIndustryDropdown() {
-  const select = $('industry-select');
-  // Clear existing optgroups
-  const optgroups = select.querySelectorAll('optgroup');
-  optgroups.forEach(og => og.innerHTML = '');
+/* ===== Searchable Industry Dropdown ===== */
 
-  // Build map of main -> optgroup label
-  const ogMap = {};
-  optgroups.forEach(og => {
-    const label = og.getAttribute('label');
-    ogMap[label] = og;
+const mainToLabel = {
+  'Agriculture, Forestry, And Fishing': 'Agriculture',
+  'Mining': 'Mining',
+  'Construction': 'Construction',
+  'Manufacturing': 'Manufacturing',
+  'Transportation, Communications, Electric, Gas And Sanitary Services': 'Transportation',
+  'Wholesale Trade': 'Wholesale Trade',
+  'Retail Trade': 'Retail Trade',
+  'Finance, Insurance, And Real Estate': 'Finance / Insurance / Real Estate',
+  'Services': 'Services',
+  'Healthcare': 'Healthcare',
+  'Public Administration': 'Public Administration',
+};
+
+function populateIndustryDropdown() {
+  const dropdown = $('industry-dropdown');
+  const searchInput = $('industry-search');
+  dropdown.innerHTML = '';
+
+  // Group industries by main category
+  const groups = {};
+  INDUSTRIES.forEach((ind, idx) => {
+    const label = mainToLabel[ind.main] || ind.main;
+    if (!groups[label]) groups[label] = [];
+    groups[label].push({ idx, sub: ind.sub, main: ind.main, refer: ind.referForUW });
   });
 
-  // Map main categories to optgroup labels
-  const mainToLabel = {
-    'Agriculture, Forestry, And Fishing': 'Agriculture',
-    'Mining': 'Mining',
-    'Construction': 'Construction',
-    'Manufacturing': 'Manufacturing',
-    'Transportation, Communications, Electric, Gas And Sanitary Services': 'Transportation',
-    'Wholesale Trade': 'Wholesale Trade',
-    'Retail Trade': 'Retail Trade',
-    'Finance, Insurance, And Real Estate': 'Finance/Insurance/Real Estate',
-    'Services': 'Services',
-    'Healthcare': 'Healthcare',
-    'Public Administration': 'Public Administration',
-  };
+  // Render all groups and options
+  Object.keys(groups).forEach(groupLabel => {
+    const groupDiv = document.createElement('div');
+    groupDiv.className = 'dropdown-group-label';
+    groupDiv.textContent = groupLabel;
+    groupDiv.dataset.group = groupLabel;
+    dropdown.appendChild(groupDiv);
 
-  INDUSTRIES.forEach((ind, idx) => {
-    const label = mainToLabel[ind.main];
-    const og = ogMap[label];
-    if (og) {
-      const opt = document.createElement('option');
-      opt.value = idx;
-      opt.textContent = ind.sub;
-      opt.dataset.main = ind.main;
-      opt.dataset.refer = ind.referForUW ? 'true' : 'false';
-      og.appendChild(opt);
+    groups[groupLabel].forEach(item => {
+      const optDiv = document.createElement('div');
+      optDiv.className = 'dropdown-option';
+      optDiv.textContent = item.sub;
+      optDiv.dataset.idx = item.idx;
+      optDiv.dataset.sub = item.sub.toLowerCase();
+      optDiv.dataset.main = item.main.toLowerCase();
+      optDiv.dataset.group = groupLabel.toLowerCase();
+      optDiv.dataset.refer = item.refer ? 'true' : 'false';
+      optDiv.addEventListener('click', () => selectIndustry(item.idx));
+      dropdown.appendChild(optDiv);
+    });
+  });
+
+  // Open dropdown on input focus/click
+  searchInput.addEventListener('focus', () => {
+    dropdown.classList.add('open');
+    filterIndustryDropdown(searchInput.value);
+  });
+
+  searchInput.addEventListener('click', () => {
+    dropdown.classList.add('open');
+  });
+
+  // Filter on typing
+  searchInput.addEventListener('input', () => {
+    dropdown.classList.add('open');
+    filterIndustryDropdown(searchInput.value);
+  });
+
+  // Keyboard navigation
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      dropdown.classList.remove('open');
+      searchInput.blur();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      moveHighlight(1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      moveHighlight(-1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const highlighted = dropdown.querySelector('.dropdown-option.highlighted');
+      if (highlighted) {
+        selectIndustry(parseInt(highlighted.dataset.idx));
+      }
     }
   });
+
+  // Close on click outside
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#industry-wrapper')) {
+      dropdown.classList.remove('open');
+    }
+  });
+}
+
+function filterIndustryDropdown(query) {
+  const dropdown = $('industry-dropdown');
+  const q = query.toLowerCase().trim();
+  let anyVisible = false;
+
+  dropdown.querySelectorAll('.dropdown-group-label').forEach(g => g.style.display = 'none');
+  dropdown.querySelectorAll('.dropdown-option').forEach(opt => {
+    const matchesSub = opt.dataset.sub.includes(q);
+    const matchesMain = opt.dataset.main.includes(q);
+    const matchesGroup = opt.dataset.group.includes(q);
+    const visible = !q || matchesSub || matchesMain || matchesGroup;
+    opt.style.display = visible ? '' : 'none';
+    if (visible) {
+      anyVisible = true;
+      // Show the group label too
+      const groupLabel = opt.dataset.group;
+      const groupEl = dropdown.querySelector(`.dropdown-group-label[data-group="${groupLabel}"]`);
+      if (groupEl) groupEl.style.display = '';
+    }
+  });
+
+  // Show "no results" message
+  let noResults = dropdown.querySelector('.dropdown-no-results');
+  if (!anyVisible) {
+    if (!noResults) {
+      noResults = document.createElement('div');
+      noResults.className = 'dropdown-no-results';
+      dropdown.appendChild(noResults);
+    }
+    noResults.textContent = `No industries matching "${query}"`;
+    noResults.style.display = '';
+  } else if (noResults) {
+    noResults.style.display = 'none';
+  }
+}
+
+function moveHighlight(direction) {
+  const dropdown = $('industry-dropdown');
+  const visible = Array.from(dropdown.querySelectorAll('.dropdown-option')).filter(o => o.style.display !== 'none');
+  if (visible.length === 0) return;
+
+  const current = dropdown.querySelector('.dropdown-option.highlighted');
+  let idx = current ? visible.indexOf(current) : -1;
+  if (current) current.classList.remove('highlighted');
+
+  idx += direction;
+  if (idx < 0) idx = visible.length - 1;
+  if (idx >= visible.length) idx = 0;
+
+  visible[idx].classList.add('highlighted');
+  visible[idx].scrollIntoView({ block: 'nearest' });
+}
+
+function selectIndustry(industryIdx) {
+  const dropdown = $('industry-dropdown');
+  const searchInput = $('industry-search');
+  const industry = INDUSTRIES[industryIdx];
+
+  // Update hidden input and state
+  $('industry-select').value = industryIdx;
+  state.industryIndex = industryIdx;
+
+  // Update search input display
+  searchInput.value = industry.sub;
+
+  // Mark selected
+  dropdown.querySelectorAll('.dropdown-option').forEach(o => o.classList.remove('selected'));
+  const selected = dropdown.querySelector(`.dropdown-option[data-idx="${industryIdx}"]`);
+  if (selected) selected.classList.add('selected');
+
+  // Close dropdown
+  dropdown.classList.remove('open');
+
+  // Check referForUW
+  if (industry.referForUW) {
+    setBlocker(true, `${industry.main} requires referral for underwriting.`);
+    return;
+  }
+
+  // Clear any industry-based blocker
+  if (state.isBlocked && !state.blockReason.includes('R200M') && !state.blockReason.includes('Underwriting declined')) {
+    setBlocker(false, '');
+  }
+
+  checkNextBtn1();
 }
 
 /* ===== Step Navigation ===== */
@@ -1613,27 +1752,7 @@ document.addEventListener('DOMContentLoaded', () => {
     checkNextBtn1();
   });
 
-  // Industry select
-  $('industry-select').addEventListener('change', () => {
-    const select = $('industry-select');
-    const idx = parseInt(select.value, 10);
-    state.industryIndex = idx;
-
-    const industry = INDUSTRIES[idx];
-
-    // Check referForUW
-    if (industry.referForUW) {
-      setBlocker(true, `${industry.main} requires referral for underwriting.`);
-      return;
-    }
-
-    // Clear any industry-based blocker
-    if (state.isBlocked && !state.blockReason.includes('R200M') && !state.blockReason.includes('Underwriting declined')) {
-      setBlocker(false, '');
-    }
-
-    checkNextBtn1();
-  });
+  // Industry select — handled by selectIndustry() in searchable dropdown
 
   // Turnover inputs
   ['turnover-prev', 'turnover-current'].forEach(id => {

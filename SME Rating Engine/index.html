@@ -76,34 +76,16 @@
           <input class="form-input" id="company-name" type="text" placeholder="e.g. Acme Trading (Pty) Ltd" aria-label="Company Name"/>
         </div>
 
-        <!-- Industry -->
+        <!-- Industry (searchable dropdown) -->
         <div class="form-group">
-          <label class="field-label" for="industry-select">Industry</label>
-          <select class="form-select" id="industry-select" required aria-label="Select industry">
-            <option value="" disabled selected>Select industry</option>
-            <optgroup label="Agriculture">
-            </optgroup>
-            <optgroup label="Mining">
-            </optgroup>
-            <optgroup label="Construction">
-            </optgroup>
-            <optgroup label="Manufacturing">
-            </optgroup>
-            <optgroup label="Transportation">
-            </optgroup>
-            <optgroup label="Wholesale Trade">
-            </optgroup>
-            <optgroup label="Retail Trade">
-            </optgroup>
-            <optgroup label="Finance/Insurance/Real Estate">
-            </optgroup>
-            <optgroup label="Services">
-            </optgroup>
-            <optgroup label="Healthcare">
-            </optgroup>
-            <optgroup label="Public Administration">
-            </optgroup>
-          </select>
+          <label class="field-label">Industry</label>
+          <div class="searchable-select" id="industry-wrapper">
+            <input type="text" class="form-input" id="industry-search" placeholder="Search or select industry..." autocomplete="off" aria-label="Search industry"/>
+            <div class="searchable-select-arrow">&#9662;</div>
+            <div class="searchable-dropdown" id="industry-dropdown"></div>
+          </div>
+          <!-- Hidden select to preserve value for form logic -->
+          <input type="hidden" id="industry-select" value=""/>
         </div>
 
         <!-- Turnover -->

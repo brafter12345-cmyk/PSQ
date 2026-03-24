@@ -384,22 +384,91 @@ body::before {
 }
 
 
-/* ===== 11. Industry Dropdown (Select with optgroup) ===== */
-.industry-select {
-  padding: 13px 16px;
+/* ===== 11. Searchable Industry Dropdown ===== */
+.searchable-select {
+  position: relative;
 }
-.industry-select optgroup {
-  font-weight: 700;
-  color: var(--accent-light);
-  font-style: normal;
+.searchable-select .form-input {
+  cursor: pointer;
+  padding-right: 36px;
+}
+.searchable-select-arrow {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  pointer-events: none;
+}
+.searchable-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 320px;
+  overflow-y: auto;
   background: #0d1b2a;
-  padding: 4px 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  z-index: 200;
 }
-.industry-select optgroup option {
-  font-weight: 400;
+.searchable-dropdown.open {
+  display: block;
+  animation: fadeSlideUp 0.2s var(--ease);
+}
+.searchable-dropdown .dropdown-group-label {
+  padding: 8px 14px 4px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent-light);
+  background: rgba(0, 119, 182, 0.08);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.searchable-dropdown .dropdown-option {
+  padding: 10px 14px 10px 24px;
+  font-size: 0.88rem;
   color: var(--text-primary);
-  padding-left: 12px;
-  background: #1b2838;
+  cursor: pointer;
+  transition: background 0.15s;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+.searchable-dropdown .dropdown-option:hover,
+.searchable-dropdown .dropdown-option.highlighted {
+  background: rgba(0, 180, 216, 0.1);
+  color: var(--text-heading);
+}
+.searchable-dropdown .dropdown-option.selected {
+  background: rgba(0, 180, 216, 0.15);
+  color: var(--accent);
+  font-weight: 600;
+}
+.searchable-dropdown .dropdown-no-results {
+  padding: 16px 14px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-align: center;
+  font-style: italic;
+}
+/* Scrollbar styling for dropdown */
+.searchable-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+.searchable-dropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+.searchable-dropdown::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+.searchable-dropdown::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 
