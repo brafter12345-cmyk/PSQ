@@ -564,7 +564,7 @@ function populateIndustryDropdown() {
     const groupDiv = document.createElement('div');
     groupDiv.className = 'dropdown-group-label';
     groupDiv.textContent = groupLabel;
-    groupDiv.dataset.group = groupLabel;
+    groupDiv.dataset.group = groupLabel.toLowerCase();
     dropdown.appendChild(groupDiv);
 
     groups[groupLabel].forEach(item => {
