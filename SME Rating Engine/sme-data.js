@@ -276,11 +276,11 @@ const COVER_AVAILABILITY = [
   // R1M,           R2.5M,          R5M,            R7.5M,          R10M,           R15M
   ["recommended",  "recommended",  "optional",     "optional",     "optional",     "optional"],     // R0-R10M
   ["optional",     "recommended",  "recommended",  "optional",     "optional",     "optional"],     // R10M-R25M
-  ["recommended",  "recommended",  "recommended",  "optional",     "optional",     "optional"],     // R25M-R50M
-  ["optional",     "recommended",  "recommended",  "recommended",  "optional",     "optional"],     // R50M-R75M
-  [null,           "optional",     "optional",     "optional",     "optional",     "optional"],     // R75M-R100M
-  [null,           null,           "optional",     "optional",     "optional",     "optional"],     // R100M-R150M
-  [null,           null,           "optional",     "optional",     "optional",     "optional"],     // R150M-R200M
+  ["optional",     "recommended",  "recommended",  "optional",     "optional",     "optional"],     // R25M-R50M
+  ["request-only", "optional",     "recommended",  "recommended",  "optional",     "optional"],     // R50M-R75M
+  [null,           "optional",     "optional",     "recommended",  "recommended",  "optional"],     // R75M-R100M
+  [null,           null,           "optional",     "recommended",  "recommended",  "optional"],     // R100M-R150M
+  [null,           null,           "optional",     "optional",     "recommended",  "recommended"],   // R150M-R200M
 ];
 
 // ─── Underwriting Questions ────────────────────────────────────────────────────
