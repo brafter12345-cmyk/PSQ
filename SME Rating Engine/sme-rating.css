@@ -1931,6 +1931,25 @@ body::before {
   line-height: 1.5;
   font-size: 0.88rem;
 }
+.sum-conditions-list {
+  margin: 4px 0 0 0;
+  padding: 0 0 0 20px;
+  list-style: decimal;
+}
+.sum-conditions-list li {
+  margin-bottom: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.sum-conditions-list li:last-child {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
 .summary-endorsements {
   font-size: 0.88rem;
   color: var(--text-primary);

@@ -1362,9 +1362,14 @@ function populateSummary() {
     allConditions.push('Prior claim: additional underwriting required');
   }
 
-  $('sum-uw-conditions').textContent = allConditions.length > 0
-    ? allConditions.join('; ')
-    : 'None';
+  const condEl = $('sum-uw-conditions');
+  if (allConditions.length > 0) {
+    condEl.innerHTML = '<ol class="sum-conditions-list">' +
+      allConditions.map(c => '<li>' + c + '</li>').join('') +
+      '</ol>';
+  } else {
+    condEl.textContent = 'None';
+  }
 
   // Prior claim
   $('sum-prior-claim').style.display = state.priorClaim ? 'flex' : 'none';
