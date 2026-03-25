@@ -395,11 +395,13 @@ function calculatePremium(coverIndex, overrideState, optionOverrides) {
   // 6. Discounts (applied to both total and ex-FP)
   const postureD = (optionOverrides && optionOverrides.postureDiscount !== undefined) ? optionOverrides.postureDiscount : (s.postureDiscount || 0);
   const discretionaryD = (optionOverrides && optionOverrides.discretionaryDiscount !== undefined) ? optionOverrides.discretionaryDiscount : (s.discretionaryDiscount || 0);
-  if (postureD > 0 || discretionaryD > 0) {
+  if (postureD !== 0 || discretionaryD !== 0) {
     const discountMultiplier = (1 - postureD) * (1 - discretionaryD);
     totalPremium = totalPremium * discountMultiplier;
     annualExFP = annualExFP * discountMultiplier;
-    breakdown.push({ step: 6, desc: `Discounts (posture ${Math.round(postureD * 100)}%, discretionary ${Math.round(discretionaryD * 100)}%)`, value: totalPremium });
+    const postureLabel = postureD >= 0 ? `discount ${Math.round(postureD * 100)}%` : `loading ${Math.abs(Math.round(postureD * 100))}%`;
+    const discLabel = discretionaryD >= 0 ? `discount ${Math.round(discretionaryD * 100)}%` : `loading ${Math.abs(Math.round(discretionaryD * 100))}%`;
+    breakdown.push({ step: 6, desc: `Adjustments (posture ${postureLabel}, discretionary ${discLabel})`, value: totalPremium });
   }
 
   const monthly = Math.ceil(totalPremium / 12);
@@ -577,10 +579,8 @@ function evaluateUW() {
     state.uwOutcome = 'loading';
   }
 
-  // Q9 = No means prior incidents/claims exist -> add referral note
-  if (a['q9'] === false) {
-    state.uwOutcome = 'refer';
-  }
+  // Q9 is informational only (prior coverage history, not claims history)
+  // No impact on underwriting outcome regardless of answer
 
   renderUWOutcome();
   checkNextBtn1();
@@ -1683,8 +1683,8 @@ function updateDiscounts() {
   const posture = parseFloat($('posture-discount').value) || 0;
   const discretionary = parseFloat($('discretionary-discount').value) || 0;
 
-  state.postureDiscount = Math.min(posture, 100) / 100;
-  state.discretionaryDiscount = Math.min(discretionary, 100) / 100;
+  state.postureDiscount = Math.max(-100, Math.min(posture, 100)) / 100;
+  state.discretionaryDiscount = Math.max(-100, Math.min(discretionary, 100)) / 100;
 
   // Apply to quoteOptions
   if (state.quoteOptions.length > 0) {
@@ -1704,10 +1704,10 @@ function updateDiscounts() {
     }
   }
 
-  // Combined discount check
+  // Combined discount check (only warn on discounts, not loadings)
   const combined = 1 - (1 - state.postureDiscount) * (1 - state.discretionaryDiscount);
   const warning = $('discount-warning');
-  if (combined > 0.35) {
+  if (combined > 0.35 && state.postureDiscount >= 0 && state.discretionaryDiscount >= 0) {
     warning.style.display = 'flex';
   } else {
     warning.style.display = 'none';
@@ -1727,8 +1727,10 @@ function updateDiscounts() {
       const baseBeforeDisc = calc.annual / ((1 - pd) * (1 - dd)) || calc.annual;
       const postureAmt = baseBeforeDisc * pd;
       const discAmt = (baseBeforeDisc - postureAmt) * dd;
-      $('posture-discount-value').textContent = formatR(postureAmt);
-      $('discretionary-discount-value').textContent = formatR(discAmt);
+      const posturePrefix = pd < 0 ? '+' : pd > 0 ? '-' : '';
+      const discPrefix = dd < 0 ? '+' : dd > 0 ? '-' : '';
+      $('posture-discount-value').textContent = posturePrefix + formatR(Math.abs(postureAmt));
+      $('discretionary-discount-value').textContent = discPrefix + formatR(Math.abs(discAmt));
     }
   } else {
     const covers = state.selectedCovers.length > 0 ? state.selectedCovers : state.recommendedCovers;
@@ -1738,8 +1740,10 @@ function updateDiscounts() {
         const baseBeforeDisc = calc.annual / ((1 - state.postureDiscount) * (1 - state.discretionaryDiscount)) || calc.annual;
         const postureAmt = baseBeforeDisc * state.postureDiscount;
         const discAmt = (baseBeforeDisc - postureAmt) * state.discretionaryDiscount;
-        $('posture-discount-value').textContent = formatR(postureAmt);
-        $('discretionary-discount-value').textContent = formatR(discAmt);
+        const posturePrefix = state.postureDiscount < 0 ? '+' : state.postureDiscount > 0 ? '-' : '';
+        const discPrefix = state.discretionaryDiscount < 0 ? '+' : state.discretionaryDiscount > 0 ? '-' : '';
+        $('posture-discount-value').textContent = posturePrefix + formatR(Math.abs(postureAmt));
+        $('discretionary-discount-value').textContent = discPrefix + formatR(Math.abs(discAmt));
       }
     }
   }
