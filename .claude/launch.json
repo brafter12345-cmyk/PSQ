@@ -12,6 +12,12 @@
       "runtimeExecutable": "C:/Users/sarel/AppData/Local/Programs/Python/Python312/python.exe",
       "runtimeArgs": ["security_scanner/app.py"],
       "port": 5001
+    },
+    {
+      "name": "sme-engine",
+      "runtimeExecutable": "C:/Users/sarel/AppData/Local/Programs/Python/Python312/python.exe",
+      "runtimeArgs": ["SME Rating Engine/app.py"],
+      "port": 5002
     }
   ]
 }
