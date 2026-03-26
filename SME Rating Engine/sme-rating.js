@@ -2062,8 +2062,9 @@ function generateAllPDFs() {
     return;
   }
 
-  state.quoteOptions.forEach(opt => {
-    generatePDF(opt);
+  // Stagger downloads to avoid browser popup blocker
+  state.quoteOptions.forEach((opt, idx) => {
+    setTimeout(() => generatePDF(opt), idx * 1000);
   });
 }
 
