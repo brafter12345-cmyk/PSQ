@@ -9,3 +9,17 @@ quote_pdfs/
 *.db-journal
 *.db-wal
 ~$*
+
+# Backup folder (contains full repo copy)
+Backup/
+
+# Binary / generated files
+*.pdf
+*.docx
+*.xlsx
+package-lock.json
+security_scanner/scanner.db
+
+# Screenshots and generated output
+SME Rating Engine/manual_screenshots/
+SME Rating Engine/Quotes/

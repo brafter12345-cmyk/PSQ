@@ -1,0 +1,18 @@
+Rank,IBM_Industry,Cost_2025_USD_M,Cost_2024_USD_M,Cost_2025_ZAR_M,YoY_Trend,vs_Global_Avg
+1,Healthcare,7.42,9.77,133.56,Down,+67%
+2,Financial,5.56,6.08,100.08,Down,+25%
+3,Industrial,5.00,5.56,90.00,Down,+13%
+4,Energy,4.83,5.29,86.94,Down,+9%
+5,Technology,4.79,5.45,86.22,Down,+8%
+6,Pharmaceuticals,4.61,5.10,82.98,Down,+4%
+7,Services,4.56,5.08,82.08,Down,+3%
+8,Entertainment,4.43,4.09,79.74,Up,~0%
+9,Media,4.22,3.94,75.96,Up,-5%
+10,Hospitality,4.03,3.82,72.54,Up,-9%
+11,Transportation,3.98,4.43,71.64,Down,-10%
+12,Education,3.80,3.50,68.40,Up,-14%
+13,Research,3.79,3.54,68.22,Up,-15%
+14,Communications,3.75,4.09,67.50,Down,-16%
+15,Consumer,3.72,3.91,66.96,Down,-16%
+16,Retail,3.54,3.48,63.72,Up,-20%
+17,Public Sector,2.86,2.55,51.48,Up,-36%

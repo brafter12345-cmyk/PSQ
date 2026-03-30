@@ -1,0 +1,87 @@
+SIC_Major_Group,SIC_Sub_Industry,IBM_Industry,Global_Cost_USD_M,Global_Cost_ZAR_M,SA_Cost_ZAR_M,SA_Cost_USD_M,SA_Source
+"Agriculture, Forestry, And Fishing",Agricultural Production Crops,Industrial,5,90,49.66,2.76,Estimated
+"Agriculture, Forestry, And Fishing",Agriculture production livestock and animal specialties,Industrial,5,90,49.66,2.76,Estimated
+"Agriculture, Forestry, And Fishing",Agricultural Services,Services,4.56,82.08,56.8,3.16,SA Actual
+"Agriculture, Forestry, And Fishing",Forestry,Industrial,5,90,49.66,2.76,Estimated
+"Agriculture, Forestry, And Fishing",Fishing hunting and trapping,Industrial,5,90,49.66,2.76,Estimated
+Mining,Metal Mining,Industrial,5,90,49.66,2.76,Estimated
+Mining,Coal Mining,Energy,4.83,86.94,47.97,2.67,Estimated
+Mining,Oil And Gas Extraction,Energy,4.83,86.94,47.97,2.67,Estimated
+Mining,"Mining And Quarrying Of Nonmetallic Minerals, Except Fuels",Industrial,5,90,49.66,2.76,Estimated
+Construction,Building Construction General Contractors And Operative Builders,Industrial,5,90,49.66,2.76,Estimated
+Construction,Heavy Construction Other Than Building Construction Contractors,Industrial,5,90,49.66,2.76,Estimated
+Construction,Construction Special Trade Contractors,Industrial,5,90,49.66,2.76,Estimated
+Manufacturing,Food And Kindred Products,Consumer,3.72,66.96,36.95,2.05,Estimated
+Manufacturing,Tobacco Products,Consumer,3.72,66.96,36.95,2.05,Estimated
+Manufacturing,Textile Mill Products,Consumer,3.72,66.96,36.95,2.05,Estimated
+Manufacturing,Apparel And Other Finished Products Made From Fabrics And Similar Materials,Consumer,3.72,66.96,36.95,2.05,Estimated
+Manufacturing,"Lumber And Wood Products, Except Furniture",Industrial,5,90,49.66,2.76,Estimated
+Manufacturing,Furniture And Fixtures,Consumer,3.72,66.96,36.95,2.05,Estimated
+Manufacturing,Paper And Allied Products,Industrial,5,90,49.66,2.76,Estimated
+Manufacturing,"Printing, Publishing, And Allied Industries",Media,4.22,75.96,41.91,2.33,Estimated
+Manufacturing,Chemicals And Allied Products,Pharmaceuticals,4.61,82.98,45.79,2.54,Estimated
+Manufacturing,Petroleum Refining And Related Industries,Energy,4.83,86.94,47.97,2.67,Estimated
+Manufacturing,Rubber And Miscellaneous Plastics Products,Industrial,5,90,49.66,2.76,Estimated
+Manufacturing,Leather And Leather Products,Consumer,3.72,66.96,36.95,2.05,Estimated
+Manufacturing,"Stone, Clay, Glass, And Concrete Products",Industrial,5,90,49.66,2.76,Estimated
+Manufacturing,Primary Metal Industries,Industrial,5,90,49.66,2.76,Estimated
+Manufacturing,"Fabricated Metal Products, Except Machinery And Transportation Equipment",Industrial,5,90,49.66,2.76,Estimated
+Manufacturing,Industrial And Commercial Machinery And Computer Equipment,Technology,4.79,86.22,47.58,2.64,Estimated
+Manufacturing,"Electronic And Other Electrical Equipment And Components, Except Computer Equipment",Technology,4.79,86.22,47.58,2.64,Estimated
+Manufacturing,Transportation Equipment,Industrial,5,90,49.66,2.76,Estimated
+Manufacturing,"Measuring, Analyzing, And Controlling Instruments; Photographic, Medical And Optical Goods; Watches And Clocks",Healthcare,7.42,133.56,73.7,4.09,Estimated
+Manufacturing,Miscellaneous Manufacturing Industries,Industrial,5,90,49.66,2.76,Estimated
+"Transportation, Communications, Electric, Gas, And Sanitary Services",Railroad Transportation,Transportation,3.98,71.64,39.52,2.2,Estimated
+"Transportation, Communications, Electric, Gas, And Sanitary Services",Local And Suburban Transit And Interurban Highway Passenger Transportation,Transportation,3.98,71.64,39.52,2.2,Estimated
+"Transportation, Communications, Electric, Gas, And Sanitary Services",Motor Freight Transportation And Warehousing,Transportation,3.98,71.64,39.52,2.2,Estimated
+"Transportation, Communications, Electric, Gas, And Sanitary Services",Postal Service,Transportation,3.98,71.64,39.52,2.2,Estimated
+"Transportation, Communications, Electric, Gas, And Sanitary Services",Water Transportation,Transportation,3.98,71.64,39.52,2.2,Estimated
+"Transportation, Communications, Electric, Gas, And Sanitary Services",Transportation By Air,Transportation,3.98,71.64,39.52,2.2,Estimated
+"Transportation, Communications, Electric, Gas, And Sanitary Services","Pipelines, Except Natural Gas",Energy,4.83,86.94,47.97,2.67,Estimated
+"Transportation, Communications, Electric, Gas, And Sanitary Services",Transportation Services,Transportation,3.98,71.64,39.52,2.2,Estimated
+"Transportation, Communications, Electric, Gas, And Sanitary Services",Communications,Communications,3.75,67.5,37.25,2.07,Estimated
+"Transportation, Communications, Electric, Gas, And Sanitary Services","Electric, Gas, And Sanitary Services",Energy,4.83,86.94,47.97,2.67,Estimated
+"Transportation, Communications, Electric, Gas, And Sanitary Services",Water and Waste Management,Energy,4.83,86.94,47.97,2.67,Estimated
+Wholesale Trade,Wholesale Trade - Durable Goods,Consumer,3.72,66.96,36.95,2.05,Estimated
+Wholesale Trade,Wholesale Trade - Non-durable Goods,Consumer,3.72,66.96,36.95,2.05,Estimated
+Retail Trade,eCommerce,Retail,3.54,63.72,35.16,1.95,Estimated
+Retail Trade,"Building Materials, Hardware, Garden Supply, And Mobile Home Dealers",Retail,3.54,63.72,35.16,1.95,Estimated
+Retail Trade,General Merchandise Stores,Retail,3.54,63.72,35.16,1.95,Estimated
+Retail Trade,Food Stores,Retail,3.54,63.72,35.16,1.95,Estimated
+Retail Trade,Automotive Dealers And Gasoline Service Stations,Retail,3.54,63.72,35.16,1.95,Estimated
+Retail Trade,Apparel And Accessory Stores,Retail,3.54,63.72,35.16,1.95,Estimated
+Retail Trade,"Home Furniture, Furnishings, And Equipment Stores",Retail,3.54,63.72,35.16,1.95,Estimated
+Retail Trade,Eating And Drinking Places,Hospitality,4.03,72.54,57.5,3.19,SA Actual
+Retail Trade,Miscellaneous Retail,Retail,3.54,63.72,35.16,1.95,Estimated
+"Finance, Insurance, And Real Estate",Depository Institutions,Financial,5.56,100.08,70.2,3.9,SA Actual
+"Finance, Insurance, And Real Estate",Non-depository Credit Institutions,Financial,5.56,100.08,70.2,3.9,SA Actual
+"Finance, Insurance, And Real Estate","Security And Commodity Brokers, Dealers, Exchanges, And Services",Financial,5.56,100.08,70.2,3.9,SA Actual
+"Finance, Insurance, And Real Estate",Insurance Carriers,Financial,5.56,100.08,70.2,3.9,SA Actual
+"Finance, Insurance, And Real Estate","Insurance Agents, Brokers, And Service",Financial,5.56,100.08,70.2,3.9,SA Actual
+"Finance, Insurance, And Real Estate",Real Estate,Services,4.56,82.08,56.8,3.16,SA Actual
+"Finance, Insurance, And Real Estate",Holding And Other Investment Offices,Financial,5.56,100.08,70.2,3.9,SA Actual
+Services,"Hotels, Rooming Houses, Camps, And Other Lodging Places",Hospitality,4.03,72.54,57.5,3.19,SA Actual
+Services,Personal Services,Services,4.56,82.08,56.8,3.16,SA Actual
+Services,Business Services,Services,4.56,82.08,56.8,3.16,SA Actual
+Services,"Automotive Repair, Services, And Parking",Services,4.56,82.08,56.8,3.16,SA Actual
+Services,Miscellaneous Repair Services,Services,4.56,82.08,56.8,3.16,SA Actual
+Services,Motion Pictures,Entertainment,4.43,79.74,44,2.44,Estimated
+Services,Amusement And Recreation Services,Entertainment,4.43,79.74,44,2.44,Estimated
+Services,Health Services,Healthcare,7.42,133.56,73.7,4.09,Estimated
+Services,Legal Services,Services,4.56,82.08,56.8,3.16,SA Actual
+Services,Educational Services,Education,3.8,68.4,37.73,2.1,Estimated
+Services,Social Services,Public Sector,2.86,51.48,28.41,1.58,Estimated
+Services,"Museums, Art Galleries, And Botanical And Zoological Gardens",Entertainment,4.43,79.74,44,2.44,Estimated
+Services,Membership Organizations,Services,4.56,82.08,56.8,3.16,SA Actual
+Services,"Engineering, Accounting, Research, Management, And Related Services",Research,3.79,68.22,37.64,2.09,Estimated
+Services,Private Households,Services,4.56,82.08,56.8,3.16,SA Actual
+Services,Miscellaneous Services,Services,4.56,82.08,56.8,3.16,SA Actual
+Services,Software and Technology,Technology,4.79,86.22,47.58,2.64,Estimated
+Public Administration,"Executive, Legislative, And General Government, Except Finance",Public Sector,2.86,51.48,28.41,1.58,Estimated
+Public Administration,"Justice, Public Order, And Safety",Public Sector,2.86,51.48,28.41,1.58,Estimated
+Public Administration,"Public Finance, Taxation, And Monetary Policy",Public Sector,2.86,51.48,28.41,1.58,Estimated
+Public Administration,Administration Of Human Resource Programs,Public Sector,2.86,51.48,28.41,1.58,Estimated
+Public Administration,Administration Of Environmental Quality And Housing Programs,Public Sector,2.86,51.48,28.41,1.58,Estimated
+Public Administration,Administration Of Economic Programs,Public Sector,2.86,51.48,28.41,1.58,Estimated
+Public Administration,National Security And International Affairs,Public Sector,2.86,51.48,28.41,1.58,Estimated
+Public Administration,Nonclassifiable Establishments,Public Sector,2.86,51.48,28.41,1.58,Estimated
