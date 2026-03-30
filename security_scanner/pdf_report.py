@@ -491,6 +491,9 @@ def cat_tech(d, S):
     rows = [("CMS", f"{ts.get('cms',{}).get('detected','None')} {ts.get('cms',{}).get('version','') or ''}")] + \
            [(e["software"], e["note"]) for e in eols[:5]] + \
            [("Server software", sw) for sw in ts.get("server_software", [])[:3]]
+    js_libs = ts.get("js_libraries", [])
+    if js_libs:
+        rows.append(("JS Libraries", ", ".join(f"{l['library']} {l['version']}" for l in js_libs)))
     return build_cat_card("Technology Stack & EOL Software", col,
                           f"{len(eols)} EOL component(s)", rows, ts.get("issues", []), S)
 
@@ -575,12 +578,19 @@ def cat_shodan(d, S):
         version = svc.get("version", "")
         rows.append((port_label, f"{product} {version}".strip() or "—"))
 
+    # Exploit maturity summary
+    wpn = sv.get("weaponized_count", 0)
+    poc = sv.get("poc_public_count", 0)
+    if wpn > 0 or poc > 0:
+        rows.append(("Exploit maturity", f"Weaponized: {wpn}  |  PoC Public: {poc}  |  Theoretical: {max(0, total - wpn - poc)}"))
+
     # Detailed CVE rows
     for cve in sv.get("cves", [])[:8]:
         sev = cve.get("severity", "unknown").upper()
         cvss = cve.get("cvss_score", 0)
-        desc = cve.get("description", "")[:120]
-        label = f"{sev}  |  CVSS {cvss}"
+        maturity = cve.get("exploit_maturity", "theoretical").upper()
+        desc = cve.get("description", "")[:100]
+        label = f"{sev}  |  CVSS {cvss}  |  {maturity}"
         if desc:
             label += f"  —  {desc}"
         rows.append((cve.get("cve_id", ""), label))
@@ -671,6 +681,26 @@ def cat_privacy_compliance(d, S):
         if pc.get("sections_missing"):
             rows.append(("Sections missing", " | ".join(pc["sections_missing"])))
     return build_cat_card("Privacy Policy Compliance", col, summary, rows, pc.get("issues", []), S)
+
+
+def cat_compliance_frameworks(data, S):
+    """Render compliance framework mapping section."""
+    compliance = data.get("compliance", {})
+    if not compliance:
+        return []
+
+    story = []
+    for framework, fw_data in compliance.items():
+        pct = fw_data.get("overall_pct", 0)
+        col = C_GREEN if pct >= 75 else (C_AMBER if pct >= 50 else C_RED)
+        rows = []
+        for ctrl_name, ctrl in fw_data.get("controls", {}).items():
+            status_str = ctrl.get("status", "no_data").upper()
+            rows.append((ctrl_name, f"{status_str} — {ctrl.get('description', '')}"))
+            for finding in ctrl.get("findings", [])[:2]:
+                rows.append(("", f"  ↳ {finding[:100]}"))
+        story += build_cat_card(f"{framework}", col, f"{pct}% aligned", rows, [], S)
+    return story
 
 
 def cat_website(d, S):
@@ -1163,6 +1193,11 @@ def generate_pdf(results: dict) -> bytes:
     story += cat_privacy_compliance(cats, S)
     story += cat_security_policy(cats, S)
     story += cat_payment(cats, S)
+
+    # ── Compliance Framework Mapping ─────────────────────────────────────────
+    if data.get("compliance"):
+        story += section_header("COMPLIANCE FRAMEWORK MAPPING", S)
+        story += cat_compliance_frameworks(data, S)
 
     # ── Recommendations ──────────────────────────────────────────────────────
     if recs:

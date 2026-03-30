@@ -1368,6 +1368,24 @@ class TechStackChecker:
         "nginx/1.10": {"risk": "critical", "note": "nginx 1.10 — end-of-life"},
         "OpenSSL/1.0": {"risk": "critical", "note": "OpenSSL 1.0.x — end-of-life Dec 2019"},
         "OpenSSL/1.1.0": {"risk": "high", "note": "OpenSSL 1.1.0 — end-of-life Sep 2019"},
+        # Node.js EOL
+        "Node.js/12": {"risk": "critical", "note": "Node.js 12.x — end-of-life Apr 2022"},
+        "Node.js/14": {"risk": "high", "note": "Node.js 14.x — end-of-life Apr 2023"},
+        "Node.js/16": {"risk": "medium", "note": "Node.js 16.x — end-of-life Sep 2023"},
+        "node/12": {"risk": "critical", "note": "Node.js 12.x — end-of-life Apr 2022"},
+        "node/14": {"risk": "high", "note": "Node.js 14.x — end-of-life Apr 2023"},
+        "node/16": {"risk": "medium", "note": "Node.js 16.x — end-of-life Sep 2023"},
+        # Python 2
+        "Python/2": {"risk": "critical", "note": "Python 2.x — end-of-life Jan 2020"},
+        # IIS EOL
+        "Microsoft-IIS/6": {"risk": "critical", "note": "IIS 6.0 — end-of-life Jul 2015"},
+        "Microsoft-IIS/7.0": {"risk": "critical", "note": "IIS 7.0 — end-of-life Jan 2020"},
+        "Microsoft-IIS/7.5": {"risk": "high", "note": "IIS 7.5 — end-of-life Jan 2020"},
+        # Tomcat EOL
+        "Apache-Coyote/1": {"risk": "critical", "note": "Tomcat/Coyote 1.x — end-of-life"},
+        "Tomcat/7": {"risk": "critical", "note": "Apache Tomcat 7.x — end-of-life"},
+        "Tomcat/8.0": {"risk": "high", "note": "Apache Tomcat 8.0 — end-of-life Jun 2018"},
+        "Tomcat/8.5": {"risk": "medium", "note": "Apache Tomcat 8.5 — end-of-life Mar 2024"},
     }
 
     CMS_SIGNATURES = {
@@ -1399,9 +1417,17 @@ class TechStackChecker:
             all_headers_str = str(r.headers)
 
             # Collect disclosed software versions from headers
-            for h in ["Server", "X-Powered-By", "X-Generator", "X-AspNet-Version"]:
+            for h in ["Server", "X-Powered-By", "X-Generator", "X-AspNet-Version",
+                       "X-Runtime", "X-Drupal-Cache", "X-Varnish", "X-CF-Powered-By"]:
                 if h in r.headers:
                     result["server_software"].append(f"{h}: {r.headers[h]}")
+
+            # Flag technology disclosure as info leak
+            if "X-Powered-By" in r.headers:
+                result["issues"].append(
+                    f"X-Powered-By header discloses technology: {r.headers['X-Powered-By']} — information leak"
+                )
+                result["score"] -= 5
 
             # Check for EOL versions
             combined = (all_headers_str + body).lower()
@@ -1425,8 +1451,57 @@ class TechStackChecker:
                         if not m:
                             m = re.search(r'content="WordPress ([\d.]+)"', body)
                         version = m.group(1) if m else None
+                    elif cms == "Joomla":
+                        m = re.search(r'<meta\s+name="generator"\s+content="Joomla!\s*([\d.]+)"', body, re.I)
+                        if not m:
+                            m = re.search(r'content="Joomla!\s*([\d.]+)"', body, re.I)
+                        version = m.group(1) if m else None
+                    elif cms == "Drupal":
+                        m = re.search(r'<meta\s+name="generator"\s+content="Drupal\s*([\d.]+)"', body, re.I)
+                        if not m:
+                            m = re.search(r'content="Drupal\s*([\d.]+)"', body, re.I)
+                        if not m:
+                            try:
+                                cl = requests.get(f"https://{domain}/CHANGELOG.txt", timeout=5,
+                                                  headers={"User-Agent": USER_AGENT})
+                                if cl.status_code == 200:
+                                    cm = re.search(r'Drupal\s+([\d.]+)', cl.text[:500])
+                                    if cm:
+                                        version = cm.group(1)
+                            except Exception:
+                                pass
+                        else:
+                            version = m.group(1)
                     result["cms"] = {"detected": cms, "version": version}
                     break
+
+            # JavaScript library detection
+            js_libs = []
+            jquery_m = re.search(r'jquery[.-]?([\d.]+)(?:\.min)?\.js', body, re.I)
+            if not jquery_m:
+                jquery_m = re.search(r'/\*!\s*jQuery\s+v([\d.]+)', body)
+            if not jquery_m:
+                jquery_m = re.search(r'jquery\.min\.js\?v(?:er)?=([\d.]+)', body, re.I)
+            if jquery_m:
+                jq_ver = jquery_m.group(1)
+                js_libs.append({"library": "jQuery", "version": jq_ver})
+                try:
+                    parts = [int(x) for x in jq_ver.split(".")[:3]]
+                    if parts[0] < 3 or (parts[0] == 3 and len(parts) > 1 and parts[1] < 5):
+                        result["issues"].append(
+                            f"jQuery {jq_ver} — versions below 3.5.0 have XSS vulnerabilities (CVE-2020-11022)"
+                        )
+                        result["score"] -= 15
+                except (ValueError, IndexError):
+                    pass
+
+            angular_m = re.search(r'angular[.-]?([\d.]+)(?:\.min)?\.js', body, re.I)
+            if angular_m:
+                js_libs.append({"library": "AngularJS", "version": angular_m.group(1)})
+                result["issues"].append(f"AngularJS {angular_m.group(1)} — AngularJS is end-of-life (Dec 2021)")
+                result["score"] -= 10
+
+            result["js_libraries"] = js_libs
 
             result["score"] = max(0, result["score"])
 
@@ -1718,9 +1793,16 @@ class ShodanVulnChecker:
     KEV_URL        = "https://www.cisa.gov/sites/default/files/feeds/known-exploited-vulnerabilities.json"
     EPSS_URL       = "https://api.first.org/data/v1/epss"
 
-    # Module-level KEV cache
+    MSF_MODULES_URL = "https://raw.githubusercontent.com/rapid7/metasploit-framework/master/db/modules_metadata_base.json"
+    EXPLOITDB_CSV_URL = "https://gitlab.com/exploit-database/exploitdb/-/raw/main/files_exploits.csv"
+
+    # Module-level caches (24h TTL)
     _kev_cache = None
     _kev_cache_time = 0
+    _msf_cache = None
+    _msf_cache_time = 0
+    _exploitdb_cache = None
+    _exploitdb_cache_time = 0
 
     def _cvss_severity(self, score: float) -> str:
         if score >= 9.0: return "critical"
@@ -1834,6 +1916,62 @@ class ShodanVulnChecker:
             pass
         return set()
 
+    def _load_msf_modules(self) -> set:
+        """Load Metasploit module CVE list, cached for 24 hours."""
+        now = time.time()
+        if ShodanVulnChecker._msf_cache is not None and (now - ShodanVulnChecker._msf_cache_time) < 86400:
+            return ShodanVulnChecker._msf_cache
+        try:
+            r = requests.get(self.MSF_MODULES_URL, timeout=25,
+                             headers={"User-Agent": USER_AGENT})
+            if r.status_code == 200:
+                data = r.json()
+                cve_set = set()
+                cve_pat = re.compile(r'(CVE-\d{4}-\d+)', re.I)
+                for mod_info in data.values():
+                    for ref in mod_info.get("references", []):
+                        m = cve_pat.match(ref)
+                        if m:
+                            cve_set.add(m.group(1).upper())
+                ShodanVulnChecker._msf_cache = cve_set
+                ShodanVulnChecker._msf_cache_time = now
+                return cve_set
+        except Exception:
+            pass
+        return ShodanVulnChecker._msf_cache or set()
+
+    def _load_exploitdb_cves(self) -> set:
+        """Load ExploitDB CVE list from CSV, cached for 24 hours."""
+        now = time.time()
+        if ShodanVulnChecker._exploitdb_cache is not None and (now - ShodanVulnChecker._exploitdb_cache_time) < 86400:
+            return ShodanVulnChecker._exploitdb_cache
+        try:
+            import csv, io
+            r = requests.get(self.EXPLOITDB_CSV_URL, timeout=25,
+                             headers={"User-Agent": USER_AGENT})
+            if r.status_code == 200:
+                cve_set = set()
+                cve_pat = re.compile(r'(CVE-\d{4}-\d+)', re.I)
+                reader = csv.reader(io.StringIO(r.text))
+                header = next(reader, None)
+                codes_idx = None
+                if header:
+                    for i, col in enumerate(header):
+                        if 'codes' in col.lower():
+                            codes_idx = i
+                            break
+                if codes_idx is not None:
+                    for row in reader:
+                        if len(row) > codes_idx:
+                            for m in cve_pat.finditer(row[codes_idx]):
+                                cve_set.add(m.group(1).upper())
+                ShodanVulnChecker._exploitdb_cache = cve_set
+                ShodanVulnChecker._exploitdb_cache_time = now
+                return cve_set
+        except Exception:
+            pass
+        return ShodanVulnChecker._exploitdb_cache or set()
+
     def _fetch_epss(self, cve_ids: list) -> dict:
         """Batch-fetch EPSS scores for up to 30 CVEs."""
         if not cve_ids:
@@ -1856,14 +1994,18 @@ class ShodanVulnChecker:
         return {}
 
     def _enrich_cves(self, raw_cves: list, result: dict) -> bool:
-        """Enrich CVEs with CVSS, KEV, and EPSS data."""
-        # Load KEV catalog and EPSS scores
+        """Enrich CVEs with CVSS, KEV, EPSS, and exploit maturity data."""
+        # Load enrichment data sources
         kev_set = self._load_kev()
+        msf_set = self._load_msf_modules()
+        edb_set = self._load_exploitdb_cves()
         epss_data = self._fetch_epss(raw_cves[:10])
 
         enriched = []
         kev_count = 0
         high_epss_count = 0
+        weaponized_count = 0
+        poc_count = 0
         for cve_id in raw_cves[:10]:
             info = self._fetch_cvss(cve_id)
             if info:
@@ -1878,6 +2020,20 @@ class ShodanVulnChecker:
                 if info["epss_score"] > 0.5:
                     high_epss_count += 1
 
+                # Exploit maturity classification
+                in_msf = cve_id.upper() in msf_set
+                in_edb = cve_id.upper() in edb_set
+                info["in_msf"] = in_msf
+                info["in_exploitdb"] = in_edb
+                if info["in_kev"] or in_msf:
+                    info["exploit_maturity"] = "weaponized"
+                    weaponized_count += 1
+                elif in_edb or info["epss_score"] > 0.5:
+                    info["exploit_maturity"] = "poc_public"
+                    poc_count += 1
+                else:
+                    info["exploit_maturity"] = "theoretical"
+
                 enriched.append(info)
                 sev = info.get("severity", "unknown")
                 if sev == "critical":   result["critical_count"] += 1
@@ -1891,6 +2047,8 @@ class ShodanVulnChecker:
         result["cves"] = enriched
         result["kev_count"] = kev_count
         result["high_epss_count"] = high_epss_count
+        result["weaponized_count"] = weaponized_count
+        result["poc_public_count"] = poc_count
 
         if kev_count > 0:
             result["issues"].append(
@@ -1899,6 +2057,10 @@ class ShodanVulnChecker:
         if high_epss_count > 0:
             result["issues"].append(
                 f"{high_epss_count} CVE(s) with high EPSS score (>0.5) — high probability of exploitation"
+            )
+        if weaponized_count > 0:
+            result["issues"].append(
+                f"{weaponized_count} CVE(s) have weaponized exploits (CISA KEV / Metasploit) — immediate patching required"
             )
 
         return True
@@ -2790,6 +2952,65 @@ class InformationDisclosureChecker:
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Compliance Framework Mapping
+# ---------------------------------------------------------------------------
+# Maps checker IDs to regulatory/standards control IDs for compliance reporting.
+
+COMPLIANCE_MAP = {
+    "POPIA": {
+        "Section 19 — Security Safeguards": {
+            "description": "Appropriate technical measures to secure personal information",
+            "checkers": ["ssl", "http_headers", "website_security", "waf", "vpn_remote", "high_risk_protocols"],
+        },
+        "Section 20 — Processing Limitation": {
+            "description": "Personal information processed lawfully and minimised",
+            "checkers": ["privacy_compliance"],
+        },
+        "Section 21 — Information Quality": {
+            "description": "Ensure completeness, accuracy and not misleading",
+            "checkers": ["tech_stack", "info_disclosure"],
+        },
+        "Section 22 — Breach Notification": {
+            "description": "Notification obligations when personal data is compromised",
+            "checkers": ["breaches", "dehashed"],
+        },
+    },
+    "PCI DSS v4.0": {
+        "Req 2 — Secure Configurations": {
+            "description": "Apply secure configurations to all system components",
+            "checkers": ["http_headers", "exposed_admin", "info_disclosure", "security_policy"],
+        },
+        "Req 4 — Encryption in Transit": {
+            "description": "Protect cardholder data with strong cryptography during transmission",
+            "checkers": ["ssl", "website_security"],
+        },
+        "Req 6 — Secure Development": {
+            "description": "Develop and maintain secure systems and software",
+            "checkers": ["tech_stack", "website_security"],
+        },
+        "Req 11 — Vulnerability Testing": {
+            "description": "Test security of systems and networks regularly",
+            "checkers": ["shodan_vulns", "virustotal"],
+        },
+    },
+    "ISO 27001": {
+        "A.8 — Asset Management": {
+            "description": "Identify and manage information assets",
+            "checkers": ["tech_stack", "subdomains", "external_ips"],
+        },
+        "A.12 — Operations Security": {
+            "description": "Ensure correct and secure operations of information processing",
+            "checkers": ["high_risk_protocols", "vpn_remote", "dnsbl", "waf"],
+        },
+        "A.14 — System Acquisition & Security": {
+            "description": "Ensure security is integral to information systems",
+            "checkers": ["ssl", "http_headers", "website_security", "payment_security"],
+        },
+    },
+}
+
+
 # 28. Risk Scoring Engine
 # ---------------------------------------------------------------------------
 
@@ -2915,9 +3136,13 @@ class RiskScorer:
         risky_subs = len(results.get("subdomains", {}).get("risky_subdomains", []))
         sub_risk = min(100, risky_subs * 15)
 
-        # Shodan CVE risk
+        # Shodan CVE risk (boosted for weaponized/PoC exploits)
         shodan = results.get("shodan_vulns", {})
         shodan_risk = inv(shodan.get("score", 100))
+        if shodan.get("weaponized_count", 0) > 0:
+            shodan_risk = min(100, shodan_risk * 1.3)
+        elif shodan.get("poc_public_count", 0) > 0:
+            shodan_risk = min(100, shodan_risk * 1.1)
 
         # Dehashed credential leak risk
         dehashed = results.get("dehashed", {})
@@ -3034,6 +3259,48 @@ class RiskScorer:
             )
 
         return risk_score, risk_level, recommendations
+
+    def compliance_summary(self, results: dict) -> dict:
+        """Map checker results to POPIA/PCI/ISO compliance controls."""
+        summary = {}
+        for framework, controls in COMPLIANCE_MAP.items():
+            ctrl_results = {}
+            pass_count = 0
+            total = len(controls)
+            for ctrl_name, ctrl_info in controls.items():
+                checker_scores = []
+                findings = []
+                for chk_id in ctrl_info["checkers"]:
+                    chk = results.get(chk_id, {})
+                    if not isinstance(chk, dict):
+                        continue
+                    score = chk.get("score")
+                    if score is not None:
+                        checker_scores.append(score)
+                    for issue in chk.get("issues", []):
+                        findings.append(issue)
+                if not checker_scores:
+                    status = "no_data"
+                else:
+                    avg = sum(checker_scores) / len(checker_scores)
+                    if avg >= 70:
+                        status = "pass"
+                        pass_count += 1
+                    elif avg >= 40:
+                        status = "partial"
+                    else:
+                        status = "fail"
+                ctrl_results[ctrl_name] = {
+                    "status": status,
+                    "description": ctrl_info["description"],
+                    "checkers": ctrl_info["checkers"],
+                    "findings": findings[:5],
+                }
+            summary[framework] = {
+                "overall_pct": round(pass_count / total * 100) if total else 0,
+                "controls": ctrl_results,
+            }
+        return summary
 
 
 # ---------------------------------------------------------------------------
@@ -3990,6 +4257,7 @@ class SecurityScanner:
         results["overall_risk_score"] = risk_score
         results["risk_level"] = risk_level
         results["recommendations"] = recommendations
+        results["compliance"] = scorer.compliance_summary(cat_results)
 
         # --- Phase 6: Insurance Analytics ---
         self._notify(on_progress, "insurance_analytics", "running")

@@ -1030,7 +1030,7 @@
             <details style="padding:4px 14px 8px;border-top:1px solid rgba(30,58,138,0.06);">
               <summary style="cursor:pointer;font-size:0.8rem;color:#60a5fa;font-weight:600;padding:4px 0;">&#9654; Show {{ vuln.get('cves', []) | length }} enriched CVE(s)</summary>
               <table style="width:100%;font-size:0.78rem;margin-top:6px;border-collapse:collapse;">
-                <tr style="background:rgba(30,58,138,0.04);"><th style="text-align:left;padding:4px;">CVE</th><th style="padding:4px;">CVSS</th><th style="padding:4px;">EPSS</th><th style="padding:4px;">KEV</th><th style="text-align:left;padding:4px;">Description</th></tr>
+                <tr style="background:rgba(30,58,138,0.04);"><th style="text-align:left;padding:4px;">CVE</th><th style="padding:4px;">CVSS</th><th style="padding:4px;">EPSS</th><th style="padding:4px;">KEV</th><th style="padding:4px;">Maturity</th><th style="text-align:left;padding:4px;">Description</th></tr>
                 {% for cve in vuln.get('cves', []) %}
                 <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
                   <td style="padding:4px;font-family:monospace;white-space:nowrap;">{{ cve.cve_id }}</td>
@@ -1043,7 +1043,12 @@
                       <span style="font-weight:600;color:{% if cve.epss_score >= 0.5 %}#e74c3c{% elif cve.epss_score >= 0.1 %}#e67e22{% else %}#27ae60{% endif %};">{{ "%.1f" | format(cve.epss_score * 100) }}%</span>
                     {% else %}—{% endif %}
                   </td>
-                  <td style="padding:4px;text-align:center;">{% if cve.kev_exploited %}<span class="badge badge-red" style="font-size:0.6rem;">KEV</span>{% else %}—{% endif %}</td>
+                  <td style="padding:4px;text-align:center;">{% if cve.in_kev %}<span class="badge badge-red" style="font-size:0.6rem;">KEV</span>{% else %}—{% endif %}</td>
+                  <td style="padding:4px;text-align:center;">
+                    {% if cve.exploit_maturity == 'weaponized' %}<span class="badge badge-red" style="font-size:0.6rem;">Weaponized</span>
+                    {% elif cve.exploit_maturity == 'poc_public' %}<span class="badge badge-amber" style="font-size:0.6rem;">PoC Public</span>
+                    {% else %}<span class="badge" style="font-size:0.6rem;background:rgba(100,116,139,0.3);color:#94a3b8;">Theoretical</span>{% endif %}
+                  </td>
                   <td style="padding:4px;font-size:0.73rem;color:#cbd5e1;">{{ cve.description | default('') | truncate(120) }}</td>
                 </tr>
                 {% endfor %}
@@ -1307,6 +1312,7 @@
           {% if ts.server_software %}{% for sw in ts.server_software %}<tr><td colspan="2" style="font-size:.78rem;color:var(--muted);">{{ sw }}</td></tr>{% endfor %}{% endif %}
           <tr><td>CMS</td><td>{% if ts.cms and ts.cms.detected %}{{ ts.cms.detected }}{% if ts.cms.version %} {{ ts.cms.version }}{% endif %}{% else %}Not detected{% endif %}</td></tr>
           <tr><td>EOL software</td><td>{% if ts.eol_detected %}<span class="badge badge-red">{{ ts.eol_detected | length }} detected</span>{% else %}<span class="badge badge-green">None detected</span>{% endif %}</td></tr>
+          {% if ts.get('js_libraries') %}<tr><td>JS Libraries</td><td style="font-size:.78rem;">{% for lib in ts.js_libraries %}{{ lib.library }} {{ lib.version }}{% if not loop.last %}, {% endif %}{% endfor %}</td></tr>{% endif %}
         </table>
         {% if ts.eol_detected %}
         <div style="margin-top:8px;">
@@ -1448,6 +1454,57 @@
     </div>
 
   </div>
+
+  <!-- =================== COMPLIANCE FRAMEWORK MAPPING =================== -->
+  {% if results.get('compliance') %}
+  <div class="section-label">&#9878; Compliance Framework Mapping</div>
+  <div class="categories">
+
+    {% for framework, fw_data in results.compliance.items() %}
+    {% set fw_pct = fw_data.get('overall_pct', 0) %}
+    {% set fw_tl = 'tl-green' if fw_pct >= 75 else ('tl-amber' if fw_pct >= 50 else 'tl-red') %}
+    <div class="cat-card">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light {{ fw_tl }}"></div><div class="cat-title">{{ framework }}</div></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="cat-grade {% if fw_pct < 50 %}color-red{% elif fw_pct < 75 %}color-amber{% endif %}">{{ fw_pct }}% aligned</span>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="cat-body">
+        <!-- Progress bar -->
+        <div style="background:rgba(255,255,255,0.06);border-radius:4px;height:8px;margin-bottom:12px;">
+          <div style="width:{{ fw_pct }}%;height:100%;border-radius:4px;background:{% if fw_pct >= 75 %}#22c55e{% elif fw_pct >= 50 %}#f59e0b{% else %}#ef4444{% endif %};"></div>
+        </div>
+        <table style="width:100%;font-size:.82rem;border-collapse:collapse;">
+          <tr style="background:rgba(30,58,138,0.04);"><th style="text-align:left;padding:6px;">Control</th><th style="padding:6px;width:80px;">Status</th><th style="text-align:left;padding:6px;">Description</th></tr>
+          {% for ctrl_name, ctrl in fw_data.get('controls', {}).items() %}
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+            <td style="padding:6px;font-weight:600;white-space:nowrap;">{{ ctrl_name }}</td>
+            <td style="padding:6px;text-align:center;">
+              {% if ctrl.status == 'pass' %}<span class="badge badge-green" style="font-size:0.65rem;">PASS</span>
+              {% elif ctrl.status == 'partial' %}<span class="badge badge-amber" style="font-size:0.65rem;">PARTIAL</span>
+              {% elif ctrl.status == 'fail' %}<span class="badge badge-red" style="font-size:0.65rem;">FAIL</span>
+              {% else %}<span class="badge badge-grey" style="font-size:0.65rem;">N/A</span>{% endif %}
+            </td>
+            <td style="padding:6px;color:#94a3b8;font-size:.78rem;">{{ ctrl.description }}</td>
+          </tr>
+          {% if ctrl.findings %}
+          <tr><td colspan="3" style="padding:2px 6px 8px 20px;">
+            <ul style="margin:0;padding:0 0 0 14px;font-size:.75rem;color:#64748b;">
+              {% for f in ctrl.findings[:3] %}<li>{{ f }}</li>{% endfor %}
+              {% if ctrl.findings | length > 3 %}<li style="color:#475569;">+{{ ctrl.findings | length - 3 }} more finding(s)</li>{% endif %}
+            </ul>
+          </td></tr>
+          {% endif %}
+          {% endfor %}
+        </table>
+      </div>
+    </div>
+    {% endfor %}
+
+  </div>
+  {% endif %}
 
   <!-- =================== DISCOVERY & INFO =================== -->
   <div class="section-label">&#128269; Discovery & Information Security</div>
