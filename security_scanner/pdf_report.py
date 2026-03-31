@@ -147,7 +147,7 @@ def _header_footer(canvas, doc, domain, timestamp):
     canvas.rect(0, h - 12 * mm, w, 12 * mm, fill=True, stroke=False)
     canvas.setFillColor(C_WHITE)
     canvas.setFont("Helvetica-Bold", 8)
-    canvas.drawString(MARGIN, h - 7 * mm, "PHISHIELD  |  Cyber Risk Assessment Report")
+    canvas.drawString(MARGIN, h - 7 * mm, "PHISHIELD Cyber Protect  |  Risk Assessment Report")
     canvas.setFont("Helvetica", 7)
     canvas.drawRightString(w - MARGIN, h - 7 * mm, domain)
 
@@ -157,8 +157,8 @@ def _header_footer(canvas, doc, domain, timestamp):
     canvas.setFillColor(C_GREY_4)
     canvas.setFont("Helvetica", 6.5)
     canvas.drawString(MARGIN, 3.5 * mm,
-                      "Passive external assessment only. For insurance underwriting use. "
-                      "Bryte Insurance Company Limited (FSP 17703).")
+                      "PHISHIELD Cyber Protect  |  Underwritten by Bryte Insurance Company Limited  |  "
+                      "FSP 17703  |  Reg. 1965/006764/06")
     canvas.drawRightString(w - MARGIN, 3.5 * mm,
                            f"Page {doc.page}  |  {timestamp[:10]}")
     canvas.restoreState()
@@ -1369,8 +1369,10 @@ def generate_pdf(results: dict) -> bytes:
     story.append(Paragraph(
         "DISCLAIMER: This report is based solely on passive, external assessment of publicly observable "
         "infrastructure and does not constitute a full security audit. Results reflect point-in-time observations. "
-        "Bryte Insurance Company Limited (FSP 17703) accepts no liability for decisions made solely on the basis "
-        "of this automated assessment. For insurance purposes this report must be reviewed by a qualified underwriter.",
+        "PHISHIELD is a product of Bryte Insurance Company Limited (FSP 17703, Reg. 1965/006764/06), "
+        "a wholly owned subsidiary of Fairfax Financial Holdings Limited. Neither Bryte nor PHISHIELD accepts "
+        "liability for decisions made solely on the basis of this automated assessment. "
+        "For insurance purposes this report must be reviewed by a qualified underwriter.",
         S["disclaimer"]
     ))
 
