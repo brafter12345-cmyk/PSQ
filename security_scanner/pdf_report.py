@@ -255,7 +255,7 @@ def build_cat_card(title: str, tl_col, summary: str, data_rows: list, issues: li
         r, bg = kv_row(k, v, S, alt=i % 2 == 0)
         rows.append(r); bgs.append(bg)
 
-    data_tbl = _cat_table(rows, bgs, [40 * mm, 80 * mm], S) if rows else None
+    data_tbl = _cat_table(rows, bgs, [40 * mm, INNER_W - 40 * mm], S) if rows else None
 
     issues_para = issues_cell(issues, S)
     issues_block = Table([[issues_para]], colWidths=[INNER_W])
@@ -1195,9 +1195,9 @@ def generate_pdf(results: dict) -> bytes:
     story += cat_payment(cats, S)
 
     # ── Compliance Framework Mapping ─────────────────────────────────────────
-    if data.get("compliance"):
+    if results.get("compliance"):
         story += section_header("COMPLIANCE FRAMEWORK MAPPING", S)
-        story += cat_compliance_frameworks(data, S)
+        story += cat_compliance_frameworks(results, S)
 
     # ── Recommendations ──────────────────────────────────────────────────────
     if recs:
