@@ -2647,11 +2647,11 @@ class FraudulentDomainChecker:
             permutations = self._generate_permutations(name, tld)
             result["total_permutations"] = len(permutations)
 
-            # Check DNS resolution in parallel (cap at 80 to keep it fast)
-            to_check = permutations[:80]
+            # Check DNS resolution in parallel (cap at 60 to keep memory low on free tier)
+            to_check = permutations[:60]
             resolved = []
 
-            with ThreadPoolExecutor(max_workers=20) as ex:
+            with ThreadPoolExecutor(max_workers=10) as ex:
                 futures = {
                     ex.submit(self._resolves, perm[0]): perm
                     for perm in to_check
@@ -4518,7 +4518,7 @@ class SecurityScanner:
         per_ip_results = {}  # {ip: {checker_name: result}}
 
         # --- Run domain-level checkers first ---
-        with ThreadPoolExecutor(max_workers=16) as ex:
+        with ThreadPoolExecutor(max_workers=8) as ex:
             futures = {}
             for name, (fn, args) in domain_checkers.items():
                 self._notify(on_progress, name, "running")
@@ -4547,7 +4547,7 @@ class SecurityScanner:
             results["subdomain_ips_added"] = len(new_ips)
 
         # --- Run IP-level checkers on ALL discovered IPs ---
-        with ThreadPoolExecutor(max_workers=16) as ex:
+        with ThreadPoolExecutor(max_workers=8) as ex:
             futures = {}
             for ip in all_ips:
                 per_ip_results[ip] = {}
