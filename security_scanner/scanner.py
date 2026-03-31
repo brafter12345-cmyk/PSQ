@@ -3008,6 +3008,32 @@ COMPLIANCE_MAP = {
             "checkers": ["ssl", "http_headers", "website_security", "payment_security"],
         },
     },
+    "NIST CSF 2.0": {
+        "GV — Govern": {
+            "description": "Establish and monitor cybersecurity risk management strategy and policy",
+            "checkers": ["security_policy", "privacy_compliance"],
+        },
+        "ID — Identify": {
+            "description": "Understand organisational assets, suppliers, and cyber risk exposure",
+            "checkers": ["tech_stack", "subdomains", "external_ips", "info_disclosure"],
+        },
+        "PR — Protect": {
+            "description": "Safeguards to manage and reduce cybersecurity risk",
+            "checkers": ["ssl", "http_headers", "waf", "website_security", "email_security", "vpn_remote", "high_risk_protocols"],
+        },
+        "DE — Detect": {
+            "description": "Find and analyse possible cybersecurity attacks and compromises",
+            "checkers": ["shodan_vulns", "virustotal", "dnsbl", "exposed_admin"],
+        },
+        "RS — Respond": {
+            "description": "Actions taken regarding a detected cybersecurity incident",
+            "checkers": ["breaches", "dehashed", "security_policy"],
+        },
+        "RC — Recover": {
+            "description": "Restore assets and operations affected by a cybersecurity incident",
+            "checkers": ["dns", "email_security"],
+        },
+    },
 }
 
 
