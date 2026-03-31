@@ -1124,7 +1124,7 @@ def build_summary_table(results: dict, S) -> Table:
         circ = make_traffic_circle(col, 9)
         coloured_val = _risk_colour_value(str(value))
         ctx = _INSURANCE_CONTEXT.get(label, "")
-        val_text = f"{coloured_val}  <font size='6.5' color='#64748b'><i>— {ctx}</i></font>" if ctx else coloured_val
+        val_text = f"{coloured_val}  <font size='7' color='#64748b'><i>— {ctx}</i></font>" if ctx else coloured_val
         return [circ, Paragraph(f"<b>{label}</b>", S["kv_key"]), Paragraph(val_text, S["kv_val"])]
 
     ssl_grade = cats.get("ssl", {}).get("grade", "?")
@@ -1191,7 +1191,7 @@ def build_summary_table(results: dict, S) -> Table:
     rows.append(row("Web Ranking (Tranco)", wr_label,
                      C_GREEN if cats.get("web_ranking", {}).get("ranked") else C_AMBER))
 
-    tbl = Table(rows, colWidths=[18, 55 * mm, INNER_W - 18 - 55 * mm])
+    tbl = Table(rows, colWidths=[18, 45 * mm, INNER_W - 18 - 45 * mm])
     style = [
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
         ("TOPPADDING",    (0, 0), (-1, -1), 4),
