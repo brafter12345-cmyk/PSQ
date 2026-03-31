@@ -1124,7 +1124,7 @@ def build_summary_table(results: dict, S) -> Table:
         circ = make_traffic_circle(col, 9)
         coloured_val = _risk_colour_value(str(value))
         ctx = _INSURANCE_CONTEXT.get(label, "")
-        val_text = f"{coloured_val}<br/><font size='6' color='#64748b'><i>{ctx}</i></font>" if ctx else coloured_val
+        val_text = f"{coloured_val}  <font size='6.5' color='#64748b'><i>— {ctx}</i></font>" if ctx else coloured_val
         return [circ, Paragraph(f"<b>{label}</b>", S["kv_key"]), Paragraph(val_text, S["kv_val"])]
 
     ssl_grade = cats.get("ssl", {}).get("grade", "?")
