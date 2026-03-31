@@ -194,18 +194,74 @@ def badge_text(text: str, bg, fg=C_WHITE) -> Table:
     return t
 
 
+def _risk_colour_value(val: str) -> str:
+    """Wrap risk keywords in value text with appropriate colour tags."""
+    v = str(val)
+    vl = v.lower()
+    # Full-value matches (the entire cell is a risk indicator)
+    if vl in ("critical risk", "critical", "yes — critical", "no — critical",
+              "critical exposure", "rdp exposed", "exposed"):
+        return f"<font color='#991b1b'><b>{v}</b></font>"
+    if vl in ("high risk", "high"):
+        return f"<font color='#dc2626'><b>{v}</b></font>"
+    if vl in ("medium risk", "medium"):
+        return f"<font color='#92400e'><b>{v}</b></font>"
+    if vl in ("low risk", "low", "low exposure"):
+        return f"<font color='#166534'><b>{v}</b></font>"
+    # Keyword matches within text
+    if "CRITICAL" in v or "EXPOSED" in v:
+        v = v.replace("CRITICAL", "<font color='#991b1b'><b>CRITICAL</b></font>")
+        v = v.replace("EXPOSED", "<font color='#991b1b'><b>EXPOSED</b></font>")
+        return v
+    if "CISA KEV" in v:
+        v = v.replace("CISA KEV", "<font color='#991b1b'><b>CISA KEV</b></font>")
+        return v
+    if "HIGH RISK" in v or "HIGH" in v.upper().split("—")[0]:
+        v = v.replace("HIGH RISK", "<font color='#dc2626'><b>HIGH RISK</b></font>")
+        v = v.replace("HIGH", "<font color='#dc2626'><b>HIGH</b></font>")
+        return v
+    if "MISSING" in v or "Missing" in v:
+        return f"<font color='#dc2626'>{v}</font>"
+    if "DANGEROUS" in v:
+        return f"<font color='#991b1b'><b>{v}</b></font>"
+    if "Weak" in v or "RISK" in v:
+        return f"<font color='#d97706'>{v}</font>"
+    if "No —" in v or "Not detected" in v or "Not found" in v or "Not configured" in v:
+        return f"<font color='#d97706'>{v}</font>"
+    # Positive indicators
+    if vl in ("present", "yes", "ok", "detected", "strong", "disabled"):
+        return f"<font color='#16a34a'>{v}</font>"
+    if v.startswith("Present") or v.startswith("Yes") or v.startswith("Supported"):
+        return f"<font color='#16a34a'>{v}</font>"
+    return v
+
+
 def kv_row(key, value, S, alt=False):
     bg = C_GREY_1 if alt else C_WHITE
-    row = [Paragraph(key, S["kv_key"]), Paragraph(str(value) if value is not None else "—", S["kv_val"])]
+    val_str = str(value) if value is not None else "—"
+    coloured_val = _risk_colour_value(val_str)
+    row = [Paragraph(key, S["kv_key"]), Paragraph(coloured_val, S["kv_val"])]
     return row, bg
+
+
+def _colour_issue(text: str) -> str:
+    """Apply colour to an issue line based on severity keywords."""
+    t = str(text)
+    if t.startswith("CRITICAL:") or "CRITICAL" in t.upper()[:20]:
+        return f"<font color='#991b1b'><b>{t}</b></font>"
+    if "High-risk" in t or "high-risk" in t:
+        return f"<font color='#dc2626'>{t}</font>"
+    if "Medium-risk" in t or "medium-risk" in t:
+        return f"<font color='#92400e'>{t}</font>"
+    return t
 
 
 def issues_cell(issues: list, S) -> Paragraph:
     if not issues:
         return Paragraph("<font color='#16a34a'>No issues detected</font>", S["body"])
-    lines = "<br/>".join(f"• {i}" for i in issues[:6])
+    lines = "<br/>".join(f"\u2022 {_colour_issue(i)}" for i in issues[:6])
     if len(issues) > 6:
-        lines += f"<br/>• …and {len(issues) - 6} more"
+        lines += f"<br/>\u2022 \u2026and {len(issues) - 6} more"
     return Paragraph(lines, S["issue"])
 
 
