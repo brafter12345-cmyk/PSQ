@@ -28,6 +28,14 @@ try:
 except ImportError:
     DNS_AVAILABLE = False
 
+try:
+    from sslyze import Scanner as SSLyzeScanner, ServerScanRequest, ScanCommand
+    from sslyze.server_setting import ServerNetworkLocation
+    from sslyze.errors import ServerHostnameCouldNotBeResolved
+    SSLYZE_AVAILABLE = True
+except ImportError:
+    SSLYZE_AVAILABLE = False
+
 DEFAULT_TIMEOUT = 10
 USER_AGENT = "Mozilla/5.0 CyberInsuranceScanner/1.0 (passive assessment)"
 
@@ -37,19 +45,38 @@ USER_AGENT = "Mozilla/5.0 CyberInsuranceScanner/1.0 (passive assessment)"
 # ---------------------------------------------------------------------------
 
 class SSLChecker:
+    # Weak cipher fragments for detection
+    WEAK_CIPHERS = ["RC4", "DES", "3DES", "MD5", "NULL", "EXPORT", "ANON", "RC2"]
+
     def check(self, domain: str) -> dict:
         result = {
             "status": "completed", "certificate": {}, "tls_versions": {},
             "cipher_suite": {}, "hsts": False, "grade": "F", "score": 0, "issues": [],
+            "ocsp_stapling": None, "cert_chain_valid": None, "key_size": None,
+            "caa_records": [], "data_source": "stdlib",
         }
         try:
-            result["certificate"] = self._get_certificate(domain)
-            result["tls_versions"] = self._check_tls_versions(domain)
-            result["cipher_suite"] = self._get_cipher_suite(domain)
+            # Try sslyze first for deep analysis
+            if SSLYZE_AVAILABLE:
+                try:
+                    self._check_with_sslyze(domain, result)
+                    result["data_source"] = "sslyze"
+                except Exception:
+                    self._check_with_stdlib(domain, result)
+                    result["data_source"] = "stdlib_fallback"
+            else:
+                self._check_with_stdlib(domain, result)
+
+            # HSTS + CAA always via separate checks
             result["hsts"] = self._check_hsts(domain)
+            result["caa_records"] = self._check_caa(domain)
+
+            # Calculate grade from all collected data
             grade, score, issues = self._calculate_grade(
                 result["certificate"], result["tls_versions"],
-                result["cipher_suite"], result["hsts"]
+                result["cipher_suite"], result["hsts"],
+                result.get("ocsp_stapling"), result.get("cert_chain_valid"),
+                result.get("key_size"), result.get("caa_records", []),
             )
             result["grade"] = grade
             result["score"] = score
@@ -59,7 +86,109 @@ class SSLChecker:
             result["issues"] = [f"SSL check error: {e}"]
         return result
 
-    def _get_certificate(self, domain: str) -> dict:
+    def _check_with_sslyze(self, domain: str, result: dict):
+        """Deep SSL/TLS analysis using sslyze library."""
+        location = ServerNetworkLocation(hostname=domain, port=443)
+        scan_request = ServerScanRequest(server_location=location, scan_commands={
+            ScanCommand.CERTIFICATE_INFO,
+            ScanCommand.SSL_2_0_CIPHER_SUITES,
+            ScanCommand.SSL_3_0_CIPHER_SUITES,
+            ScanCommand.TLS_1_0_CIPHER_SUITES,
+            ScanCommand.TLS_1_1_CIPHER_SUITES,
+            ScanCommand.TLS_1_2_CIPHER_SUITES,
+            ScanCommand.TLS_1_3_CIPHER_SUITES,
+        })
+        scanner = SSLyzeScanner()
+        scanner.queue_scans([scan_request])
+
+        for server_result in scanner.get_results():
+            # Certificate info
+            try:
+                cert_result = server_result.scan_result.certificate_info
+                if cert_result and cert_result.result:
+                    cert_deployments = cert_result.result.certificate_deployments
+                    if cert_deployments:
+                        dep = cert_deployments[0]
+                        leaf = dep.received_certificate_chain[0]
+                        now = datetime.now(timezone.utc)
+                        days_left = (leaf.not_valid_after_utc - now).days if hasattr(leaf, 'not_valid_after_utc') else (leaf.not_valid_after - now).days
+
+                        # Key size
+                        pub_key = leaf.public_key()
+                        key_size = getattr(pub_key, 'key_size', None)
+
+                        result["certificate"] = {
+                            "valid": dep.leaf_certificate_subject_matches_hostname,
+                            "subject": leaf.subject.rfc4514_string() if leaf.subject else domain,
+                            "issuer": leaf.issuer.rfc4514_string() if leaf.issuer else "Unknown",
+                            "issuer_cn": str(leaf.issuer) if leaf.issuer else "Unknown",
+                            "expiry_date": str(leaf.not_valid_after_utc if hasattr(leaf, 'not_valid_after_utc') else leaf.not_valid_after),
+                            "days_until_expiry": days_left,
+                            "is_expired": days_left < 0,
+                            "expiring_soon": 0 <= days_left <= 30,
+                            "san_count": len(leaf.extensions) if leaf.extensions else 0,
+                            "chain_length": len(dep.received_certificate_chain),
+                            "chain_valid": dep.verified_certificate_chain is not None,
+                        }
+                        result["cert_chain_valid"] = dep.verified_certificate_chain is not None
+                        result["key_size"] = key_size
+                        result["ocsp_stapling"] = dep.ocsp_response_is_trusted if hasattr(dep, 'ocsp_response_is_trusted') else dep.ocsp_response is not None
+            except Exception:
+                pass
+
+            # TLS versions — check which have accepted cipher suites
+            tls_map = {
+                "TLS 1.0": ScanCommand.TLS_1_0_CIPHER_SUITES,
+                "TLS 1.1": ScanCommand.TLS_1_1_CIPHER_SUITES,
+                "TLS 1.2": ScanCommand.TLS_1_2_CIPHER_SUITES,
+                "TLS 1.3": ScanCommand.TLS_1_3_CIPHER_SUITES,
+            }
+            versions = {}
+            all_accepted = []
+            for label, cmd in tls_map.items():
+                try:
+                    cmd_result = getattr(server_result.scan_result, cmd.value, None)
+                    if cmd_result and cmd_result.result:
+                        accepted = cmd_result.result.accepted_cipher_suites
+                        versions[label] = len(accepted) > 0
+                        if accepted:
+                            all_accepted.extend([(label, cs.cipher_suite.name) for cs in accepted])
+                    else:
+                        versions[label] = False
+                except Exception:
+                    versions[label] = False
+            result["tls_versions"] = versions
+
+            # Best cipher suite (from highest TLS version)
+            if all_accepted:
+                # Prefer TLS 1.3 ciphers, then 1.2
+                best = all_accepted[-1]  # last = highest version
+                cipher_name = best[1]
+                weak = any(w in cipher_name.upper() for w in self.WEAK_CIPHERS)
+                result["cipher_suite"] = {
+                    "name": cipher_name, "protocol": best[0],
+                    "bits": 256 if "256" in cipher_name else (128 if "128" in cipher_name else 0),
+                    "is_weak": weak,
+                    "total_accepted": len(all_accepted),
+                    "weak_count": sum(1 for _, c in all_accepted if any(w in c.upper() for w in self.WEAK_CIPHERS)),
+                }
+            # Check for SSL 2.0/3.0
+            for old_cmd, old_label in [(ScanCommand.SSL_2_0_CIPHER_SUITES, "SSL 2.0"),
+                                        (ScanCommand.SSL_3_0_CIPHER_SUITES, "SSL 3.0")]:
+                try:
+                    old_result = getattr(server_result.scan_result, old_cmd.value, None)
+                    if old_result and old_result.result and old_result.result.accepted_cipher_suites:
+                        result["tls_versions"][old_label] = True
+                except Exception:
+                    pass
+
+    def _check_with_stdlib(self, domain: str, result: dict):
+        """Fallback SSL check using Python stdlib."""
+        result["certificate"] = self._get_certificate_stdlib(domain)
+        result["tls_versions"] = self._check_tls_versions_stdlib(domain)
+        result["cipher_suite"] = self._get_cipher_suite_stdlib(domain)
+
+    def _get_certificate_stdlib(self, domain: str) -> dict:
         info = {"valid": False}
         try:
             ctx = ssl.create_default_context()
@@ -90,7 +219,7 @@ class SSLChecker:
             info = {"valid": False, "error": str(e)}
         return info
 
-    def _check_tls_versions(self, domain: str) -> dict:
+    def _check_tls_versions_stdlib(self, domain: str) -> dict:
         versions = {"TLS 1.0": False, "TLS 1.1": False, "TLS 1.2": False, "TLS 1.3": False}
         checks = {
             "TLS 1.2": ("TLSv1_2", True), "TLS 1.3": ("TLSv1_3", True),
@@ -112,16 +241,15 @@ class SSLChecker:
                 pass
         return versions
 
-    def _get_cipher_suite(self, domain: str) -> dict:
+    def _get_cipher_suite_stdlib(self, domain: str) -> dict:
         try:
             ctx = ssl.create_default_context()
             with socket.create_connection((domain, 443), timeout=DEFAULT_TIMEOUT) as raw:
                 with ctx.wrap_socket(raw, server_hostname=domain) as s:
                     c = s.cipher()
                     if c:
-                        weak = ["RC4", "DES", "3DES", "MD5", "NULL", "EXPORT", "ANON"]
                         return {"name": c[0], "protocol": c[1], "bits": c[2] or 0,
-                                "is_weak": any(w in c[0].upper() for w in weak)}
+                                "is_weak": any(w in c[0].upper() for w in self.WEAK_CIPHERS)}
         except Exception as e:
             return {"name": "Unknown", "bits": 0, "is_weak": True, "error": str(e)}
         return {"name": "Unknown", "bits": 0, "is_weak": True}
@@ -136,26 +264,67 @@ class SSLChecker:
         except Exception:
             return False
 
-    def _calculate_grade(self, cert, tls, cipher, hsts) -> tuple:
+    def _check_caa(self, domain: str) -> list:
+        """Check CAA DNS records — controls which CAs can issue certs."""
+        if not DNS_AVAILABLE:
+            return []
+        try:
+            answers = dns.resolver.resolve(domain, "CAA", lifetime=DEFAULT_TIMEOUT)
+            return [str(r) for r in answers]
+        except Exception:
+            return []
+
+    def _calculate_grade(self, cert, tls, cipher, hsts,
+                         ocsp_stapling=None, cert_chain_valid=None,
+                         key_size=None, caa_records=None) -> tuple:
         issues, ded = [], 0
+        # Certificate validity
         if not cert.get("valid"):
             ded += 40; issues.append("Invalid or unverifiable SSL certificate")
         elif cert.get("is_expired"):
             ded += 40; issues.append("SSL certificate has EXPIRED")
         elif cert.get("expiring_soon"):
             ded += 20; issues.append(f"Certificate expiring in {cert.get('days_until_expiry')} days")
+        # Certificate chain
+        if cert_chain_valid is False:
+            ded += 15; issues.append("Certificate chain incomplete or invalid")
+        # Key size
+        if key_size is not None:
+            if key_size < 2048:
+                ded += 20; issues.append(f"Weak key size: {key_size}-bit (minimum 2048-bit recommended)")
+            elif key_size < 4096:
+                pass  # 2048+ is acceptable
+        # TLS versions
+        if tls.get("SSL 2.0"):
+            ded += 30; issues.append("SSL 2.0 supported — critically insecure")
+        if tls.get("SSL 3.0"):
+            ded += 25; issues.append("SSL 3.0 supported — vulnerable to POODLE attack")
         if tls.get("TLS 1.0"):
             ded += 20; issues.append("TLS 1.0 supported — deprecated and insecure")
         if tls.get("TLS 1.1"):
             ded += 10; issues.append("TLS 1.1 supported — deprecated")
         if not tls.get("TLS 1.2") and not tls.get("TLS 1.3"):
             ded += 30; issues.append("No modern TLS version (1.2/1.3) detected")
+        # Cipher suite
         if cipher.get("is_weak"):
             ded += 20; issues.append(f"Weak cipher: {cipher.get('name', 'Unknown')}")
+        weak_count = cipher.get("weak_count", 0)
+        if weak_count > 0:
+            ded += min(10, weak_count * 2)
+            issues.append(f"{weak_count} weak cipher suite(s) accepted")
+        # HSTS
         if not hsts:
             ded += 10; issues.append("HSTS header missing")
+        # OCSP stapling
+        if ocsp_stapling is False:
+            ded += 5; issues.append("OCSP stapling not enabled — slower certificate revocation checks")
+        # CAA records
+        if caa_records is not None and len(caa_records) == 0:
+            ded += 3; issues.append("No CAA records — any CA can issue certificates for this domain")
+
         score = max(0, 100 - ded)
-        grade = "A+" if score >= 95 else "A" if score >= 80 else "B" if score >= 70 else "C" if score >= 60 else "D" if score >= 50 else "F"
+        grade = ("A+" if score >= 95 else "A" if score >= 85 else "B" if score >= 70
+                 else "C" if score >= 55 else "D" if score >= 40 else "F")
         return grade, score, issues
 
 
@@ -1119,6 +1288,19 @@ class DNSInfrastructureChecker:
         except Exception:
             return None
 
+    # Banner probes for service version detection
+    BANNER_PROBES = {
+        21: b"",             # FTP sends banner on connect
+        22: b"",             # SSH sends banner on connect
+        25: b"EHLO scanner\r\n",
+        80: b"HEAD / HTTP/1.0\r\nHost: {domain}\r\n\r\n",
+        110: b"",            # POP3 sends banner on connect
+        143: b"",            # IMAP sends banner on connect
+        3306: b"",           # MySQL sends greeting on connect
+        5432: b"",           # PostgreSQL sends error on raw connect (version in error)
+        8080: b"HEAD / HTTP/1.0\r\nHost: {domain}\r\n\r\n",
+    }
+
     def _scan_ports(self, domain: str, ip: str = None) -> list:
         try:
             ip = ip or socket.gethostbyname(domain)
@@ -1133,7 +1315,15 @@ class DNSInfrastructureChecker:
                 s.settimeout(3)
                 if s.connect_ex((ip, port)) == 0:
                     risk = "high" if port in self.HIGH_RISK_PORTS else "medium" if port in self.MEDIUM_RISK_PORTS else "info"
-                    return {"port": port, "service": self.ALL_PORTS.get(port, "Unknown"), "risk": risk}
+                    entry = {"port": port, "service": self.ALL_PORTS.get(port, "Unknown"), "risk": risk}
+                    # Banner grabbing for version detection
+                    banner = self._grab_banner(s, port, domain)
+                    if banner:
+                        entry["banner"] = banner[:200]  # cap at 200 chars
+                        version = self._extract_version(banner, port)
+                        if version:
+                            entry["detected_version"] = version
+                    return entry
             except Exception:
                 pass
             finally:
@@ -1151,6 +1341,54 @@ class DNSInfrastructureChecker:
                 except Exception:
                     pass
         return sorted(open_ports, key=lambda x: x["port"])
+
+    def _grab_banner(self, sock, port: int, domain: str) -> str:
+        """Attempt to grab service banner from an open port."""
+        try:
+            probe = self.BANNER_PROBES.get(port)
+            if probe is None:
+                return ""
+            if probe:
+                sock.sendall(probe.replace(b"{domain}", domain.encode()))
+            sock.settimeout(2)
+            data = sock.recv(1024)
+            return data.decode("utf-8", errors="replace").strip()
+        except Exception:
+            return ""
+
+    def _extract_version(self, banner: str, port: int) -> str:
+        """Extract software version string from banner text."""
+        if not banner:
+            return ""
+        # SSH: "SSH-2.0-OpenSSH_9.2p1 Debian-2+deb12u3"
+        if port == 22 and "SSH-" in banner:
+            m = re.search(r"SSH-[\d.]+-(\S+)", banner)
+            return m.group(1) if m else ""
+        # FTP: "220 ProFTPD 1.3.8b Server"
+        if port == 21:
+            m = re.search(r"220[- ](.+?)(?:\r|\n|$)", banner)
+            return m.group(1).strip() if m else ""
+        # SMTP: "220 mail.example.com ESMTP Postfix"
+        if port == 25:
+            m = re.search(r"220[- ](.+?)(?:\r|\n|$)", banner)
+            return m.group(1).strip() if m else ""
+        # POP3: "+OK Dovecot ready."
+        if port == 110:
+            m = re.search(r"\+OK (.+?)(?:\r|\n|$)", banner)
+            return m.group(1).strip() if m else ""
+        # IMAP: "* OK [CAPABILITY ...] Dovecot ready."
+        if port == 143:
+            m = re.search(r"\* OK (.+?)(?:\r|\n|$)", banner)
+            return m.group(1).strip() if m else ""
+        # MySQL: version in greeting packet (after initial bytes)
+        if port == 3306:
+            m = re.search(r"([\d]+\.[\d]+\.[\d]+[^\x00]*)", banner)
+            return m.group(1).strip() if m else ""
+        # HTTP Server header
+        if port in (80, 8080):
+            m = re.search(r"Server:\s*(.+?)(?:\r|\n|$)", banner, re.IGNORECASE)
+            return m.group(1).strip() if m else ""
+        return ""
 
     def _fingerprint_server(self, domain: str) -> dict:
         if not REQUESTS_AVAILABLE:
@@ -2205,6 +2443,152 @@ class ShodanVulnChecker:
             result["error"] = str(e)
 
         return result
+
+
+# ---------------------------------------------------------------------------
+# 20b. OSV.dev Version-to-CVE Mapper
+# ---------------------------------------------------------------------------
+
+class OSVChecker:
+    """
+    Queries the free OSV.dev API to find known vulnerabilities for detected
+    software versions (from Shodan CPE list and banner grabbing).
+    No API key required.
+    """
+    OSV_API_URL = "https://api.osv.dev/v1/query"
+    # Map common CPE vendor/product to OSV package queries
+    # Primary: Debian package names (most common server OS)
+    # Fallback: no-ecosystem query (broader match)
+    CPE_TO_OSV = {
+        ("apache", "http_server"):       [("Debian:12", "apache2"), (None, "apache")],
+        ("nginx", "nginx"):              [("Debian:12", "nginx"), (None, "nginx")],
+        ("openssl", "openssl"):          [("Debian:12", "openssl"), (None, "openssl")],
+        ("openbsd", "openssh"):          [("Debian:12", "openssh"), (None, "openssh")],
+        ("mariadb", "mariadb"):          [(None, "mariadb"), ("Debian:12", "mariadb-10.0")],
+        ("mysql", "mysql"):              [(None, "mysql"), ("Debian:12", "mysql-8.0")],
+        ("postgresql", "postgresql"):    [("Debian:12", "postgresql-15"), (None, "postgresql")],
+        ("php", "php"):                  [("Debian:12", "php8.2"), (None, "php")],
+        ("microsoft", "iis"):            [],  # No OSV ecosystem
+        ("nodejs", "node.js"):           [("Debian:12", "nodejs"), (None, "node")],
+        ("jquery", "jquery"):            [("npm", "jquery")],
+        ("angularjs", "angular.js"):     [("npm", "angular")],
+    }
+
+    def query_cpe_list(self, cpe_list: list) -> list:
+        """Query OSV.dev for each CPE in the list. Returns list of vuln dicts."""
+        if not REQUESTS_AVAILABLE or not cpe_list:
+            return []
+        results = []
+        seen_ids = set()
+        for cpe in cpe_list[:10]:  # Cap at 10 to avoid rate limits
+            try:
+                vulns = self._query_single_cpe(cpe)
+                for v in vulns:
+                    vid = v.get("id", "")
+                    if vid and vid not in seen_ids:
+                        seen_ids.add(vid)
+                        results.append(v)
+            except Exception:
+                continue
+        return results[:50]  # Cap total results
+
+    def query_version(self, package: str, version: str, ecosystem: str = None) -> list:
+        """Query OSV.dev for a specific package version."""
+        if not REQUESTS_AVAILABLE or not package or not version:
+            return []
+        try:
+            payload = {"version": version, "package": {"name": package}}
+            if ecosystem:
+                payload["package"]["ecosystem"] = ecosystem
+            resp = requests.post(self.OSV_API_URL, json=payload, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                return self._parse_vulns(data.get("vulns", []))
+        except Exception:
+            pass
+        return []
+
+    def _query_single_cpe(self, cpe: str) -> list:
+        """Parse CPE string and query OSV.dev with multiple mapping attempts."""
+        # CPE format: cpe:/a:vendor:product:version or cpe:2.3:a:vendor:product:version
+        parts = cpe.replace("cpe:/a:", "").replace("cpe:2.3:a:", "").split(":")
+        if len(parts) < 2:
+            return []
+        vendor = parts[0].lower()
+        product = parts[1].split(":")[0].lower()
+        version = parts[2] if len(parts) > 2 else ""
+        # Clean version: remove URL-encoded chars and distro suffixes
+        version = re.sub(r'%[0-9a-fA-F]{2}', '', version).split("-")[0].split("+")[0]
+        # Extract major.minor.patch only
+        ver_match = re.match(r'(\d+\.\d+(?:\.\d+)?)', version)
+        version = ver_match.group(1) if ver_match else version
+        if not version or version == "*":
+            return []
+
+        # Try each mapping in order until we get results
+        mappings = self.CPE_TO_OSV.get((vendor, product), [])
+        for ecosystem, pkg_name in mappings:
+            results = self.query_version(pkg_name, version, ecosystem)
+            if results:
+                return results
+        # Fallback: try querying by product name with no ecosystem
+        return self.query_version(product, version)
+
+    def _query_by_cpe_string(self, cpe: str, version: str) -> list:
+        """Query OSV.dev using raw CPE approach — search by package name."""
+        try:
+            # Extract product name for a general query
+            parts = cpe.replace("cpe:/a:", "").replace("cpe:2.3:a:", "").split(":")
+            if len(parts) >= 2:
+                product = parts[1].lower()
+                payload = {"version": version, "package": {"name": product, "ecosystem": "OSS-Fuzz"}}
+                resp = requests.post(self.OSV_API_URL, json=payload, timeout=10)
+                if resp.status_code == 200:
+                    return self._parse_vulns(resp.json().get("vulns", []))
+        except Exception:
+            pass
+        return []
+
+    def _parse_vulns(self, vulns: list) -> list:
+        """Parse OSV vulnerability entries into simplified dicts."""
+        results = []
+        for v in vulns[:20]:  # Cap per-package
+            severity = "medium"  # default
+            cvss_score = None
+            cve_id = None
+            # Extract CVE alias
+            for alias in v.get("aliases", []):
+                if alias.startswith("CVE-"):
+                    cve_id = alias
+                    break
+            # Extract CVSS from severity
+            for sev in v.get("severity", []):
+                if sev.get("type") == "CVSS_V3":
+                    score_str = sev.get("score", "")
+                    # Try to extract base score from CVSS vector
+                    try:
+                        # Some entries have numeric score, others have vector string
+                        cvss_score = float(score_str) if score_str.replace(".", "").isdigit() else None
+                    except (ValueError, TypeError):
+                        pass
+            # Determine severity from CVSS or database_specific
+            db_sev = v.get("database_specific", {}).get("severity")
+            if cvss_score:
+                severity = ("critical" if cvss_score >= 9.0 else "high" if cvss_score >= 7.0
+                           else "medium" if cvss_score >= 4.0 else "low")
+            elif db_sev:
+                severity = db_sev.lower()
+
+            results.append({
+                "id": v.get("id", ""),
+                "cve": cve_id,
+                "summary": (v.get("summary") or v.get("details", ""))[:200],
+                "severity": severity,
+                "cvss_score": cvss_score,
+                "published": v.get("published", ""),
+                "source": "osv.dev",
+            })
+        return results
 
 
 # ---------------------------------------------------------------------------
@@ -4603,6 +4987,36 @@ class SecurityScanner:
         )
         self._notify(on_progress, "external_ips", "done",
                      results["categories"]["external_ips"])
+
+        # --- Phase 4c: OSV.dev version-to-CVE enrichment ---
+        self._notify(on_progress, "osv_enrichment", "running")
+        try:
+            osv = OSVChecker()
+            # Get CPE list from Shodan results
+            shodan_data = cat_results.get("shodan_vulns", {})
+            cpe_list = shodan_data.get("cpe_list", [])
+            osv_vulns = osv.query_cpe_list(cpe_list)
+            if osv_vulns:
+                results["categories"]["osv_vulns"] = {
+                    "status": "completed",
+                    "source": "osv.dev",
+                    "total_vulns": len(osv_vulns),
+                    "vulns": osv_vulns,
+                    "critical_count": sum(1 for v in osv_vulns if v.get("severity") == "critical"),
+                    "high_count": sum(1 for v in osv_vulns if v.get("severity") == "high"),
+                    "issues": [],
+                }
+                crit = results["categories"]["osv_vulns"]["critical_count"]
+                high = results["categories"]["osv_vulns"]["high_count"]
+                if crit > 0:
+                    results["categories"]["osv_vulns"]["issues"].append(
+                        f"{crit} critical vulnerability(ies) found via version analysis (OSV.dev)")
+                if high > 0:
+                    results["categories"]["osv_vulns"]["issues"].append(
+                        f"{high} high-severity vulnerability(ies) found via version analysis (OSV.dev)")
+        except Exception:
+            pass
+        self._notify(on_progress, "osv_enrichment", "done")
 
         # --- Phase 5: Score ---
         scorer = RiskScorer()

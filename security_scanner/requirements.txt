@@ -3,6 +3,9 @@ requests>=2.31.0
 dnspython>=2.4.2
 cryptography>=41.0.0
 
+# Deep SSL/TLS analysis (Phase 2)
+sslyze>=6.0.0
+
 # Flask API
 flask>=3.0.0
 flask-cors>=4.0.0
