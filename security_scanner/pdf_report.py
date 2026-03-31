@@ -256,6 +256,16 @@ def build_cat_card(title: str, tl_col, summary: str, data_rows: list, issues: li
         ("BOX",           (0, 0), (-1, -1), 0.25, C_GREY_2),
     ]))
 
+    # Risk-level background colours for group headers
+    _RISK_BG = {
+        "critical": C_CRITICAL_BG, "high": C_RED_BG,
+        "medium": C_AMBER_BG, "low": C_GREEN_BG, "info": C_BLUE_LIGHT,
+    }
+    _RISK_FG = {
+        "critical": "#991b1b", "high": "#dc2626",
+        "medium": "#92400e", "low": "#166534", "info": "#1e40af",
+    }
+
     # Data + issues side-by-side
     rows, bgs = [], []
     alt_idx = 0
@@ -264,11 +274,20 @@ def build_cat_card(title: str, tl_col, summary: str, data_rows: list, issues: li
             # Separator row — thin coloured line
             r = [Paragraph("", S["kv_key"]), Paragraph("", S["kv_val"])]
             rows.append(r); bgs.append(C_GREY_2)
-        elif str(k).startswith("▶"):
-            # Port group header — highlighted
-            r = [Paragraph(f"<b>{k}</b>", S["kv_key"]),
-                 Paragraph(f"<b>{v}</b>", S["kv_val"])]
-            rows.append(r); bgs.append(C_BLUE_LIGHT)
+        elif str(k).startswith("\u25b6"):
+            # Port/service group header — colour-coded by risk level
+            # Format: "▶critical:Port 21/FTP" or just "▶ Port 21/FTP"
+            key_text = str(k)
+            risk_level = "info"
+            if ":" in key_text[1:]:
+                parts = key_text[1:].split(":", 1)
+                risk_level = parts[0].strip().lower()
+                key_text = "\u25b6 " + parts[1].strip()
+            bg = _RISK_BG.get(risk_level, C_BLUE_LIGHT)
+            fg = _RISK_FG.get(risk_level, "#1e40af")
+            r = [Paragraph(f"<b><font color='{fg}'>{key_text}</font></b>", S["kv_key"]),
+                 Paragraph(f"<b><font color='{fg}'>{v}</font></b>", S["kv_val"])]
+            rows.append(r); bgs.append(bg)
             alt_idx = 0
         else:
             r, bg = kv_row(k, v, S, alt=alt_idx % 2 == 0)
@@ -391,12 +410,13 @@ def cat_dns(d, S):
         ("Server header", dns.get("server_info", {}).get("Server", "—")),
         ("Reverse DNS",   dns.get("reverse_dns") or "—"),
     ]
-    # Per-port exploit intel with group separators
-    risky = [p for p in ports if p.get("risk") in ("high", "medium")]
+    # Per-port exploit intel with group separators and risk-level colours
+    risky = [p for p in ports if p.get("risk") in ("high", "medium", "critical")]
     for p in risky:
         rows.append(("———", "———"))  # visual separator
-        risk_label = p.get("risk_level", p.get("risk", "").upper() + " RISK")
-        rows.append((f"▶ {p['port']}/{p['service']}", risk_label))
+        risk = p.get("risk", "medium")
+        risk_label = p.get("risk_level", risk.upper() + " RISK")
+        rows.append((f"\u25b6{risk}:{p['port']}/{p['service']}", risk_label))
         if p.get("typical_exploits"):
             rows.append(("  Exploits", p["typical_exploits"]))
         if p.get("vuln_metrics"):
@@ -416,7 +436,7 @@ def cat_hrp(d, S):
     for i, s in enumerate(svcs):
         if i > 0:
             rows.append(("———", "———"))  # separator between services
-        rows.append((f"▶ {s['service']}", f"Port {s['port']} — CRITICAL EXPOSURE"))
+        rows.append((f"\u25b6critical:{s['service']}", f"Port {s['port']} — CRITICAL EXPOSURE"))
         if s.get("known_exploits"):
             rows.append(("  Known exploits", s["known_exploits"]))
         if s.get("vuln_metrics"):
