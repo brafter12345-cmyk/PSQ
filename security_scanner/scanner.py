@@ -3294,7 +3294,7 @@ class RiskScorer:
                     "status": status,
                     "description": ctrl_info["description"],
                     "checkers": ctrl_info["checkers"],
-                    "findings": findings[:5],
+                    "findings": findings,
                 }
             summary[framework] = {
                 "overall_pct": round(pass_count / total * 100) if total else 0,
