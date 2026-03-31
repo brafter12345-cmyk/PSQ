@@ -1152,6 +1152,13 @@
         <div style="display:flex;align-items:center;gap:10px;"><span class="cat-grade">{{ subs.total_count | default(0) }} found</span><span class="chevron">&#9660;</span></div>
       </div>
       <div class="cat-body">
+        <!-- Discovery source breakdown -->
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:8px;margin-bottom:10px;">
+          <div style="font-size:.78rem;color:var(--muted);">CT Logs: <strong style="color:var(--text);">{{ subs.ct_count | default(0) }}</strong></div>
+          <div style="font-size:.78rem;color:var(--muted);">DNS Brute-force: <strong style="color:var(--text);">{{ subs.brute_count | default(0) }}</strong></div>
+          <div style="font-size:.78rem;color:var(--muted);">Unique IPs: <strong style="color:var(--text);">{{ subs.unique_ips_found | default(0) }}</strong></div>
+          {% if results.subdomain_ips_added %}<div style="font-size:.78rem;color:var(--blue);">+{{ results.subdomain_ips_added }} IPs fed into scanner pipeline</div>{% endif %}
+        </div>
         {% if subs.risky_subdomains %}
         <p style="font-size:.8rem;color:var(--medium);margin-top:8px;margin-bottom:6px;">&#9888; Risky subdomains in public CT logs:</p>
         <div class="sub-list">{% for s in subs.risky_subdomains %}<span class="sub-chip sub-risky">{{ s }}</span>{% endfor %}</div>
@@ -1473,19 +1480,18 @@
         <div style="background:rgba(255,255,255,0.06);border-radius:4px;height:8px;margin-bottom:12px;">
           <div style="width:{{ fw_pct }}%;height:100%;border-radius:4px;background:{% if fw_pct >= 75 %}#22c55e{% elif fw_pct >= 50 %}#f59e0b{% else %}#ef4444{% endif %};"></div>
         </div>
-        <table style="width:100%;font-size:.82rem;border-collapse:collapse;table-layout:fixed;">
-          <colgroup><col style="width:30%;"><col style="width:18%;"><col style="width:52%;"></colgroup>
-          <tr style="background:rgba(30,58,138,0.04);"><th style="text-align:left;padding:8px;">Control</th><th style="text-align:center;padding:8px;">Status</th><th style="text-align:left;padding:8px;">Description</th></tr>
+        <table style="width:100%;font-size:.82rem;border-collapse:collapse;">
+          <tr style="background:rgba(30,58,138,0.04);"><th style="text-align:left;padding:8px;white-space:nowrap;">Control</th><th style="text-align:center;padding:8px;">Status</th><th style="text-align:left;padding:8px;">Description</th></tr>
           {% for ctrl_name, ctrl in fw_data.get('controls', {}).items() %}
           <tr style="border-bottom:1px solid rgba(255,255,255,0.05);vertical-align:top;">
-            <td style="padding:8px;font-weight:600;word-wrap:break-word;">{{ ctrl_name }}</td>
+            <td style="padding:8px;font-weight:600;white-space:nowrap;">{{ ctrl_name }}</td>
             <td style="padding:8px;text-align:center;white-space:nowrap;">
               {% if ctrl.status == 'pass' %}<span class="badge badge-green" style="font-size:0.65rem;">PASS</span>
               {% elif ctrl.status == 'partial' %}<span class="badge badge-amber" style="font-size:0.65rem;">PARTIAL</span>
               {% elif ctrl.status == 'fail' %}<span class="badge badge-red" style="font-size:0.65rem;">FAIL</span>
               {% else %}<span class="badge badge-grey" style="font-size:0.65rem;">N/A</span>{% endif %}
             </td>
-            <td style="padding:8px;color:#94a3b8;font-size:.78rem;word-wrap:break-word;">{{ ctrl.description }}</td>
+            <td style="padding:8px;color:#94a3b8;font-size:.78rem;">{{ ctrl.description }}</td>
           </tr>
           {% if ctrl.findings %}
           <tr><td colspan="3" style="padding:2px 6px 8px 20px;">

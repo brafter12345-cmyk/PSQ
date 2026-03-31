@@ -3311,7 +3311,7 @@ COMPLIANCE_MAP = {
         },
         "RC — Recover": {
             "description": "Restore assets and operations affected by a cybersecurity incident",
-            "checkers": ["dns", "email_security"],
+            "checkers": ["dns_infrastructure", "email_security", "cloud_cdn"],
         },
     },
 }
@@ -4517,16 +4517,39 @@ class SecurityScanner:
         cat_results = {}
         per_ip_results = {}  # {ip: {checker_name: result}}
 
+        # --- Run domain-level checkers first ---
         with ThreadPoolExecutor(max_workers=16) as ex:
             futures = {}
-
-            # Submit domain-level checkers
             for name, (fn, args) in domain_checkers.items():
                 self._notify(on_progress, name, "running")
                 futures[ex.submit(fn, *args)] = name
 
-            # Submit IP-level checkers for each IP
-            for ip in discovered_ips:
+            for future in as_completed(futures, timeout=180):
+                label = futures[future]
+                try:
+                    cat_results[label] = future.result(timeout=DEFAULT_TIMEOUT * 2)
+                except Exception as e:
+                    cat_results[label] = {"status": "error", "error": str(e), "issues": []}
+                self._notify(on_progress, label, "done", cat_results[label])
+
+        # --- Expand IP pool with subdomain-resolved IPs ---
+        sub_result = cat_results.get("subdomains", {})
+        subdomain_ips = set()
+        for ip_list in sub_result.get("resolved_ips", {}).values():
+            if isinstance(ip_list, list):
+                subdomain_ips.update(ip_list)
+            elif isinstance(ip_list, str):
+                subdomain_ips.add(ip_list)
+        new_ips = [ip for ip in subdomain_ips if ip not in discovered_ips]
+        all_ips = discovered_ips + new_ips
+        if new_ips:
+            results["discovered_ips"] = all_ips
+            results["subdomain_ips_added"] = len(new_ips)
+
+        # --- Run IP-level checkers on ALL discovered IPs ---
+        with ThreadPoolExecutor(max_workers=16) as ex:
+            futures = {}
+            for ip in all_ips:
                 per_ip_results[ip] = {}
                 for checker_name, fn in ip_checkers_templates.items():
                     label = f"{checker_name}:{ip}"
@@ -4536,22 +4559,15 @@ class SecurityScanner:
                     else:
                         futures[ex.submit(fn, domain, ip)] = label
 
-            # Collect results
             for future in as_completed(futures, timeout=180):
                 label = futures[future]
                 try:
                     result = future.result(timeout=DEFAULT_TIMEOUT * 2)
                 except Exception as e:
                     result = {"status": "error", "error": str(e), "issues": []}
-
-                if ":" in label:
-                    # IP-level result — e.g. "shodan_vulns:1.2.3.4"
-                    checker_name, ip = label.split(":", 1)
-                    per_ip_results[ip][checker_name] = result
-                    self._notify(on_progress, label, "done", result)
-                else:
-                    cat_results[label] = result
-                    self._notify(on_progress, label, "done", result)
+                checker_name, ip = label.split(":", 1)
+                per_ip_results[ip][checker_name] = result
+                self._notify(on_progress, label, "done", result)
 
         # --- Phase 4: Aggregate IP-level results ---
         results["categories"] = cat_results
@@ -4564,7 +4580,7 @@ class SecurityScanner:
         # --- Phase 4b: External IP Aggregation (feeds CVE panel) ---
         self._notify(on_progress, "external_ips", "running")
         results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
-            discovered_ips, per_ip_results
+            all_ips, per_ip_results
         )
         self._notify(on_progress, "external_ips", "done",
                      results["categories"]["external_ips"])
