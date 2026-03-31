@@ -1715,7 +1715,7 @@ function updateDiscounts() {
 
   // Update computed values
   if (state.quoteOptions.length > 0) {
-    const opt = state.quoteOptions[0];
+    const opt = getOption(state.activeOptionTab) || state.quoteOptions[0];
     const calc = calculatePremium(opt.coverIndex, state, {
       fpIndex: opt.fpIndex,
       postureDiscount: opt.postureDiscount || 0,
