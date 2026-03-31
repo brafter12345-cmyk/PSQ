@@ -4216,11 +4216,15 @@ class SecurityScanner:
             "dehashed":            (DehashedChecker().check,           [domain, self.dehashed_email, self.dehashed_api_key]),
             "virustotal":          (VirusTotalChecker().check,         [domain, self.virustotal_api_key]),
             "securitytrails":      (SecurityTrailsChecker().check,     [domain, self.securitytrails_api_key]),
-            "fraudulent_domains":  (FraudulentDomainChecker().check,   [domain]),
-            "privacy_compliance":  (PrivacyComplianceChecker().check,  [domain]),
-            "web_ranking":         (WebRankingChecker().check,          [domain]),
-            "info_disclosure":     (InformationDisclosureChecker().check, [domain]),
         }
+
+        # Conditionally include fraudulent domain checker
+        if include_fraudulent_domains:
+            domain_checkers["fraudulent_domains"] = (FraudulentDomainChecker().check, [domain])
+
+        domain_checkers["privacy_compliance"] = (PrivacyComplianceChecker().check, [domain])
+        domain_checkers["web_ranking"] = (WebRankingChecker().check, [domain])
+        domain_checkers["info_disclosure"] = (InformationDisclosureChecker().check, [domain])
 
         # --- Phase 3: IP-level checkers (per-IP) ---
         ip_checkers_templates = {

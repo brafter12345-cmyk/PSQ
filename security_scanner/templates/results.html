@@ -1246,37 +1246,34 @@
 
     <!-- Fraudulent Domains -->
     {% set fraud = results.categories.get('fraudulent_domains', {}) %}
-    {% if fraud and fraud.fraudulent_domains_found is defined %}
-    {% set fraud_tl = 'tl-crimson' if fraud.fraudulent_domains_found > 3 else ('tl-red' if fraud.fraudulent_domains_found > 0 else 'tl-green') %}
+    {% if fraud and fraud.resolved_count is defined %}
+    {% set fraud_count = fraud.resolved_count | default(0) %}
+    {% set fraud_tl = 'tl-crimson' if fraud_count > 3 else ('tl-red' if fraud_count > 0 else 'tl-green') %}
     <div class="cat-card">
       <div class="cat-header" onclick="toggle(this)">
         <div class="cat-left"><div class="traffic-light {{ fraud_tl }}"></div><div class="cat-title">Fraudulent Domains (Typosquat)</div></div>
         <div style="display:flex;align-items:center;gap:10px;">
-          <span class="cat-grade">{{ fraud.fraudulent_domains_found | default(0) }} found</span>
+          <span class="cat-grade">{{ fraud_count }} found</span>
           <span class="chevron">&#9660;</span>
         </div>
       </div>
       <div class="cat-body">
         <table class="kv-table">
-          <tr><td>Variants checked</td><td>{{ fraud.variants_checked | default(0) }}</td></tr>
-          <tr><td>Lookalikes with certs</td><td>{% if fraud.fraudulent_domains_found > 0 %}<span class="badge badge-red">{{ fraud.fraudulent_domains_found }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+          <tr><td>Permutations checked</td><td>{{ fraud.total_permutations | default(0) }}</td></tr>
+          <tr><td>Lookalikes resolved</td><td>{% if fraud_count > 0 %}<span class="badge badge-red">{{ fraud_count }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
         </table>
-        {% if fraud.domains %}
+        {% if fraud.fraudulent_domains %}
         <div style="margin-top:8px;">
-          {% for d in fraud.domains %}
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:.8rem;">
-            <div>
-              <strong>{{ d.domain }}</strong>
-              <span class="badge badge-amber" style="margin-left:4px;">{{ d.type }}</span>
-            </div>
-            <div style="text-align:right;font-size:.75rem;color:var(--muted);">
-              {{ d.cert_issuer }} &middot; {{ d.first_seen }}
-            </div>
+          {% for d in fraud.fraudulent_domains %}
+          <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:.8rem;">
+            <strong style="color:#f87171;">{{ d.domain }}</strong>
+            <span class="badge badge-amber" style="font-size:.6rem;">{{ d.technique }}</span>
+            {% if d.similarity %}<span style="font-size:.7rem;color:var(--muted);">{{ (d.similarity * 100) | round(0) }}% similar</span>{% endif %}
           </div>
           {% endfor %}
         </div>
-        {% elif fraud.fraudulent_domains_found == 0 %}
-        <p style="color:var(--low);font-size:.82rem;margin-top:8px;">&#10003; No lookalike domains with active certificates detected.</p>
+        {% elif fraud_count == 0 %}
+        <p style="color:var(--low);font-size:.82rem;margin-top:8px;">&#10003; No lookalike domains with active DNS resolution detected.</p>
         {% endif %}
         {% if fraud.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in fraud.issues %}<li class="issue-item"><span class="issue-icon issue-err">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
       </div>
@@ -1477,18 +1474,18 @@
           <div style="width:{{ fw_pct }}%;height:100%;border-radius:4px;background:{% if fw_pct >= 75 %}#22c55e{% elif fw_pct >= 50 %}#f59e0b{% else %}#ef4444{% endif %};"></div>
         </div>
         <table style="width:100%;font-size:.82rem;border-collapse:collapse;table-layout:fixed;">
-          <colgroup><col style="width:35%;"><col style="width:12%;"><col style="width:53%;"></colgroup>
-          <tr style="background:rgba(30,58,138,0.04);"><th style="text-align:left;padding:6px;">Control</th><th style="padding:6px;">Status</th><th style="text-align:left;padding:6px;">Description</th></tr>
+          <colgroup><col style="width:30%;"><col style="width:18%;"><col style="width:52%;"></colgroup>
+          <tr style="background:rgba(30,58,138,0.04);"><th style="text-align:left;padding:8px;">Control</th><th style="text-align:center;padding:8px;">Status</th><th style="text-align:left;padding:8px;">Description</th></tr>
           {% for ctrl_name, ctrl in fw_data.get('controls', {}).items() %}
-          <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-            <td style="padding:6px;font-weight:600;word-wrap:break-word;">{{ ctrl_name }}</td>
-            <td style="padding:6px;text-align:center;">
+          <tr style="border-bottom:1px solid rgba(255,255,255,0.05);vertical-align:top;">
+            <td style="padding:8px;font-weight:600;word-wrap:break-word;">{{ ctrl_name }}</td>
+            <td style="padding:8px;text-align:center;white-space:nowrap;">
               {% if ctrl.status == 'pass' %}<span class="badge badge-green" style="font-size:0.65rem;">PASS</span>
               {% elif ctrl.status == 'partial' %}<span class="badge badge-amber" style="font-size:0.65rem;">PARTIAL</span>
               {% elif ctrl.status == 'fail' %}<span class="badge badge-red" style="font-size:0.65rem;">FAIL</span>
               {% else %}<span class="badge badge-grey" style="font-size:0.65rem;">N/A</span>{% endif %}
             </td>
-            <td style="padding:6px;color:#94a3b8;font-size:.78rem;word-wrap:break-word;">{{ ctrl.description }}</td>
+            <td style="padding:8px;color:#94a3b8;font-size:.78rem;word-wrap:break-word;">{{ ctrl.description }}</td>
           </tr>
           {% if ctrl.findings %}
           <tr><td colspan="3" style="padding:2px 6px 8px 20px;">
