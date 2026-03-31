@@ -1072,12 +1072,60 @@ def cat_risk_mitigations(d, S):
 # Executive summary table
 # ---------------------------------------------------------------------------
 
+def _build_legend(S) -> Table:
+    """Colour glossary legend for the report."""
+    legend_items = [
+        (C_GREEN, "Low Risk", "No action required"),
+        (C_AMBER, "Medium Risk", "Monitor / improve when feasible"),
+        (C_RED, "High Risk", "Remediation recommended"),
+        (C_CRITICAL, "Critical Risk", "Immediate action required"),
+    ]
+    legend_rows = []
+    for col, label, desc in legend_items:
+        legend_rows.append([
+            make_traffic_circle(col, 8),
+            Paragraph(f"<b>{label}</b>", S["kv_key"]),
+            Paragraph(desc, S["body_muted"]),
+        ])
+    tbl = Table(legend_rows, colWidths=[14, 28 * mm, INNER_W - 14 - 28 * mm])
+    tbl.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LEFTPADDING",   (0, 0), (0, -1), 4),
+        ("LEFTPADDING",   (1, 0), (-1, -1), 4),
+    ]))
+    return tbl
+
+
+# Insurance risk context for executive summary items
+_INSURANCE_CONTEXT = {
+    "Ransomware Susceptibility": "Determines premium loading; high RSI correlates with ransomware claim frequency",
+    "Data Breach Index": "Historical breach exposure; impacts data breach and regulatory fine projections",
+    "SSL Grade": "Weak encryption enables man-in-the-middle attacks; increases data breach probability",
+    "Email Security Score": "Poor email auth enables phishing/BEC; top initial attack vector for claims",
+    "HTTP Security Headers": "Missing headers enable XSS and clickjacking; increases web application breach risk",
+    "Known Data Breaches": "Prior breaches significantly increase probability of repeat incidents and claims",
+    "Exposed Admin Panels": "Direct entry point for attackers; leads to full system compromise and ransomware",
+    "DB/Service Exposure": "Exposed databases enable mass data theft; highest severity finding for underwriting",
+    "IP/Domain Blacklisted": "Indicates prior compromise or spam; reputation damage affects business interruption",
+    "WAF Protection": "No WAF leaves web applications unprotected against automated attacks and DDoS",
+    "RDP Exposed": "Primary ransomware entry vector; single highest risk factor for cyber claims",
+    "Est. Annual Loss": "FAIR-modelled expected loss; basis for coverage limits and premium calculation",
+    "Fraudulent Domains": "Brand impersonation risk; phishing campaigns targeting clients and employees",
+    "Web Ranking (Tranco)": "Site visibility indicator; higher-profile targets attract more automated attacks",
+}
+
+
 def build_summary_table(results: dict, S) -> Table:
     cats = results.get("categories", {})
 
     def row(label, value, col):
         circ = make_traffic_circle(col, 9)
-        return [circ, Paragraph(label, S["kv_key"]), Paragraph(str(value), S["kv_val"])]
+        coloured_val = _risk_colour_value(str(value))
+        ctx = _INSURANCE_CONTEXT.get(label, "")
+        val_text = f"{coloured_val}<br/><font size='6' color='#64748b'><i>{ctx}</i></font>" if ctx else coloured_val
+        return [circ, Paragraph(f"<b>{label}</b>", S["kv_key"]), Paragraph(val_text, S["kv_val"])]
 
     ssl_grade = cats.get("ssl", {}).get("grade", "?")
     em_score  = cats.get("email_security", {}).get("score", 0)
@@ -1143,13 +1191,15 @@ def build_summary_table(results: dict, S) -> Table:
     rows.append(row("Web Ranking (Tranco)", wr_label,
                      C_GREEN if cats.get("web_ranking", {}).get("ranked") else C_AMBER))
 
-    tbl = Table(rows, colWidths=[14, 70 * mm, INNER_W - 14 - 70 * mm])
+    tbl = Table(rows, colWidths=[18, 55 * mm, INNER_W - 18 - 55 * mm])
     style = [
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-        ("GRID",          (0, 0), (-1, -1), 0.25, C_GREY_2),
+        ("TOPPADDING",    (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("LEFTPADDING",   (0, 0), (0, -1), 4),
+        ("LEFTPADDING",   (1, 0), (-1, -1), 6),
+        ("BOX",           (0, 0), (-1, -1), 0.25, C_GREY_2),
+        ("LINEBELOW",     (0, 0), (-1, -2), 0.25, C_GREY_2),
     ]
     for i in range(0, len(rows), 2):
         style.append(("BACKGROUND", (0, i), (-1, i), C_GREY_1))
@@ -1228,6 +1278,12 @@ def generate_pdf(results: dict) -> bytes:
     # Gauge
     story.append(make_risk_gauge(risk_score))
     story.append(Spacer(1, 6 * mm))
+
+    # Colour glossary legend
+    story.append(Paragraph("<b>Risk Indicator Legend</b>", S["body_muted"]))
+    story.append(Spacer(1, 1 * mm))
+    story.append(_build_legend(S))
+    story.append(Spacer(1, 4 * mm))
 
     # Executive summary table
     story.append(Paragraph("<b>Executive Summary</b>", S["cat_title"]))
