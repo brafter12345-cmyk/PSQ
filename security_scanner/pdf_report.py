@@ -157,8 +157,8 @@ def _header_footer(canvas, doc, domain, timestamp):
     canvas.setFillColor(C_GREY_4)
     canvas.setFont("Helvetica", 6.5)
     canvas.drawString(MARGIN, 3.5 * mm,
-                      "PHISHIELD Cyber Protect  |  Underwritten by Bryte Insurance Company Limited  |  "
-                      "FSP 17703  |  Reg. 1965/006764/06")
+                      "PHISHIELD UMA (Pty) Ltd  |  Authorised Financial Services Provider  |  "
+                      "FSP 46418")
     canvas.drawRightString(w - MARGIN, 3.5 * mm,
                            f"Page {doc.page}  |  {timestamp[:10]}")
     canvas.restoreState()
@@ -1369,9 +1369,8 @@ def generate_pdf(results: dict) -> bytes:
     story.append(Paragraph(
         "DISCLAIMER: This report is based solely on passive, external assessment of publicly observable "
         "infrastructure and does not constitute a full security audit. Results reflect point-in-time observations. "
-        "PHISHIELD is a product of Bryte Insurance Company Limited (FSP 17703, Reg. 1965/006764/06), "
-        "a wholly owned subsidiary of Fairfax Financial Holdings Limited. Neither Bryte nor PHISHIELD accepts "
-        "liability for decisions made solely on the basis of this automated assessment. "
+        "Phishield UMA (Pty) Ltd is an Authorised Financial Services Provider (FSP 46418). "
+        "Phishield accepts no liability for decisions made solely on the basis of this automated assessment. "
         "For insurance purposes this report must be reviewed by a qualified underwriter.",
         S["disclaimer"]
     ))
