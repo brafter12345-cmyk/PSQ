@@ -4427,7 +4427,7 @@ class SecurityScanner:
                 pass
 
     def _aggregate_ip_results(self, per_ip: dict, checker_name: str) -> dict:
-        """Merge per-IP results for a checker into a single aggregate (worst-case)."""
+        """Merge per-IP results for a checker into a single aggregate (richest data)."""
         all_results = [per_ip[ip].get(checker_name, {}) for ip in per_ip if checker_name in per_ip.get(ip, {})]
         if not all_results:
             return {"status": "completed", "issues": []}
@@ -4435,8 +4435,16 @@ class SecurityScanner:
             agg = dict(all_results[0])
             agg["per_ip"] = per_ip
             return agg
-        # Use the result with the worst (lowest) score
-        best = min(all_results, key=lambda r: r.get("score", r.get("risk_score", 100)))
+        # Pick the result with the most findings (ports, CVEs, issues, services)
+        # Score 0 means "no data" not "high risk", so min(score) picks empty results
+        def richness(r):
+            return (len(r.get("open_ports", [])) +
+                    len(r.get("cves", [])) +
+                    len(r.get("exposed_services", [])) +
+                    len(r.get("issues", [])) +
+                    len(r.get("ip_listings", [])) +
+                    len(r.get("domain_listings", [])))
+        best = max(all_results, key=richness)
         agg = dict(best)
         # Merge issues from all IPs
         all_issues = []
@@ -4445,6 +4453,17 @@ class SecurityScanner:
                 if issue not in all_issues:
                     all_issues.append(issue)
         agg["issues"] = all_issues
+        # Merge open_ports from all IPs (dedup by port number)
+        if checker_name == "dns_infrastructure":
+            seen_ports = set()
+            merged_ports = []
+            for r in all_results:
+                for p in r.get("open_ports", []):
+                    if p.get("port") not in seen_ports:
+                        seen_ports.add(p.get("port"))
+                        merged_ports.append(p)
+            merged_ports.sort(key=lambda p: p.get("port", 0))
+            agg["open_ports"] = merged_ports
         agg["per_ip"] = per_ip
         return agg
 
