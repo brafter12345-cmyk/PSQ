@@ -1120,11 +1120,19 @@ _INSURANCE_CONTEXT = {
 def build_summary_table(results: dict, S) -> Table:
     cats = results.get("categories", {})
 
+    # Map traffic light colours to hex for inline font tags
+    _COL_HEX = {
+        id(C_GREEN): "#16a34a", id(C_AMBER): "#d97706",
+        id(C_RED): "#dc2626", id(C_CRITICAL): "#991b1b",
+        id(C_BLUE): "#1d4ed8", id(C_GREY_3): "#94a3b8",
+    }
+
     def row(label, value, col):
         circ = make_traffic_circle(col, 9)
-        coloured_val = _risk_colour_value(str(value))
+        col_hex = _COL_HEX.get(id(col), "#0f172a")
+        val_str = str(value)
         ctx = _INSURANCE_CONTEXT.get(label, "")
-        val_text = f"{coloured_val}  <font size='7' color='#64748b'><i>— {ctx}</i></font>" if ctx else coloured_val
+        val_text = f"<font color='{col_hex}'><b>{val_str}</b></font>  <font size='7' color='#64748b'><i>— {ctx}</i></font>" if ctx else f"<font color='{col_hex}'><b>{val_str}</b></font>"
         return [circ, Paragraph(f"<b>{label}</b>", S["kv_key"]), Paragraph(val_text, S["kv_val"])]
 
     ssl_grade = cats.get("ssl", {}).get("grade", "?")
