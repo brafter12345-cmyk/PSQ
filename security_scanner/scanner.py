@@ -696,20 +696,52 @@ class DomainIntelChecker:
 # ---------------------------------------------------------------------------
 
 class SubdomainChecker:
+    # Common prefixes to brute-force resolve as supplement to CT logs
+    BRUTE_PREFIXES = [
+        "www", "mail", "remote", "blog", "webmail", "server", "ns1", "ns2",
+        "smtp", "secure", "vpn", "m", "shop", "ftp", "mail2", "test",
+        "portal", "dns", "relay", "cdn", "api", "dev", "staging", "beta",
+        "admin", "old", "backup", "app", "intranet", "db", "database",
+        "jenkins", "gitlab", "jira", "grafana", "kibana", "phpmyadmin",
+        "cpanel", "webdisk", "autodiscover", "sip", "lyncdiscover",
+        "owa", "exchange", "docs", "sharepoint", "crm", "erp",
+    ]
+
+    RISKY_KEYWORDS = [
+        "dev", "staging", "test", "admin", "api", "old", "beta",
+        "backup", "db", "database", "internal", "vpn", "remote",
+        "jenkins", "gitlab", "jira", "grafana", "kibana", "phpmyadmin",
+        "cpanel", "owa", "exchange", "ftp", "intranet",
+    ]
+
+    @staticmethod
+    def _resolves(hostname: str) -> list:
+        """Try to resolve a hostname, return list of IPs or empty list."""
+        try:
+            answers = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            return list(set(addr[4][0] for addr in answers))
+        except Exception:
+            return []
+
     def check(self, domain: str) -> dict:
         result = {
             "status": "completed",
             "subdomains": [],
             "risky_subdomains": [],
+            "resolved_ips": {},
             "total_count": 0,
+            "ct_count": 0,
+            "brute_count": 0,
             "issues": [],
+            "score": 100,
         }
         if not REQUESTS_AVAILABLE:
             result["status"] = "error"; return result
 
-        RISKY_KEYWORDS = ["dev", "staging", "test", "admin", "api", "old", "beta",
-                          "backup", "db", "database", "internal", "vpn", "remote",
-                          "jenkins", "gitlab", "jira", "grafana", "kibana", "phpmyadmin"]
+        seen = set()
+        subdomains = []
+
+        # --- Source 1: Certificate Transparency via crt.sh ---
         try:
             r = requests.get(
                 f"https://crt.sh/?q=%.{domain}&output=json",
@@ -717,8 +749,6 @@ class SubdomainChecker:
             )
             if r.status_code == 200:
                 entries = r.json()
-                seen = set()
-                subdomains = []
                 for entry in entries:
                     names = entry.get("name_value", "").split("\n")
                     for name in names:
@@ -726,20 +756,72 @@ class SubdomainChecker:
                         if name and name != domain and domain in name and name not in seen:
                             seen.add(name)
                             subdomains.append(name)
+                result["ct_count"] = len(subdomains)
+        except Exception:
+            pass  # crt.sh can be slow/unreliable — continue with brute-force
 
-                subdomains = subdomains[:100]  # cap at 100
-                result["subdomains"] = subdomains
-                result["total_count"] = len(subdomains)
+        # --- Source 2: DNS brute-force for common prefixes ---
+        brute_candidates = [
+            f"{prefix}.{domain}" for prefix in self.BRUTE_PREFIXES
+            if f"{prefix}.{domain}" not in seen
+        ]
+        brute_found = 0
+        with ThreadPoolExecutor(max_workers=20) as ex:
+            futures = {ex.submit(self._resolves, host): host for host in brute_candidates}
+            for future in as_completed(futures, timeout=15):
+                host = futures[future]
+                try:
+                    ips = future.result(timeout=3)
+                    if ips:
+                        seen.add(host)
+                        subdomains.append(host)
+                        brute_found += 1
+                except Exception:
+                    pass
+        result["brute_count"] = brute_found
 
-                risky = [s for s in subdomains if any(k in s for k in RISKY_KEYWORDS)]
-                result["risky_subdomains"] = risky
+        # Cap and store
+        subdomains = subdomains[:150]
+        result["subdomains"] = subdomains
+        result["total_count"] = len(subdomains)
 
-                if risky:
-                    result["issues"].append(
-                        f"{len(risky)} risky subdomain(s) found in public CT logs: {', '.join(risky[:5])}"
-                    )
-        except Exception as e:
-            result["status"] = "error"; result["error"] = str(e)
+        # --- Resolve all subdomains to IPs (for attack surface mapping) ---
+        resolved_ips = {}
+        with ThreadPoolExecutor(max_workers=20) as ex:
+            futures = {ex.submit(self._resolves, sub): sub for sub in subdomains[:80]}
+            for future in as_completed(futures, timeout=15):
+                sub = futures[future]
+                try:
+                    ips = future.result(timeout=3)
+                    if ips:
+                        resolved_ips[sub] = ips
+                except Exception:
+                    pass
+        result["resolved_ips"] = resolved_ips
+
+        # Unique IPs across all subdomains
+        all_ips = set()
+        for ips in resolved_ips.values():
+            all_ips.update(ips)
+        result["unique_ips_found"] = len(all_ips)
+
+        # --- Identify risky subdomains ---
+        risky = [s for s in subdomains if any(k in s for k in self.RISKY_KEYWORDS)]
+        result["risky_subdomains"] = risky
+
+        if risky:
+            result["issues"].append(
+                f"{len(risky)} risky subdomain(s) found: {', '.join(risky[:5])}"
+            )
+            result["score"] = max(40, 100 - len(risky) * 5)
+
+        if len(subdomains) > 50:
+            result["issues"].append(
+                f"Large attack surface: {len(subdomains)} subdomains discovered "
+                f"across {len(all_ips)} unique IPs"
+            )
+            result["score"] = min(result["score"], 60)
+
         return result
 
 
@@ -2952,6 +3034,204 @@ class InformationDisclosureChecker:
 
 
 # ---------------------------------------------------------------------------
+# External IP Aggregator
+# ---------------------------------------------------------------------------
+# Not a scanner — aggregates discovered IPs + per-IP Shodan results into
+# the external_ips structure that the CVE / Known Vulnerabilities panel expects.
+
+class ExternalIPAggregator:
+    """
+    Builds the external_ips result dict from discovered IPs and per-IP
+    Shodan results. Provides IP classification, ASN aggregation, and
+    vulnerability summary across all IPs.
+    """
+
+    @staticmethod
+    def aggregate(discovered_ips: list, per_ip_results: dict) -> dict:
+        """
+        Args:
+            discovered_ips: List of IP strings from Phase 1 discovery.
+            per_ip_results: Dict of {ip: {checker_name: result}} from Phase 3.
+
+        Returns:
+            Dict matching the external_ips template shape.
+        """
+        result = {
+            "status": "completed",
+            "total_unique_ips": 0,
+            "ipv4_count": 0,
+            "ipv6_count": 0,
+            "unique_asns": 0,
+            "unique_countries": 0,
+            "ip_addresses": [],
+            "aggregate_vulns": {
+                "total_cves": 0,
+                "critical_count": 0,
+                "high_count": 0,
+                "medium_count": 0,
+                "low_count": 0,
+                "kev_count": 0,
+                "ips_with_vulns": 0,
+                "max_cvss": 0,
+                "max_epss": 0,
+            },
+            "score": 100,
+            "issues": [],
+        }
+
+        if not discovered_ips:
+            return result
+
+        seen_ips = set()
+        asns = set()
+        countries = set()
+        ipv4 = 0
+        ipv6 = 0
+        ip_entries = []
+        agg = result["aggregate_vulns"]
+
+        for i, ip in enumerate(discovered_ips):
+            if ip in seen_ips:
+                continue
+            seen_ips.add(ip)
+
+            # Classify IP version
+            if ":" in ip:
+                ipv6 += 1
+            else:
+                ipv4 += 1
+
+            # Get Shodan results for this IP
+            ip_data = per_ip_results.get(ip, {})
+            shodan = ip_data.get("shodan_vulns", {})
+            dns_info = ip_data.get("dns_infrastructure", {})
+
+            # Extract org/ASN/country from Shodan full API or DNS
+            org = shodan.get("org", "")
+            asn = shodan.get("asn", "")
+            country = shodan.get("country", "")
+            city = shodan.get("city", "")
+            reverse_dns = dns_info.get("reverse_dns", "")
+            hostnames = shodan.get("hostnames", [])
+
+            if asn:
+                asns.add(asn)
+            if country:
+                countries.add(country)
+
+            # Build per-IP vulnerability summary
+            cves = shodan.get("cves", [])
+            cve_count = len(cves)
+            critical = sum(1 for c in cves if c.get("severity") == "critical")
+            high = sum(1 for c in cves if c.get("severity") == "high")
+            medium = sum(1 for c in cves if c.get("severity") == "medium")
+            low = sum(1 for c in cves if c.get("severity") == "low")
+            kev = sum(1 for c in cves if c.get("in_kev"))
+            max_cvss = max((c.get("cvss_score", 0) for c in cves), default=0)
+            max_epss = max((c.get("epss_score", 0) for c in cves if c.get("epss_score")), default=0)
+
+            # Risk score per IP
+            ip_score = shodan.get("score", 100)
+            if ip_score < 20:
+                risk_label = "Critical"
+            elif ip_score < 50:
+                risk_label = "High"
+            elif ip_score < 80:
+                risk_label = "Medium"
+            else:
+                risk_label = "Low"
+
+            # Remediation hint
+            remediation = ""
+            if critical > 0:
+                remediation = f"Patch {critical} critical CVE(s) immediately — active exploitation likely"
+            elif high > 0:
+                remediation = f"Prioritise patching {high} high-severity CVE(s) within 30 days"
+            elif cve_count > 0:
+                remediation = f"Review and patch {cve_count} known vulnerability(ies)"
+
+            # Determine sources
+            sources = ["A record"]
+            if i == 0:
+                sources.append("primary")
+            if hostnames:
+                sources.append("reverse DNS")
+
+            ip_entry = {
+                "ip": ip,
+                "is_primary": i == 0,
+                "hosting": True,
+                "org": org or "Unknown",
+                "asn": asn,
+                "country": country,
+                "city": city,
+                "reverse_dns": reverse_dns or (hostnames[0] if hostnames else ""),
+                "sources": sources,
+                "shodan": {
+                    "open_ports": shodan.get("open_ports", []),
+                    "cve_count": cve_count,
+                    "critical_count": critical,
+                    "high_count": high,
+                    "medium_count": medium,
+                    "low_count": low,
+                    "kev_count": kev,
+                    "max_cvss": max_cvss,
+                    "max_epss": max_epss,
+                    "risk_score": ip_score,
+                    "risk_label": risk_label,
+                    "cves": cves,
+                    "remediation": remediation,
+                    "data_source": shodan.get("data_source", "internetdb"),
+                    "tags": shodan.get("tags", []),
+                },
+            }
+            ip_entries.append(ip_entry)
+
+            # Aggregate totals
+            if cve_count > 0:
+                agg["ips_with_vulns"] += 1
+            agg["total_cves"] += cve_count
+            agg["critical_count"] += critical
+            agg["high_count"] += high
+            agg["medium_count"] += medium
+            agg["low_count"] += low
+            agg["kev_count"] += kev
+            agg["max_cvss"] = max(agg["max_cvss"], max_cvss)
+            agg["max_epss"] = max(agg["max_epss"], max_epss)
+
+        result["total_unique_ips"] = len(seen_ips)
+        result["ipv4_count"] = ipv4
+        result["ipv6_count"] = ipv6
+        result["unique_asns"] = len(asns) if asns else 1  # at least 1 if IPs found
+        result["unique_countries"] = len(countries) if countries else 1
+        result["ip_addresses"] = ip_entries
+
+        # Scoring
+        if agg["critical_count"] > 0 or agg["kev_count"] > 0:
+            result["score"] = max(0, 20 - agg["critical_count"] * 5)
+            result["issues"].append(
+                f"CRITICAL: {agg['critical_count']} critical CVE(s) across {agg['ips_with_vulns']} IP(s)"
+            )
+        elif agg["high_count"] > 0:
+            result["score"] = max(20, 50 - agg["high_count"] * 5)
+            result["issues"].append(
+                f"{agg['high_count']} high-severity CVE(s) detected across external IPs"
+            )
+        elif agg["total_cves"] > 0:
+            result["score"] = max(50, 80 - agg["total_cves"] * 2)
+            result["issues"].append(
+                f"{agg['total_cves']} CVE(s) detected — review and prioritise patching"
+            )
+
+        if agg["kev_count"] > 0:
+            result["issues"].append(
+                f"CRITICAL: {agg['kev_count']} CVE(s) in CISA Known Exploited Vulnerabilities catalog — "
+                "active exploitation confirmed"
+            )
+
+        return result
+
+
 # ---------------------------------------------------------------------------
 # Compliance Framework Mapping
 # ---------------------------------------------------------------------------
@@ -4280,6 +4560,14 @@ class SecurityScanner:
             results["categories"][checker_name] = self._aggregate_ip_results(
                 per_ip_results, checker_name
             )
+
+        # --- Phase 4b: External IP Aggregation (feeds CVE panel) ---
+        self._notify(on_progress, "external_ips", "running")
+        results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
+            discovered_ips, per_ip_results
+        )
+        self._notify(on_progress, "external_ips", "done",
+                     results["categories"]["external_ips"])
 
         # --- Phase 5: Score ---
         scorer = RiskScorer()
