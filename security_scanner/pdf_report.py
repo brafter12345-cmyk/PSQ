@@ -226,6 +226,11 @@ def _cat_table(rows, bgs, col_widths, S):
     ]
     for i, bg in enumerate(bgs):
         style.append(("BACKGROUND", (0, i), (-1, i), bg))
+        # Make separator rows very thin
+        if bg == C_GREY_2:
+            style.append(("TOPPADDING", (0, i), (-1, i), 0))
+            style.append(("BOTTOMPADDING", (0, i), (-1, i), 0))
+            style.append(("FONTSIZE", (0, i), (-1, i), 2))
     tbl.setStyle(TableStyle(style))
     return tbl
 
@@ -239,21 +244,36 @@ def build_cat_card(title: str, tl_col, summary: str, data_rows: list, issues: li
     title_tbl = Table([
         [make_traffic_circle(tl_col, 10), Paragraph(f"<b>{title}</b>", S["cat_title"]),
          Paragraph(f"<i>{summary}</i>", S["body_muted"])]
-    ], colWidths=[14, 80 * mm, INNER_W - 14 - 80 * mm])
+    ], colWidths=[18, 80 * mm, INNER_W - 18 - 80 * mm])
     title_tbl.setStyle(TableStyle([
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
         ("BACKGROUND",    (0, 0), (-1, -1), C_GREY_1),
-        ("TOPPADDING",    (0, 0), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 6),
-        ("GRID",          (0, 0), (-1, -1), 0.25, C_GREY_2),
+        ("TOPPADDING",    (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING",   (0, 0), (0, 0), 4),
+        ("LEFTPADDING",   (1, 0), (-1, -1), 6),
+        ("LINEBELOW",     (0, 0), (-1, -1), 0.5, C_GREY_2),
+        ("BOX",           (0, 0), (-1, -1), 0.25, C_GREY_2),
     ]))
 
     # Data + issues side-by-side
     rows, bgs = [], []
-    for i, (k, v) in enumerate(data_rows):
-        r, bg = kv_row(k, v, S, alt=i % 2 == 0)
-        rows.append(r); bgs.append(bg)
+    alt_idx = 0
+    for k, v in data_rows:
+        if k == "———":
+            # Separator row — thin coloured line
+            r = [Paragraph("", S["kv_key"]), Paragraph("", S["kv_val"])]
+            rows.append(r); bgs.append(C_GREY_2)
+        elif str(k).startswith("▶"):
+            # Port group header — highlighted
+            r = [Paragraph(f"<b>{k}</b>", S["kv_key"]),
+                 Paragraph(f"<b>{v}</b>", S["kv_val"])]
+            rows.append(r); bgs.append(C_BLUE_LIGHT)
+            alt_idx = 0
+        else:
+            r, bg = kv_row(k, v, S, alt=alt_idx % 2 == 0)
+            rows.append(r); bgs.append(bg)
+            alt_idx += 1
 
     data_tbl = _cat_table(rows, bgs, [40 * mm, INNER_W - 40 * mm], S) if rows else None
 
@@ -362,28 +382,29 @@ def cat_waf(d, S):
 def cat_dns(d, S):
     dns  = d.get("dns_infrastructure", {})
     ports= dns.get("open_ports", [])
-    high = [p for p in ports if p["risk"] == "high"]
+    high = [p for p in ports if p.get("risk") == "high"]
     col  = _tl(len(high) == 0 and len(ports) <= 2, len(high) == 0)
     port_str = ", ".join(f"{p['port']}/{p['service']}" for p in ports) or "None"
     rows = [
         ("Open ports",    port_str),
         ("High-risk ports", ", ".join(f"{p['port']}/{p['service']}" for p in high) or "None"),
         ("Server header", dns.get("server_info", {}).get("Server", "—")),
-        ("X-Powered-By",  dns.get("server_info", {}).get("X-Powered-By", "—")),
         ("Reverse DNS",   dns.get("reverse_dns") or "—"),
     ]
-    # Add per-port exploit intel for risky ports
-    risky = [p for p in ports if p["risk"] in ("high", "medium")]
+    # Per-port exploit intel with group separators
+    risky = [p for p in ports if p.get("risk") in ("high", "medium")]
     for p in risky:
-        rows.append((f"Port {p['port']}/{p['service']}", p.get("risk_level", p["risk"].upper() + " RISK")))
+        rows.append(("———", "———"))  # visual separator
+        risk_label = p.get("risk_level", p.get("risk", "").upper() + " RISK")
+        rows.append((f"▶ {p['port']}/{p['service']}", risk_label))
         if p.get("typical_exploits"):
-            rows.append(("Typical exploits", p["typical_exploits"]))
+            rows.append(("  Exploits", p["typical_exploits"]))
         if p.get("vuln_metrics"):
-            rows.append(("Vuln metrics", p["vuln_metrics"]))
+            rows.append(("  Vuln metrics", p["vuln_metrics"]))
         if p.get("notable_cves"):
-            rows.append(("Notable CVEs", ", ".join(p["notable_cves"])))
+            rows.append(("  CVEs", ", ".join(p["notable_cves"])))
         if p.get("insurance_risk"):
-            rows.append(("Insurance risk", p["insurance_risk"]))
+            rows.append(("  Insurance risk", p["insurance_risk"]))
     return build_cat_card("DNS & Open Ports", col, f"{len(ports)} open port(s)", rows, dns.get("issues", []), S)
 
 
@@ -392,18 +413,20 @@ def cat_hrp(d, S):
     svcs = hrp.get("exposed_services", [])
     col  = C_CRITICAL if svcs else C_GREEN
     rows = []
-    for s in svcs:
-        rows.append((s["service"], f"Port {s['port']} — EXPOSED"))
+    for i, s in enumerate(svcs):
+        if i > 0:
+            rows.append(("———", "———"))  # separator between services
+        rows.append((f"▶ {s['service']}", f"Port {s['port']} — CRITICAL EXPOSURE"))
         if s.get("known_exploits"):
-            rows.append(("Known exploits", s["known_exploits"]))
+            rows.append(("  Known exploits", s["known_exploits"]))
         if s.get("vuln_metrics"):
-            rows.append(("Vuln metrics", s["vuln_metrics"]))
+            rows.append(("  Vuln metrics", s["vuln_metrics"]))
         if s.get("notable_cves"):
-            rows.append(("Notable CVEs", ", ".join(s["notable_cves"])))
+            rows.append(("  CVEs", ", ".join(s["notable_cves"])))
         if s.get("insurance_risk"):
-            rows.append(("Insurance risk", s["insurance_risk"]))
+            rows.append(("  Insurance risk", s["insurance_risk"]))
         if s.get("underwriting_impact"):
-            rows.append(("Underwriting impact", s["underwriting_impact"]))
+            rows.append(("  Underwriting impact", s["underwriting_impact"]))
     if not rows:
         rows = [("Status", "No critical services exposed")]
     return build_cat_card("Database & Service Exposure", col,
