@@ -38,6 +38,67 @@ C_GREY_4    = colors.HexColor("#475569")
 C_WHITE     = colors.white
 C_BLACK     = colors.HexColor("#0f172a")
 
+# Brief descriptions for common CVEs referenced in the protocol knowledge base
+CVE_DESCRIPTIONS = {
+    # FTP
+    "CVE-2015-3306": "ProFTPD mod_copy — unauthenticated remote file copy/write",
+    "CVE-2019-12815": "ProFTPD mod_copy — arbitrary file copy without auth",
+    "CVE-2010-4221": "ProFTPD — remote stack buffer overflow (RCE)",
+    # SSH
+    "CVE-2024-6387": "regreSSHion — unauthenticated RCE in OpenSSH (critical)",
+    "CVE-2023-48795": "Terrapin — SSH prefix truncation attack",
+    "CVE-2016-20012": "OpenSSH — username enumeration via timing",
+    # Telnet
+    "CVE-2020-10188": "Telnetd — remote code execution via buffer overflow",
+    "CVE-2011-4862": "FreeBSD telnetd — encryption key ID buffer overflow (RCE)",
+    # SMTP
+    "CVE-2021-3156": "Sudo heap overflow — local privilege escalation",
+    "CVE-2020-28018": "Exim — use-after-free leading to RCE",
+    "CVE-2011-1720": "Postfix — memory corruption via SASL",
+    # POP3/IMAP
+    "CVE-2021-33515": "Dovecot — STARTTLS command injection",
+    "CVE-2019-11500": "Dovecot — buffer overflow in mail processing (RCE)",
+    # MySQL
+    "CVE-2012-2122": "MySQL — authentication bypass via timing attack",
+    "CVE-2016-6662": "MySQL — remote root code execution via config file",
+    "CVE-2020-14812": "MySQL Server — denial of service via optimizer",
+    # RDP
+    "CVE-2019-0708": "BlueKeep — unauthenticated RCE in RDP (wormable, critical)",
+    "CVE-2019-1181": "DejaBlue — RDP RCE affecting newer Windows versions",
+    "CVE-2019-1182": "DejaBlue — RDP RCE variant (wormable)",
+    # PostgreSQL
+    "CVE-2023-5868": "PostgreSQL — privilege escalation via aggregate functions",
+    "CVE-2019-9193": "PostgreSQL — authenticated RCE via COPY FROM PROGRAM",
+    "CVE-2023-39417": "PostgreSQL — SQL injection in extension scripts",
+    # VNC
+    "CVE-2006-2369": "RealVNC — authentication bypass (no password required)",
+    "CVE-2019-15681": "TightVNC — heap buffer overflow (RCE)",
+    # SMB
+    "CVE-2017-0144": "EternalBlue — SMBv1 RCE (WannaCry, NotPetya)",
+    "CVE-2020-0796": "SMBGhost — SMBv3 RCE (wormable, critical)",
+    "CVE-2017-0145": "EternalRomance — SMBv1 RCE variant",
+    # Redis
+    "CVE-2022-0543": "Redis — Lua sandbox escape (RCE)",
+    "CVE-2021-32761": "Redis — integer overflow in BITFIELD (heap corruption)",
+    # Elasticsearch
+    "CVE-2015-1427": "Elasticsearch — Groovy scripting RCE (unauthenticated)",
+    "CVE-2014-3120": "Elasticsearch — MVEL scripting RCE",
+    # MongoDB
+    "CVE-2015-7882": "MongoDB — authentication bypass",
+    "CVE-2013-1892": "MongoDB — nativeHelper buffer overflow (RCE)",
+    # MSSQL
+    "CVE-2020-0618": "SQL Server — deserialization RCE",
+    "CVE-2019-1068": "SQL Server — remote code execution",
+    # CouchDB
+    "CVE-2017-12635": "CouchDB — privilege escalation to admin",
+    "CVE-2017-12636": "CouchDB — arbitrary command execution",
+    # Docker
+    "CVE-2019-5736": "runc — container escape to host (critical)",
+    # SNMP
+    "CVE-2017-6736": "Cisco SNMP — remote code execution",
+    "CVE-2002-0012": "SNMP — community string brute-force / info disclosure",
+}
+
 PAGE_W, PAGE_H = A4
 MARGIN = 18 * mm
 INNER_W = PAGE_W - 2 * MARGIN
@@ -480,7 +541,9 @@ def cat_dns(d, S):
         if p.get("vuln_metrics"):
             rows.append(("  Vuln metrics", p["vuln_metrics"]))
         if p.get("notable_cves"):
-            rows.append(("  CVEs", ", ".join(p["notable_cves"])))
+            for cve_id in p["notable_cves"][:5]:
+                desc = CVE_DESCRIPTIONS.get(cve_id, "")
+                rows.append((f"  {cve_id}", desc if desc else "See NVD for details"))
         if p.get("insurance_risk"):
             rows.append(("  Insurance risk", p["insurance_risk"]))
         if p.get("osv_vulns"):
@@ -505,7 +568,9 @@ def cat_hrp(d, S):
         if s.get("vuln_metrics"):
             rows.append(("  Vuln metrics", s["vuln_metrics"]))
         if s.get("notable_cves"):
-            rows.append(("  CVEs", ", ".join(s["notable_cves"])))
+            for cve_id in s["notable_cves"][:5]:
+                desc = CVE_DESCRIPTIONS.get(cve_id, "")
+                rows.append((f"  {cve_id}", desc if desc else "See NVD for details"))
         if s.get("insurance_risk"):
             rows.append(("  Insurance risk", s["insurance_risk"]))
         if s.get("underwriting_impact"):
