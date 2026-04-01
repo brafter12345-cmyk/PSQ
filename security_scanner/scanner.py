@@ -2635,10 +2635,12 @@ class OSVChecker:
 class DehashedChecker:
     """
     Queries Dehashed for credential leaks associated with the domain.
-    Requires DEHASHED_EMAIL + DEHASHED_API_KEY env vars (paid subscription).
+    Requires DEHASHED_API_KEY env var (paid subscription with credits).
+    Uses v2 API (POST with JSON body, API key header).
     Falls back gracefully with status='no_api_key' when credentials are absent.
     """
-    API_URL = "https://api.dehashed.com/search"
+    API_URL_V2 = "https://api.dehashed.com/v2/search"
+    API_URL_V1 = "https://api.dehashed.com/search"
 
     def check(self, domain: str, email: str = None, api_key: str = None) -> dict:
         result = {
@@ -2651,19 +2653,41 @@ class DehashedChecker:
             "issues": [],
         }
 
-        if not email or not api_key:
+        if not api_key:
             result["status"] = "no_api_key"
             return result
 
+        # Try v2 API first (POST + API key header)
         try:
-            r = requests.get(
-                self.API_URL,
-                params={"query": f"domain:{domain}", "size": 100},
-                auth=(email, api_key),
-                headers={"Accept": "application/json", "User-Agent": USER_AGENT},
+            r = requests.post(
+                self.API_URL_V2,
+                json={"query": f"domain:{domain}", "page": 1, "size": 100},
+                headers={
+                    "Content-Type": "application/json",
+                    "Dehashed-Api-Key": api_key,
+                    "User-Agent": USER_AGENT,
+                },
                 timeout=15,
             )
+        except Exception:
+            r = None
 
+        # Fall back to v1 if v2 fails completely
+        if r is None or r.status_code == 404:
+            try:
+                r = requests.get(
+                    self.API_URL_V1,
+                    params={"query": f"domain:{domain}", "size": 100},
+                    auth=(email or "", api_key),
+                    headers={"Accept": "application/json", "User-Agent": USER_AGENT},
+                    timeout=15,
+                )
+            except Exception as e:
+                result["status"] = "error"
+                result["error"] = str(e)
+                return result
+
+        try:
             if r.status_code == 401:
                 result["status"] = "auth_failed"
                 result["issues"].append("Dehashed authentication failed — check API credentials")
@@ -2695,7 +2719,6 @@ class DehashedChecker:
 
             result["unique_emails"] = len(emails_seen)
             result["has_passwords"] = has_pw
-            # Show up to 5 sample emails (truncated for display)
             result["sample_emails"] = [
                 e[:40] + ("…" if len(e) > 40 else "") for e in list(emails_seen)[:5]
             ]
