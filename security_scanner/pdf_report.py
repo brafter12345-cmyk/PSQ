@@ -759,12 +759,24 @@ def cat_shodan(d, S):
     for cve in sv.get("cves", [])[:8]:
         sev = cve.get("severity", "unknown").upper()
         cvss = cve.get("cvss_score", 0)
+        epss = cve.get("epss_score", 0)
         maturity = cve.get("exploit_maturity", "theoretical").upper()
-        desc = cve.get("description", "")[:100]
-        label = f"{sev}  |  CVSS {cvss}  |  {maturity}"
+        kev = "CISA KEV" if cve.get("in_kev") else ""
+        desc = cve.get("description", "")
+        cve_id = cve.get("cve_id", "")
+
+        # Metrics line
+        metrics = f"{sev}  |  CVSS {cvss}"
+        if epss:
+            metrics += f"  |  EPSS {epss*100:.0f}%"
+        if kev:
+            metrics += f"  |  {kev}"
+        metrics += f"  |  {maturity}"
+        rows.append((f"severity:{sev.lower()}:{cve_id}", metrics))
+
+        # Description on separate line (full text, wraps naturally in PDF cell)
         if desc:
-            label += f"  —  {desc}"
-        rows.append((cve.get("cve_id", ""), label))
+            rows.append(("", desc))
 
     return build_cat_card(f"CVE / Known Vulnerabilities (Shodan {source})", col, summary, rows, sv.get("issues", []), S)
 
