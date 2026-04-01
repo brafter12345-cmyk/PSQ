@@ -2110,7 +2110,8 @@ class ShodanVulnChecker:
     INTERNETDB_URL = "https://internetdb.shodan.io/{ip}"
     SHODAN_HOST_URL = "https://api.shodan.io/shodan/host/{ip}"
     NVD_URL        = "https://services.nvd.nist.gov/rest/json/cves/2.0"
-    KEV_URL        = "https://www.cisa.gov/sites/default/files/feeds/known-exploited-vulnerabilities.json"
+    KEV_URL        = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+    KEV_URL_MIRROR = "https://raw.githubusercontent.com/cisagov/kev-data/main/known_exploited_vulnerabilities.json"
     EPSS_URL       = "https://api.first.org/data/v1/epss"
 
     MSF_MODULES_URL = "https://raw.githubusercontent.com/rapid7/metasploit-framework/master/db/modules_metadata_base.json"
@@ -2219,21 +2220,23 @@ class ShodanVulnChecker:
         return self._enrich_cves(raw_cves, result)
 
     def _load_kev(self) -> set:
-        """Load CISA KEV catalog, cached for 24 hours."""
+        """Load CISA KEV catalog, cached for 24 hours. Tries CISA direct then GitHub mirror."""
         now = time.time()
         if ShodanVulnChecker._kev_cache is not None and (now - ShodanVulnChecker._kev_cache_time) < 86400:
             return ShodanVulnChecker._kev_cache
-        try:
-            r = requests.get(self.KEV_URL, timeout=15,
-                             headers={"User-Agent": USER_AGENT})
-            if r.status_code == 200:
-                data = r.json()
-                kev_set = {v["cveID"] for v in data.get("vulnerabilities", [])}
-                ShodanVulnChecker._kev_cache = kev_set
-                ShodanVulnChecker._kev_cache_time = now
-                return kev_set
-        except Exception:
-            pass
+        for url in (self.KEV_URL, self.KEV_URL_MIRROR):
+            try:
+                r = requests.get(url, timeout=15,
+                                 headers={"User-Agent": USER_AGENT})
+                if r.status_code == 200:
+                    data = r.json()
+                    kev_set = {v["cveID"] for v in data.get("vulnerabilities", [])}
+                    if kev_set:
+                        ShodanVulnChecker._kev_cache = kev_set
+                        ShodanVulnChecker._kev_cache_time = now
+                        return kev_set
+            except Exception:
+                continue
         return set()
 
     def _load_msf_modules(self) -> set:
