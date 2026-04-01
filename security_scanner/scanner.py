@@ -5066,6 +5066,27 @@ class SecurityScanner:
             pass
         self._notify(on_progress, "osv_enrichment", "done")
 
+        # --- Phase 4d: Enrich per-port entries with banner + OSV data ---
+        dns_cat = cat_results.get("dns_infrastructure", {})
+        osv_vulns_all = results.get("categories", {}).get("osv_vulns", {}).get("vulns", [])
+        if dns_cat.get("open_ports") and osv_vulns_all:
+            for port_entry in dns_cat["open_ports"]:
+                ver = port_entry.get("detected_version", "")
+                if not ver:
+                    continue
+                # Match OSV vulns to this port's detected version by package name
+                ver_lower = ver.lower()
+                matched = []
+                for v in osv_vulns_all:
+                    pkg = (v.get("package", "") or "").lower()
+                    if pkg and pkg in ver_lower:
+                        matched.append(v)
+                    elif ver_lower and any(kw in ver_lower for kw in
+                        [v.get("ecosystem", "").lower()] if v.get("ecosystem")):
+                        matched.append(v)
+                if matched:
+                    port_entry["osv_vulns"] = matched[:15]
+
         # --- Phase 5: Score ---
         scorer = RiskScorer()
         risk_score, risk_level, recommendations = scorer.calculate(cat_results)

@@ -842,6 +842,7 @@
               <span class="port-chip port-{{ p.risk }}" style="margin-right:6px;">{{ p.port }}/{{ p.service }}</span>
               <span style="color:{% if p.risk == 'high' %}#e74c3c{% else %}#e67e22{% endif %};">{{ p.risk | upper }} RISK</span>
             </div>
+            {% if p.detected_version is defined and p.detected_version %}<div style="margin-bottom:3px;"><span style="color:#94a3b8;">Detected version:</span> <span style="color:#22d3ee;font-weight:600;font-family:monospace;font-size:0.82rem;">{{ p.detected_version }}</span></div>{% endif %}
             {% if p.typical_exploits is defined %}<div style="margin-bottom:3px;"><span style="color:#94a3b8;">Typical exploits:</span> <span style="color:#cbd5e1;">{{ p.typical_exploits }}</span></div>{% endif %}
             {% if p.vuln_metrics is defined %}
             <div style="margin-bottom:3px;"><span style="color:#94a3b8;">Vuln metrics:</span> <span style="font-weight:600;color:{% if 'CISA KEV' in p.vuln_metrics %}#e74c3c{% elif 'CVSS 9' in p.vuln_metrics %}#e74c3c{% elif 'CVSS 8' in p.vuln_metrics or 'CVSS 7' in p.vuln_metrics %}#e67e22{% else %}#f39c12{% endif %};">{{ p.vuln_metrics }}</span>
@@ -850,6 +851,27 @@
             {% if p.notable_cves is defined and p.notable_cves %}<div style="margin-bottom:3px;"><span style="color:#94a3b8;">Notable CVEs:</span> <span style="font-family:monospace;font-size:0.78rem;color:#94a3b8;">{{ p.notable_cves | join(', ') }}</span></div>{% endif %}
             {% if p.insurance_risk is defined %}<div style="margin-bottom:3px;"><span style="color:#94a3b8;">Insurance risk:</span> <span style="color:#fbbf24;">{{ p.insurance_risk }}</span></div>{% endif %}
             {% if p.underwriting_impact is defined %}<div><span style="color:#94a3b8;">Underwriting impact:</span> <span style="color:#fb923c;">{{ p.underwriting_impact }}</span></div>{% endif %}
+            {% if p.banner is defined and p.banner %}
+            <details style="margin-top:6px;">
+              <summary style="cursor:pointer;color:#60a5fa;font-size:0.78rem;user-select:none;">Show raw banner &amp; version detail</summary>
+              <div style="margin-top:4px;padding:6px 10px;background:rgba(0,0,0,0.2);border-radius:6px;font-family:monospace;font-size:0.75rem;color:#94a3b8;white-space:pre-wrap;word-break:break-all;">{{ p.banner }}</div>
+              {% if p.osv_vulns is defined and p.osv_vulns %}
+              <div style="margin-top:6px;">
+                <span style="color:#94a3b8;font-size:0.78rem;font-weight:600;">Version-specific CVEs (OSV.dev):</span>
+                <div style="margin-top:4px;">
+                  {% for v in p.osv_vulns[:10] %}
+                  <div style="display:flex;gap:8px;align-items:center;padding:3px 0;font-size:0.76rem;">
+                    <span style="font-family:monospace;color:#60a5fa;">{{ v.id }}</span>
+                    <span class="badge badge-{% if v.severity == 'critical' %}red{% elif v.severity == 'high' %}red{% elif v.severity == 'medium' %}amber{% else %}grey{% endif %}" style="font-size:0.6rem;">{{ v.severity | upper }}</span>
+                    {% if v.summary %}<span style="color:#94a3b8;">{{ v.summary[:80] }}</span>{% endif %}
+                  </div>
+                  {% endfor %}
+                  {% if p.osv_vulns | length > 10 %}<div style="color:#64748b;font-size:0.72rem;margin-top:2px;">...and {{ p.osv_vulns | length - 10 }} more</div>{% endif %}
+                </div>
+              </div>
+              {% endif %}
+            </details>
+            {% endif %}
           </div>
           {% endfor %}
         </div>

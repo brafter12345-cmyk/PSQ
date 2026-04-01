@@ -473,6 +473,8 @@ def cat_dns(d, S):
         risk = p.get("risk", "medium")
         risk_label = p.get("risk_level", risk.upper() + " RISK")
         rows.append((f"\u25b6{risk}:{p['port']}/{p['service']}", risk_label))
+        if p.get("detected_version"):
+            rows.append(("  Detected version", p["detected_version"]))
         if p.get("typical_exploits"):
             rows.append(("  Exploits", p["typical_exploits"]))
         if p.get("vuln_metrics"):
@@ -481,6 +483,11 @@ def cat_dns(d, S):
             rows.append(("  CVEs", ", ".join(p["notable_cves"])))
         if p.get("insurance_risk"):
             rows.append(("  Insurance risk", p["insurance_risk"]))
+        if p.get("osv_vulns"):
+            osv_ids = [v.get("id", "") for v in p["osv_vulns"][:5]]
+            rows.append(("  OSV.dev CVEs", ", ".join(osv_ids)))
+            if len(p["osv_vulns"]) > 5:
+                rows.append(("", f"...and {len(p['osv_vulns']) - 5} more"))
     return build_cat_card("DNS & Open Ports", col, f"{len(ports)} open port(s)", rows, dns.get("issues", []), S)
 
 
