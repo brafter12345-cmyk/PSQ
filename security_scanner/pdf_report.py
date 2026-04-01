@@ -848,10 +848,29 @@ def cat_hudson_rock(d, S):
         rows.append(("", ""))
         rows.append(("INTERPRETATION", "Third-party supply chain exposure detected. A vendor or partner connected to this domain "
                       "has compromised credentials. Review shared access and enforce MFA on all integrations."))
-    elif total == 0:
+    elif total == 0 and third == 0:
         rows.append(("", ""))
         rows.append(("INTERPRETATION", "No active infostealer infections detected on employee or user devices. "
                       "This indicates healthy endpoint security posture."))
+
+    rows.append(("", ""))
+    rows.append(("WHAT THIS MEANS", ""))
+    if employees > 0:
+        rows.append(("", "Infostealer malware (such as RedLine, Raccoon, or Vidar) has been detected on devices "
+                      "belonging to employees of this organisation. This type of malware silently runs in the background "
+                      "and captures everything — saved passwords from web browsers, banking credentials, email logins, "
+                      "VPN access details, and even session cookies that allow attackers to bypass MFA. "
+                      "The stolen data is automatically uploaded to criminal servers and sold within hours. "
+                      "This is not a historical breach — it indicates CURRENT, ACTIVE compromise."))
+    elif third > 0:
+        rows.append(("", "A third-party vendor or partner connected to this organisation has been found in infostealer databases. "
+                      "This means a supplier, contractor, or service provider who interacts with your systems has had their "
+                      "credentials stolen. Attackers frequently use compromised vendor access as a backdoor into larger "
+                      "organisations (supply chain attacks). Review all shared access and API integrations with external partners."))
+    else:
+        rows.append(("", "No infostealer infections were detected. This check scans a database of over 34 million compromised "
+                      "devices worldwide. A clean result means no employee or user devices associated with this domain "
+                      "appear in known infostealer databases. This is a positive security indicator."))
     return build_cat_card("Infostealer Detection (Hudson Rock)", col, summary, rows, hr.get("issues", []), S)
 
 
@@ -878,15 +897,37 @@ def cat_intelx(d, S):
         rows.append(("RECENT FINDINGS", ""))
         for rec in recent[:8]:
             rows.append((f"  {rec.get('date', '')}", f"{rec.get('name', 'Unknown')} ({rec.get('media', '')})"))
-    # Interpretation
+    # Plain-English interpretation
+    rows.append(("", ""))
+    rows.append(("WHAT THIS MEANS", ""))
     if darkweb > 0:
+        rows.append(("", f"We found {darkweb} mention(s) of this domain on dark web criminal forums. "
+                      "This means stolen data (login credentials, personal information, or internal documents) "
+                      "associated with your organisation is actively being bought and sold by cybercriminals. "
+                      "This is a strong indicator of elevated cyber risk and potential for targeted attacks."))
         rows.append(("", ""))
-        rows.append(("INTERPRETATION", f"{darkweb} dark web mention(s) found. Credentials or data associated with this domain "
-                      "are actively being traded on criminal forums. Force password resets and enable MFA immediately."))
+        rows.append(("RECOMMENDED ACTION", "1. Immediately force password resets for all staff accounts. "
+                      "2. Enable multi-factor authentication (MFA) on all systems. "
+                      "3. Engage a forensic investigator to determine the source of the leak. "
+                      "4. Notify affected individuals as required under POPIA Section 22."))
     elif total > 0:
+        rows.append(("", f"We found {total} reference(s) to this domain in dark web leak databases. "
+                      "These entries are typically 'infostealer logs' — records created when malware on someone's "
+                      "computer silently captures everything they type, including passwords and banking details. "
+                      "The stolen data is then packaged and uploaded to criminal databases where it can be "
+                      "purchased by other attackers."))
         rows.append(("", ""))
-        rows.append(("INTERPRETATION", f"{total} reference(s) found in leak databases. These are primarily infostealer logs "
-                      "containing stolen browser data from infected endpoints. Review affected accounts and enforce credential rotation."))
+        rows.append(("", "In simple terms: someone who has (or had) login access to your systems had their "
+                      "personal device infected with spyware. The passwords they used for your systems may now "
+                      "be in criminal hands."))
+        rows.append(("", ""))
+        rows.append(("RECOMMENDED ACTION", "1. Force password resets for all staff, especially those using personal devices. "
+                      "2. Enable MFA — even if passwords are stolen, MFA prevents unauthorised access. "
+                      "3. Consider endpoint security solutions (antivirus, EDR) for all devices accessing company systems. "
+                      "4. Educate staff about the risks of downloading unverified software."))
+    else:
+        rows.append(("", "No references to this domain were found on dark web forums, paste sites, or leak databases. "
+                      "This is a positive indicator — there is no evidence of stolen credentials being traded online."))
     return build_cat_card("Dark Web Monitoring (IntelX)", col, summary, rows, ix.get("issues", []), S)
 
 
@@ -908,11 +949,29 @@ def cat_credential_risk(d, S):
         rows.append(("RISK FACTORS", ""))
         for f in factors:
             rows.append(("", f))
-    # Summary
+    # Summary + plain English
     summary_text = cr.get("summary", "")
     if summary_text:
         rows.append(("", ""))
         rows.append(("ASSESSMENT", summary_text))
+    rows.append(("", ""))
+    rows.append(("WHAT THIS MEANS", ""))
+    if level == "CRITICAL":
+        rows.append(("", "One or more employee devices are actively infected with credential-stealing malware. "
+                      "This is the highest severity finding — attackers have real-time access to stolen passwords "
+                      "and can log into your systems at any time. Treat this as an active security incident."))
+    elif level == "HIGH":
+        rows.append(("", "Staff credentials (usernames and passwords) have been found in recent data breaches. "
+                      "While these may have been changed since the breach, attackers routinely use stolen passwords "
+                      "to attempt access to other systems (credential stuffing). The risk of unauthorised access "
+                      "is significantly elevated."))
+    elif level == "MEDIUM":
+        rows.append(("", "Historical credential exposure has been detected in older data breaches. "
+                      "The risk is moderate — passwords may have been changed since the breach, but "
+                      "organisations with poor password hygiene or no MFA remain vulnerable."))
+    else:
+        rows.append(("", "No significant credential exposure detected. This is a positive indicator of "
+                      "good security practices. Continue monitoring and maintain MFA enforcement."))
     # Enriched breach timeline
     enriched = d.get("dehashed", {}).get("enriched_sources", [])
     if enriched:
