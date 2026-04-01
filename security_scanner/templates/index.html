@@ -141,6 +141,19 @@
         </div>
 
         <div class="field">
+          <div class="toggle-row">
+            <label class="toggle">
+              <input type="checkbox" id="dehashed-check" name="include_dehashed" checked />
+              <span class="toggle-slider"></span>
+            </label>
+            <div>
+              <div class="toggle-label">Include Dehashed Credential Leak Check</div>
+              <div class="toggle-note">Searches breach databases for leaked credentials. Uses 1 API credit per scan. <span id="dehashed-balance" style="color:#60a5fa;font-weight:600;"></span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
           <label class="field-label" for="client-ips">Additional External IPs (optional)</label>
           <div style="display:flex;gap:10px;align-items:flex-start;">
             <textarea id="client-ips" name="client_ips" rows="2" placeholder="e.g. 41.76.108.10, 196.15.23.55" style="flex:1;background:var(--card-bg,#1a2332);color:#e2e8f0;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px 12px;font-size:.9rem;resize:vertical;font-family:monospace;"></textarea>
@@ -174,6 +187,28 @@ const progress = document.getElementById('scan-progress');
 const errorEl = document.getElementById('error');
 const submitBtn = document.getElementById('submit-btn');
 
+// Fetch Dehashed credit balance on page load
+(async () => {
+  try {
+    const r = await fetch('/api/dehashed/balance');
+    const d = await r.json();
+    const el = document.getElementById('dehashed-balance');
+    if (d.status === 'active' && d.balance !== null) {
+      el.textContent = `(${d.balance} credits remaining)`;
+      el.style.color = d.balance < 50 ? '#f59e0b' : '#60a5fa';
+    } else if (d.status === 'inactive') {
+      el.textContent = '(subscription inactive)';
+      el.style.color = '#ef4444';
+      document.getElementById('dehashed-check').checked = false;
+    } else if (d.status === 'no_api_key') {
+      el.textContent = '(no API key configured)';
+      el.style.color = '#94a3b8';
+      document.getElementById('dehashed-check').checked = false;
+      document.getElementById('dehashed-check').disabled = true;
+    }
+  } catch (e) {}
+})();
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   errorEl.style.display = 'none';
@@ -190,6 +225,7 @@ form.addEventListener('submit', async (e) => {
   if (revenue > 0) body.annual_revenue_zar = revenue;
 
   if (document.getElementById('fraud-check').checked) body.include_fraudulent_domains = true;
+  if (!document.getElementById('dehashed-check').checked) body.skip_dehashed = true;
 
   // Parse client-supplied IPs
   const ipText = document.getElementById('client-ips').value.trim();

@@ -498,7 +498,8 @@ def auto_update_invoice_statuses():
 
 def run_scan(scan_id: str, domain: str, industry: str = "other",
              annual_revenue: float = 0, annual_revenue_zar: int = 0, country: str = "",
-             include_fraudulent_domains: bool = False, client_ips: list = None):
+             include_fraudulent_domains: bool = False, client_ips: list = None,
+             skip_dehashed: bool = False):
     progress_q = queue.Queue()
     _scan_progress[scan_id] = progress_q
 
@@ -509,8 +510,8 @@ def run_scan(scan_id: str, domain: str, industry: str = "other",
         try:
             scanner = SecurityScanner(
                 hibp_api_key=HIBP_API_KEY,
-                dehashed_email=DEHASHED_EMAIL,
-                dehashed_api_key=DEHASHED_API_KEY,
+                dehashed_email=None if skip_dehashed else DEHASHED_EMAIL,
+                dehashed_api_key=None if skip_dehashed else DEHASHED_API_KEY,
                 virustotal_api_key=VIRUSTOTAL_API_KEY,
                 securitytrails_api_key=SECURITYTRAILS_API_KEY,
                 shodan_api_key=SHODAN_API_KEY,
@@ -585,6 +586,29 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/api/dehashed/balance", methods=["GET"])
+def dehashed_balance():
+    """Check Dehashed API credit balance without using a credit."""
+    if not DEHASHED_API_KEY:
+        return jsonify({"status": "no_api_key", "balance": None})
+    try:
+        import requests as req
+        r = req.post("https://api.dehashed.com/v2/search",
+                     json={"query": "domain:example.com", "page": 1, "size": 1},
+                     headers={"Content-Type": "application/json",
+                              "Dehashed-Api-Key": DEHASHED_API_KEY},
+                     timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            return jsonify({"status": "active", "balance": data.get("balance")})
+        elif r.status_code == 401:
+            return jsonify({"status": "inactive", "balance": None,
+                            "error": r.json().get("error", "Auth failed")})
+        return jsonify({"status": "error", "balance": None})
+    except Exception as e:
+        return jsonify({"status": "error", "balance": None, "error": str(e)})
+
+
 @app.route("/api/scan", methods=["POST"])
 def start_scan():
     data = request.get_json(silent=True) or {}
@@ -608,6 +632,7 @@ def start_scan():
         annual_revenue_zar = 0
     country = str(data.get("country", "")).strip()
     include_fraudulent_domains = bool(data.get("include_fraudulent_domains", False))
+    skip_dehashed = bool(data.get("skip_dehashed", False))
 
     # Parse client-supplied IPs (optional)
     import ipaddress as _ipaddress
@@ -652,7 +677,7 @@ def start_scan():
     t = threading.Thread(
         target=run_scan,
         args=(scan_id, domain, industry, annual_revenue, annual_revenue_zar, country,
-              include_fraudulent_domains, client_ips),
+              include_fraudulent_domains, client_ips, skip_dehashed),
         daemon=True,
     )
     t.start()
