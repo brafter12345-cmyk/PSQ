@@ -2534,9 +2534,19 @@ class OSVChecker:
         for ecosystem, pkg_name in mappings:
             results = self.query_version(pkg_name, version, ecosystem)
             if results:
+                # Tag each result with the source package for per-IP matching
+                for r in results:
+                    r["package"] = product
+                    r["vendor"] = vendor
+                    r["detected_version"] = version
                 return results
         # Fallback: try querying by product name with no ecosystem
-        return self.query_version(product, version)
+        results = self.query_version(product, version)
+        for r in results:
+            r["package"] = product
+            r["vendor"] = vendor
+            r["detected_version"] = version
+        return results
 
     def _query_by_cpe_string(self, cpe: str, version: str) -> list:
         """Query OSV.dev using raw CPE approach — search by package name."""
@@ -2569,12 +2579,29 @@ class OSVChecker:
             for sev in v.get("severity", []):
                 if sev.get("type") == "CVSS_V3":
                     score_str = sev.get("score", "")
-                    # Try to extract base score from CVSS vector
                     try:
-                        # Some entries have numeric score, others have vector string
+                        # Numeric score directly
                         cvss_score = float(score_str) if score_str.replace(".", "").isdigit() else None
                     except (ValueError, TypeError):
                         pass
+                    # Parse CVSS vector string (e.g., "CVSS:3.1/AV:N/AC:L/...")
+                    if cvss_score is None and score_str.startswith("CVSS:"):
+                        # Use a simple heuristic based on vector components
+                        # AV:N = network, AC:L = low complexity, etc.
+                        av = "N" if "AV:N" in score_str else ("A" if "AV:A" in score_str else "L")
+                        ac = "L" if "AC:L" in score_str else "H"
+                        pr = "N" if "PR:N" in score_str else ("L" if "PR:L" in score_str else "H")
+                        ui = "N" if "UI:N" in score_str else "R"
+                        ci = score_str.count(":H")  # Count High impacts
+                        # Approximate score based on attack surface
+                        base = 5.0
+                        if av == "N": base += 1.5
+                        if ac == "L": base += 1.0
+                        if pr == "N": base += 1.0
+                        elif pr == "L": base += 0.5
+                        if ui == "N": base += 0.5
+                        base += ci * 0.5
+                        cvss_score = min(10.0, round(base, 1))
             # Determine severity from CVSS or database_specific
             db_sev = v.get("database_specific", {}).get("severity")
             if cvss_score:
@@ -2583,13 +2610,19 @@ class OSVChecker:
             elif db_sev:
                 severity = db_sev.lower()
 
+            # Filter out very old advisories (pre-2015) — likely false positives
+            published = v.get("published", "")
+            if published and published[:4].isdigit() and int(published[:4]) < 2015:
+                continue
+
             results.append({
                 "id": v.get("id", ""),
                 "cve": cve_id,
                 "summary": (v.get("summary") or v.get("details", ""))[:200],
                 "severity": severity,
                 "cvss_score": cvss_score,
-                "published": v.get("published", ""),
+                "epss": None,  # populated during merge if available
+                "published": published,
                 "source": "osv.dev",
             })
         return results
@@ -5375,10 +5408,20 @@ class SecurityScanner:
         self._notify(on_progress, "osv_enrichment", "running")
         try:
             osv = OSVChecker()
-            # Get CPE list from Shodan results
-            shodan_data = cat_results.get("shodan_vulns", {})
-            cpe_list = shodan_data.get("cpe_list", [])
-            osv_vulns = osv.query_cpe_list(cpe_list)
+            # Collect CPEs from ALL per-IP Shodan results (not just aggregated)
+            all_cpes = set()
+            ip_cpe_map = {}  # {ip: [cpe_list]} for per-IP merging
+            for ip, checkers in per_ip_results.items():
+                shodan_r = checkers.get("shodan_vulns", {})
+                ip_cpes = shodan_r.get("cpe_list", [])
+                if ip_cpes:
+                    all_cpes.update(ip_cpes)
+                    ip_cpe_map[ip] = ip_cpes
+            # Also check aggregated result as fallback
+            agg_shodan = cat_results.get("shodan_vulns", {})
+            all_cpes.update(agg_shodan.get("cpe_list", []))
+
+            osv_vulns = osv.query_cpe_list(list(all_cpes)) if all_cpes else []
             if osv_vulns:
                 results["categories"]["osv_vulns"] = {
                     "status": "completed",
@@ -5397,6 +5440,60 @@ class SecurityScanner:
                 if high > 0:
                     results["categories"]["osv_vulns"]["issues"].append(
                         f"{high} high-severity vulnerability(ies) found via version analysis (OSV.dev)")
+
+                # --- Merge OSV CVEs back into per-IP cards ---
+                for ip, cpes in ip_cpe_map.items():
+                    # Find OSV vulns that match this IP's CPEs
+                    ip_osv_cves = []
+                    for vuln in osv_vulns:
+                        pkg = (vuln.get("package", "") or "").lower()
+                        for cpe in cpes:
+                            cpe_lower = cpe.lower()
+                            # Match by package name in CPE string
+                            if pkg and pkg in cpe_lower:
+                                ip_osv_cves.append(vuln)
+                                break
+                    if ip_osv_cves:
+                        # Merge into per-IP Shodan result
+                        shodan_r = per_ip_results[ip].get("shodan_vulns", {})
+                        existing_cve_ids = {c.get("cve_id") for c in shodan_r.get("cves", [])}
+                        for ov in ip_osv_cves:
+                            # Prefer CVE alias over Debian ID for display
+                            cve_id = ov.get("cve") or ov.get("id", "")
+                            if cve_id and cve_id not in existing_cve_ids:
+                                cvss = ov.get("cvss_score") or 0
+                                sev = ov.get("severity", "unknown")
+                                # If no CVSS, estimate from severity
+                                if not cvss and sev != "unknown":
+                                    cvss = {"critical": 9.5, "high": 7.5, "medium": 5.0, "low": 2.5}.get(sev, 0)
+                                shodan_r.setdefault("cves", []).append({
+                                    "cve_id": cve_id,
+                                    "cvss_score": cvss,
+                                    "severity": sev,
+                                    "epss_score": ov.get("epss") or 0,
+                                    "description": ov.get("summary", "")[:200],
+                                    "source": "osv.dev",
+                                    "package": ov.get("package", ""),
+                                    "detected_version": ov.get("detected_version", ""),
+                                    "in_kev": False,
+                                })
+                                existing_cve_ids.add(cve_id)
+                        # Update counts
+                        all_cves = shodan_r.get("cves", [])
+                        shodan_r["total_cves"] = len(all_cves)
+                        shodan_r["critical_count"] = sum(1 for c in all_cves if c.get("severity") == "critical")
+                        shodan_r["high_count"] = sum(1 for c in all_cves if c.get("severity") == "high")
+                        shodan_r["medium_count"] = sum(1 for c in all_cves if c.get("severity") == "medium")
+                        shodan_r["low_count"] = sum(1 for c in all_cves if c.get("severity") == "low")
+                        max_cvss = max((c.get("cvss_score", 0) for c in all_cves), default=0)
+                        max_epss = max((c.get("epss_score", 0) for c in all_cves if c.get("epss_score")), default=0)
+                        shodan_r["max_cvss"] = max_cvss
+                        shodan_r["max_epss"] = max_epss
+
+                # --- Re-aggregate External IPs with enriched data ---
+                results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
+                    all_ips, per_ip_results, ip_sources=ip_sources
+                )
         except Exception:
             pass
         self._notify(on_progress, "osv_enrichment", "done")
