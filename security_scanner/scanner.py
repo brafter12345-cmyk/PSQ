@@ -4987,6 +4987,8 @@ class SecurityScanner:
                     event["score"] = result.get("score") or result.get("grade") or result.get("compliance_pct")
                     if "ips" in result:
                         event["ips"] = result["ips"]
+                    if "ip_sources" in result:
+                        event["ip_sources"] = result["ip_sources"]
                 on_progress(event)
             except Exception:
                 pass
