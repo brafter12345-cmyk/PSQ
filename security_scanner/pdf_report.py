@@ -710,9 +710,17 @@ def cat_dehashed(d, S):
     total  = dh.get("total_entries", 0)
     col    = (C_CRITICAL if total > 50 else C_RED if total > 10 else
               C_AMBER if total > 0 else (C_BLUE if status == "no_api_key" else C_GREEN))
-    summary = "No API key" if status == "no_api_key" else (f"{total} records" if total > 0 else "Clean")
+    is_error = status == "error"
+    summary = ("No API key" if status == "no_api_key" else
+               "API unavailable" if is_error else
+               f"{total} records" if total > 0 else "Clean")
+    if is_error:
+        col = C_BLUE  # Info colour, not red
+    status_text = ("API key not configured" if status == "no_api_key" else
+                   "API endpoint unavailable — check subscription" if is_error else
+                   "Completed")
     rows = [
-        ("Status",        "API key not configured" if status == "no_api_key" else status),
+        ("Status",        status_text),
         ("Total records", total),
         ("Unique emails", dh.get("unique_emails", 0)),
         ("Passwords in leaks", "Yes — CRITICAL" if dh.get("has_passwords") else "No"),
@@ -732,13 +740,39 @@ def cat_virustotal(d, S):
     summary = ("No API key" if status == "no_api_key" else
                f"{mal} malicious" if mal > 0 else
                f"{sus} suspicious" if sus > 0 else "Clean")
+    harmless = vt.get("harmless_count", 0)
+    undetected = vt.get("undetected_count", 0)
+    total_engines = mal + sus + harmless + undetected
+    rep = vt.get("reputation", 0)
+
+    # Build interpretation text
+    if status == "no_api_key":
+        interp = "VirusTotal API key not configured — unable to check domain reputation."
+    elif mal > 3:
+        interp = f"CRITICAL: {mal} of {total_engines} security engines flagged this domain as malicious. Indicates active malware hosting, phishing, or compromise. Immediate investigation required."
+    elif mal > 0:
+        interp = f"WARNING: {mal} engine(s) flagged this domain as malicious. May indicate historical compromise or false positive. Review flagging engines below for context."
+    elif sus > 0:
+        interp = f"CAUTION: {sus} engine(s) flagged this domain as suspicious. No confirmed malicious activity but warrants monitoring."
+    elif harmless > 50:
+        interp = f"CLEAN: {harmless} of {total_engines} engines confirmed harmless. Strong positive reputation with no malicious indicators detected."
+    else:
+        interp = f"No malicious or suspicious detections across {total_engines} security engines. Domain has a clean reputation."
+
+    # Add reputation context
+    if rep > 0:
+        interp += f" Community reputation score is positive ({rep})."
+    elif rep < 0:
+        interp += f" Community reputation score is negative ({rep}) — users have flagged concerns."
+
     rows = [
-        ("Status",              "API key not configured" if status == "no_api_key" else status),
-        ("Malicious detections", mal),
-        ("Suspicious detections", sus),
-        ("Harmless",             vt.get("harmless_count", 0)),
-        ("Undetected",           vt.get("undetected_count", 0)),
-        ("Community reputation", vt.get("reputation", 0)),
+        ("INTERPRETATION",       interp),
+        ("",                     ""),
+        ("Malicious detections", f"{mal} of {total_engines} engines"),
+        ("Suspicious detections", f"{sus} of {total_engines} engines"),
+        ("Harmless",             harmless),
+        ("Undetected",           undetected),
+        ("Community reputation", rep),
         ("Community votes",      f"Harmless: {vt.get('harmless_votes', 0)}  |  Malicious: {vt.get('malicious_votes', 0)}"),
     ]
     if vt.get("popularity_rank"):
