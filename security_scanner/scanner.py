@@ -3514,8 +3514,23 @@ class ExternalIPAggregator:
             max_cvss = max((c.get("cvss_score", 0) for c in cves), default=0)
             max_epss = max((c.get("epss_score", 0) for c in cves if c.get("epss_score")), default=0)
 
-            # Risk score per IP
+            # Risk score per IP — combine CVE score with port/protocol risk
             ip_score = shodan.get("score", 100)
+
+            # Penalise for high-risk open ports (even without CVEs)
+            hrp = ip_data.get("high_risk_protocols", {})
+            open_ports = shodan.get("open_ports", [])
+            high_risk_ports = {21, 23, 25, 110, 143, 445, 1433, 3306, 3389, 5432, 5900, 6379, 9200, 11211, 27017}
+            exposed_high = [p for p in open_ports if p in high_risk_ports]
+            exposed_services = hrp.get("exposed_services", [])
+
+            port_penalty = len(exposed_high) * 10  # 10 pts per high-risk port
+            svc_penalty = sum(15 if s.get("risk") == "critical" else 8
+                              for s in exposed_services)  # extra for critical services
+            total_port_penalty = min(60, port_penalty + svc_penalty)
+
+            ip_score = max(0, ip_score - total_port_penalty)
+
             if ip_score < 20:
                 risk_label = "Critical"
             elif ip_score < 50:
