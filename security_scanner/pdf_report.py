@@ -125,7 +125,7 @@ def build_styles():
     S["rec_num"]     = ParagraphStyle("rec_num",      fontSize=8,  fontName="Helvetica-Bold",
                                        textColor=C_BLUE, leading=11)
     S["rec_body"]    = ParagraphStyle("rec_body",     fontSize=8,  leading=11, textColor=C_BLACK,
-                                       leftIndent=12)
+                                       leftIndent=18, firstLineIndent=-18)
     S["footer"]      = ParagraphStyle("footer",       fontSize=6.5, textColor=C_GREY_3,
                                        alignment=TA_CENTER)
     S["disclaimer"]  = ParagraphStyle("disclaimer",   fontSize=7,  leading=10, textColor=C_GREY_4)
@@ -1428,8 +1428,10 @@ def generate_pdf(results: dict) -> bytes:
     if recs:
         story += section_header("REMEDIATION RECOMMENDATIONS", S)
         for i, rec in enumerate(recs, 1):
-            story.append(Paragraph(f"{i}.", S["rec_num"]))
-            story.append(Paragraph(rec, S["rec_body"]))
+            story.append(Paragraph(
+                f'<font name="Helvetica-Bold" color="{C_BLUE}">{i}.</font>&nbsp;&nbsp;{rec}',
+                S["rec_body"]
+            ))
             story.append(Spacer(1, 2 * mm))
 
     # ── Disclaimer ───────────────────────────────────────────────────────────
