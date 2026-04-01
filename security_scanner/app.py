@@ -498,7 +498,7 @@ def auto_update_invoice_statuses():
 
 def run_scan(scan_id: str, domain: str, industry: str = "other",
              annual_revenue: float = 0, annual_revenue_zar: int = 0, country: str = "",
-             include_fraudulent_domains: bool = False):
+             include_fraudulent_domains: bool = False, client_ips: list = None):
     progress_q = queue.Queue()
     _scan_progress[scan_id] = progress_q
 
@@ -521,6 +521,7 @@ def run_scan(scan_id: str, domain: str, industry: str = "other",
                 annual_revenue_zar=annual_revenue_zar,
                 country=country,
                 include_fraudulent_domains=include_fraudulent_domains,
+                client_ips=client_ips,
             )
             update_scan(scan_id, results)
             # Auto-link to client by domain
@@ -594,6 +595,18 @@ def start_scan():
     country = str(data.get("country", "")).strip()
     include_fraudulent_domains = bool(data.get("include_fraudulent_domains", False))
 
+    # Parse client-supplied IPs (optional)
+    import ipaddress as _ipaddress
+    raw_client_ips = data.get("client_ips", [])
+    client_ips = []
+    if isinstance(raw_client_ips, list):
+        for ip_str in raw_client_ips:
+            try:
+                _ipaddress.ip_address(str(ip_str).strip())
+                client_ips.append(str(ip_str).strip())
+            except ValueError:
+                continue
+
     scan_id = str(uuid.uuid4())
     effective_revenue = annual_revenue_zar if annual_revenue_zar > 0 else annual_revenue
     save_scan(scan_id, domain, industry, effective_revenue, country)
@@ -625,7 +638,7 @@ def start_scan():
     t = threading.Thread(
         target=run_scan,
         args=(scan_id, domain, industry, annual_revenue, annual_revenue_zar, country,
-              include_fraudulent_domains),
+              include_fraudulent_domains, client_ips),
         daemon=True,
     )
     t.start()

@@ -3145,33 +3145,24 @@ class PrivacyComplianceChecker:
     }
 
     def _find_policy_url(self, domain: str) -> tuple:
-        """Try common paths to find the privacy policy page."""
-        for path in self.POLICY_PATHS:
-            for scheme in ("https", "http"):
-                url = f"{scheme}://{domain}{path}"
-                try:
-                    r = requests.get(url, headers={"User-Agent": USER_AGENT},
-                                     timeout=8, allow_redirects=True)
-                    if r.status_code == 200 and len(r.text) > 500:
-                        return url, r.text.lower()
-                except Exception:
-                    continue
+        """Find privacy policy page. Crawls homepage first (1 request),
+        then falls back to common paths if no link found."""
+        import re as _re
 
-        # Fallback: check homepage for privacy policy link
+        # --- Strategy 1: Crawl homepage for privacy links (fastest) ---
         try:
             r = requests.get(f"https://{domain}", headers={"User-Agent": USER_AGENT},
-                             timeout=8, allow_redirects=True)
+                             timeout=10, allow_redirects=True)
             if r.status_code == 200:
                 text = r.text.lower()
-                # Look for privacy policy link in HTML
-                import re as _re
-                # Match links by URL path containing privacy keywords
-                matches = _re.findall(r'href=["\']([^"\']*(?:privac|popia|data.protect|gdpr)[^"\']*)["\']', text)
+                # Match links by URL containing privacy keywords
+                matches = _re.findall(
+                    r'href=["\']([^"\']*(?:privac|popia|data.protect|gdpr)[^"\']*)["\']', text)
                 # Also match links where anchor text mentions privacy
                 anchor_matches = _re.findall(
                     r'href=["\']([^"\']+)["\'][^>]*>(?:[^<]*(?:privac|popia|data.protect)[^<]*)</a>',
                     text)
-                all_matches = list(dict.fromkeys(matches + anchor_matches))  # dedupe, preserve order
+                all_matches = list(dict.fromkeys(matches + anchor_matches))
                 for href in all_matches[:5]:
                     if href.startswith("/"):
                         href = f"https://{domain}{href}"
@@ -3179,13 +3170,24 @@ class PrivacyComplianceChecker:
                         href = f"https://{domain}/{href}"
                     try:
                         r2 = requests.get(href, headers={"User-Agent": USER_AGENT},
-                                          timeout=8, allow_redirects=True)
+                                          timeout=10, allow_redirects=True)
                         if r2.status_code == 200 and len(r2.text) > 500:
                             return href, r2.text.lower()
                     except Exception:
                         continue
         except Exception:
             pass
+
+        # --- Strategy 2: Try common paths (fallback) ---
+        for path in self.POLICY_PATHS:
+            url = f"https://{domain}{path}"
+            try:
+                r = requests.get(url, headers={"User-Agent": USER_AGENT},
+                                 timeout=8, allow_redirects=True)
+                if r.status_code == 200 and len(r.text) > 500:
+                    return url, r.text.lower()
+            except Exception:
+                continue
 
         return None, None
 
@@ -3439,7 +3441,7 @@ class ExternalIPAggregator:
     """
 
     @staticmethod
-    def aggregate(discovered_ips: list, per_ip_results: dict) -> dict:
+    def aggregate(discovered_ips: list, per_ip_results: dict, ip_sources: dict = None) -> dict:
         """
         Args:
             discovered_ips: List of IP strings from Phase 1 discovery.
@@ -3557,12 +3559,11 @@ class ExternalIPAggregator:
             elif cve_count > 0:
                 remediation = f"Review and patch {cve_count} known vulnerability(ies)"
 
-            # Determine sources
-            sources = ["A record"]
-            if i == 0:
-                sources.append("primary")
-            if hostnames:
-                sources.append("reverse DNS")
+            # Determine sources from ip_sources tracking
+            ip_src = (ip_sources or {}).get(ip, [])
+            sources = ip_src if ip_src else ["A record"]
+            if i == 0 and "primary" not in sources:
+                sources = sources + ["primary"]
 
             ip_entry = {
                 "ip": ip,
@@ -5035,7 +5036,8 @@ class SecurityScanner:
              industry: str = "other", annual_revenue: float = 0,
              annual_revenue_zar: int = 0,
              country: str = "",
-             include_fraudulent_domains: bool = False) -> dict:
+             include_fraudulent_domains: bool = False,
+             client_ips: list = None) -> dict:
         domain = domain.lower().strip().removeprefix("https://").removeprefix("http://").split("/")[0]
         results = {
             "domain_scanned": domain,
@@ -5053,10 +5055,23 @@ class SecurityScanner:
             "insurance": {},
         }
 
-        # --- Phase 1: IP Discovery ---
+        # --- Phase 1: IP Discovery + Client IP Merge ---
         self._notify(on_progress, "ip_discovery", "running")
         discovered_ips = self.discover_ips(domain)
+
+        # Source tracking: record where each IP was found
+        ip_sources = {ip: ["dns"] for ip in discovered_ips}
+
+        # Merge client-supplied IPs (dedup against discovered)
+        client_ips = client_ips or []
+        for ip in client_ips:
+            ip_sources.setdefault(ip, []).append("client-supplied")
+            if ip not in discovered_ips:
+                discovered_ips.append(ip)
+
         results["discovered_ips"] = discovered_ips
+        results["ip_sources"] = ip_sources
+        results["client_ips_added"] = len([ip for ip in client_ips if "dns" not in ip_sources.get(ip, [])])
         self._notify(on_progress, "ip_discovery", "done", {"ips": discovered_ips})
 
         # --- Phase 2: Domain-level checkers ---
@@ -5149,8 +5164,11 @@ class SecurityScanner:
                 subdomain_ips.add(ip_list)
         new_ips = [ip for ip in subdomain_ips if ip not in discovered_ips]
         all_ips = discovered_ips + new_ips
+        for ip in new_ips:
+            ip_sources.setdefault(ip, []).append("subdomain")
         if new_ips:
             results["discovered_ips"] = all_ips
+            results["ip_sources"] = ip_sources
             results["subdomain_ips_added"] = len(new_ips)
 
         # --- Run IP-level checkers on ALL discovered IPs ---
@@ -5196,7 +5214,7 @@ class SecurityScanner:
         # --- Phase 4b: External IP Aggregation (feeds CVE panel) ---
         self._notify(on_progress, "external_ips", "running")
         results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
-            all_ips, per_ip_results
+            all_ips, per_ip_results, ip_sources=ip_sources
         )
         self._notify(on_progress, "external_ips", "done",
                      results["categories"]["external_ips"])

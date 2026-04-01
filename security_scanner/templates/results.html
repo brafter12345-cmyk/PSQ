@@ -1012,7 +1012,7 @@
             </div>
             <!-- IP details grid -->
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;font-size:0.82rem;">
-              <div style="padding:6px 14px;border-bottom:1px solid rgba(30,58,138,0.06);"><span style="color:#94a3b8;">Source:</span> {{ ip_entry.sources | join(', ') | truncate(80) }}</div>
+              <div style="padding:6px 14px;border-bottom:1px solid rgba(30,58,138,0.06);"><span style="color:#94a3b8;">Source:</span> {% for src in ip_entry.sources %}<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.65rem;margin-right:3px;color:#fff;background:{% if src == 'dns' %}#3b82f6{% elif src == 'client-supplied' %}#8b5cf6{% elif src == 'subdomain' %}#14b8a6{% elif src == 'primary' %}#2563eb{% else %}#64748b{% endif %};">{{ src }}</span>{% endfor %}</div>
               <div style="padding:6px 14px;border-bottom:1px solid rgba(30,58,138,0.06);"><span style="color:#94a3b8;">Org:</span> {{ ip_entry.org | default('—') }}{% if ip_entry.asn %} <span style="color:#64748b;">({{ ip_entry.asn }})</span>{% endif %}</div>
               <div style="padding:6px 14px;border-bottom:1px solid rgba(30,58,138,0.06);"><span style="color:#94a3b8;">Country:</span> {{ ip_entry.country | default('—') }}{% if ip_entry.city %}, {{ ip_entry.city }}{% endif %}</div>
               <div style="padding:6px 14px;border-bottom:1px solid rgba(30,58,138,0.06);"><span style="color:#94a3b8;">Reverse DNS:</span> {{ ip_entry.reverse_dns | default('—') | truncate(40) }}</div>
