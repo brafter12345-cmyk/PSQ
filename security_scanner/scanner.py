@@ -4934,13 +4934,21 @@ class SecurityScanner:
                 self._notify(on_progress, name, "running")
                 futures[ex.submit(fn, *args)] = name
 
-            for future in as_completed(futures, timeout=180):
-                label = futures[future]
-                try:
-                    cat_results[label] = future.result(timeout=DEFAULT_TIMEOUT * 2)
-                except Exception as e:
-                    cat_results[label] = {"status": "error", "error": str(e), "issues": []}
-                self._notify(on_progress, label, "done", cat_results[label])
+            try:
+                for future in as_completed(futures, timeout=180):
+                    label = futures[future]
+                    try:
+                        cat_results[label] = future.result(timeout=DEFAULT_TIMEOUT * 2)
+                    except Exception as e:
+                        cat_results[label] = {"status": "error", "error": str(e), "issues": []}
+                    self._notify(on_progress, label, "done", cat_results[label])
+            except TimeoutError:
+                # Gracefully handle checkers that didn't finish in time
+                for fut, name in futures.items():
+                    if name not in cat_results:
+                        fut.cancel()
+                        cat_results[name] = {"status": "timeout", "error": "Checker timed out after 180s", "issues": []}
+                        self._notify(on_progress, name, "done", cat_results[name])
 
         # --- Run heavyweight checkers sequentially (memory-safe) ---
         for name, fn, args in heavy_checkers:
@@ -4978,15 +4986,24 @@ class SecurityScanner:
                     else:
                         futures[ex.submit(fn, domain, ip)] = label
 
-            for future in as_completed(futures, timeout=180):
-                label = futures[future]
-                try:
-                    result = future.result(timeout=DEFAULT_TIMEOUT * 2)
-                except Exception as e:
-                    result = {"status": "error", "error": str(e), "issues": []}
-                checker_name, ip = label.split(":", 1)
-                per_ip_results[ip][checker_name] = result
-                self._notify(on_progress, label, "done", result)
+            try:
+                for future in as_completed(futures, timeout=180):
+                    label = futures[future]
+                    try:
+                        result = future.result(timeout=DEFAULT_TIMEOUT * 2)
+                    except Exception as e:
+                        result = {"status": "error", "error": str(e), "issues": []}
+                    checker_name, ip = label.split(":", 1)
+                    per_ip_results[ip][checker_name] = result
+                    self._notify(on_progress, label, "done", result)
+            except TimeoutError:
+                for fut, lbl in futures.items():
+                    checker_name, ip = lbl.split(":", 1)
+                    if checker_name not in per_ip_results.get(ip, {}):
+                        fut.cancel()
+                        per_ip_results.setdefault(ip, {})[checker_name] = {
+                            "status": "timeout", "error": "Checker timed out", "issues": []}
+                        self._notify(on_progress, lbl, "done", per_ip_results[ip][checker_name])
 
         # --- Phase 4: Aggregate IP-level results ---
         results["categories"] = cat_results
