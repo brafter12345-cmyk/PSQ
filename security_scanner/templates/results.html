@@ -55,9 +55,9 @@
     .gauge-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
     .gauge-wrap { position: relative; width: 190px; height: 105px; }
     .gauge-wrap svg { width: 190px; height: 105px; }
-    .gauge-label { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); text-align: center; }
-    .gauge-score { font-size: 2.2rem; font-weight: 800; line-height: 1; }
-    .gauge-max { font-size: 0.85rem; color: var(--muted); margin-top: 4px; letter-spacing: 1px; }
+    .gauge-label { position: absolute; bottom: -8px; left: 50%; transform: translateX(-50%); text-align: center; }
+    .gauge-score { font-size: 3rem; font-weight: 800; line-height: 1; margin-bottom: 2px; }
+    .gauge-max { font-size: 0.85rem; color: rgba(255,255,255,0.55); margin-top: 2px; letter-spacing: 2px; font-weight: 500; }
     .risk-pill { padding: 5px 18px; border-radius: 999px; font-weight: 700; font-size: 0.95rem; }
     .risk-Low    { background: #14532d; color: var(--low); }
     .risk-Medium { background: #78350f; color: var(--medium); }
@@ -338,8 +338,7 @@
         <svg viewBox="0 0 190 105" fill="none" xmlns="http://www.w3.org/2000/svg">
           <path d="M 15 95 A 80 80 0 0 1 175 95" stroke="#2e3347" stroke-width="14" stroke-linecap="round"/>
           <path id="gauge-arc" d="M 15 95 A 80 80 0 0 1 175 95" stroke="#ef4444" stroke-width="14" stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="251.2"/>
-          <line id="gauge-needle" x1="95" y1="95" x2="95" y2="23" stroke="white" stroke-width="2" stroke-linecap="round"/>
-          <circle cx="95" cy="95" r="4" fill="white"/>
+          <!-- needle removed for cleaner visual -->
         </svg>
         <div class="gauge-label">
           <div class="gauge-score" id="gauge-score">{{ results.overall_risk_score }}</div>
@@ -487,8 +486,8 @@
         </table>
 
         {# Monte Carlo Confidence Intervals #}
-        {% set mc = fin.get('monte_carlo', {}) if fin is mapping else {} %}
-        {% if mc and mc.total %}
+        {% set mc = fin.monte_carlo if fin.monte_carlo is defined else {} %}
+        {% if mc and mc.total is defined %}
         <div style="font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">
           Monte Carlo Analysis <span style="font-weight:400;text-transform:none;">({{ '{:,}'.format(mc.iterations) }} simulations, PERT distribution)</span>
         </div>
@@ -505,12 +504,12 @@
             {# P50 median marker #}
             <div style="position:absolute;left:{{ (mc_t.p50 / mc_max_val * 100) | round(1) }}%;top:0;bottom:0;width:3px;background:white;border-radius:2px;"></div>
           </div>
-          <div style="display:flex;justify-content:space-between;font-size:.7rem;color:var(--muted);">
-            <span>P5: R {{ '{:,.0f}'.format(mc_t.p5) }}</span>
-            <span>P25: R {{ '{:,.0f}'.format(mc_t.p25) }}</span>
-            <span style="color:white;font-weight:700;">P50: R {{ '{:,.0f}'.format(mc_t.p50) }}</span>
-            <span>P75: R {{ '{:,.0f}'.format(mc_t.p75) }}</span>
-            <span>P95: R {{ '{:,.0f}'.format(mc_t.p95) }}</span>
+          <div style="display:flex;justify-content:space-between;font-size:.7rem;color:var(--muted);text-align:center;">
+            <span style="flex:1;">P5<br>R {{ '{:,.0f}'.format(mc_t.p5) }}</span>
+            <span style="flex:1;">P25<br>R {{ '{:,.0f}'.format(mc_t.p25) }}</span>
+            <span style="flex:1;color:white;font-weight:700;">P50<br>R {{ '{:,.0f}'.format(mc_t.p50) }}</span>
+            <span style="flex:1;">P75<br>R {{ '{:,.0f}'.format(mc_t.p75) }}</span>
+            <span style="flex:1;">P95<br>R {{ '{:,.0f}'.format(mc_t.p95) }}</span>
           </div>
         </div>
 
@@ -525,10 +524,10 @@
         {# Per-scenario MC breakdown #}
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
           {% for name, label in [('data_breach', 'Data Breach'), ('ransomware', 'Ransomware'), ('business_interruption', 'Bus. Interruption')] %}
-          {% set smc = fin.scenarios[name].get('monte_carlo', {}) if fin.scenarios[name] is mapping else {} %}
+          {% set smc = fin.scenarios[name].monte_carlo if fin.scenarios[name].monte_carlo is defined else {} %}
           {% if smc %}
-          <div style="background:var(--surface2);border-radius:8px;padding:10px;">
-            <div style="font-size:.7rem;color:var(--muted);text-transform:uppercase;margin-bottom:4px;">{{ label }}</div>
+          <div style="background:var(--surface2);border-radius:8px;padding:10px;display:flex;flex-direction:column;min-height:80px;">
+            <div style="font-size:.7rem;color:var(--muted);text-transform:uppercase;margin-bottom:auto;white-space:nowrap;">{{ label }}</div>
             <div style="font-size:1rem;font-weight:700;color:var(--critical);">R {{ '{:,.0f}'.format(smc.p50) }}</div>
             <div style="font-size:.68rem;color:var(--muted);margin-top:2px;">P5: R {{ '{:,.0f}'.format(smc.p5) }} — P95: R {{ '{:,.0f}'.format(smc.p95) }}</div>
           </div>
@@ -1701,12 +1700,7 @@
     var arc = document.getElementById('gauge-arc');
     arc.style.strokeDashoffset = arcLen - (arcLen * pct);
     arc.setAttribute('stroke', pct < 0.2 ? '#22c55e' : pct < 0.4 ? '#f59e0b' : pct < 0.6 ? '#f97316' : '#ef4444');
-    var angle = -90 + (pct * 180);
-    var rad = angle * Math.PI / 180;
-    var x2 = 95 + 62 * Math.cos(rad);
-    var y2 = 95 + 62 * Math.sin(rad);
-    document.getElementById('gauge-needle').setAttribute('x2', x2.toFixed(1));
-    document.getElementById('gauge-needle').setAttribute('y2', y2.toFixed(1));
+    // Needle removed — arc fill + score number is cleaner
   })();
   </script>
 
