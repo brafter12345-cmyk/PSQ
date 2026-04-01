@@ -1002,6 +1002,10 @@ def cat_financial_impact(d, S):
         eal    = fin.get("estimated_annual_loss", {})
         ins    = fin.get("insurance_recommendation", {})
         most_l = eal.get("most_likely", 0)
+        mc     = fin.get("monte_carlo", {})
+        mc_t   = mc.get("total", {})
+        ci90   = mc.get("confidence_interval_90", {})
+        ci50   = mc.get("confidence_interval_50", {})
         rows = [
             ("Industry",              fin.get("industry", "Other")),
             ("Annual Revenue",        f"{cur} {fin.get('annual_revenue_zar', 0):,.0f}"),
@@ -1010,6 +1014,26 @@ def cat_financial_impact(d, S):
             ("Est. Annual Loss (Likely)", f"{cur} {most_l:,.0f}"),
             ("Est. Annual Loss (Max)",    f"{cur} {eal.get('maximum', 0):,.0f}"),
             ("",                      ""),
+        ]
+        # Monte Carlo section
+        if mc_t:
+            rows.extend([
+                ("MONTE CARLO ANALYSIS",  f"{mc.get('iterations', 10000):,} simulations — PERT distribution"),
+                ("  90% Confidence Interval", f"{cur} {ci90.get('lower', 0):,.0f} — {cur} {ci90.get('upper', 0):,.0f}"),
+                ("  50% Confidence Interval", f"{cur} {ci50.get('lower', 0):,.0f} — {cur} {ci50.get('upper', 0):,.0f}"),
+                ("  Median (P50)",        f"{cur} {mc_t.get('p50', 0):,.0f}"),
+                ("  Mean",                f"{cur} {mc_t.get('mean', 0):,.0f}"),
+                ("  Std. Deviation",      f"{cur} {mc_t.get('std_dev', 0):,.0f}"),
+                ("",                      ""),
+            ])
+            # Per-scenario MC breakdown
+            for sname, slabel in [("data_breach", "Data Breach"), ("ransomware", "Ransomware"), ("business_interruption", "Bus. Interruption")]:
+                smc = sc.get(sname, {}).get("monte_carlo", {})
+                if smc:
+                    rows.append((f"  {slabel} (MC P50)", f"{cur} {smc.get('p50', 0):,.0f}  (P5: {cur} {smc.get('p5', 0):,.0f} — P95: {cur} {smc.get('p95', 0):,.0f})"))
+            rows.append(("", ""))
+
+        rows.extend([
             ("Data Breach Loss",      f"{cur} {sc.get('data_breach', {}).get('estimated_loss', 0):,.0f}  (P={sc.get('data_breach', {}).get('probability', 0)})"),
             ("  Records at risk",     f"{sc.get('data_breach', {}).get('estimated_records', 0):,} @ {cur}{sc.get('data_breach', {}).get('cost_per_record', 0):,.0f}/rec"),
             ("  POPIA regulatory",    f"{cur} {sc.get('data_breach', {}).get('regulatory_fine', 0):,.0f}"),
@@ -1021,11 +1045,15 @@ def cat_financial_impact(d, S):
             ("Min. Insurance Cover",  f"{cur} {ins.get('minimum_cover_zar', 0):,.0f}"),
             ("Rec. Insurance Cover",  f"{cur} {ins.get('recommended_cover_zar', 0):,.0f}"),
             ("Premium Risk Tier",     ins.get("premium_risk_tier", "N/A")),
-        ]
+        ])
     else:
         total  = fin.get("total", {})
         most_l = total.get("most_likely", 0)
         ins    = fin.get("insurance_recommendations", {})
+        mc     = fin.get("monte_carlo", {})
+        mc_t   = mc.get("total", {})
+        ci90   = mc.get("confidence_interval_90", {})
+        ci50   = mc.get("confidence_interval_50", {})
         rows = [
             ("Industry",              fin.get("industry", "Other")),
             ("",                      ""),
@@ -1033,13 +1061,25 @@ def cat_financial_impact(d, S):
             ("Est. Annual Loss (Likely)", f"{cur} {most_l:,.0f}"),
             ("Est. Annual Loss (Max)",    f"{cur} {total.get('max', 0):,.0f}"),
             ("",                      ""),
+        ]
+        if mc_t:
+            rows.extend([
+                ("MONTE CARLO ANALYSIS",  f"{mc.get('iterations', 10000):,} simulations — PERT distribution"),
+                ("  90% Confidence Interval", f"{cur} {ci90.get('lower', 0):,.0f} — {cur} {ci90.get('upper', 0):,.0f}"),
+                ("  50% Confidence Interval", f"{cur} {ci50.get('lower', 0):,.0f} — {cur} {ci50.get('upper', 0):,.0f}"),
+                ("  Median (P50)",        f"{cur} {mc_t.get('p50', 0):,.0f}"),
+                ("  Mean",                f"{cur} {mc_t.get('mean', 0):,.0f}"),
+                ("  Std. Deviation",      f"{cur} {mc_t.get('std_dev', 0):,.0f}"),
+                ("",                      ""),
+            ])
+        rows.extend([
             ("Data Breach",           f"{cur} {sc.get('data_breach', {}).get('most_likely', 0):,.0f}"),
             ("Ransomware",            f"{cur} {sc.get('ransomware', {}).get('most_likely', 0):,.0f}"),
             ("Bus. Interruption",     f"{cur} {sc.get('business_interruption', {}).get('most_likely', 0):,.0f}"),
             ("",                      ""),
             ("Suggested Deductible",  f"{cur} {ins.get('suggested_deductible', 0):,.0f}"),
             ("Recommended Coverage",  f"{cur} {ins.get('recommended_coverage', 0):,.0f}"),
-        ]
+        ])
 
     return build_cat_card("Financial Impact (FAIR Model)", col,
                           f"{cur} {most_l:,.0f}", rows, fin.get("issues", []), S)
