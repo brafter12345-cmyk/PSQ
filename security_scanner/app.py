@@ -524,6 +524,20 @@ def run_scan(scan_id: str, domain: str, industry: str = "other",
                 client_ips=client_ips,
             )
             update_scan(scan_id, results)
+
+            # Archive PDF: scans/<domain>/<year>/<month>/<day>_<scan_id>.pdf
+            try:
+                from pdf_report import generate_pdf
+                from pathlib import Path
+                scan_date = datetime.now()
+                archive_dir = Path(__file__).parent / "scans" / domain / str(scan_date.year) / f"{scan_date.month:02d}"
+                archive_dir.mkdir(parents=True, exist_ok=True)
+                pdf_path = archive_dir / f"{scan_date.day:02d}_{scan_id[:8]}.pdf"
+                pdf_bytes = generate_pdf(results)
+                pdf_path.write_bytes(pdf_bytes)
+            except Exception:
+                pass  # Don't fail the scan if PDF archiving fails
+
             # Auto-link to client by domain
             try:
                 with get_db() as conn:
