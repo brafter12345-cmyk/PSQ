@@ -5072,7 +5072,10 @@ class SecurityScanner:
         results["discovered_ips"] = discovered_ips
         results["ip_sources"] = ip_sources
         results["client_ips_added"] = len([ip for ip in client_ips if "dns" not in ip_sources.get(ip, [])])
-        self._notify(on_progress, "ip_discovery", "done", {"ips": discovered_ips})
+        self._notify(on_progress, "ip_discovery", "done", {
+            "ips": discovered_ips,
+            "ip_sources": ip_sources,
+        })
 
         # --- Phase 2: Domain-level checkers ---
         # Split into lightweight (concurrent) and heavyweight (sequential) to
@@ -5170,6 +5173,9 @@ class SecurityScanner:
             results["discovered_ips"] = all_ips
             results["ip_sources"] = ip_sources
             results["subdomain_ips_added"] = len(new_ips)
+            self._notify(on_progress, "subdomain_ips", "done", {
+                "ips": new_ips,
+            })
 
         # --- Run IP-level checkers on ALL discovered IPs ---
         with ThreadPoolExecutor(max_workers=4) as ex:

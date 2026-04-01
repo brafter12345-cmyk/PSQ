@@ -57,7 +57,7 @@
     .gauge-wrap svg { width: 190px; height: 105px; }
     .gauge-label { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); text-align: center; }
     .gauge-score { font-size: 2.2rem; font-weight: 800; line-height: 1; }
-    .gauge-max { font-size: 0.78rem; color: var(--muted); }
+    .gauge-max { font-size: 0.85rem; color: var(--muted); margin-top: 4px; letter-spacing: 1px; }
     .risk-pill { padding: 5px 18px; border-radius: 999px; font-weight: 700; font-size: 0.95rem; }
     .risk-Low    { background: #14532d; color: var(--low); }
     .risk-Medium { background: #78350f; color: var(--medium); }
@@ -177,8 +177,18 @@
       <div class="progress-bar-text" id="progressText">0 / 0</div>
     </div>
     <div class="ip-discovery-card" id="ipCard">
-      <div style="font-size:.82rem;font-weight:600;color:var(--blue);">Discovered IPs</div>
-      <div class="ip-list" id="ipList"></div>
+      <div id="ipDns" style="display:none;margin-bottom:6px;">
+        <div style="font-size:.78rem;font-weight:600;color:#3b82f6;">DNS Discovered</div>
+        <div class="ip-list" id="ipDnsList"></div>
+      </div>
+      <div id="ipClient" style="display:none;margin-bottom:6px;">
+        <div style="font-size:.78rem;font-weight:600;color:#8b5cf6;">Client-Supplied</div>
+        <div class="ip-list" id="ipClientList"></div>
+      </div>
+      <div id="ipSubdomain" style="display:none;">
+        <div style="font-size:.78rem;font-weight:600;color:#14b8a6;">Subdomain IPs</div>
+        <div class="ip-list" id="ipSubdomainList"></div>
+      </div>
     </div>
     <div id="scanSections"></div>
   </div>
@@ -270,7 +280,27 @@
       if (checker === 'ip_discovery' && status === 'done' && data.ips && data.ips.length > 0) {
         const card = document.getElementById('ipCard');
         card.classList.add('visible');
-        document.getElementById('ipList').innerHTML = data.ips.map(ip => `<span class="ip-chip">${ip}</span>`).join('');
+        const src = data.ip_sources || {};
+        const dnsIps = [], clientIps = [];
+        data.ips.forEach(ip => {
+          const tags = src[ip] || ['dns'];
+          if (tags.includes('dns')) dnsIps.push(ip);
+          if (tags.includes('client-supplied')) clientIps.push(ip);
+          if (!tags.includes('dns') && !tags.includes('client-supplied')) dnsIps.push(ip);
+        });
+        if (dnsIps.length > 0) {
+          document.getElementById('ipDns').style.display = '';
+          document.getElementById('ipDnsList').innerHTML = dnsIps.map(ip => `<span class="ip-chip">${ip}</span>`).join('');
+        }
+        if (clientIps.length > 0) {
+          document.getElementById('ipClient').style.display = '';
+          document.getElementById('ipClientList').innerHTML = clientIps.map(ip => `<span class="ip-chip">${ip}</span>`).join('');
+        }
+      }
+      if (checker === 'subdomain_ips' && status === 'done' && data.ips && data.ips.length > 0) {
+        document.getElementById('ipCard').classList.add('visible');
+        document.getElementById('ipSubdomain').style.display = '';
+        document.getElementById('ipSubdomainList').innerHTML = data.ips.map(ip => `<span class="ip-chip">${ip}</span>`).join('');
       }
       if (checker.includes(':')) {
         const base = checker.split(':')[0];
