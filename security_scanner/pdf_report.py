@@ -789,6 +789,19 @@ def cat_privacy_compliance(d, S):
     return build_cat_card("Privacy Policy Compliance", col, summary, rows, pc.get("issues", []), S)
 
 
+def _finding_colour(text: str) -> str:
+    """Return hex colour based on finding severity keywords."""
+    tl = text.lower()
+    if "critical" in tl:
+        return "#dc2626"
+    if any(kw in tl for kw in ("high-risk", "missing", "not enforced", "not enabled",
+                                "no spf", "no dmarc", "no dkim", "exposed", "no waf")):
+        return "#f97316"
+    if any(kw in tl for kw in ("medium-risk", "no modern tls", "hsts", "listed")):
+        return "#eab308"
+    return "#64748b"
+
+
 def cat_compliance_frameworks(data, S):
     """Render compliance framework mapping section."""
     compliance = data.get("compliance", {})
@@ -802,9 +815,11 @@ def cat_compliance_frameworks(data, S):
         rows = []
         for ctrl_name, ctrl in fw_data.get("controls", {}).items():
             status_str = ctrl.get("status", "no_data").upper()
-            rows.append((ctrl_name, f"{status_str} — {ctrl.get('description', '')}"))
-            for finding in ctrl.get("findings", [])[:2]:
-                rows.append(("", f"  ↳ {finding[:100]}"))
+            status_col = {"PASS": "#16a34a", "PARTIAL": "#d97706", "FAIL": "#dc2626", "NO_DATA": "#64748b"}.get(status_str, "#64748b")
+            rows.append((ctrl_name, f"<font color='{status_col}'><b>{status_str}</b></font> — {ctrl.get('description', '')}"))
+            for finding in ctrl.get("findings", [])[:3]:
+                fc = _finding_colour(finding)
+                rows.append(("", f"  <font color='{fc}'>↳ {finding[:120]}</font>"))
         story += build_cat_card(f"{framework}", col, f"{pct}% aligned", rows, [], S)
     return story
 
