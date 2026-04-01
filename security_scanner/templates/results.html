@@ -1297,7 +1297,7 @@
           <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:.8rem;">
             <strong style="color:#f87171;">{{ d.domain }}</strong>
             <span class="badge badge-amber" style="font-size:.6rem;">{{ d.technique }}</span>
-            {% if d.similarity %}<span style="font-size:.7rem;color:var(--muted);">{{ (d.similarity * 100) | round(0) }}% similar</span>{% endif %}
+            {% if d.similarity %}<span style="font-size:.7rem;color:var(--muted);">{{ d.similarity | round(0) }}% similar</span>{% endif %}
           </div>
           {% endfor %}
         </div>
@@ -1503,7 +1503,7 @@
           <div style="width:{{ fw_pct }}%;height:100%;border-radius:4px;background:{% if fw_pct >= 75 %}#22c55e{% elif fw_pct >= 50 %}#f59e0b{% else %}#ef4444{% endif %};"></div>
         </div>
         <table style="width:100%;font-size:.82rem;border-collapse:collapse;table-layout:fixed;">
-          <colgroup><col style="width:35%;"><col style="width:12%;"><col style="width:53%;"></colgroup>
+          <colgroup><col style="width:32%;"><col style="width:16%;"><col style="width:52%;"></colgroup>
           <tr style="background:rgba(30,58,138,0.04);"><th style="text-align:left;padding:8px;">Control</th><th style="text-align:center;padding:8px;">Status</th><th style="text-align:left;padding:8px;">Description</th></tr>
           {% for ctrl_name, ctrl in fw_data.get('controls', {}).items() %}
           <tr style="border-bottom:1px solid rgba(255,255,255,0.05);vertical-align:top;">
