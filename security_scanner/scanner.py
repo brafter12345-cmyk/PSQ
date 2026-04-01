@@ -2713,23 +2713,57 @@ class DehashedChecker:
 
             emails_seen = set()
             has_pw = False
+            breach_sources = set()
+            breach_details = []
             for entry in entries:
+                # v2 API returns email as list, v1 as string
                 em = entry.get("email", "")
-                if em:
-                    emails_seen.add(em)
-                if entry.get("password") or entry.get("hashed_password"):
+                if isinstance(em, list):
+                    for e in em:
+                        if e:
+                            emails_seen.add(str(e))
+                elif em:
+                    emails_seen.add(str(em))
+
+                pw = entry.get("password")
+                hpw = entry.get("hashed_password")
+                if isinstance(pw, list):
+                    pw = pw[0] if pw else None
+                if isinstance(hpw, list):
+                    hpw = hpw[0] if hpw else None
+                if pw or hpw:
                     has_pw = True
+
+                db_name = entry.get("database_name", "Unknown source")
+                if db_name:
+                    breach_sources.add(db_name)
+
+                # Build detail record for PDF
+                email_str = ", ".join(em) if isinstance(em, list) else (em or "N/A")
+                username = entry.get("username", "")
+                if isinstance(username, list):
+                    username = username[0] if username else ""
+                breach_details.append({
+                    "email": email_str,
+                    "username": str(username) if username else "",
+                    "database": db_name,
+                    "has_password": bool(pw),
+                    "has_hash": bool(hpw),
+                })
 
             result["unique_emails"] = len(emails_seen)
             result["has_passwords"] = has_pw
             result["sample_emails"] = [
                 e[:40] + ("…" if len(e) > 40 else "") for e in list(emails_seen)[:5]
             ]
+            result["breach_sources"] = list(breach_sources)
+            result["breach_details"] = breach_details[:20]
 
             if total > 0:
+                src_list = ", ".join(list(breach_sources)[:5])
                 result["issues"].append(
-                    f"{total} credential record(s) found in Dehashed for this domain — "
-                    "notify affected users and enforce password reset"
+                    f"{total} credential record(s) found in Dehashed for this domain "
+                    f"(sources: {src_list}) — notify affected users and enforce password reset"
                 )
             if has_pw:
                 result["issues"].append(
@@ -5068,33 +5102,54 @@ class RemediationSimulator:
     # Remediation catalog: maps issue patterns to actions
     REMEDIATION_MAP = [
         # (checker_key, condition_fn, action, est_cost, rsi_reduction)
-        ("vpn_remote", lambda c: c.get("rdp_exposed"), "Block RDP (port 3389) from public internet — use VPN/ZTNA instead", "R9,000–R36,000", 0.35),
-        ("high_risk_protocols", lambda c: any(s.get("port") in (27017, 6379, 9200, 5432, 1433) for s in c.get("exposed_services", [])),
-         "Firewall exposed database ports (MongoDB, Redis, PostgreSQL, etc.)", "R9,000–R36,000", 0.15),
+        # --- Critical: Immediate action required ---
+        ("vpn_remote", lambda c: c.get("rdp_exposed"), "Block RDP (port 3389) from public internet — use VPN/ZTNA instead. RDP is the #1 ransomware entry vector.", "R9,000–R36,000", 0.35),
+        ("high_risk_protocols", lambda c: any(s.get("port") in (27017, 6379, 9200, 5432, 1433, 3306) for s in c.get("exposed_services", [])),
+         "Firewall exposed database ports (MongoDB, Redis, PostgreSQL, MySQL, etc.) — restrict to VPN/private network only.", "R9,000–R36,000", 0.15),
         ("shodan_vulns", lambda c: c.get("kev_count", 0) > 0,
-         "Patch CISA KEV vulnerabilities — actively exploited in the wild", "R18,000–R90,000", 0.10),
+         "Patch CISA KEV vulnerabilities immediately — these are confirmed actively exploited in the wild. CISA mandates remediation within 14 days.", "R18,000–R90,000", 0.10),
+        ("osv_vulns", lambda c: c.get("critical_count", 0) > 0,
+         "Patch critical vulnerabilities detected via version analysis (OSV.dev) — update affected software packages to latest stable versions.", "R18,000–R90,000", 0.10),
+        # --- High: Address within 30 days ---
         ("shodan_vulns", lambda c: c.get("high_epss_count", 0) > 0,
-         "Patch high-EPSS CVEs (>50% exploitation probability)", "R18,000–R90,000", 0.05),
-        ("email_security", lambda c: not c.get("dmarc", {}).get("present"),
-         "Implement DMARC with 'quarantine' or 'reject' policy", "R3,600–R9,000", 0.05),
-        ("waf", lambda c: not c.get("detected"),
-         "Deploy a Web Application Firewall (Cloudflare, AWS WAF, etc.)", "R0–R9,000/mo", 0.05),
+         "Patch high-EPSS CVEs (>50% exploitation probability within 30 days) — prioritise by EPSS score for maximum risk reduction.", "R18,000–R90,000", 0.05),
         ("ssl", lambda c: c.get("grade", "A") in ("D", "E", "F"),
-         "Upgrade SSL/TLS configuration — enable TLS 1.2+, strong ciphers", "R0–R3,600", 0.05),
+         "Upgrade SSL/TLS configuration — enable TLS 1.2+, disable weak ciphers. sslyze analysis shows vulnerable protocols or cipher suites.", "R0–R3,600", 0.05),
+        ("email_security", lambda c: not c.get("dmarc", {}).get("present"),
+         "Implement DMARC with 'quarantine' or 'reject' policy to prevent email spoofing and phishing campaigns.", "R3,600–R9,000", 0.05),
+        ("email_security", lambda c: not c.get("spf", {}).get("present"),
+         "Configure SPF record to authorise legitimate email senders — reduces phishing and BEC risk.", "R0–R3,600", 0.03),
+        ("email_hardening", lambda c: not c.get("mta_sts"),
+         "Implement MTA-STS to force TLS for inbound email and prevent downgrade attacks.", "R3,600–R9,000", 0.02),
+        ("waf", lambda c: not c.get("detected"),
+         "Deploy a Web Application Firewall (Cloudflare, AWS WAF, etc.) — protects against OWASP Top 10 attacks and DDoS.", "R0–R9,000/mo", 0.05),
+        ("http_headers", lambda c: c.get("score", 100) < 40,
+         "Implement security headers: HSTS, Content-Security-Policy, X-Frame-Options, Permissions-Policy — prevents XSS, clickjacking, and data leakage.", "R0–R3,600", 0.03),
+        ("dehashed", lambda c: c.get("total_entries", 0) > 0,
+         "Force password resets for all leaked credentials and enable MFA. Breached credentials enable credential stuffing and account takeover attacks.", "R9,000–R36,000", 0.05),
         ("info_disclosure", lambda c: any(p.get("risk_level") == "critical" for p in c.get("exposed_paths", [])),
-         "Remove exposed sensitive files (.env, .git, backups) from web root", "R0–R9,000", 0.03),
+         "Remove exposed sensitive files (.env, .git, backups, config files) from web root — these leak credentials and infrastructure details.", "R0–R9,000", 0.03),
         ("exposed_admin", lambda c: c.get("critical_count", 0) > 0,
-         "Restrict admin panel access — IP whitelist or VPN-only", "R3,600–R18,000", 0.02),
+         "Restrict admin panel access — implement IP whitelist, VPN-only access, or move to non-standard paths.", "R3,600–R18,000", 0.02),
+        # --- Medium: Address within 90 days ---
+        ("tech_stack", lambda c: c.get("eol_count", 0) > 0,
+         "Update end-of-life software components — EOL software receives no security patches and is a prime exploitation target.", "R9,000–R36,000", 0.03),
         ("dnsbl", lambda c: c.get("blacklisted"),
-         "Investigate and resolve IP/domain blacklisting", "R9,000–R36,000", 0.05),
-        ("dehashed", lambda c: c.get("total_entries", 0) > 100,
-         "Force password reset for leaked credentials and enable MFA", "R9,000–R36,000", 0.05),
+         "Investigate and resolve IP/domain blacklisting — indicates prior compromise, spam, or malware distribution.", "R9,000–R36,000", 0.05),
         ("breaches", lambda c: c.get("breach_count", 0) > 0,
-         "Implement breach response plan and credential monitoring", "R18,000–R90,000", 0.02),
-        ("fraudulent_domains", lambda c: c.get("lookalike_count", 0) > 5,
-         "Register key lookalike domains defensively and set up monitoring", "R9,000–R36,000", 0.01),
-        ("privacy_compliance", lambda c: c.get("score", 100) < 50,
-         "Update privacy policy to cover all POPIA/GDPR required sections", "R9,000–R36,000", 0.01),
+         "Implement breach response plan and continuous credential monitoring — prior breaches significantly increase repeat incident probability.", "R18,000–R90,000", 0.02),
+        ("privacy_compliance", lambda c: c.get("score", 100) < 60,
+         "Update privacy policy to cover all POPIA/GDPR required sections — failure to comply risks regulatory fines up to 2% of annual turnover.", "R9,000–R36,000", 0.01),
+        ("fraudulent_domains", lambda c: c.get("lookalike_count", 0) > 0,
+         "Register key lookalike domains defensively and set up brand monitoring — lookalike domains enable phishing and brand impersonation.", "R9,000–R36,000", 0.01),
+        ("cloud_cdn", lambda c: not c.get("cdn_detected"),
+         "Deploy a CDN for DDoS resilience and improved availability — single-origin hosting is vulnerable to volumetric attacks.", "R0–R9,000/mo", 0.02),
+        ("security_policy", lambda c: not c.get("security_txt_found"),
+         "Create a security.txt file at /.well-known/security.txt — establishes a vulnerability disclosure policy for responsible reporting.", "R0", 0.01),
+        ("website_security", lambda c: not c.get("https_enforced"),
+         "Configure web server to redirect all HTTP traffic to HTTPS (301 redirect) — prevents credential interception.", "R0–R3,600", 0.02),
+        ("dns_infrastructure", lambda c: not c.get("dnssec_enabled"),
+         "Enable DNSSEC to protect against DNS spoofing and cache poisoning attacks.", "R3,600–R9,000", 0.01),
     ]
 
     def calculate(self, categories: dict, rsi_result: dict,

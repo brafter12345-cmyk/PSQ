@@ -800,7 +800,29 @@ def cat_dehashed(d, S):
         ("Passwords in leaks", "Yes — CRITICAL" if dh.get("has_passwords") else "No"),
     ]
     if dh.get("sample_emails"):
-        rows.append(("Sample emails", " | ".join(dh["sample_emails"][:3])))
+        rows.append(("Affected emails", " | ".join(dh["sample_emails"][:5])))
+    if dh.get("breach_sources"):
+        rows.append(("Breach sources", " | ".join(dh["breach_sources"][:8])))
+    # Show individual breach records
+    details = dh.get("breach_details", [])
+    if details:
+        rows.append(("", ""))
+        rows.append(("BREACH DETAILS", ""))
+        for i, d in enumerate(details[:10]):
+            pw_flag = " [PASSWORD EXPOSED]" if d.get("has_password") else (" [HASH EXPOSED]" if d.get("has_hash") else "")
+            user_str = f" (user: {d['username']})" if d.get("username") else ""
+            rows.append((f"  {d.get('database', 'Unknown')}", f"{d.get('email', 'N/A')}{user_str}{pw_flag}"))
+        if len(details) > 10:
+            rows.append(("", f"...and {len(details) - 10} more records"))
+    # Remediation advice
+    if total > 0:
+        rows.append(("", ""))
+        rows.append(("REMEDIATION", ""))
+        rows.append(("  1. Password resets", "Force password resets for all identified email addresses across all company systems"))
+        rows.append(("  2. MFA enforcement", "Enable multi-factor authentication on all accounts, especially those with exposed credentials"))
+        rows.append(("  3. Credential monitoring", "Enroll in continuous breach monitoring to detect future exposures"))
+        if dh.get("has_passwords"):
+            rows.append(("  4. Password audit", "CRITICAL: Plaintext passwords found — audit all systems for password reuse immediately"))
     return build_cat_card("Dehashed Credential Leaks", col, summary, rows, dh.get("issues", []), S)
 
 
