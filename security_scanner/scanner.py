@@ -3199,7 +3199,13 @@ class PrivacyComplianceChecker:
                 anchor_matches = _re.findall(
                     r'href=["\']([^"\']+)["\'][^>]*>(?:[^<]*(?:privac|popia|data.protect)[^<]*)</a>',
                     text)
-                all_matches = list(dict.fromkeys(matches + anchor_matches))
+                # Filter out non-HTML resources (CSS, JS, images, fonts, etc.)
+                skip_exts = ('.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.woff', '.woff2', '.ttf', '.ico')
+                all_matches = []
+                for m in list(dict.fromkeys(matches + anchor_matches)):
+                    url_path = m.split("?")[0].lower()
+                    if not url_path.endswith(skip_exts):
+                        all_matches.append(m)
                 for href in all_matches[:5]:
                     if href.startswith("/"):
                         href = f"https://{domain}{href}"
