@@ -4880,15 +4880,15 @@ class SecurityScanner:
         self._notify(on_progress, "ip_discovery", "done", {"ips": discovered_ips})
 
         # --- Phase 2: Domain-level checkers ---
+        # Split into lightweight (concurrent) and heavyweight (sequential) to
+        # stay within Render free-tier 512 MB RAM limit.
         domain_checkers = {
-            "ssl":                 (SSLChecker().check,               [domain]),
             "email_security":      (EmailSecurityChecker().check,      [domain]),
             "email_hardening":     (EmailHardeningChecker().check,     [domain]),
             "http_headers":        (HTTPHeaderChecker().check,         [domain]),
             "waf":                 (WAFChecker().check,                [domain]),
             "cloud_cdn":           (CloudCDNChecker().check,           [domain]),
             "domain_intel":        (DomainIntelChecker().check,        [domain]),
-            "subdomains":          (SubdomainChecker().check,          [domain]),
             "exposed_admin":       (ExposedAdminChecker().check,       [domain]),
             "vpn_remote":          (VPNRemoteAccessChecker().check,    [domain]),
             "security_policy":     (SecurityPolicyChecker().check,     [domain]),
@@ -4899,15 +4899,22 @@ class SecurityScanner:
             "dehashed":            (DehashedChecker().check,           [domain, self.dehashed_email, self.dehashed_api_key]),
             "virustotal":          (VirusTotalChecker().check,         [domain, self.virustotal_api_key]),
             "securitytrails":      (SecurityTrailsChecker().check,     [domain, self.securitytrails_api_key]),
+            "privacy_compliance":  (PrivacyComplianceChecker().check,  [domain]),
+            "web_ranking":         (WebRankingChecker().check,         [domain]),
+            "info_disclosure":     (InformationDisclosureChecker().check, [domain]),
         }
 
-        # Conditionally include fraudulent domain checker
+        # Heavy checkers run sequentially AFTER the concurrent batch to cap
+        # peak memory (sslyze spawns subprocesses, CT logs parse large JSON,
+        # subdomains resolve many IPs).
+        heavy_checkers = [
+            ("ssl",         SSLChecker().check,              [domain]),
+            ("subdomains",  SubdomainChecker().check,        [domain]),
+        ]
         if include_fraudulent_domains:
-            domain_checkers["fraudulent_domains"] = (FraudulentDomainChecker().check, [domain])
-
-        domain_checkers["privacy_compliance"] = (PrivacyComplianceChecker().check, [domain])
-        domain_checkers["web_ranking"] = (WebRankingChecker().check, [domain])
-        domain_checkers["info_disclosure"] = (InformationDisclosureChecker().check, [domain])
+            heavy_checkers.append(
+                ("fraudulent_domains", FraudulentDomainChecker().check, [domain])
+            )
 
         # --- Phase 3: IP-level checkers (per-IP) ---
         ip_checkers_templates = {
@@ -4920,8 +4927,8 @@ class SecurityScanner:
         cat_results = {}
         per_ip_results = {}  # {ip: {checker_name: result}}
 
-        # --- Run domain-level checkers first ---
-        with ThreadPoolExecutor(max_workers=8) as ex:
+        # --- Run lightweight domain-level checkers concurrently ---
+        with ThreadPoolExecutor(max_workers=6) as ex:
             futures = {}
             for name, (fn, args) in domain_checkers.items():
                 self._notify(on_progress, name, "running")
@@ -4934,6 +4941,15 @@ class SecurityScanner:
                 except Exception as e:
                     cat_results[label] = {"status": "error", "error": str(e), "issues": []}
                 self._notify(on_progress, label, "done", cat_results[label])
+
+        # --- Run heavyweight checkers sequentially (memory-safe) ---
+        for name, fn, args in heavy_checkers:
+            self._notify(on_progress, name, "running")
+            try:
+                cat_results[name] = fn(*args)
+            except Exception as e:
+                cat_results[name] = {"status": "error", "error": str(e), "issues": []}
+            self._notify(on_progress, name, "done", cat_results[name])
 
         # --- Expand IP pool with subdomain-resolved IPs ---
         sub_result = cat_results.get("subdomains", {})
@@ -4950,7 +4966,7 @@ class SecurityScanner:
             results["subdomain_ips_added"] = len(new_ips)
 
         # --- Run IP-level checkers on ALL discovered IPs ---
-        with ThreadPoolExecutor(max_workers=8) as ex:
+        with ThreadPoolExecutor(max_workers=4) as ex:
             futures = {}
             for ip in all_ips:
                 per_ip_results[ip] = {}
