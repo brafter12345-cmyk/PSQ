@@ -3210,9 +3210,11 @@ class PrivacyComplianceChecker:
         import re as _re
 
         # --- Strategy 1: Crawl homepage for privacy links (fastest) ---
+        # Try with and without www prefix
+        homepage_url = f"https://{domain}"
         try:
-            r = requests.get(f"https://{domain}", headers={"User-Agent": USER_AGENT},
-                             timeout=10, allow_redirects=True)
+            r = requests.get(homepage_url, headers={"User-Agent": USER_AGENT},
+                             timeout=20, allow_redirects=True)
             if r.status_code == 200:
                 text = r.text.lower()
                 # Match links by URL containing privacy keywords
@@ -3236,7 +3238,7 @@ class PrivacyComplianceChecker:
                         href = f"https://{domain}/{href}"
                     try:
                         r2 = requests.get(href, headers={"User-Agent": USER_AGENT},
-                                          timeout=10, allow_redirects=True)
+                                          timeout=20, allow_redirects=True)
                         if r2.status_code == 200 and len(r2.text) > 500:
                             return href, r2.text.lower()
                     except Exception:
@@ -3244,16 +3246,20 @@ class PrivacyComplianceChecker:
         except Exception:
             pass
 
-        # --- Strategy 2: Try common paths (fallback) ---
-        for path in self.POLICY_PATHS:
-            url = f"https://{domain}{path}"
-            try:
-                r = requests.get(url, headers={"User-Agent": USER_AGENT},
-                                 timeout=8, allow_redirects=True)
-                if r.status_code == 200 and len(r.text) > 500:
-                    return url, r.text.lower()
-            except Exception:
-                continue
+        # --- Strategy 2: Try common paths on both domain and www variant ---
+        domains_to_try = [domain]
+        if not domain.startswith("www."):
+            domains_to_try.append(f"www.{domain}")
+        for d in domains_to_try:
+            for path in self.POLICY_PATHS:
+                url = f"https://{d}{path}"
+                try:
+                    r = requests.get(url, headers={"User-Agent": USER_AGENT},
+                                     timeout=15, allow_redirects=True)
+                    if r.status_code == 200 and len(r.text) > 500:
+                        return url, r.text.lower()
+                except Exception:
+                    continue
 
         return None, None
 
