@@ -6034,9 +6034,21 @@ class SecurityScanner:
                 results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
                     all_ips, per_ip_results, ip_sources=ip_sources
                 )
+        except Exception as _osv_err:
+            # Log OSV enrichment errors instead of silently swallowing
+            results["categories"]["osv_vulns"] = {
+                "status": "error", "error": str(_osv_err), "total_vulns": 0,
+                "vulns": [], "issues": [f"OSV enrichment failed: {_osv_err}"],
+            }
+        self._notify(on_progress, "osv_enrichment", "done")
+
+        # --- Ensure re-aggregation always runs (even if OSV failed) ---
+        try:
+            results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
+                all_ips, per_ip_results, ip_sources=ip_sources
+            )
         except Exception:
             pass
-        self._notify(on_progress, "osv_enrichment", "done")
 
         # --- Phase 4d: Enrich per-port entries with banner + OSV data ---
         dns_cat = cat_results.get("dns_infrastructure", {})
