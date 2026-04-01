@@ -3173,7 +3173,7 @@ class CredentialRiskClassifier:
     }
 
     @staticmethod
-    def classify(dehashed: dict, hudson_rock: dict, hibp_enriched: dict = None) -> dict:
+    def classify(dehashed: dict, hudson_rock: dict, intelx: dict = None, hibp_enriched: dict = None) -> dict:
         """Return overall credential risk assessment."""
         result = {
             "risk_level": "LOW",
@@ -3199,6 +3199,29 @@ class CredentialRiskClassifier:
             result["factors"].append(
                 f"{hr_users} user account(s) compromised via infostealer malware"
             )
+
+        # Factor 1b: Dark web exposure (IntelX)
+        if intelx and isinstance(intelx, dict):
+            darkweb = intelx.get("darkweb_count", 0)
+            pastes = intelx.get("paste_count", 0)
+            total_ix = intelx.get("total_results", 0)
+            if darkweb > 0:
+                if result["risk_level"] not in ("CRITICAL",):
+                    result["risk_level"] = "HIGH"
+                result["risk_score"] = max(0, result["risk_score"] - darkweb * 10)
+                result["factors"].append(
+                    f"DARK WEB: {darkweb} mention(s) found on dark web forums/markets — "
+                    "credentials or data may be actively traded"
+                )
+            if pastes > 3:
+                result["risk_score"] = max(0, result["risk_score"] - pastes * 3)
+                result["factors"].append(
+                    f"{pastes} paste site mention(s) — data shared on public paste sites"
+                )
+            elif total_ix > 0 and darkweb == 0:
+                result["factors"].append(
+                    f"{total_ix} reference(s) found in leak databases (IntelX)"
+                )
 
         # Factor 2: Credential exposure (Dehashed)
         total_leaks = dehashed.get("total_entries", 0)
@@ -3278,7 +3301,113 @@ class CredentialRiskClassifier:
 
 
 # ---------------------------------------------------------------------------
-# 27. Fraudulent / Lookalike Domain Detection
+# 27. IntelX Dark Web Monitoring (free tier)
+# ---------------------------------------------------------------------------
+
+class IntelXChecker:
+    """
+    Searches Intelligence X for dark web pastes, leaked documents, and
+    breach data associated with a domain. Two-step: initiate search, poll results.
+    Free tier: 40 results/search, ~500 credits/day.
+    """
+    API_URL = "https://free.intelx.io"
+
+    def check(self, domain: str, api_key: str = None) -> dict:
+        result = {
+            "status": "completed",
+            "total_results": 0,
+            "paste_count": 0,
+            "leak_count": 0,
+            "darkweb_count": 0,
+            "recent_results": [],
+            "score": 100,
+            "issues": [],
+        }
+        if not api_key:
+            result["status"] = "no_api_key"
+            return result
+
+        try:
+            # Step 1: Initiate search
+            r = requests.post(f"{self.API_URL}/intelligent/search",
+                json={"term": domain, "maxresults": 40, "timeout": 5, "sort": 4, "media": 0},
+                headers={"X-Key": api_key}, timeout=15)
+            if r.status_code == 401:
+                result["status"] = "auth_failed"
+                return result
+            if r.status_code != 200:
+                result["status"] = "error"
+                return result
+
+            search_id = r.json().get("id")
+            if not search_id:
+                return result
+
+            # Step 2: Poll for results (wait up to 8s)
+            import time as _time
+            _time.sleep(3)
+            records = []
+            for _ in range(3):
+                r2 = requests.get(f"{self.API_URL}/intelligent/search/result",
+                    params={"id": search_id},
+                    headers={"X-Key": api_key}, timeout=10)
+                if r2.status_code != 200:
+                    break
+                data = r2.json()
+                records.extend(data.get("records", []))
+                if data.get("status") in (1, 2, 4):  # 1=done, 2=not found, 4=error
+                    break
+                _time.sleep(2)
+
+            result["total_results"] = len(records)
+
+            # Classify results by type
+            for rec in records:
+                media = rec.get("media", 0)
+                # media types: 1=paste, 2=paste, 5=email, 13=darkweb, 14=document
+                if media in (1, 2):
+                    result["paste_count"] += 1
+                elif media == 13:
+                    result["darkweb_count"] += 1
+                else:
+                    result["leak_count"] += 1
+
+                # Keep recent entries for display
+                if len(result["recent_results"]) < 10:
+                    result["recent_results"].append({
+                        "name": (rec.get("name") or "Unknown")[:80],
+                        "type": rec.get("typeh", "Unknown"),
+                        "media": rec.get("mediah", "Unknown"),
+                        "date": (rec.get("date") or "")[:10],
+                    })
+
+            # Scoring
+            if result["darkweb_count"] > 0:
+                result["score"] = max(0, 100 - result["darkweb_count"] * 15)
+                result["issues"].append(
+                    f"{result['darkweb_count']} dark web mention(s) found — "
+                    "credentials or data may be actively traded on criminal forums."
+                )
+            if result["paste_count"] > 5:
+                result["score"] = max(0, result["score"] - result["paste_count"] * 3)
+                result["issues"].append(
+                    f"{result['paste_count']} paste site mention(s) — "
+                    "data has been shared on public paste sites (Pastebin, etc.)."
+                )
+            if result["total_results"] > 0 and not result["issues"]:
+                result["issues"].append(
+                    f"{result['total_results']} reference(s) found in dark web and leak databases."
+                )
+
+        except Exception as e:
+            result["status"] = "error"
+            result["error"] = str(e)
+
+        return result
+
+
+# ---------------------------------------------------------------------------
+# 28. Fraudulent / Lookalike Domain Detection
 # ---------------------------------------------------------------------------
 
 class FraudulentDomainChecker:
@@ -5500,13 +5629,15 @@ class SecurityScanner:
                  dehashed_api_key: Optional[str] = None,
                  virustotal_api_key: Optional[str] = None,
                  securitytrails_api_key: Optional[str] = None,
-                 shodan_api_key: Optional[str] = None):
+                 shodan_api_key: Optional[str] = None,
+                 intelx_api_key: Optional[str] = None):
         self.hibp_api_key          = hibp_api_key
         self.dehashed_email        = dehashed_email
         self.dehashed_api_key      = dehashed_api_key
         self.virustotal_api_key    = virustotal_api_key
         self.securitytrails_api_key = securitytrails_api_key
         self.shodan_api_key        = shodan_api_key
+        self.intelx_api_key        = intelx_api_key
 
     def discover_ips(self, domain: str) -> list:
         """Resolve all A record IPs for a domain."""
@@ -5645,6 +5776,7 @@ class SecurityScanner:
             "virustotal":          (VirusTotalChecker().check,         [domain, self.virustotal_api_key]),
             "securitytrails":      (SecurityTrailsChecker().check,     [domain, self.securitytrails_api_key]),
             "hudson_rock":         (HudsonRockChecker().check,         [domain]),
+            "intelx":              (IntelXChecker().check,             [domain, self.intelx_api_key]),
             "privacy_compliance":  (PrivacyComplianceChecker().check,  [domain]),
             "web_ranking":         (WebRankingChecker().check,         [domain]),
             "info_disclosure":     (InformationDisclosureChecker().check, [domain]),
@@ -5938,10 +6070,12 @@ class SecurityScanner:
 
             # Build credential risk classification
             hudson_rock_data = cat_results.get("hudson_rock", {})
+            intelx_data = cat_results.get("intelx", {})
             classifier = CredentialRiskClassifier()
             cred_risk = classifier.classify(
                 dehashed=cat_results.get("dehashed", {}),
                 hudson_rock=hudson_rock_data,
+                intelx=intelx_data,
             )
             results["categories"]["credential_risk"] = cred_risk
         except Exception:

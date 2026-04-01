@@ -46,6 +46,7 @@ DEHASHED_API_KEY       = os.environ.get("DEHASHED_API_KEY")        # Optional �
 VIRUSTOTAL_API_KEY     = os.environ.get("VIRUSTOTAL_API_KEY")      # Optional — free tier
 SECURITYTRAILS_API_KEY = os.environ.get("SECURITYTRAILS_API_KEY")  # Optional — free tier
 SHODAN_API_KEY         = os.environ.get("SHODAN_API_KEY")          # Optional — free account
+INTELX_API_KEY         = os.environ.get("INTELX_API_KEY")          # Optional — free tier
 DB_PATH = os.environ.get("DB_PATH", "scans.db")
 MAX_CONCURRENT = int(os.environ.get("MAX_CONCURRENT_SCANS", "5"))
 
@@ -499,7 +500,7 @@ def auto_update_invoice_statuses():
 def run_scan(scan_id: str, domain: str, industry: str = "other",
              annual_revenue: float = 0, annual_revenue_zar: int = 0, country: str = "",
              include_fraudulent_domains: bool = False, client_ips: list = None,
-             skip_dehashed: bool = False):
+             skip_dehashed: bool = False, skip_intelx: bool = False):
     progress_q = queue.Queue()
     _scan_progress[scan_id] = progress_q
 
@@ -515,6 +516,7 @@ def run_scan(scan_id: str, domain: str, industry: str = "other",
                 virustotal_api_key=VIRUSTOTAL_API_KEY,
                 securitytrails_api_key=SECURITYTRAILS_API_KEY,
                 shodan_api_key=SHODAN_API_KEY,
+                intelx_api_key=None if skip_intelx else INTELX_API_KEY,
             )
             results = scanner.scan(
                 domain, on_progress=on_progress,
@@ -609,6 +611,29 @@ def dehashed_balance():
         return jsonify({"status": "error", "balance": None, "error": str(e)})
 
 
+@app.route("/api/intelx/balance", methods=["GET"])
+def intelx_balance():
+    """Check IntelX API credit balance."""
+    if not INTELX_API_KEY:
+        return jsonify({"status": "no_api_key", "balance": None})
+    try:
+        import requests as req
+        r = req.get("https://free.intelx.io/authenticate/info",
+                     headers={"X-Key": INTELX_API_KEY}, timeout=10)
+        if r.status_code == 200:
+            data = r.json()
+            # Extract search credits from paths
+            paths = data.get("paths", {})
+            search_info = paths.get("/intelligent/search", {})
+            credits_left = search_info.get("CreditLeft", 0)
+            credits_max = search_info.get("CreditMax", 0)
+            return jsonify({"status": "active", "balance": credits_left,
+                            "max_credits": credits_max})
+        return jsonify({"status": "error", "balance": None})
+    except Exception as e:
+        return jsonify({"status": "error", "balance": None, "error": str(e)})
+
+
 @app.route("/api/scan", methods=["POST"])
 def start_scan():
     data = request.get_json(silent=True) or {}
@@ -633,6 +658,7 @@ def start_scan():
     country = str(data.get("country", "")).strip()
     include_fraudulent_domains = bool(data.get("include_fraudulent_domains", False))
     skip_dehashed = bool(data.get("skip_dehashed", False))
+    skip_intelx = bool(data.get("skip_intelx", False))
 
     # Parse client-supplied IPs (optional)
     import ipaddress as _ipaddress
@@ -677,7 +703,7 @@ def start_scan():
     t = threading.Thread(
         target=run_scan,
         args=(scan_id, domain, industry, annual_revenue, annual_revenue_zar, country,
-              include_fraudulent_domains, client_ips, skip_dehashed),
+              include_fraudulent_domains, client_ips, skip_dehashed, skip_intelx),
         daemon=True,
     )
     t.start()

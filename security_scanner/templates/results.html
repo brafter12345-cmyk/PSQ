@@ -1332,6 +1332,41 @@
       </div>
     </div>
 
+    <!-- IntelX Dark Web Monitoring -->
+    {% set ix = results.categories.get('intelx', {}) %}
+    {% if ix and ix.status != 'no_api_key' %}
+    {% set ix_tl = 'tl-crimson' if ix.darkweb_count > 0 else ('tl-red' if ix.paste_count > 5 else ('tl-amber' if ix.total_results > 0 else 'tl-green')) %}
+    <div class="cat-card">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light {{ ix_tl }}"></div><div class="cat-title">Dark Web Monitoring (IntelX)</div></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="cat-grade {% if ix.darkweb_count > 0 %}color-red{% endif %}">{{ ix.total_results }} result(s)</span>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="cat-body">
+        <table class="kv-table">
+          <tr><td>Total references</td><td>{{ ix.total_results }}</td></tr>
+          <tr><td>Dark web mentions</td><td>{% if ix.darkweb_count > 0 %}<span class="badge badge-red">{{ ix.darkweb_count }}</span>{% else %}0{% endif %}</td></tr>
+          <tr><td>Paste site mentions</td><td>{% if ix.paste_count > 0 %}<span class="badge badge-amber">{{ ix.paste_count }}</span>{% else %}0{% endif %}</td></tr>
+          <tr><td>Leak database entries</td><td>{{ ix.leak_count | default(0) }}</td></tr>
+        </table>
+        {% if ix.recent_results %}
+        <div style="margin-top:10px;font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;">Recent Findings</div>
+        <table class="kv-table" style="margin-top:6px;">
+          {% for rec in ix.recent_results[:8] %}
+          <tr>
+            <td style="font-size:.75rem;color:var(--muted);">{{ rec.date }}</td>
+            <td style="font-size:.75rem;">{{ rec.name }} <span style="color:var(--muted);">({{ rec.media }})</span></td>
+          </tr>
+          {% endfor %}
+        </table>
+        {% endif %}
+        {% if ix.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in ix.issues %}<li class="issue-item"><span class="issue-icon issue-err">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+
     <!-- Credential Risk Assessment -->
     {% set cr = results.categories.get('credential_risk', {}) %}
     {% if cr and cr.risk_level %}
