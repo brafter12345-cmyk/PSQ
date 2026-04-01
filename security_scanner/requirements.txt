@@ -16,6 +16,9 @@ python-whois>=0.9.4
 # PDF report generation
 reportlab>=4.0.0
 
+# Monte Carlo simulation for FAIR model
+numpy>=1.24.0
+
 # Environment variable loading
 python-dotenv>=1.0.0
 

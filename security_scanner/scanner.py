@@ -4345,8 +4345,48 @@ class FinancialImpactCalculator:
     """
     Estimates probable financial loss using Open FAIR-inspired model.
     Three scenarios: Data Breach + Ransomware + Business Interruption.
-    Outputs min / most_likely / max range for insurance underwriting.
+    Uses Monte Carlo simulation (10,000 iterations) with PERT distributions
+    to produce statistically robust confidence intervals.
+    Outputs P5/P25/P50/P75/P95 percentiles for insurance underwriting.
     """
+    MC_ITERATIONS = 10_000  # Number of Monte Carlo simulations
+
+    @staticmethod
+    def _pert_sample(low, mode, high, size=1):
+        """Sample from a PERT (modified beta) distribution.
+        PERT is preferred over triangular for risk analysis because it
+        concentrates more probability around the most likely value."""
+        import numpy as np
+        if high <= low:
+            return np.full(size, mode)
+        # PERT lambda=4 (standard); alpha/beta from PERT formula
+        lam = 4.0
+        mu = (low + lam * mode + high) / (lam + 2)
+        # Prevent division by zero
+        if high == low:
+            return np.full(size, mode)
+        a = ((mu - low) * (2 * mode - low - high)) / ((mode - mu) * (high - low)) if (mode - mu) != 0 else 2.0
+        a = max(1.01, a)  # ensure valid shape
+        b = a * (high - mu) / (mu - low) if (mu - low) != 0 else 2.0
+        b = max(1.01, b)
+        samples = np.random.beta(a, b, size=size) * (high - low) + low
+        return samples
+
+    @staticmethod
+    def _mc_percentiles(samples):
+        """Extract P5, P25, P50 (median), P75, P95 percentiles."""
+        import numpy as np
+        p5, p25, p50, p75, p95 = np.percentile(samples, [5, 25, 50, 75, 95])
+        return {
+            "p5": round(float(p5)),
+            "p25": round(float(p25)),
+            "p50": round(float(p50)),
+            "p75": round(float(p75)),
+            "p95": round(float(p95)),
+            "mean": round(float(np.mean(samples))),
+            "std_dev": round(float(np.std(samples))),
+        }
+
     # Industry cost-per-record (IBM/Ponemon averages)
     COST_PER_RECORD = {
         "healthcare": 239, "finance": 219, "tech": 183,
@@ -4450,21 +4490,67 @@ class FinancialImpactCalculator:
             "max": round(bi_max),
         }
 
-        # --- Totals ---
-        total_min = breach_min + ransom_min + bi_min
-        total_likely = breach_most_likely + ransom_most_likely + bi_most_likely
-        total_max = breach_max + ransom_max + bi_max
+        # --- Monte Carlo Simulation (USD) ---
+        import numpy as np
+        np.random.seed(42)
+        N = self.MC_ITERATIONS
 
-        # Insurance recommendations
-        deductible = round(total_min * 0.5, -3)  # Round to nearest $1K
-        expected_annual = round(total_likely, -3)
-        coverage_limit = round(total_max * 1.2, -3)
+        mc_p_br = np.clip(self._pert_sample(p_breach * 0.5, p_breach, min(1.0, p_breach * 2.0), N), 0, 1)
+        mc_rec = self._pert_sample(est_records * 0.3, est_records, est_records * 3.0, N)
+        mc_cpr = self._pert_sample(cost_per_record * 0.6, cost_per_record, cost_per_record * 1.5, N)
+        mc_fine = self._pert_sample(reg_fine * 0.5, reg_fine, reg_fine * 2.0, N)
+        mc_breach_s = mc_p_br * (mc_rec * mc_cpr + mc_fine)
+
+        mc_rsi = np.clip(self._pert_sample(rsi * 0.5, rsi, min(1.0, rsi * 2.0), N), 0, 1)
+        mc_dt = self._pert_sample(7, downtime_days, 45, N)
+        mc_rd = self._pert_sample(ransom_demand * 0.3, ransom_demand, ransom_demand * 3.0, N)
+        mc_ir = self._pert_sample(ir_cost * 0.5, ir_cost, ir_cost * 2.5, N)
+        mc_ransom_s = mc_rsi * (mc_dt * daily_revenue + mc_rd + mc_ir)
+
+        mc_pi = np.clip(self._pert_sample(p_interrupt * 0.3, p_interrupt, min(0.8, p_interrupt * 3.0), N), 0, 1)
+        mc_bd = self._pert_sample(1, bi_downtime, 14, N)
+        mc_if = np.clip(self._pert_sample(impact_factor * 0.5, impact_factor, min(1.0, impact_factor * 1.5), N), 0, 1)
+        mc_bi_s = mc_pi * (mc_bd * daily_revenue * mc_if)
+
+        mc_total_s = mc_breach_s + mc_ransom_s + mc_bi_s
+        mc_stats = self._mc_percentiles(mc_total_s)
+        mc_breach_stats = self._mc_percentiles(mc_breach_s)
+        mc_ransom_stats = self._mc_percentiles(mc_ransom_s)
+        mc_bi_stats = self._mc_percentiles(mc_bi_s)
+
+        # Use MC percentiles
+        total_min = mc_stats["p5"]
+        total_likely = mc_stats["p50"]
+        total_max = mc_stats["p95"]
+
+        # Insurance recommendations from MC distribution
+        deductible = round(mc_stats["p5"] * 0.5, -3)
+        expected_annual = round(mc_stats["p50"], -3)
+        coverage_limit = round(mc_stats["p95"] * 1.2, -3)
+
+        # Add MC stats to scenario dicts
+        data_breach["monte_carlo"] = mc_breach_stats
+        ransomware["monte_carlo"] = mc_ransom_stats
+        business_interruption["monte_carlo"] = mc_bi_stats
 
         output = {
             "scenarios": {
                 "data_breach": data_breach,
                 "ransomware": ransomware,
                 "business_interruption": business_interruption,
+            },
+            "monte_carlo": {
+                "iterations": N,
+                "method": "PERT distribution (lambda=4)",
+                "total": mc_stats,
+                "confidence_interval_90": {
+                    "lower": mc_stats["p5"],
+                    "upper": mc_stats["p95"],
+                },
+                "confidence_interval_50": {
+                    "lower": mc_stats["p25"],
+                    "upper": mc_stats["p75"],
+                },
             },
             "total": {
                 "min": round(total_min),
@@ -4525,10 +4611,48 @@ class FinancialImpactCalculator:
         bi_loss = p_interruption * (5 * daily_revenue * impact_factor)
 
         most_likely = round(data_breach_loss + ransomware_loss + bi_loss)
-        minimum = round(most_likely * 0.15)
-        maximum = round(most_likely * 3.5)
+
+        # --- Monte Carlo Simulation (ZAR) ---
+        # Each parameter is sampled from a PERT distribution around its
+        # point estimate, using ±30-50% ranges based on parameter uncertainty.
+        import numpy as np
+        np.random.seed(42)  # Reproducible results for same input
+        N = self.MC_ITERATIONS
+
+        # Breach scenario samples
+        mc_p_breach = np.clip(self._pert_sample(p_breach * 0.5, p_breach, min(1.0, p_breach * 2.0), N), 0, 1)
+        mc_records = self._pert_sample(estimated_records * 0.3, estimated_records, estimated_records * 3.0, N)
+        mc_cpr = self._pert_sample(cost_per_record * 0.6, cost_per_record, cost_per_record * 1.5, N)
+        mc_reg_fine = self._pert_sample(regulatory_fine * 0.5, regulatory_fine, regulatory_fine * 2.0, N)
+        mc_breach = mc_p_breach * (mc_records * mc_cpr + mc_reg_fine)
+
+        # Ransomware scenario samples
+        mc_rsi = np.clip(self._pert_sample(rsi_score * 0.5, rsi_score, min(1.0, rsi_score * 2.0), N), 0, 1)
+        mc_downtime = self._pert_sample(7, avg_downtime_days, 45, N)  # 7-45 days range
+        mc_ransom = self._pert_sample(ransom_estimate * 0.3, ransom_estimate, ransom_estimate * 3.0, N)
+        mc_ir = self._pert_sample(ir_cost * 0.5, ir_cost, ir_cost * 2.5, N)
+        mc_ransomware = mc_rsi * (mc_downtime * daily_revenue * 0.5 + mc_ransom + mc_ir)
+
+        # BI scenario samples
+        mc_p_int = np.clip(self._pert_sample(p_interruption * 0.3, p_interruption, min(0.8, p_interruption * 3.0), N), 0, 1)
+        mc_bi_days = self._pert_sample(1, 5, 14, N)  # 1-14 days range
+        mc_impact = np.clip(self._pert_sample(impact_factor * 0.5, impact_factor, min(1.0, impact_factor * 1.5), N), 0, 1)
+        mc_bi = mc_p_int * (mc_bi_days * daily_revenue * mc_impact)
+
+        # Total loss distribution
+        mc_total = mc_breach + mc_ransomware + mc_bi
+        mc_stats = self._mc_percentiles(mc_total)
+
+        # Per-scenario percentiles
+        mc_breach_stats = self._mc_percentiles(mc_breach)
+        mc_ransomware_stats = self._mc_percentiles(mc_ransomware)
+        mc_bi_stats = self._mc_percentiles(mc_bi)
+
+        # Use MC percentiles for min/max instead of fixed multipliers
+        minimum = mc_stats["p5"]
+        maximum = mc_stats["p95"]
         recommended_cover = max(1_000_000, round(maximum * 1.2, -5))
-        minimum_cover = max(500_000, round(most_likely, -5))
+        minimum_cover = max(500_000, round(mc_stats["p50"], -5))
 
         if rsi_score >= 0.7:
             premium_tier = "Very High"
@@ -4568,16 +4692,32 @@ class FinancialImpactCalculator:
                     "cost_per_record": cost_per_record,
                     "estimated_records": estimated_records,
                     "regulatory_fine": round(regulatory_fine),
+                    "monte_carlo": mc_breach_stats,
                 },
                 "ransomware": {
                     "rsi_score": rsi_score,
                     "estimated_loss": round(ransomware_loss),
                     "avg_downtime_days": avg_downtime_days,
                     "ransom_estimate": ransom_estimate,
+                    "monte_carlo": mc_ransomware_stats,
                 },
                 "business_interruption": {
                     "probability": round(p_interruption, 3),
                     "estimated_loss": round(bi_loss),
+                    "monte_carlo": mc_bi_stats,
+                },
+            },
+            "monte_carlo": {
+                "iterations": N,
+                "method": "PERT distribution (lambda=4)",
+                "total": mc_stats,
+                "confidence_interval_90": {
+                    "lower": mc_stats["p5"],
+                    "upper": mc_stats["p95"],
+                },
+                "confidence_interval_50": {
+                    "lower": mc_stats["p25"],
+                    "upper": mc_stats["p75"],
                 },
             },
             "insurance_recommendation": {

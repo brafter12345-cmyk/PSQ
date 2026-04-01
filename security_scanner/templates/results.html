@@ -481,10 +481,61 @@
         {# Estimated Annual Loss range #}
         <div style="font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Estimated Annual Loss</div>
         <table class="kv-table" style="margin-bottom:14px;">
-          <tr><td style="width:180px;">Est. Annual Loss (Min)</td><td>R {{ '{:,.0f}'.format(fin.total.min) }}</td></tr>
-          <tr><td>Est. Annual Loss (Likely)</td><td><strong style="color:var(--critical);">R {{ '{:,.0f}'.format(fin.total.most_likely) }}</strong></td></tr>
+          <tr><td style="width:180px;">Est. Annual Loss (Likely)</td><td><strong style="color:var(--critical);">R {{ '{:,.0f}'.format(fin.total.most_likely) }}</strong></td></tr>
+          <tr><td>Est. Annual Loss (Min)</td><td>R {{ '{:,.0f}'.format(fin.total.min) }}</td></tr>
           <tr><td>Est. Annual Loss (Max)</td><td>R {{ '{:,.0f}'.format(fin.total.max) }}</td></tr>
         </table>
+
+        {# Monte Carlo Confidence Intervals #}
+        {% set mc = fin.get('monte_carlo', {}) if fin is mapping else {} %}
+        {% if mc and mc.total %}
+        <div style="font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">
+          Monte Carlo Analysis <span style="font-weight:400;text-transform:none;">({{ '{:,}'.format(mc.iterations) }} simulations, PERT distribution)</span>
+        </div>
+
+        {# Confidence interval visual bar #}
+        {% set mc_t = mc.total %}
+        {% set mc_max_val = mc_t.p95 if mc_t.p95 > 0 else 1 %}
+        <div style="position:relative;background:var(--surface2);border-radius:8px;padding:16px 14px 10px;margin-bottom:14px;">
+          {# 90% CI bar (P5-P95) #}
+          <div style="position:relative;height:28px;background:rgba(255,255,255,0.05);border-radius:6px;overflow:hidden;margin-bottom:8px;">
+            <div style="position:absolute;left:{{ (mc_t.p5 / mc_max_val * 100) | round(1) }}%;width:{{ ((mc_t.p95 - mc_t.p5) / mc_max_val * 100) | round(1) }}%;height:100%;background:linear-gradient(90deg, rgba(52,211,153,0.3), rgba(251,191,36,0.3), rgba(239,68,68,0.3));border-radius:6px;"></div>
+            {# 50% CI bar (P25-P75) #}
+            <div style="position:absolute;left:{{ (mc_t.p25 / mc_max_val * 100) | round(1) }}%;width:{{ ((mc_t.p75 - mc_t.p25) / mc_max_val * 100) | round(1) }}%;height:100%;background:linear-gradient(90deg, rgba(251,191,36,0.5), rgba(239,68,68,0.5));border-radius:4px;"></div>
+            {# P50 median marker #}
+            <div style="position:absolute;left:{{ (mc_t.p50 / mc_max_val * 100) | round(1) }}%;top:0;bottom:0;width:3px;background:white;border-radius:2px;"></div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:.7rem;color:var(--muted);">
+            <span>P5: R {{ '{:,.0f}'.format(mc_t.p5) }}</span>
+            <span>P25: R {{ '{:,.0f}'.format(mc_t.p25) }}</span>
+            <span style="color:white;font-weight:700;">P50: R {{ '{:,.0f}'.format(mc_t.p50) }}</span>
+            <span>P75: R {{ '{:,.0f}'.format(mc_t.p75) }}</span>
+            <span>P95: R {{ '{:,.0f}'.format(mc_t.p95) }}</span>
+          </div>
+        </div>
+
+        <table class="kv-table" style="margin-bottom:14px;">
+          <tr><td style="width:220px;">90% Confidence Interval</td><td>R {{ '{:,.0f}'.format(mc.confidence_interval_90.lower) }} — R {{ '{:,.0f}'.format(mc.confidence_interval_90.upper) }}</td></tr>
+          <tr><td>50% Confidence Interval</td><td><strong>R {{ '{:,.0f}'.format(mc.confidence_interval_50.lower) }} — R {{ '{:,.0f}'.format(mc.confidence_interval_50.upper) }}</strong></td></tr>
+          <tr><td>Median (P50)</td><td><strong style="color:var(--critical);">R {{ '{:,.0f}'.format(mc_t.p50) }}</strong></td></tr>
+          <tr><td>Mean</td><td>R {{ '{:,.0f}'.format(mc_t.mean) }}</td></tr>
+          <tr><td>Standard Deviation</td><td>R {{ '{:,.0f}'.format(mc_t.std_dev) }}</td></tr>
+        </table>
+
+        {# Per-scenario MC breakdown #}
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+          {% for name, label in [('data_breach', 'Data Breach'), ('ransomware', 'Ransomware'), ('business_interruption', 'Bus. Interruption')] %}
+          {% set smc = fin.scenarios[name].get('monte_carlo', {}) if fin.scenarios[name] is mapping else {} %}
+          {% if smc %}
+          <div style="background:var(--surface2);border-radius:8px;padding:10px;">
+            <div style="font-size:.7rem;color:var(--muted);text-transform:uppercase;margin-bottom:4px;">{{ label }}</div>
+            <div style="font-size:1rem;font-weight:700;color:var(--critical);">R {{ '{:,.0f}'.format(smc.p50) }}</div>
+            <div style="font-size:.68rem;color:var(--muted);margin-top:2px;">P5: R {{ '{:,.0f}'.format(smc.p5) }} — P95: R {{ '{:,.0f}'.format(smc.p95) }}</div>
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+        {% endif %}
 
         {# Scenario breakdown #}
         <div style="font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Scenario Breakdown</div>
