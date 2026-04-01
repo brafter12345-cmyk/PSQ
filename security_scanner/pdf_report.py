@@ -826,6 +826,106 @@ def cat_dehashed(d, S):
     return build_cat_card("Dehashed Credential Leaks", col, summary, rows, dh.get("issues", []), S)
 
 
+def cat_hudson_rock(d, S):
+    hr = d.get("hudson_rock", {})
+    employees = hr.get("compromised_employees", 0)
+    users = hr.get("compromised_users", 0)
+    third = hr.get("third_party_exposures", 0)
+    total = employees + users
+    col = C_CRITICAL if employees > 0 else (C_RED if users > 0 else (C_AMBER if third > 0 else C_GREEN))
+    summary = f"{total} compromised" if total > 0 else ("Third-party exposure" if third > 0 else "Clean")
+    rows = [
+        ("Compromised employees", f"{employees}" + (" — ACTIVE INFOSTEALER" if employees > 0 else "")),
+        ("Compromised users", users),
+        ("Third-party exposures", third),
+    ]
+    if employees > 0:
+        rows.append(("", ""))
+        rows.append(("INTERPRETATION", "Employee devices are ACTIVELY infected with infostealer malware (Raccoon, RedLine, Vidar). "
+                      "Credentials are being exfiltrated in real-time and sold on dark web markets. "
+                      "Immediate incident response required: isolate devices, force password resets, engage forensics."))
+    elif third > 0:
+        rows.append(("", ""))
+        rows.append(("INTERPRETATION", "Third-party supply chain exposure detected. A vendor or partner connected to this domain "
+                      "has compromised credentials. Review shared access and enforce MFA on all integrations."))
+    elif total == 0:
+        rows.append(("", ""))
+        rows.append(("INTERPRETATION", "No active infostealer infections detected on employee or user devices. "
+                      "This indicates healthy endpoint security posture."))
+    return build_cat_card("Infostealer Detection (Hudson Rock)", col, summary, rows, hr.get("issues", []), S)
+
+
+def cat_intelx(d, S):
+    ix = d.get("intelx", {})
+    if ix.get("status") == "no_api_key":
+        return []
+    total = ix.get("total_results", 0)
+    darkweb = ix.get("darkweb_count", 0)
+    pastes = ix.get("paste_count", 0)
+    leaks = ix.get("leak_count", 0)
+    col = C_CRITICAL if darkweb > 0 else (C_RED if pastes > 5 else (C_AMBER if total > 0 else C_GREEN))
+    summary = f"{total} result(s)" if total > 0 else "Clean"
+    rows = [
+        ("Total references", total),
+        ("Dark web mentions", f"{darkweb}" + (" — ACTIVE TRADING" if darkweb > 0 else "")),
+        ("Paste site mentions", pastes),
+        ("Leak database entries", leaks),
+    ]
+    # Add recent findings
+    recent = ix.get("recent_results", [])
+    if recent:
+        rows.append(("", ""))
+        rows.append(("RECENT FINDINGS", ""))
+        for rec in recent[:8]:
+            rows.append((f"  {rec.get('date', '')}", f"{rec.get('name', 'Unknown')} ({rec.get('media', '')})"))
+    # Interpretation
+    if darkweb > 0:
+        rows.append(("", ""))
+        rows.append(("INTERPRETATION", f"{darkweb} dark web mention(s) found. Credentials or data associated with this domain "
+                      "are actively being traded on criminal forums. Force password resets and enable MFA immediately."))
+    elif total > 0:
+        rows.append(("", ""))
+        rows.append(("INTERPRETATION", f"{total} reference(s) found in leak databases. These are primarily infostealer logs "
+                      "containing stolen browser data from infected endpoints. Review affected accounts and enforce credential rotation."))
+    return build_cat_card("Dark Web Monitoring (IntelX)", col, summary, rows, ix.get("issues", []), S)
+
+
+def cat_credential_risk(d, S):
+    cr = d.get("credential_risk", {})
+    if not cr or not cr.get("risk_level"):
+        return []
+    level = cr.get("risk_level", "LOW")
+    col = C_CRITICAL if level == "CRITICAL" else (C_RED if level == "HIGH" else (C_AMBER if level == "MEDIUM" else C_GREEN))
+    rows = [
+        ("Overall Risk Level", level),
+        ("Risk Score", f"{cr.get('risk_score', 100)}/100"),
+        ("Active Compromise", "YES — IMMEDIATE ACTION REQUIRED" if cr.get("active_compromise") else "No"),
+    ]
+    # Factors
+    factors = cr.get("factors", [])
+    if factors:
+        rows.append(("", ""))
+        rows.append(("RISK FACTORS", ""))
+        for f in factors:
+            rows.append(("", f))
+    # Summary
+    summary_text = cr.get("summary", "")
+    if summary_text:
+        rows.append(("", ""))
+        rows.append(("ASSESSMENT", summary_text))
+    # Enriched breach timeline
+    enriched = d.get("dehashed", {}).get("enriched_sources", [])
+    if enriched:
+        rows.append(("", ""))
+        rows.append(("BREACH SOURCE TIMELINE", ""))
+        for src in enriched:
+            pw_flag = " [PASSWORDS EXPOSED]" if src.get("passwords_in_breach") else ""
+            verified = " [Verified]" if src.get("verified") else ""
+            data = ", ".join(src.get("data_exposed", [])[:4]) if src.get("data_exposed") else "Unknown"
+            rows.append((f"  {src.get('name', 'Unknown')}", f"Date: {src.get('breach_date', 'Unknown')}{pw_flag}{verified} | Data: {data}"))
+    return build_cat_card("Credential Risk Assessment", col, level, rows, [], S)
+
+
 def cat_virustotal(d, S):
     vt     = d.get("virustotal", {})
     status = vt.get("status", "completed")
@@ -1557,6 +1657,9 @@ def generate_pdf(results: dict) -> bytes:
     story += cat_subdomains(cats, S)
     story += cat_shodan(cats, S)
     story += cat_dehashed(cats, S)
+    story += cat_hudson_rock(cats, S)
+    story += cat_intelx(cats, S)
+    story += cat_credential_risk(cats, S)
     story += cat_virustotal(cats, S)
     story += cat_fraudulent_domains(cats, S)
 
