@@ -3003,7 +3003,282 @@ class SecurityTrailsChecker:
 
 
 # ---------------------------------------------------------------------------
-# 24. Fraudulent / Lookalike Domain Detection
+# 24. Hudson Rock Infostealer Detection (free, no API key)
+# ---------------------------------------------------------------------------
+
+class HudsonRockChecker:
+    """
+    Checks if a domain has employees/users compromised by infostealer malware
+    (Raccoon, RedLine, Vidar, etc.) via Hudson Rock's free OSINT API.
+    Active infostealers indicate CURRENT compromise — not historical.
+    """
+    API_URL = "https://cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-domain"
+
+    def check(self, domain: str) -> dict:
+        result = {
+            "status": "completed",
+            "compromised_employees": 0,
+            "compromised_users": 0,
+            "third_party_exposures": 0,
+            "total_compromised": 0,
+            "score": 100,
+            "issues": [],
+        }
+        try:
+            r = requests.get(f"{self.API_URL}?domain={domain}",
+                             headers={"User-Agent": USER_AGENT}, timeout=15)
+            if r.status_code != 200:
+                result["status"] = "error"
+                return result
+
+            data = r.json()
+            employees = data.get("employees", 0) or 0
+            users = data.get("users", 0) or 0
+            third_parties = data.get("third_parties", 0) or 0
+            total = employees + users
+
+            result["compromised_employees"] = employees
+            result["compromised_users"] = users
+            result["third_party_exposures"] = third_parties
+            result["total_compromised"] = total
+
+            if employees > 0:
+                result["issues"].append(
+                    f"CRITICAL: {employees} employee device(s) infected with infostealer malware — "
+                    "credentials are actively being sold on dark web markets. Immediate incident response required."
+                )
+                result["score"] = max(0, 100 - employees * 30)
+            if users > 0:
+                result["issues"].append(
+                    f"{users} user account(s) compromised via infostealer — "
+                    "force password resets and enable MFA for affected accounts."
+                )
+                result["score"] = max(0, result["score"] - users * 10)
+            if third_parties > 0:
+                result["issues"].append(
+                    f"{third_parties} third-party exposure(s) detected — "
+                    "review supply chain partners and shared credential access."
+                )
+                result["score"] = max(0, result["score"] - third_parties * 5)
+
+        except Exception as e:
+            result["status"] = "error"
+            result["error"] = str(e)
+
+        return result
+
+
+# ---------------------------------------------------------------------------
+# 25. HIBP Breach Metadata (free tier — breach list + date enrichment)
+# ---------------------------------------------------------------------------
+
+class HIBPBreachMetadata:
+    """
+    Uses the free HIBP breach list API to enrich Dehashed results with
+    breach dates, data classes exposed, and verification status.
+    No API key required for the breach list endpoint.
+    """
+    BREACHES_URL = "https://haveibeenpwned.com/api/v3/breaches"
+
+    _cache = None
+    _cache_time = 0
+
+    def load_breaches(self) -> dict:
+        """Load full breach catalog, cached for 24 hours. Returns {name_lower: breach_dict}."""
+        now = time.time()
+        if HIBPBreachMetadata._cache is not None and (now - HIBPBreachMetadata._cache_time) < 86400:
+            return HIBPBreachMetadata._cache
+        try:
+            r = requests.get(self.BREACHES_URL,
+                             headers={"User-Agent": USER_AGENT}, timeout=15)
+            if r.status_code == 200:
+                breaches = r.json()
+                lookup = {}
+                for b in breaches:
+                    # Index by name (lowercased) and also by common variants
+                    name = b.get("Name", "")
+                    lookup[name.lower()] = {
+                        "name": name,
+                        "title": b.get("Title", name),
+                        "breach_date": b.get("BreachDate", ""),
+                        "pwn_count": b.get("PwnCount", 0),
+                        "data_classes": b.get("DataClasses", []),
+                        "is_verified": b.get("IsVerified", False),
+                        "is_sensitive": b.get("IsSensitive", False),
+                        "description": b.get("Description", "")[:200],
+                    }
+                HIBPBreachMetadata._cache = lookup
+                HIBPBreachMetadata._cache_time = now
+                return lookup
+        except Exception:
+            pass
+        return {}
+
+    def enrich_dehashed_results(self, dehashed_result: dict) -> dict:
+        """Add breach dates and data classes to Dehashed breach details."""
+        breaches_db = self.load_breaches()
+        if not breaches_db:
+            return dehashed_result
+
+        enriched_sources = []
+        for source in dehashed_result.get("breach_sources", []):
+            source_lower = source.lower().strip()
+            # Try exact match, then partial match
+            match = breaches_db.get(source_lower)
+            if not match:
+                for key, val in breaches_db.items():
+                    if source_lower in key or key in source_lower:
+                        match = val
+                        break
+            if match:
+                enriched_sources.append({
+                    "name": source,
+                    "breach_date": match["breach_date"],
+                    "records": match["pwn_count"],
+                    "data_exposed": match["data_classes"],
+                    "verified": match["is_verified"],
+                    "passwords_in_breach": "Passwords" in match["data_classes"],
+                })
+            else:
+                enriched_sources.append({
+                    "name": source,
+                    "breach_date": "Unknown",
+                    "records": 0,
+                    "data_exposed": [],
+                    "verified": False,
+                    "passwords_in_breach": False,
+                })
+
+        dehashed_result["enriched_sources"] = enriched_sources
+        return dehashed_result
+
+
+# ---------------------------------------------------------------------------
+# 26. Credential Risk Classifier
+# ---------------------------------------------------------------------------
+
+class CredentialRiskClassifier:
+    """
+    Combines Dehashed + HIBP + Hudson Rock data to classify credential
+    exposure risk as CRITICAL / HIGH / MEDIUM / LOW.
+    """
+
+    # Known breach dates for common sources not in HIBP
+    KNOWN_BREACH_DATES = {
+        "alien txtbase": "2024-12-01",
+        "socradar.io": "2024-08-01",
+        "collection #1": "2019-01-01",
+        "anti public combo list": "2016-12-01",
+        "exploit.in": "2017-05-01",
+    }
+
+    @staticmethod
+    def classify(dehashed: dict, hudson_rock: dict, hibp_enriched: dict = None) -> dict:
+        """Return overall credential risk assessment."""
+        result = {
+            "risk_level": "LOW",
+            "risk_score": 100,
+            "active_compromise": False,
+            "factors": [],
+            "summary": "",
+        }
+
+        # Factor 1: Active infostealer (Hudson Rock) — CRITICAL
+        hr_employees = hudson_rock.get("compromised_employees", 0)
+        hr_users = hudson_rock.get("compromised_users", 0)
+        if hr_employees > 0:
+            result["risk_level"] = "CRITICAL"
+            result["active_compromise"] = True
+            result["risk_score"] = max(0, result["risk_score"] - 50)
+            result["factors"].append(
+                f"ACTIVE INFOSTEALER: {hr_employees} employee device(s) currently infected — "
+                "credentials are being exfiltrated in real-time"
+            )
+        if hr_users > 0:
+            result["risk_score"] = max(0, result["risk_score"] - 20)
+            result["factors"].append(
+                f"{hr_users} user account(s) compromised via infostealer malware"
+            )
+
+        # Factor 2: Credential exposure (Dehashed)
+        total_leaks = dehashed.get("total_entries", 0)
+        has_passwords = dehashed.get("has_passwords", False)
+        unique_emails = dehashed.get("unique_emails", 0)
+
+        if has_passwords and total_leaks > 0:
+            if result["risk_level"] != "CRITICAL":
+                result["risk_level"] = "HIGH"
+            result["risk_score"] = max(0, result["risk_score"] - 30)
+            result["factors"].append(
+                f"Plaintext or hashed passwords exposed for {unique_emails} email(s) "
+                f"across {total_leaks} breach record(s)"
+            )
+        elif total_leaks > 0:
+            if result["risk_level"] not in ("CRITICAL", "HIGH"):
+                result["risk_level"] = "MEDIUM"
+            result["risk_score"] = max(0, result["risk_score"] - 15)
+            result["factors"].append(
+                f"{total_leaks} credential record(s) found across {len(dehashed.get('breach_sources', []))} breach source(s) "
+                f"— {unique_emails} unique email(s) exposed"
+            )
+
+        # Factor 3: Breach recency (HIBP enrichment)
+        enriched = dehashed.get("enriched_sources", [])
+        recent_breaches = []
+        old_breaches = []
+        for src in enriched:
+            date_str = src.get("breach_date", "Unknown")
+            if date_str and date_str != "Unknown":
+                try:
+                    year = int(date_str[:4])
+                    if year >= 2023:
+                        recent_breaches.append(src["name"])
+                    else:
+                        old_breaches.append(src["name"])
+                except (ValueError, IndexError):
+                    pass
+            pw_in_breach = src.get("passwords_in_breach", False)
+            if pw_in_breach:
+                result["factors"].append(
+                    f"Breach '{src['name']}' (date: {date_str}) included passwords in exposed data"
+                )
+
+        if recent_breaches:
+            if result["risk_level"] not in ("CRITICAL",):
+                result["risk_level"] = "HIGH"
+            result["risk_score"] = max(0, result["risk_score"] - 15)
+            result["factors"].append(
+                f"Recent breaches (2023+): {', '.join(recent_breaches)} — higher likelihood credentials are still active"
+            )
+
+        # Build summary
+        if result["risk_level"] == "CRITICAL":
+            result["summary"] = (
+                "CRITICAL credential risk — active infostealer infection detected. "
+                "Credentials are being exfiltrated in real-time. Immediate incident response required: "
+                "isolate affected devices, force all password resets, enable MFA, engage forensics team."
+            )
+        elif result["risk_level"] == "HIGH":
+            result["summary"] = (
+                "HIGH credential risk — recent breaches with password exposure. "
+                "Force password resets for all identified accounts, enable MFA, "
+                "and implement continuous credential monitoring."
+            )
+        elif result["risk_level"] == "MEDIUM":
+            result["summary"] = (
+                "MEDIUM credential risk — historical credential exposure detected. "
+                "Review affected accounts, enforce MFA, and monitor for credential stuffing attempts."
+            )
+        else:
+            result["summary"] = (
+                "LOW credential risk — no active compromise or significant credential exposure detected."
+            )
+
+        return result
+
+
+# ---------------------------------------------------------------------------
+# 27. Fraudulent / Lookalike Domain Detection
 # ---------------------------------------------------------------------------
 
 class FraudulentDomainChecker:
@@ -5369,6 +5644,7 @@ class SecurityScanner:
             "dehashed":            (DehashedChecker().check,           [domain, self.dehashed_email, self.dehashed_api_key]),
             "virustotal":          (VirusTotalChecker().check,         [domain, self.virustotal_api_key]),
             "securitytrails":      (SecurityTrailsChecker().check,     [domain, self.securitytrails_api_key]),
+            "hudson_rock":         (HudsonRockChecker().check,         [domain]),
             "privacy_compliance":  (PrivacyComplianceChecker().check,  [domain]),
             "web_ranking":         (WebRankingChecker().check,         [domain]),
             "info_disclosure":     (InformationDisclosureChecker().check, [domain]),
@@ -5650,6 +5926,27 @@ class SecurityScanner:
                         matched.append(v)
                 if matched:
                     port_entry["osv_vulns"] = matched[:15]
+
+        # --- Phase 4e: Credential risk enrichment (HIBP + Hudson Rock + Dehashed) ---
+        self._notify(on_progress, "credential_risk", "running")
+        try:
+            # Enrich Dehashed with HIBP breach metadata (dates, data classes)
+            hibp = HIBPBreachMetadata()
+            dehashed_data = cat_results.get("dehashed", {})
+            if dehashed_data.get("total_entries", 0) > 0 or dehashed_data.get("breach_sources"):
+                cat_results["dehashed"] = hibp.enrich_dehashed_results(dehashed_data)
+
+            # Build credential risk classification
+            hudson_rock_data = cat_results.get("hudson_rock", {})
+            classifier = CredentialRiskClassifier()
+            cred_risk = classifier.classify(
+                dehashed=cat_results.get("dehashed", {}),
+                hudson_rock=hudson_rock_data,
+            )
+            results["categories"]["credential_risk"] = cred_risk
+        except Exception:
+            pass
+        self._notify(on_progress, "credential_risk", "done")
 
         # --- Phase 5: Score ---
         scorer = RiskScorer()

@@ -1307,6 +1307,71 @@
       </div>
     </div>
 
+    <!-- Hudson Rock Infostealer Detection -->
+    {% set hr = results.categories.get('hudson_rock', {}) %}
+    {% set hr_total = (hr.compromised_employees | default(0)) + (hr.compromised_users | default(0)) %}
+    {% set hr_tl = 'tl-crimson' if hr.compromised_employees > 0 else ('tl-red' if hr.compromised_users > 0 else ('tl-amber' if hr.third_party_exposures > 0 else 'tl-green')) %}
+    <div class="cat-card">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light {{ hr_tl }}"></div><div class="cat-title">Infostealer Detection (Hudson Rock)</div></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="cat-grade {% if hr_total > 0 %}color-red{% endif %}">
+            {% if hr_total > 0 %}{{ hr_total }} compromised{% elif hr.third_party_exposures > 0 %}{{ hr.third_party_exposures }} third-party{% else %}Clean{% endif %}
+          </span>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="cat-body">
+        <table class="kv-table">
+          <tr><td>Compromised employees</td><td>{% if hr.compromised_employees > 0 %}<span class="badge badge-red">{{ hr.compromised_employees }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+          <tr><td>Compromised users</td><td>{% if hr.compromised_users > 0 %}<span class="badge badge-red">{{ hr.compromised_users }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+          <tr><td>Third-party exposures</td><td>{% if hr.third_party_exposures > 0 %}<span class="badge badge-amber">{{ hr.third_party_exposures }}</span>{% else %}0{% endif %}</td></tr>
+        </table>
+        {% if hr.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in hr.issues %}<li class="issue-item"><span class="issue-icon issue-err">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
+        {% if not hr.issues %}<p style="color:var(--low);font-size:.82rem;margin-top:8px;">No active infostealer infections detected.</p>{% endif %}
+      </div>
+    </div>
+
+    <!-- Credential Risk Assessment -->
+    {% set cr = results.categories.get('credential_risk', {}) %}
+    {% if cr and cr.risk_level %}
+    {% set cr_tl = 'tl-crimson' if cr.risk_level == 'CRITICAL' else ('tl-red' if cr.risk_level == 'HIGH' else ('tl-amber' if cr.risk_level == 'MEDIUM' else 'tl-green')) %}
+    <div class="cat-card" style="grid-column: 1 / -1;">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light {{ cr_tl }}"></div><div class="cat-title">Credential Risk Assessment</div></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="cat-grade" style="{% if cr.risk_level == 'CRITICAL' %}color:var(--critical);{% elif cr.risk_level == 'HIGH' %}color:var(--red);{% elif cr.risk_level == 'MEDIUM' %}color:var(--medium);{% else %}color:var(--low);{% endif %}">{{ cr.risk_level }}</span>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="cat-body">
+        <p style="font-size:.88rem;color:var(--text);padding:8px 0;line-height:1.5;">{{ cr.summary }}</p>
+        {% if cr.factors %}
+        <ul class="issue-list" style="margin-top:4px;">
+          {% for f in cr.factors %}<li class="issue-item"><span class="issue-icon issue-{% if 'CRITICAL' in f or 'ACTIVE' in f %}err{% elif 'password' in f.lower() %}err{% else %}warn{% endif %}">&#9888;</span>{{ f }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+        {% set enriched = results.categories.get('dehashed', {}).get('enriched_sources', []) %}
+        {% if enriched %}
+        <div style="margin-top:10px;font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;">Breach Source Timeline</div>
+        <table class="kv-table" style="margin-top:6px;">
+          {% for src in enriched %}
+          <tr>
+            <td style="width:140px;font-weight:600;">{{ src.name }}</td>
+            <td>
+              Date: {{ src.breach_date }}
+              {% if src.passwords_in_breach %}<span class="badge badge-red" style="margin-left:6px;">Passwords exposed</span>{% endif %}
+              {% if src.verified %}<span class="badge badge-amber" style="margin-left:4px;">Verified</span>{% endif %}
+              {% if src.data_exposed %}<br><span style="color:var(--muted);font-size:.75rem;">Data: {{ src.data_exposed | join(', ') }}</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </table>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
     <!-- VirusTotal Reputation -->
     {% set vt = results.categories.get('virustotal', {}) %}
     {% set vt_mal = vt.get('malicious_count', 0) %}
