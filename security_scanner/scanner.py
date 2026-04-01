@@ -3646,79 +3646,226 @@ class ExternalIPAggregator:
 
 COMPLIANCE_MAP = {
     "POPIA": {
-        "Section 19 — Security Safeguards": {
-            "description": "Appropriate technical measures to secure personal information",
-            "checkers": ["ssl", "http_headers", "website_security", "waf", "vpn_remote", "high_risk_protocols"],
+        "S19a — Encryption in Transit": {
+            "description": "Secure data transmission using strong encryption (TLS 1.2+)",
+            "checkers": ["ssl"],
+            "weight": 1.2,
         },
-        "Section 20 — Processing Limitation": {
-            "description": "Personal information processed lawfully and minimised",
+        "S19b — Security Headers": {
+            "description": "HTTP security headers to prevent XSS, clickjacking, MIME attacks",
+            "checkers": ["http_headers"],
+            "weight": 1.0,
+        },
+        "S19c — Web Application Security": {
+            "description": "Secure web application configuration and WAF protection",
+            "checkers": ["website_security", "waf"],
+            "weight": 1.0,
+        },
+        "S19d — Network Access Control": {
+            "description": "Restrict remote access and close high-risk network services",
+            "checkers": ["vpn_remote", "high_risk_protocols"],
+            "weight": 1.2,
+        },
+        "S19e — Email Security": {
+            "description": "SPF, DMARC, DKIM to prevent phishing and impersonation",
+            "checkers": ["email_security", "email_hardening"],
+            "weight": 0.8,
+        },
+        "S20a — Privacy Policy": {
+            "description": "Published privacy policy covering all required POPIA sections",
             "checkers": ["privacy_compliance"],
+            "weight": 1.0,
         },
-        "Section 21 — Information Quality": {
-            "description": "Ensure completeness, accuracy and not misleading",
-            "checkers": ["tech_stack", "info_disclosure"],
+        "S20b — Data Minimisation": {
+            "description": "Limit data collection and avoid unnecessary information exposure",
+            "checkers": ["info_disclosure", "exposed_admin"],
+            "weight": 0.8,
         },
-        "Section 22 — Breach Notification": {
-            "description": "Notification obligations when personal data is compromised",
-            "checkers": ["breaches", "dehashed"],
+        "S21a — Software Currency": {
+            "description": "Keep software and frameworks up to date, no end-of-life components",
+            "checkers": ["tech_stack"],
+            "weight": 1.0,
+        },
+        "S22a — Breach History": {
+            "description": "Historical data breach exposure and notification readiness",
+            "checkers": ["breaches"],
+            "weight": 1.0,
+        },
+        "S22b — Credential Exposure": {
+            "description": "Leaked credentials in public breach databases",
+            "checkers": ["dehashed"],
+            "weight": 1.0,
         },
     },
     "PCI DSS v4.0": {
-        "Req 2 — Secure Configurations": {
-            "description": "Apply secure configurations to all system components",
-            "checkers": ["http_headers", "exposed_admin", "info_disclosure", "security_policy"],
+        "Req 2a — Default Credentials": {
+            "description": "Remove default accounts, change vendor defaults before deployment",
+            "checkers": ["exposed_admin"],
+            "weight": 1.2,
         },
-        "Req 4 — Encryption in Transit": {
-            "description": "Protect cardholder data with strong cryptography during transmission",
-            "checkers": ["ssl", "website_security"],
+        "Req 2b — System Hardening": {
+            "description": "Harden system configurations and disable unnecessary services",
+            "checkers": ["http_headers", "info_disclosure"],
+            "weight": 1.0,
         },
-        "Req 6 — Secure Development": {
-            "description": "Develop and maintain secure systems and software",
-            "checkers": ["tech_stack", "website_security"],
+        "Req 2c — Security Policies": {
+            "description": "Documented security policies and procedures",
+            "checkers": ["security_policy"],
+            "weight": 0.8,
         },
-        "Req 11 — Vulnerability Testing": {
-            "description": "Test security of systems and networks regularly",
-            "checkers": ["shodan_vulns", "virustotal"],
+        "Req 4a — TLS Configuration": {
+            "description": "Strong TLS encryption for cardholder data transmission",
+            "checkers": ["ssl"],
+            "weight": 1.2,
+        },
+        "Req 4b — HTTPS Enforcement": {
+            "description": "Enforce HTTPS across all endpoints handling sensitive data",
+            "checkers": ["website_security"],
+            "weight": 1.0,
+        },
+        "Req 6a — Patch Management": {
+            "description": "Keep systems patched and free of known vulnerabilities",
+            "checkers": ["tech_stack", "shodan_vulns"],
+            "weight": 1.2,
+        },
+        "Req 6b — Secure Coding": {
+            "description": "Develop applications securely and protect against common attacks",
+            "checkers": ["website_security", "http_headers"],
+            "weight": 1.0,
+        },
+        "Req 8a — Payment Security": {
+            "description": "Secure payment processing and PCI-compliant payment forms",
+            "checkers": ["payment_security"],
+            "weight": 1.2,
+        },
+        "Req 11a — Vulnerability Scanning": {
+            "description": "Regular vulnerability scanning of external-facing systems",
+            "checkers": ["shodan_vulns"],
+            "weight": 1.0,
+        },
+        "Req 11b — Threat Monitoring": {
+            "description": "Monitor for malicious activity and reputation threats",
+            "checkers": ["virustotal", "dnsbl"],
+            "weight": 0.8,
         },
     },
     "ISO 27001": {
-        "A.8 — Asset Management": {
-            "description": "Identify and manage information assets",
-            "checkers": ["tech_stack", "subdomains", "external_ips"],
+        "A.8a — Asset Inventory": {
+            "description": "Identify and document all information assets and infrastructure",
+            "checkers": ["tech_stack", "external_ips"],
+            "weight": 1.0,
         },
-        "A.12 — Operations Security": {
-            "description": "Ensure correct and secure operations of information processing",
-            "checkers": ["high_risk_protocols", "vpn_remote", "dnsbl", "waf"],
+        "A.8b — Attack Surface": {
+            "description": "Map and manage the external attack surface including subdomains",
+            "checkers": ["subdomains"],
+            "weight": 0.8,
         },
-        "A.14 — System Acquisition & Security": {
-            "description": "Ensure security is integral to information systems",
-            "checkers": ["ssl", "http_headers", "website_security", "payment_security"],
+        "A.12a — Network Security": {
+            "description": "Secure network services and close unnecessary ports",
+            "checkers": ["high_risk_protocols", "dns_infrastructure"],
+            "weight": 1.2,
+        },
+        "A.12b — Remote Access": {
+            "description": "Secure remote access methods, restrict RDP and insecure protocols",
+            "checkers": ["vpn_remote"],
+            "weight": 1.0,
+        },
+        "A.12c — Malware & Reputation": {
+            "description": "Monitor for malware, blocklisting, and reputation issues",
+            "checkers": ["dnsbl", "virustotal"],
+            "weight": 1.0,
+        },
+        "A.12d — DDoS Resilience": {
+            "description": "Web application firewall and DDoS protection mechanisms",
+            "checkers": ["waf", "cloud_cdn"],
+            "weight": 0.8,
+        },
+        "A.14a — Encryption Standards": {
+            "description": "Strong encryption for data in transit and at rest",
+            "checkers": ["ssl"],
+            "weight": 1.2,
+        },
+        "A.14b — Application Security": {
+            "description": "Secure application development and deployment practices",
+            "checkers": ["http_headers", "website_security"],
+            "weight": 1.0,
+        },
+        "A.14c — Payment & Data Handling": {
+            "description": "Secure handling of payment data and sensitive information",
+            "checkers": ["payment_security", "info_disclosure"],
+            "weight": 1.0,
         },
     },
     "NIST CSF 2.0": {
-        "GV — Govern": {
-            "description": "Establish and monitor cybersecurity risk management strategy and policy",
-            "checkers": ["security_policy", "privacy_compliance"],
+        "GV.1 — Security Policy": {
+            "description": "Documented cybersecurity policies and governance framework",
+            "checkers": ["security_policy"],
+            "weight": 0.8,
         },
-        "ID — Identify": {
-            "description": "Understand organisational assets, suppliers, and cyber risk exposure",
-            "checkers": ["tech_stack", "subdomains", "external_ips", "info_disclosure"],
+        "GV.2 — Privacy Governance": {
+            "description": "Privacy policy and data protection compliance programme",
+            "checkers": ["privacy_compliance"],
+            "weight": 0.8,
         },
-        "PR — Protect": {
-            "description": "Safeguards to manage and reduce cybersecurity risk",
-            "checkers": ["ssl", "http_headers", "waf", "website_security", "email_security", "vpn_remote", "high_risk_protocols"],
+        "ID.1 — Asset Discovery": {
+            "description": "Identify and inventory organisational IT assets",
+            "checkers": ["tech_stack", "external_ips"],
+            "weight": 1.0,
         },
-        "DE — Detect": {
-            "description": "Find and analyse possible cybersecurity attacks and compromises",
-            "checkers": ["shodan_vulns", "virustotal", "dnsbl", "exposed_admin"],
+        "ID.2 — Attack Surface Mapping": {
+            "description": "Discover subdomains, exposed services, and shadow IT",
+            "checkers": ["subdomains", "info_disclosure"],
+            "weight": 0.8,
         },
-        "RS — Respond": {
-            "description": "Actions taken regarding a detected cybersecurity incident",
-            "checkers": ["breaches", "dehashed", "security_policy"],
+        "PR.1 — Encryption & TLS": {
+            "description": "Protect data in transit with strong encryption",
+            "checkers": ["ssl"],
+            "weight": 1.2,
         },
-        "RC — Recover": {
-            "description": "Restore assets and operations affected by a cybersecurity incident",
-            "checkers": ["dns_infrastructure", "email_security", "cloud_cdn"],
+        "PR.2 — Security Headers & Hardening": {
+            "description": "HTTP security headers and web application hardening",
+            "checkers": ["http_headers", "website_security"],
+            "weight": 1.0,
+        },
+        "PR.3 — Perimeter Defence": {
+            "description": "WAF, firewall, and network perimeter protection",
+            "checkers": ["waf", "high_risk_protocols", "vpn_remote"],
+            "weight": 1.2,
+        },
+        "PR.4 — Email Authentication": {
+            "description": "SPF, DMARC, DKIM to prevent email-based attacks",
+            "checkers": ["email_security", "email_hardening"],
+            "weight": 0.8,
+        },
+        "DE.1 — Vulnerability Detection": {
+            "description": "Detect known vulnerabilities across external infrastructure",
+            "checkers": ["shodan_vulns"],
+            "weight": 1.2,
+        },
+        "DE.2 — Threat Intelligence": {
+            "description": "Monitor for malicious activity, blocklisting, and fraud",
+            "checkers": ["virustotal", "dnsbl", "exposed_admin"],
+            "weight": 1.0,
+        },
+        "RS.1 — Breach Response": {
+            "description": "Historical breach exposure and incident response readiness",
+            "checkers": ["breaches", "dehashed"],
+            "weight": 1.0,
+        },
+        "RS.2 — Security Disclosure": {
+            "description": "Published security contact and vulnerability disclosure policy",
+            "checkers": ["security_policy"],
+            "weight": 0.6,
+        },
+        "RC.1 — Infrastructure Resilience": {
+            "description": "DNS redundancy, CDN, and infrastructure recovery capability",
+            "checkers": ["dns_infrastructure", "cloud_cdn"],
+            "weight": 0.8,
+        },
+        "RC.2 — Communication Recovery": {
+            "description": "Email infrastructure resilience and recovery capability",
+            "checkers": ["email_security"],
+            "weight": 0.6,
         },
     },
 }
@@ -3974,15 +4121,21 @@ class RiskScorer:
         return risk_score, risk_level, recommendations
 
     def compliance_summary(self, results: dict) -> dict:
-        """Map checker results to POPIA/PCI/ISO compliance controls."""
+        """Map checker results to POPIA/PCI/ISO/NIST compliance controls.
+
+        Hybrid scoring: each sub-control gets a 0-100 score from its checkers,
+        then the framework overall_pct is the weighted average of all sub-control
+        scores. Controls still display pass/partial/fail badges for quick visual.
+        """
         summary = {}
         for framework, controls in COMPLIANCE_MAP.items():
             ctrl_results = {}
-            pass_count = 0
-            total = len(controls)
+            weighted_total = 0.0
+            weighted_score = 0.0
             for ctrl_name, ctrl_info in controls.items():
                 checker_scores = []
                 findings = []
+                weight = ctrl_info.get("weight", 1.0)
                 for chk_id in ctrl_info["checkers"]:
                     chk = results.get(chk_id, {})
                     if not isinstance(chk, dict):
@@ -3994,23 +4147,27 @@ class RiskScorer:
                         findings.append(issue)
                 if not checker_scores:
                     status = "no_data"
+                    avg = 0
                 else:
                     avg = sum(checker_scores) / len(checker_scores)
                     if avg >= 70:
                         status = "pass"
-                        pass_count += 1
                     elif avg >= 40:
                         status = "partial"
                     else:
                         status = "fail"
+                    weighted_total += weight
+                    weighted_score += avg * weight
                 ctrl_results[ctrl_name] = {
                     "status": status,
+                    "score": round(avg, 1),
                     "description": ctrl_info["description"],
                     "checkers": ctrl_info["checkers"],
                     "findings": findings,
                 }
+            overall = round(weighted_score / weighted_total) if weighted_total > 0 else 0
             summary[framework] = {
-                "overall_pct": round(pass_count / total * 100) if total else 0,
+                "overall_pct": overall,
                 "controls": ctrl_results,
             }
         return summary
