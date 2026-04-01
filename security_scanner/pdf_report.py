@@ -1592,6 +1592,121 @@ def build_summary_table(results: dict, S) -> Table:
 # Main entry point
 # ---------------------------------------------------------------------------
 
+def _build_attackers_view(results: dict, S) -> list:
+    """Build an Attacker's View section that maps findings to the cyber kill chain."""
+    cats = results.get("categories", {})
+    ins = results.get("insurance", {})
+    parts = []
+
+    parts.append(Paragraph("<b>Attacker's View — How a Threat Actor Would Approach This Target</b>", S["cat_title"]))
+    parts.append(Spacer(1, 2 * mm))
+    parts.append(Paragraph(
+        "<i>This section maps the scan findings to a real-world attack scenario, showing how a cybercriminal "
+        "would use the identified weaknesses to compromise this organisation. Each phase represents a step "
+        "in a typical cyber attack.</i>", S["body_muted"]))
+    parts.append(Spacer(1, 3 * mm))
+
+    rows = []
+    bgs = []
+
+    # Phase 1: Reconnaissance
+    sub_count = cats.get("subdomains", {}).get("total_count", 0)
+    ip_count = results.get("categories", {}).get("external_ips", {}).get("total_unique_ips", 0)
+    tech = cats.get("tech_stack", {})
+    dh = cats.get("dehashed", {})
+    emails = dh.get("unique_emails", 0)
+    recon_risk = "HIGH" if (ip_count > 5 or emails > 3) else ("MEDIUM" if (ip_count > 1 or emails > 0) else "LOW")
+    recon_findings = []
+    if ip_count: recon_findings.append(f"{ip_count} external IPs discoverable")
+    if sub_count: recon_findings.append(f"{sub_count} subdomains enumerable")
+    if emails: recon_findings.append(f"{emails} email addresses found in breach databases")
+    if tech.get("server_header"): recon_findings.append(f"Server technology exposed: {tech.get('server_header', '')}")
+
+    _PHASE_BG = {"CRITICAL": C_CRITICAL_BG, "HIGH": C_RED_BG, "MEDIUM": C_AMBER_BG, "LOW": C_GREEN_BG}
+    _PHASE_FG = {"CRITICAL": "#991b1b", "HIGH": "#dc2626", "MEDIUM": "#92400e", "LOW": "#166534"}
+
+    rows.append([Paragraph(f"<b><font color='{_PHASE_FG[recon_risk]}'>Phase 1: RECONNAISSANCE [{recon_risk}]</font></b>", S["kv_key"]),
+                 Paragraph(f"<font color='{_PHASE_FG[recon_risk]}'><b>What an attacker learns about the target</b></font>", S["kv_val"])])
+    bgs.append(_PHASE_BG[recon_risk])
+    for f in recon_findings:
+        r, bg = kv_row("", f"• {f}", S, alt=True)
+        rows.append(r); bgs.append(bg)
+
+    # Phase 2: Initial Access
+    rdp = cats.get("vpn_remote", {}).get("rdp_exposed", False)
+    hrp = cats.get("high_risk_protocols", {}).get("exposed_services", [])
+    cred_leaks = dh.get("total_entries", 0)
+    hr = cats.get("hudson_rock", {})
+    infostealers = hr.get("compromised_employees", 0)
+    access_risk = "CRITICAL" if (rdp or infostealers > 0) else ("HIGH" if (len(hrp) > 0 or cred_leaks > 5) else ("MEDIUM" if cred_leaks > 0 else "LOW"))
+    access_findings = []
+    if rdp: access_findings.append("RDP (port 3389) exposed — primary ransomware entry vector, brute-force attack possible")
+    for svc in hrp[:3]:
+        access_findings.append(f"{svc.get('service', 'Unknown')} on port {svc.get('port', '?')} — direct attack vector")
+    if cred_leaks: access_findings.append(f"{cred_leaks} stolen credentials available from breach databases — enables credential stuffing")
+    if infostealers: access_findings.append(f"{infostealers} employee device(s) with active infostealer — real-time credential theft")
+    dmarc = cats.get("email_security", {}).get("dmarc", {})
+    if not dmarc.get("present"): access_findings.append("No DMARC policy — domain can be spoofed for phishing attacks against employees")
+
+    rows.append([Paragraph(f"<b><font color='{_PHASE_FG[access_risk]}'>Phase 2: INITIAL ACCESS [{access_risk}]</font></b>", S["kv_key"]),
+                 Paragraph(f"<font color='{_PHASE_FG[access_risk]}'><b>How an attacker would break in</b></font>", S["kv_val"])])
+    bgs.append(_PHASE_BG[access_risk])
+    for f in access_findings:
+        r, bg = kv_row("", f"• {f}", S, alt=True)
+        rows.append(r); bgs.append(bg)
+
+    # Phase 3: Exploitation
+    osv = cats.get("osv_vulns", {})
+    osv_crit = osv.get("critical_count", 0)
+    osv_high = osv.get("high_count", 0)
+    shodan = cats.get("shodan_vulns", {})
+    shodan_cves = shodan.get("total_cves", 0)
+    ssl_grade = cats.get("ssl", {}).get("grade", "A")
+    exploit_risk = "CRITICAL" if osv_crit > 0 else ("HIGH" if (osv_high > 0 or ssl_grade in ("D", "E", "F")) else "MEDIUM")
+    exploit_findings = []
+    if osv_crit: exploit_findings.append(f"{osv_crit} critical CVE(s) with known exploits — remote code execution possible")
+    if osv_high: exploit_findings.append(f"{osv_high} high-severity CVE(s) — privilege escalation and data access")
+    if ssl_grade in ("D", "E", "F"): exploit_findings.append(f"SSL grade {ssl_grade} — weak encryption enables man-in-the-middle interception")
+    headers = cats.get("http_headers", {}).get("score", 100)
+    if headers < 40: exploit_findings.append(f"Security headers score {headers}% — vulnerable to XSS, clickjacking, and injection attacks")
+    if not exploit_findings: exploit_findings.append("No critical exploitation vectors identified from external scan")
+
+    rows.append([Paragraph(f"<b><font color='{_PHASE_FG[exploit_risk]}'>Phase 3: EXPLOITATION [{exploit_risk}]</font></b>", S["kv_key"]),
+                 Paragraph(f"<font color='{_PHASE_FG[exploit_risk]}'><b>What vulnerabilities an attacker would exploit</b></font>", S["kv_val"])])
+    bgs.append(_PHASE_BG[exploit_risk])
+    for f in exploit_findings:
+        r, bg = kv_row("", f"• {f}", S, alt=True)
+        rows.append(r); bgs.append(bg)
+
+    # Phase 4: Data Access & Impact
+    db_exposed = any(s.get("port") in (3306, 5432, 27017, 6379, 9200, 1433) for s in hrp)
+    ix = cats.get("intelx", {})
+    darkweb = ix.get("total_results", 0)
+    data_risk = "CRITICAL" if db_exposed else ("HIGH" if darkweb > 10 else ("MEDIUM" if darkweb > 0 else "LOW"))
+    data_findings = []
+    if db_exposed: data_findings.append("Databases directly internet-facing — attacker can extract all business data without further escalation")
+    if darkweb > 0: data_findings.append(f"{darkweb} references in dark web databases — stolen data is already circulating in criminal networks")
+    rsi = ins.get("rsi", {}).get("rsi_score", 0)
+    if rsi > 0.5: data_findings.append(f"Ransomware susceptibility {rsi:.0%} — high probability of ransomware deployment after access is gained")
+    fin = ins.get("financial_impact", {}).get("total", {})
+    if fin.get("most_likely"):
+        cur = "R" if ins.get("financial_impact", {}).get("currency") == "ZAR" else "$"
+        data_findings.append(f"Estimated financial impact: {cur} {fin['most_likely']:,.0f} (Monte Carlo P50 median)")
+    if not data_findings: data_findings.append("Limited external data access vectors identified")
+
+    rows.append([Paragraph(f"<b><font color='{_PHASE_FG[data_risk]}'>Phase 4: DATA ACCESS & IMPACT [{data_risk}]</font></b>", S["kv_key"]),
+                 Paragraph(f"<font color='{_PHASE_FG[data_risk]}'><b>What an attacker would steal or destroy</b></font>", S["kv_val"])])
+    bgs.append(_PHASE_BG[data_risk])
+    for f in data_findings:
+        r, bg = kv_row("", f"• {f}", S, alt=True)
+        rows.append(r); bgs.append(bg)
+
+    tbl = _cat_table(rows, bgs, [40 * mm, INNER_W - 40 * mm], S)
+    parts.append(tbl)
+    parts.append(Spacer(1, 3 * mm))
+    return parts
+
+
 def generate_pdf(results: dict) -> bytes:
     buffer = io.BytesIO()
     domain    = results.get("domain_scanned", "Unknown")
@@ -1668,6 +1783,10 @@ def generate_pdf(results: dict) -> bytes:
     story.append(Paragraph("<b>Executive Summary</b>", S["cat_title"]))
     story.append(Spacer(1, 2 * mm))
     story.append(build_summary_table(results, S))
+
+    # ── Attacker's View ──────────────────────────────────────────────────────
+    story.append(Spacer(1, 4 * mm))
+    story += _build_attackers_view(results, S)
 
     # ── Insurance Analytics ─────────────────────────────────────────────────
     if results.get("insurance"):
