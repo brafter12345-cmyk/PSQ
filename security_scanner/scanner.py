@@ -5519,6 +5519,45 @@ class SecurityScanner:
                         shodan_r["max_cvss"] = max_cvss
                         shodan_r["max_epss"] = max_epss
 
+                # --- Batch EPSS + CISA KEV lookup for OSV-enriched CVEs ---
+                try:
+                    enricher = ShodanVulnChecker()
+                    kev_set = enricher._load_kev()
+                    all_osv_cve_ids = []
+                    for ip, checkers in per_ip_results.items():
+                        for c in checkers.get("shodan_vulns", {}).get("cves", []):
+                            if c.get("source") == "osv.dev":
+                                # Extract CVE ID from advisory ID (e.g., ALPINE-CVE-2023-48795 -> CVE-2023-48795)
+                                cid = c.get("cve_id", "")
+                                if not cid.startswith("CVE-"):
+                                    import re as _re
+                                    m = _re.search(r'(CVE-\d{4}-\d+)', cid)
+                                    if m:
+                                        cid = m.group(1)
+                                        c["cve_id"] = cid  # Fix display ID
+                                if cid.startswith("CVE-"):
+                                    # CISA KEV check
+                                    c["in_kev"] = cid in kev_set
+                                    if c.get("epss_score", 0) == 0:
+                                        all_osv_cve_ids.append((ip, c, cid))
+
+                    if all_osv_cve_ids:
+                        unique_cves = list(set(cid for _, _, cid in all_osv_cve_ids))
+                        epss_data = enricher._fetch_epss(unique_cves[:30])
+                        for ip, cve_entry, cid in all_osv_cve_ids:
+                            if cid in epss_data:
+                                cve_entry["epss_score"] = epss_data[cid]["epss_score"]
+                        # Update per-IP counts
+                        for ip in per_ip_results:
+                            shodan_r = per_ip_results[ip].get("shodan_vulns", {})
+                            all_cves = shodan_r.get("cves", [])
+                            if all_cves:
+                                shodan_r["max_epss"] = max(
+                                    (c.get("epss_score", 0) for c in all_cves if c.get("epss_score")), default=0)
+                                shodan_r["kev_count"] = sum(1 for c in all_cves if c.get("in_kev"))
+                except Exception:
+                    pass
+
                 # --- Re-aggregate External IPs with enriched data ---
                 results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
                     all_ips, per_ip_results, ip_sources=ip_sources
