@@ -2411,12 +2411,16 @@ class ShodanVulnChecker:
             ip = ip or socket.gethostbyname(domain)
             result["ip"] = ip
 
-            # Try full Shodan API first if key available, fall back to InternetDB
+            # Always query InternetDB first for CPE list (feeds OSV.dev pipeline)
+            self._check_internetdb(ip, result)
+            internetdb_cpes = list(result.get("cpe_list", []))
+
+            # Layer on full Shodan API data if key available (org, ASN, banners)
             if api_key:
-                if not self._check_full_api(ip, api_key, result):
-                    self._check_internetdb(ip, result)
-            else:
-                self._check_internetdb(ip, result)
+                api_ok = self._check_full_api(ip, api_key, result)
+                # Preserve InternetDB CPEs — full API doesn't return them
+                if api_ok and not result.get("cpe_list"):
+                    result["cpe_list"] = internetdb_cpes
 
             # Build issues
             if result["critical_count"] > 0:
