@@ -3099,6 +3099,8 @@ class PrivacyComplianceChecker:
         "/privacy-policy", "/privacy", "/legal/privacy", "/privacypolicy",
         "/privacy_policy", "/legal/privacy-policy", "/terms/privacy",
         "/data-privacy", "/gdpr", "/popia",
+        "/privacy-statement", "/privacy-notice", "/data-protection",
+        "/privacystatement", "/privacynotice",
     ]
 
     # Required sections with keywords to look for
@@ -3163,8 +3165,14 @@ class PrivacyComplianceChecker:
                 text = r.text.lower()
                 # Look for privacy policy link in HTML
                 import re as _re
-                matches = _re.findall(r'href=["\']([^"\']*privac[^"\']*)["\']', text)
-                for href in matches[:3]:
+                # Match links by URL path containing privacy keywords
+                matches = _re.findall(r'href=["\']([^"\']*(?:privac|popia|data.protect|gdpr)[^"\']*)["\']', text)
+                # Also match links where anchor text mentions privacy
+                anchor_matches = _re.findall(
+                    r'href=["\']([^"\']+)["\'][^>]*>(?:[^<]*(?:privac|popia|data.protect)[^<]*)</a>',
+                    text)
+                all_matches = list(dict.fromkeys(matches + anchor_matches))  # dedupe, preserve order
+                for href in all_matches[:5]:
                     if href.startswith("/"):
                         href = f"https://{domain}{href}"
                     elif not href.startswith("http"):
