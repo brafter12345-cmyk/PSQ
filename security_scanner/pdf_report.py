@@ -1021,7 +1021,14 @@ def cat_financial_impact(d, S):
                 ("MONTE CARLO ANALYSIS",  f"{mc.get('iterations', 10000):,} simulations — PERT distribution"),
                 ("  90% Confidence Interval", f"{cur} {ci90.get('lower', 0):,.0f} — {cur} {ci90.get('upper', 0):,.0f}"),
                 ("  50% Confidence Interval", f"{cur} {ci50.get('lower', 0):,.0f} — {cur} {ci50.get('upper', 0):,.0f}"),
-                ("  Median (P50)",        f"{cur} {mc_t.get('p50', 0):,.0f}"),
+                ("",                      ""),
+                ("  Percentile Breakdown", ""),
+                ("    P5  (Best case)",   f"{cur} {mc_t.get('p5', 0):,.0f}"),
+                ("    P25 (Optimistic)",  f"{cur} {mc_t.get('p25', 0):,.0f}"),
+                ("    P50 (Median)",      f"{cur} {mc_t.get('p50', 0):,.0f}"),
+                ("    P75 (Conservative)",f"{cur} {mc_t.get('p75', 0):,.0f}"),
+                ("    P95 (Worst case)",  f"{cur} {mc_t.get('p95', 0):,.0f}"),
+                ("",                      ""),
                 ("  Mean",                f"{cur} {mc_t.get('mean', 0):,.0f}"),
                 ("  Std. Deviation",      f"{cur} {mc_t.get('std_dev', 0):,.0f}"),
                 ("",                      ""),
@@ -1030,7 +1037,13 @@ def cat_financial_impact(d, S):
             for sname, slabel in [("data_breach", "Data Breach"), ("ransomware", "Ransomware"), ("business_interruption", "Bus. Interruption")]:
                 smc = sc.get(sname, {}).get("monte_carlo", {})
                 if smc:
-                    rows.append((f"  {slabel} (MC P50)", f"{cur} {smc.get('p50', 0):,.0f}  (P5: {cur} {smc.get('p5', 0):,.0f} — P95: {cur} {smc.get('p95', 0):,.0f})"))
+                    rows.append((f"  {slabel} (MC)", ""))
+                    rows.append((f"    P5",   f"{cur} {smc.get('p5', 0):,.0f}"))
+                    rows.append((f"    P25",  f"{cur} {smc.get('p25', 0):,.0f}"))
+                    rows.append((f"    P50",  f"{cur} {smc.get('p50', 0):,.0f}"))
+                    rows.append((f"    P75",  f"{cur} {smc.get('p75', 0):,.0f}"))
+                    rows.append((f"    P95",  f"{cur} {smc.get('p95', 0):,.0f}"))
+                    rows.append(("", ""))
             rows.append(("", ""))
 
         rows.extend([
@@ -1067,7 +1080,14 @@ def cat_financial_impact(d, S):
                 ("MONTE CARLO ANALYSIS",  f"{mc.get('iterations', 10000):,} simulations — PERT distribution"),
                 ("  90% Confidence Interval", f"{cur} {ci90.get('lower', 0):,.0f} — {cur} {ci90.get('upper', 0):,.0f}"),
                 ("  50% Confidence Interval", f"{cur} {ci50.get('lower', 0):,.0f} — {cur} {ci50.get('upper', 0):,.0f}"),
-                ("  Median (P50)",        f"{cur} {mc_t.get('p50', 0):,.0f}"),
+                ("",                      ""),
+                ("  Percentile Breakdown", ""),
+                ("    P5  (Best case)",   f"{cur} {mc_t.get('p5', 0):,.0f}"),
+                ("    P25 (Optimistic)",  f"{cur} {mc_t.get('p25', 0):,.0f}"),
+                ("    P50 (Median)",      f"{cur} {mc_t.get('p50', 0):,.0f}"),
+                ("    P75 (Conservative)",f"{cur} {mc_t.get('p75', 0):,.0f}"),
+                ("    P95 (Worst case)",  f"{cur} {mc_t.get('p95', 0):,.0f}"),
+                ("",                      ""),
                 ("  Mean",                f"{cur} {mc_t.get('mean', 0):,.0f}"),
                 ("  Std. Deviation",      f"{cur} {mc_t.get('std_dev', 0):,.0f}"),
                 ("",                      ""),
