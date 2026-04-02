@@ -625,7 +625,7 @@ def intelx_balance():
             # Extract search credits from paths
             paths = data.get("paths", {})
             search_info = paths.get("/intelligent/search", {})
-            credits_left = search_info.get("CreditLeft", 0)
+            credits_left = search_info.get("Credit", 0)
             credits_max = search_info.get("CreditMax", 0)
             return jsonify({"status": "active", "balance": credits_left,
                             "max_credits": credits_max})
