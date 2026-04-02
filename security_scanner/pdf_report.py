@@ -181,7 +181,7 @@ def build_styles():
                                        textColor=C_NAVY, leading=12)
     S["body"]        = ParagraphStyle("body",         fontSize=8,  leading=11, textColor=C_BLACK)
     S["body_muted"]  = ParagraphStyle("body_muted",   fontSize=7,  leading=10, textColor=C_GREY_4)
-    S["issue"]       = ParagraphStyle("issue",        fontSize=7.5, leading=10, textColor=C_RED,
+    S["issue"]       = ParagraphStyle("issue",        fontSize=8, leading=10, textColor=C_RED,
                                        leftIndent=8)
     S["rec_num"]     = ParagraphStyle("rec_num",      fontSize=8,  fontName="Helvetica-Bold",
                                        textColor=C_BLUE, leading=11)
@@ -190,8 +190,20 @@ def build_styles():
     S["footer"]      = ParagraphStyle("footer",       fontSize=6.5, textColor=C_GREY_3,
                                        alignment=TA_CENTER)
     S["disclaimer"]  = ParagraphStyle("disclaimer",   fontSize=7,  leading=10, textColor=C_GREY_4)
-    S["kv_key"]      = ParagraphStyle("kv_key",       fontSize=7.5, textColor=C_GREY_4, leading=10)
-    S["kv_val"]      = ParagraphStyle("kv_val",       fontSize=7.5, textColor=C_BLACK,  leading=10)
+    S["kv_key"]      = ParagraphStyle("kv_key",       fontSize=8, textColor=C_GREY_4, leading=10)
+    S["kv_val"]      = ParagraphStyle("kv_val",       fontSize=8, textColor=C_BLACK,  leading=10)
+    S["stat"]        = ParagraphStyle("stat",         fontSize=10, fontName="Helvetica",
+                                       textColor=C_BLACK, leading=14, spaceBefore=2, spaceAfter=2,
+                                       leftIndent=12, bulletIndent=6)
+    S["cta"]         = ParagraphStyle("cta",          fontSize=10, fontName="Helvetica",
+                                       textColor=C_BLACK, leading=14, spaceBefore=2, spaceAfter=4,
+                                       leftIndent=12, bulletIndent=6)
+    S["contact"]     = ParagraphStyle("contact",      fontSize=11, fontName="Helvetica-Bold",
+                                       textColor=C_BLUE, leading=15, alignment=TA_CENTER)
+    S["fsp"]         = ParagraphStyle("fsp",          fontSize=8, fontName="Helvetica",
+                                       textColor=C_GREY_3, leading=11, alignment=TA_CENTER)
+    S["vp_legend"]   = ParagraphStyle("vp_legend",    fontSize=8, fontName="Helvetica",
+                                       textColor=C_GREY_4, leading=10, leftIndent=4)
     return S
 
 
@@ -333,7 +345,7 @@ def issues_cell(issues: list, S) -> Paragraph:
 def _cat_table(rows, bgs, col_widths, S):
     tbl = Table(rows, colWidths=col_widths)
     style = [
-        ("FONTSIZE",      (0, 0), (-1, -1), 7.5),
+        ("FONTSIZE",      (0, 0), (-1, -1), 8),
         ("TOPPADDING",    (0, 0), (-1, -1), 3),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
         ("LEFTPADDING",   (0, 0), (-1, -1), 6),
@@ -1762,8 +1774,7 @@ def _build_vulnerability_posture(results: dict, S) -> list:
     parts.append(Spacer(1, 2 * mm))
 
     # Plain-English legend for threat indicators
-    legend_style = ParagraphStyle("vp_legend", fontSize=7.5, fontName="Helvetica",
-                                   textColor=C_GREY_4, leading=10, leftIndent=4)
+    legend_style = S["vp_legend"]
     legend_items = [
         "<b>Zero-days:</b> Vulnerabilities with no vendor patch available — no fix exists yet, requiring alternative mitigations.",
         "<b>Malware exploited:</b> Vulnerabilities known to be used by ransomware groups or malware campaigns to attack organisations.",
@@ -1954,192 +1965,6 @@ def _build_attackers_view(results: dict, S) -> list:
     return parts
 
 
-def _build_narrative_summary(results: dict, S) -> list:
-    """Build conversational narrative paragraphs for the broker summary report."""
-    cats = results.get("categories", {})
-    ins = results.get("insurance", {})
-    domain = results.get("domain_scanned", "Unknown")
-    parts = []
-
-    parts.append(Paragraph("<b>Assessment Narrative</b>", S["cat_title"]))
-    parts.append(Spacer(1, 2 * mm))
-
-    # ── 1. Business Context ──────────────────────────────────────────────────
-    parts.append(Paragraph("<b>Business Context</b>", S["cat_title"]))
-    parts.append(Spacer(1, 1 * mm))
-
-    ip_data = cats.get("external_ips", {})
-    ip_count = ip_data.get("total_unique_ips", 0)
-    sub_count = cats.get("subdomains", {}).get("total_count", 0)
-    asn_count = len(ip_data.get("asns", [])) if ip_data.get("asns") else 0
-    dns_ports = cats.get("dns_infrastructure", {}).get("open_ports", [])
-    svc_count = len(dns_ports)
-
-    fin = ins.get("financial_impact", {})
-    industry = fin.get("industry", "")
-    revenue = fin.get("annual_revenue_zar", 0) or fin.get("annual_revenue", 0)
-
-    biz_text = (f"This assessment evaluated the external-facing digital infrastructure of <b>{domain}</b>.")
-    if industry:
-        biz_text += f" The organisation operates in the <b>{industry}</b> sector"
-        if revenue:
-            cur = "R" if fin.get("currency") == "ZAR" else "$"
-            biz_text += f" with reported annual revenue of <b>{cur} {revenue:,.0f}</b>"
-        biz_text += "."
-    biz_text += (f" The scan discovered <b>{ip_count}</b> external IP address(es)")
-    if asn_count:
-        biz_text += f" across <b>{asn_count}</b> ASN(s)"
-    biz_text += f", <b>{sub_count}</b> subdomain(s), and <b>{svc_count}</b> open service(s)."
-    parts.append(Paragraph(biz_text, S["body"]))
-    parts.append(Spacer(1, 3 * mm))
-
-    # ── 2. Encryption & Web Security ─────────────────────────────────────────
-    parts.append(Paragraph("<b>Encryption &amp; Web Security</b>", S["cat_title"]))
-    parts.append(Spacer(1, 1 * mm))
-
-    ssl = cats.get("ssl", {})
-    ssl_grade = ssl.get("grade", "?")
-    ws = cats.get("website_security", {})
-    https_enforced = ws.get("https_enforced", False)
-    hh_score = cats.get("http_headers", {}).get("score", 0)
-    waf = cats.get("waf", {}).get("detected", False)
-
-    if ssl_grade in ("A+", "A"):
-        grade_meaning = "confirms strong encryption and a well-configured certificate chain"
-    elif ssl_grade == "B":
-        grade_meaning = "indicates acceptable encryption with minor configuration improvements possible"
-    elif ssl_grade == "C":
-        grade_meaning = "indicates moderate encryption weaknesses that should be addressed"
-    else:
-        grade_meaning = "indicates weak encryption configuration requiring urgent remediation"
-
-    enc_text = (f"The SSL/TLS assessment returned a grade of <b>{ssl_grade}</b>, which {grade_meaning}. ")
-    enc_text += f"HTTPS enforcement is <b>{'active' if https_enforced else 'not active'}</b>. "
-    enc_text += f"Security headers coverage stands at <b>{hh_score}%</b>. "
-    enc_text += f"Web Application Firewall (WAF) protection is <b>{'detected' if waf else 'not detected'}</b>."
-    parts.append(Paragraph(enc_text, S["body"]))
-    parts.append(Spacer(1, 3 * mm))
-
-    # ── 3. Email Security Posture ────────────────────────────────────────────
-    parts.append(Paragraph("<b>Email Security Posture</b>", S["cat_title"]))
-    parts.append(Spacer(1, 1 * mm))
-
-    em = cats.get("email_security", {})
-    spf = em.get("spf", {})
-    dkim = em.get("dkim", {})
-    dmarc = em.get("dmarc", {})
-
-    spf_status = "present" if spf.get("present") else "missing"
-    dkim_status = "present" if dkim.get("selectors_found") else "missing"
-    dmarc_status = "present" if dmarc.get("present") else "missing"
-    dmarc_policy = dmarc.get("policy", "none") if dmarc.get("present") else "N/A"
-
-    email_text = (f"SPF record is <b>{spf_status}</b>. "
-                  f"DKIM is <b>{dkim_status}</b>. "
-                  f"DMARC is <b>{dmarc_status}</b>")
-    if dmarc.get("present"):
-        email_text += f" with policy set to <b>{dmarc_policy}</b>"
-    email_text += ". "
-
-    missing_count = sum(1 for s in [spf_status, dkim_status, dmarc_status] if s == "missing")
-    if missing_count == 0:
-        email_text += "All three email authentication mechanisms are in place, providing strong protection against phishing and business email compromise (BEC)."
-    elif missing_count == 1:
-        email_text += "One email authentication mechanism is missing, leaving a partial gap that attackers could exploit for phishing or BEC attacks."
-    else:
-        email_text += f"With <b>{missing_count}</b> authentication mechanisms missing, the domain is significantly vulnerable to email spoofing, phishing, and BEC attacks."
-    parts.append(Paragraph(email_text, S["body"]))
-    parts.append(Spacer(1, 3 * mm))
-
-    # ── 4. Credential & Dark Web Exposure ────────────────────────────────────
-    parts.append(Paragraph("<b>Credential &amp; Dark Web Exposure</b>", S["cat_title"]))
-    parts.append(Spacer(1, 1 * mm))
-
-    dh = cats.get("dehashed", {})
-    hr = cats.get("hudson_rock", {})
-    ix = cats.get("intelx", {})
-    cr = cats.get("credential_risk", {})
-
-    cred_parts = []
-    dh_total = dh.get("total_entries", 0)
-    dh_emails = dh.get("unique_emails", 0)
-    dh_sources = dh.get("breach_sources", [])
-    if dh.get("status") == "no_api_key":
-        cred_parts.append("Dehashed credential search was not performed (no API key configured).")
-    elif dh_total > 0:
-        src_text = ", ".join(dh_sources[:6]) if dh_sources else "various sources"
-        cred_parts.append(f"Dehashed identified <b>{dh_emails}</b> email(s) across <b>{dh_total}</b> breach record(s) from sources including {src_text}.")
-    else:
-        cred_parts.append("Dehashed returned no exposed credentials.")
-
-    hr_emp = hr.get("compromised_employees", 0)
-    hr_usr = hr.get("compromised_users", 0)
-    if hr_emp > 0:
-        cred_parts.append(f"Hudson Rock detected <b>{hr_emp}</b> employee device(s) with <b>active infostealer</b> infections.")
-    elif hr_usr > 0:
-        cred_parts.append(f"Hudson Rock detected <b>{hr_usr}</b> compromised user credential(s).")
-    else:
-        cred_parts.append("Hudson Rock reports no active infostealer infections.")
-
-    ix_total = ix.get("total_results", 0)
-    ix_darkweb = ix.get("darkweb_count", 0)
-    ix_pastes = ix.get("paste_count", 0)
-    if ix.get("status") == "no_api_key":
-        cred_parts.append("IntelX dark web monitoring was not performed (no API key configured).")
-    elif ix_total > 0:
-        cred_parts.append(f"IntelX found <b>{ix_darkweb}</b> dark web mention(s) and <b>{ix_pastes}</b> paste reference(s).")
-    else:
-        cred_parts.append("IntelX returned no dark web mentions.")
-
-    cr_level = cr.get("risk_level", "")
-    if cr_level:
-        cred_parts.append(f"Overall credential risk level: <b>{cr_level}</b>.")
-
-    parts.append(Paragraph(" ".join(cred_parts), S["body"]))
-    parts.append(Spacer(1, 3 * mm))
-
-    # ── 5. Network & Infrastructure ──────────────────────────────────────────
-    parts.append(Paragraph("<b>Network &amp; Infrastructure</b>", S["cat_title"]))
-    parts.append(Spacer(1, 1 * mm))
-
-    port_count = len(dns_ports)
-    high_risk_ports = [p for p in dns_ports if p.get("risk") in ("high", "critical")]
-    hrp_data = cats.get("high_risk_protocols", {})
-    exposed_svcs = hrp_data.get("exposed_services", [])
-    bl = cats.get("dnsbl", {})
-    is_blacklisted = bl.get("blacklisted", False)
-    cdn = cats.get("cloud_cdn", {})
-    cdn_detected = cdn.get("cdn_detected") or cdn.get("cloud_detected", False)
-
-    net_text = f"The primary IP has <b>{port_count}</b> open port(s). "
-    if high_risk_ports:
-        svc_names = [f"{p.get('service', 'unknown')} ({p.get('port', '?')})" for p in high_risk_ports[:5]]
-        net_text += f"High-risk exposed services include: <b>{', '.join(svc_names)}</b>. "
-    elif exposed_svcs:
-        svc_names = [f"{s.get('service', 'unknown')} ({s.get('port', '?')})" for s in exposed_svcs[:5]]
-        net_text += f"Exposed services include: <b>{', '.join(svc_names)}</b>. "
-    else:
-        net_text += "No high-risk services were detected. "
-    net_text += f"CDN/WAF protection is <b>{'active' if cdn_detected else 'not detected'}</b>. "
-    net_text += f"Blacklist status: <b>{'LISTED — requires immediate attention' if is_blacklisted else 'clean'}</b>."
-    parts.append(Paragraph(net_text, S["body"]))
-    parts.append(Spacer(1, 3 * mm))
-
-    # ── 6. Compliance Snapshot ───────────────────────────────────────────────
-    compliance = results.get("compliance", {})
-    if compliance:
-        parts.append(Paragraph("<b>Compliance Snapshot</b>", S["cat_title"]))
-        parts.append(Spacer(1, 1 * mm))
-        comp_lines = []
-        for framework, fw_data in compliance.items():
-            pct = fw_data.get("overall_pct", 0)
-            comp_lines.append(f"<b>{framework}</b>: {pct}% aligned")
-        parts.append(Paragraph("  |  ".join(comp_lines), S["body"]))
-        parts.append(Spacer(1, 3 * mm))
-
-    return parts
-
-
 def generate_pdf(results: dict, report_type: str = "full") -> bytes:
     buffer = io.BytesIO()
     domain    = results.get("domain_scanned", "Unknown")
@@ -2225,10 +2050,6 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
 
     # ── Report type branching ───────────────────────────────────────────────
     if report_type == "summary":
-        # Narrative summary paragraphs
-        story.append(Spacer(1, 4 * mm))
-        story += _build_narrative_summary(results, S)
-
         # Financial Impact headline only
         ins_data = results.get("insurance", {})
         fin = ins_data.get("financial_impact", {})
@@ -2277,6 +2098,7 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         mc_p50 = mc_data.get("p50", total_likely)
         mc_p95 = mc_data.get("p95", 0)
         cur_cta = "R" if (fin and fin.get("currency") == "ZAR") else "$"
+        org_location = "a South African" if (fin and fin.get("currency") == "ZAR") else "an"
 
         # Count critical findings
         cred_risk = cats.get("credential_risk", {}).get("risk_level", "LOW")
@@ -2302,15 +2124,13 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
             f"<b>The Reality of a Cyber Breach</b>", S["cat_title"]))
         story.append(Spacer(1, 2 * mm))
         story.append(Paragraph(
-            "The financial numbers only tell part of the story. When a South African organisation "
+            f"The financial numbers only tell part of the story. When {org_location} organisation "
             "suffers a data breach, the impact extends far beyond the balance sheet:",
             S["body"]))
         story.append(Spacer(1, 2 * mm))
 
         # IBM 2025 SA statistics
-        stat_style = ParagraphStyle("stat", fontSize=10, fontName="Helvetica",
-                                     textColor=C_BLACK, leading=14, spaceBefore=2, spaceAfter=2,
-                                     leftIndent=12, bulletIndent=6)
+        stat_style = S["stat"]
 
         stats = [
             "<b>R44.1 million</b> — the average cost of a data breach in South Africa in 2025 "
@@ -2382,14 +2202,14 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
             )
         if not risk_paras:
             risk_paras.append(
-                "While this assessment did not identify critical immediate threats, the cyber "
-                "landscape evolves rapidly. New vulnerabilities are discovered daily, and threat "
-                "actors continuously scan for targets. Maintaining adequate cyber insurance ensures "
-                "your organisation is protected against unforeseen events."
+                "This assessment identified no critical immediate threats, indicating a strong "
+                "security foundation. Ongoing cyber insurance provides protection against emerging "
+                "threats, zero-day exploits, and the evolving threat landscape \u2014 ensuring business "
+                "continuity even when the unexpected occurs."
             )
 
         for para in risk_paras:
-            story.append(Paragraph(para, S["body"]))
+            story.append(Paragraph(f"\u2022 {para}", S["body"]))
             story.append(Spacer(1, 2 * mm))
         story.append(Spacer(1, 4 * mm))
 
@@ -2398,9 +2218,7 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
             f"<b>Protect Your Business — Next Steps</b>", S["cat_title"]))
         story.append(Spacer(1, 2 * mm))
 
-        cta_style = ParagraphStyle("cta", fontSize=10, fontName="Helvetica",
-                                    textColor=C_BLACK, leading=14, spaceBefore=2, spaceAfter=4,
-                                    leftIndent=12, bulletIndent=6)
+        cta_style = S["cta"]
 
         cta_items = [
             "<b>Cyber Insurance Coverage</b> — Speak to your Phishield broker about a tailored cyber "
@@ -2432,14 +2250,12 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         story.append(Paragraph(
             "<b>To discuss your cyber insurance options or arrange a remediation assessment, "
             "contact your Phishield broker or visit www.phishield.com</b>",
-            ParagraphStyle("contact", fontSize=11, fontName="Helvetica-Bold",
-                           textColor=C_BLUE, leading=15, alignment=TA_CENTER)
+            S["contact"]
         ))
         story.append(Spacer(1, 3 * mm))
         story.append(Paragraph(
             "PHISHIELD UMA (Pty) Ltd | Authorised Financial Services Provider | FSP 46418",
-            ParagraphStyle("fsp", fontSize=8, fontName="Helvetica",
-                           textColor=C_GREY_3, leading=11, alignment=TA_CENTER)
+            S["fsp"]
         ))
 
     else:
