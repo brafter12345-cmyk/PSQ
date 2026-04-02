@@ -966,7 +966,11 @@
             <div style="margin-bottom:3px;"><span style="color:#94a3b8;">Vuln metrics:</span> <span style="font-weight:600;color:{% if 'CISA KEV' in p.vuln_metrics %}#e74c3c{% elif 'CVSS 9' in p.vuln_metrics %}#e74c3c{% elif 'CVSS 8' in p.vuln_metrics or 'CVSS 7' in p.vuln_metrics %}#e67e22{% else %}#f39c12{% endif %};">{{ p.vuln_metrics }}</span>
             {% if 'CISA KEV' in p.vuln_metrics %} <span class="badge badge-red" style="font-size:0.65rem;">CISA KEV</span>{% endif %}</div>
             {% endif %}
-            {% if p.notable_cves is defined and p.notable_cves %}<div style="margin-bottom:3px;"><span style="color:#94a3b8;">Notable CVEs:</span> <span style="font-family:monospace;font-size:0.78rem;color:#94a3b8;">{{ p.notable_cves | join(', ') }}</span></div>{% endif %}
+            {% if p.notable_cves is defined and p.notable_cves %}
+            <div style="margin-bottom:3px;"><span style="color:#94a3b8;">Notable CVEs:</span>
+              {% for cve_id in p.notable_cves %}<span style="font-family:monospace;font-size:0.78rem;color:#94a3b8;margin-right:6px;">{{ cve_id }}</span>{% endfor %}
+            </div>
+            {% endif %}
             {% if p.insurance_risk is defined %}<div style="margin-bottom:3px;"><span style="color:#94a3b8;">Insurance risk:</span> <span style="color:#fbbf24;">{{ p.insurance_risk }}</span></div>{% endif %}
             {% if p.underwriting_impact is defined %}<div><span style="color:#94a3b8;">Underwriting impact:</span> <span style="color:#fb923c;">{{ p.underwriting_impact }}</span></div>{% endif %}
             {% if p.banner is defined and p.banner %}
@@ -978,10 +982,15 @@
                 <span style="color:#94a3b8;font-size:0.78rem;font-weight:600;">Version-specific CVEs (OSV.dev):</span>
                 <div style="margin-top:4px;">
                   {% for v in p.osv_vulns[:10] %}
-                  <div style="display:flex;gap:8px;align-items:center;padding:3px 0;font-size:0.76rem;">
-                    <span style="font-family:monospace;color:#60a5fa;">{{ v.id }}</span>
-                    <span class="badge badge-{% if v.severity == 'critical' %}red{% elif v.severity == 'high' %}red{% elif v.severity == 'medium' %}amber{% else %}grey{% endif %}" style="font-size:0.6rem;">{{ v.severity | upper }}</span>
-                    {% if v.summary %}<span style="color:#94a3b8;">{{ v.summary[:80] }}</span>{% endif %}
+                  <div style="display:flex;gap:6px;align-items:center;padding:3px 0;font-size:0.76rem;flex-wrap:wrap;">
+                    <span style="font-family:monospace;color:#60a5fa;">{{ v.get('cve') or v.get('id', '') }}</span>
+                    <span class="badge badge-{% if v.get('severity') == 'critical' %}red{% elif v.get('severity') == 'high' %}red{% elif v.get('severity') == 'medium' %}amber{% else %}grey{% endif %}" style="font-size:0.6rem;">{{ v.get('severity', '') | upper }}</span>
+                    {% if v.get('cvss_score') %}<span style="font-size:0.65rem;color:#94a3b8;">CVSS {{ v.cvss_score }}</span>{% endif %}
+                    {% if v.get('age_days') is not none %}<span style="font-size:0.6rem;color:{% if v.get('age_days',0) > 365 %}#e74c3c{% elif v.get('age_days',0) > 180 %}#e67e22{% else %}#94a3b8{% endif %};">{{ v.get('age_days') }}d</span>{% endif %}
+                    {% if v.get('easily_exploitable') %}<span class="badge badge-amber" style="font-size:0.5rem;">Easy</span>{% endif %}
+                    {% if v.get('widely_exploited') %}<span class="badge badge-red" style="font-size:0.5rem;">Wide</span>{% endif %}
+                    {% if v.get('ransomware_association') %}<span class="badge" style="font-size:0.5rem;background:#581c87;color:#d8b4fe;">{{ v.ransomware_association | truncate(15) }}</span>{% endif %}
+                    {% if v.get('summary') %}<span style="color:#94a3b8;">{{ v.summary[:80] }}</span>{% endif %}
                   </div>
                   {% endfor %}
                   {% if p.osv_vulns | length > 10 %}<div style="color:#64748b;font-size:0.72rem;margin-top:2px;">...and {{ p.osv_vulns | length - 10 }} more</div>{% endif %}
