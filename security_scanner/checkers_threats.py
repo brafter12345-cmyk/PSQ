@@ -445,22 +445,48 @@ class ShodanVulnChecker:
             desc = next((d["value"] for d in vuln.get("descriptions", [])
                          if d.get("lang") == "en"), "")
             metrics = vuln.get("metrics", {})
+
+            # Published date for CVE age calculation
+            published = vuln.get("published", "")[:10]  # YYYY-MM-DD
+
+            # Check for patch/advisory references (zero-day indicator)
+            references = vuln.get("references", [])
+            has_patch = any(
+                "Patch" in (ref.get("tags", []) if isinstance(ref.get("tags"), list) else [])
+                or "Vendor Advisory" in (ref.get("tags", []) if isinstance(ref.get("tags"), list) else [])
+                for ref in references
+            )
+
             # Try CVSS v3.1, then v3.0, then v2
             for key in ("cvssMetricV31", "cvssMetricV30", "cvssMetricV2"):
                 m = metrics.get(key)
                 if m:
                     base = m[0].get("cvssData", {})
                     score = base.get("baseScore", 0.0)
+                    vector = base.get("vectorString", "")
+
+                    # Parse CVSS vector for exploitability indicators
+                    easily_exploitable = (
+                        "AV:N" in vector and   # Network accessible
+                        "AC:L" in vector and   # Low complexity
+                        "PR:N" in vector       # No privileges required
+                    )
+
                     return {
                         "cve_id": cve_id,
                         "description": desc[:200],
                         "cvss_score": score,
                         "severity": self._cvss_severity(score),
-                        "vector": base.get("vectorString", ""),
+                        "vector": vector,
+                        "published": published,
+                        "has_patch": has_patch,
+                        "easily_exploitable": easily_exploitable,
                     }
-            return {"cve_id": cve_id, "description": desc[:200], "cvss_score": 0.0, "severity": "unknown", "vector": ""}
+            return {"cve_id": cve_id, "description": desc[:200], "cvss_score": 0.0, "severity": "unknown",
+                    "vector": "", "published": published, "has_patch": has_patch, "easily_exploitable": False}
         except Exception:
-            return {"cve_id": cve_id, "description": "", "cvss_score": 0.0, "severity": "unknown", "vector": ""}
+            return {"cve_id": cve_id, "description": "", "cvss_score": 0.0, "severity": "unknown",
+                    "vector": "", "published": "", "has_patch": False, "easily_exploitable": False}
 
     def _check_full_api(self, ip: str, api_key: str, result: dict) -> bool:
         """Use Shodan full API. Returns True if successful, False to fall back."""
@@ -619,8 +645,64 @@ class ShodanVulnChecker:
             pass
         return {}
 
+    # Ransomware CVE mapping — known CVEs used by ransomware families
+    # Source: community-maintained + CISA advisories
+    RANSOMWARE_CVE_MAP = {
+        # LockBit
+        "CVE-2023-4966": "LockBit (Citrix Bleed)", "CVE-2021-22986": "LockBit",
+        "CVE-2023-0669": "LockBit (GoAnywhere)", "CVE-2021-44228": "LockBit (Log4Shell)",
+        # Conti / BlackBasta (successor)
+        "CVE-2021-34473": "Conti/BlackBasta (ProxyShell)", "CVE-2021-34523": "Conti (ProxyShell)",
+        "CVE-2021-31207": "Conti (ProxyShell)", "CVE-2021-26855": "Conti (ProxyLogon)",
+        # ALPHV/BlackCat
+        "CVE-2023-22515": "ALPHV/BlackCat (Atlassian)", "CVE-2023-22518": "ALPHV/BlackCat",
+        # CL0P
+        "CVE-2023-34362": "CL0P (MOVEit)", "CVE-2023-0669": "CL0P (GoAnywhere)",
+        "CVE-2021-27101": "CL0P (Accellion)",
+        # REvil/Sodinokibi
+        "CVE-2021-30116": "REvil (Kaseya)", "CVE-2019-2725": "REvil (WebLogic)",
+        # Akira
+        "CVE-2023-20269": "Akira (Cisco VPN)", "CVE-2020-3259": "Akira (Cisco)",
+        # Play
+        "CVE-2022-41082": "Play (Exchange)", "CVE-2022-41040": "Play (ProxyNotShell)",
+        # General ransomware vectors
+        "CVE-2019-0708": "Multiple (BlueKeep — WannaCry, NotPetya)",
+        "CVE-2017-0144": "WannaCry/NotPetya (EternalBlue)",
+        "CVE-2020-0796": "Multiple (SMBGhost)",
+        "CVE-2019-11510": "Multiple (Pulse Secure VPN)",
+        "CVE-2019-19781": "Multiple (Citrix ADC)",
+        "CVE-2020-5902": "Multiple (F5 BIG-IP)",
+        "CVE-2021-27065": "Hafnium/Multiple (Exchange)",
+        "CVE-2021-40444": "Multiple (MSHTML)",
+        "CVE-2022-26134": "Multiple (Confluence)",
+        "CVE-2023-27997": "Multiple (FortiGate)",
+        "CVE-2024-1709": "Multiple (ConnectWise ScreenConnect)",
+        "CVE-2024-3400": "Multiple (Palo Alto PAN-OS)",
+    }
+
+    # MITRE ATT&CK technique mapping for common CVE exploitation patterns
+    ATTACK_TECHNIQUE_MAP = {
+        # Initial Access techniques
+        "CVE-2019-0708": {"technique": "T1210", "name": "Exploitation of Remote Services", "groups": ["APT28", "Lazarus"]},
+        "CVE-2017-0144": {"technique": "T1210", "name": "Exploitation of Remote Services", "groups": ["WannaCry", "NotPetya", "Lazarus"]},
+        "CVE-2021-44228": {"technique": "T1190", "name": "Exploit Public-Facing Application", "groups": ["APT41", "Lazarus", "LockBit"]},
+        "CVE-2021-26855": {"technique": "T1190", "name": "Exploit Public-Facing Application", "groups": ["Hafnium", "APT27", "Conti"]},
+        "CVE-2021-34473": {"technique": "T1190", "name": "Exploit Public-Facing Application", "groups": ["Conti", "LockBit", "BlackBasta"]},
+        "CVE-2023-34362": {"technique": "T1190", "name": "Exploit Public-Facing Application", "groups": ["CL0P"]},
+        "CVE-2019-11510": {"technique": "T1190", "name": "Exploit Public-Facing Application", "groups": ["APT5", "REvil"]},
+        "CVE-2019-19781": {"technique": "T1190", "name": "Exploit Public-Facing Application", "groups": ["REvil", "DoppelPaymer"]},
+        "CVE-2023-4966": {"technique": "T1190", "name": "Exploit Public-Facing Application", "groups": ["LockBit", "Medusa"]},
+        "CVE-2024-6387": {"technique": "T1190", "name": "Exploit Public-Facing Application", "groups": []},
+        "CVE-2023-48795": {"technique": "T1557", "name": "Adversary-in-the-Middle", "groups": []},
+        # Privilege escalation
+        "CVE-2021-3156": {"technique": "T1068", "name": "Exploitation for Privilege Escalation", "groups": ["Multiple"]},
+        # Lateral movement
+        "CVE-2020-0796": {"technique": "T1210", "name": "Exploitation of Remote Services", "groups": ["Multiple"]},
+    }
+
     def _enrich_cves(self, raw_cves: list, result: dict) -> bool:
-        """Enrich CVEs with CVSS, KEV, EPSS, and exploit maturity data."""
+        """Enrich CVEs with CVSS, KEV, EPSS, exploit maturity, exploitability,
+        ransomware associations, MITRE ATT&CK mapping, and CVE age data."""
         # Load enrichment data sources
         kev_set = self._load_kev()
         msf_set = self._load_msf_modules()
@@ -632,6 +714,13 @@ class ShodanVulnChecker:
         high_epss_count = 0
         weaponized_count = 0
         poc_count = 0
+        zero_day_count = 0
+        easily_exploitable_count = 0
+        widely_exploited_count = 0
+        malware_exploited_count = 0
+        oldest_cve_age = 0
+        cve_ages = []
+
         for cve_id in raw_cves[:10]:
             info = self._fetch_cvss(cve_id)
             if info:
@@ -660,6 +749,52 @@ class ShodanVulnChecker:
                 else:
                     info["exploit_maturity"] = "theoretical"
 
+                # --- NEW: Easily exploitable (from CVSS vector) ---
+                if info.get("easily_exploitable"):
+                    easily_exploitable_count += 1
+
+                # --- NEW: Widely exploited (EPSS percentile > 0.9 or score > 0.4) ---
+                if info["epss_score"] > 0.4 or info.get("epss_percentile", 0) > 0.9:
+                    info["widely_exploited"] = True
+                    widely_exploited_count += 1
+                else:
+                    info["widely_exploited"] = False
+
+                # --- NEW: Zero-day / no patch indicator ---
+                if not info.get("has_patch", True):
+                    info["zero_day"] = True
+                    zero_day_count += 1
+                else:
+                    info["zero_day"] = False
+
+                # --- NEW: Ransomware association ---
+                ransomware = self.RANSOMWARE_CVE_MAP.get(cve_id.upper(), "")
+                info["ransomware_association"] = ransomware
+                if ransomware:
+                    malware_exploited_count += 1
+
+                # --- NEW: MITRE ATT&CK mapping ---
+                attack = self.ATTACK_TECHNIQUE_MAP.get(cve_id.upper(), {})
+                info["attack_technique"] = attack.get("technique", "")
+                info["attack_technique_name"] = attack.get("name", "")
+                info["attack_groups"] = attack.get("groups", [])
+
+                # --- NEW: CVE age (days since published) ---
+                pub_date = info.get("published", "")
+                if pub_date:
+                    try:
+                        from datetime import datetime
+                        pub_dt = datetime.strptime(pub_date[:10], "%Y-%m-%d")
+                        age_days = (datetime.utcnow() - pub_dt).days
+                        info["age_days"] = age_days
+                        cve_ages.append(age_days)
+                        if age_days > oldest_cve_age:
+                            oldest_cve_age = age_days
+                    except (ValueError, TypeError):
+                        info["age_days"] = None
+                else:
+                    info["age_days"] = None
+
                 enriched.append(info)
                 sev = info.get("severity", "unknown")
                 if sev == "critical":   result["critical_count"] += 1
@@ -676,6 +811,22 @@ class ShodanVulnChecker:
         result["weaponized_count"] = weaponized_count
         result["poc_public_count"] = poc_count
 
+        # NEW indicators
+        result["zero_day_count"] = zero_day_count
+        result["easily_exploitable_count"] = easily_exploitable_count
+        result["widely_exploited_count"] = widely_exploited_count
+        result["malware_exploited_count"] = malware_exploited_count
+
+        # Patch management posture
+        result["patch_management"] = {
+            "oldest_unpatched_days": oldest_cve_age,
+            "average_age_days": round(sum(cve_ages) / len(cve_ages)) if cve_ages else 0,
+            "over_180_days": sum(1 for a in cve_ages if a > 180),
+            "90_to_180_days": sum(1 for a in cve_ages if 90 <= a <= 180),
+            "under_90_days": sum(1 for a in cve_ages if a < 90),
+            "total_cves_aged": len(cve_ages),
+        }
+
         if kev_count > 0:
             result["issues"].append(
                 f"{kev_count} CVE(s) in CISA Known Exploited Vulnerabilities catalog — actively exploited in the wild"
@@ -687,6 +838,36 @@ class ShodanVulnChecker:
         if weaponized_count > 0:
             result["issues"].append(
                 f"{weaponized_count} CVE(s) have weaponized exploits (CISA KEV / Metasploit) — immediate patching required"
+            )
+        if zero_day_count > 0:
+            result["issues"].append(
+                f"{zero_day_count} CVE(s) with no vendor patch available — monitor for updates and apply mitigations"
+            )
+        if easily_exploitable_count > 0:
+            result["issues"].append(
+                f"{easily_exploitable_count} CVE(s) are easily exploitable (network accessible, low complexity, no authentication required)"
+            )
+        if widely_exploited_count > 0:
+            result["issues"].append(
+                f"{widely_exploited_count} CVE(s) are widely exploited (EPSS > 40%) — mass exploitation campaigns likely"
+            )
+        if malware_exploited_count > 0:
+            ransomware_names = list(set(
+                info.get("ransomware_association", "") for info in enriched if info.get("ransomware_association")
+            ))[:5]
+            result["issues"].append(
+                f"{malware_exploited_count} CVE(s) associated with known ransomware/malware: {', '.join(ransomware_names)}"
+            )
+        # Patch management warning
+        pm = result["patch_management"]
+        if pm["oldest_unpatched_days"] > 365:
+            result["issues"].append(
+                f"PATCH MANAGEMENT: Oldest unpatched vulnerability is {pm['oldest_unpatched_days']} days old — "
+                f"indicates significant patch management deficiency"
+            )
+        elif pm["oldest_unpatched_days"] > 180:
+            result["issues"].append(
+                f"Patch management: {pm['over_180_days']} vulnerability(ies) unpatched for over 180 days"
             )
 
         return True

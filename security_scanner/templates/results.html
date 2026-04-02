@@ -1170,7 +1170,23 @@
             <details style="padding:4px 14px 8px;border-top:1px solid rgba(30,58,138,0.06);">
               <summary style="cursor:pointer;font-size:0.8rem;color:#60a5fa;font-weight:600;padding:4px 0;">&#9654; Show {{ vuln.get('cves', []) | length }} enriched CVE(s)</summary>
               <table style="width:100%;font-size:0.78rem;margin-top:6px;border-collapse:collapse;">
-                <tr style="background:rgba(30,58,138,0.04);"><th style="text-align:left;padding:4px;">CVE</th><th style="padding:4px;">CVSS</th><th style="padding:4px;">EPSS</th><th style="padding:4px;">KEV</th><th style="padding:4px;">Maturity</th><th style="text-align:left;padding:4px;">Description</th></tr>
+                {# Vulnerability indicator summary strip #}
+                {% set pm = vuln.get('patch_management', {}) %}
+                {% if pm %}
+                <tr><td colspan="8" style="padding:6px 4px;">
+                  <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:0.7rem;">
+                    <span style="padding:2px 8px;border-radius:4px;background:{% if vuln.get('zero_day_count',0) > 0 %}#7f1d1d{% else %}rgba(100,116,139,0.2){% endif %};color:{% if vuln.get('zero_day_count',0) > 0 %}#fca5a5{% else %}#94a3b8{% endif %};">Zero-days: {{ vuln.get('zero_day_count', 0) }}</span>
+                    <span style="padding:2px 8px;border-radius:4px;background:{% if vuln.get('malware_exploited_count',0) > 0 %}#7f1d1d{% else %}rgba(100,116,139,0.2){% endif %};color:{% if vuln.get('malware_exploited_count',0) > 0 %}#fca5a5{% else %}#94a3b8{% endif %};">Malware exploited: {{ vuln.get('malware_exploited_count', 0) }}</span>
+                    <span style="padding:2px 8px;border-radius:4px;background:{% if vuln.get('kev_count',0) > 0 %}#7f1d1d{% else %}rgba(100,116,139,0.2){% endif %};color:{% if vuln.get('kev_count',0) > 0 %}#fca5a5{% else %}#94a3b8{% endif %};">Exploited in wild: {{ vuln.get('kev_count', 0) }}</span>
+                    <span style="padding:2px 8px;border-radius:4px;background:{% if vuln.get('easily_exploitable_count',0) > 0 %}#78350f{% else %}rgba(100,116,139,0.2){% endif %};color:{% if vuln.get('easily_exploitable_count',0) > 0 %}#fde68a{% else %}#94a3b8{% endif %};">Easily exploitable: {{ vuln.get('easily_exploitable_count', 0) }}</span>
+                    <span style="padding:2px 8px;border-radius:4px;background:{% if vuln.get('widely_exploited_count',0) > 0 %}#78350f{% else %}rgba(100,116,139,0.2){% endif %};color:{% if vuln.get('widely_exploited_count',0) > 0 %}#fde68a{% else %}#94a3b8{% endif %};">Widely exploited: {{ vuln.get('widely_exploited_count', 0) }}</span>
+                    {% if pm.get('oldest_unpatched_days', 0) > 0 %}
+                    <span style="padding:2px 8px;border-radius:4px;background:{% if pm.oldest_unpatched_days > 180 %}#7f1d1d{% elif pm.oldest_unpatched_days > 90 %}#78350f{% else %}rgba(100,116,139,0.2){% endif %};color:{% if pm.oldest_unpatched_days > 180 %}#fca5a5{% elif pm.oldest_unpatched_days > 90 %}#fde68a{% else %}#94a3b8{% endif %};">Oldest: {{ pm.oldest_unpatched_days }}d &bull; Avg: {{ pm.average_age_days }}d</span>
+                    {% endif %}
+                  </div>
+                </td></tr>
+                {% endif %}
+                <tr style="background:rgba(30,58,138,0.04);"><th style="text-align:left;padding:4px;">CVE</th><th style="padding:4px;">CVSS</th><th style="padding:4px;">EPSS</th><th style="padding:4px;">KEV</th><th style="padding:4px;">Maturity</th><th style="padding:4px;">Age</th><th style="padding:4px;">Flags</th><th style="text-align:left;padding:4px;">Description</th></tr>
                 {% for cve in vuln.get('cves', []) %}
                 <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
                   <td style="padding:4px;font-family:monospace;white-space:nowrap;">{{ cve.cve_id }}</td>
@@ -1179,15 +1195,24 @@
                     <span style="font-size:0.65rem;color:#64748b;">({{ cve.severity }})</span>
                   </td>
                   <td style="padding:4px;text-align:center;">
-                    {% if cve.epss_score is not none %}
+                    {% if cve.epss_score is not none and cve.epss_score > 0 %}
                       <span style="font-weight:600;color:{% if cve.epss_score >= 0.5 %}#e74c3c{% elif cve.epss_score >= 0.1 %}#e67e22{% else %}#27ae60{% endif %};">{{ "%.1f" | format(cve.epss_score * 100) }}%</span>
                     {% else %}—{% endif %}
                   </td>
-                  <td style="padding:4px;text-align:center;">{% if cve.in_kev %}<span class="badge badge-red" style="font-size:0.6rem;">KEV</span>{% else %}—{% endif %}</td>
+                  <td style="padding:4px;text-align:center;">{% if cve.in_kev %}<span class="badge badge-red" style="font-size:0.6rem;">KEV</span>{% else %}No{% endif %}</td>
                   <td style="padding:4px;text-align:center;">
                     {% if cve.exploit_maturity == 'weaponized' %}<span class="badge badge-red" style="font-size:0.6rem;">Weaponized</span>
                     {% elif cve.exploit_maturity == 'poc_public' %}<span class="badge badge-amber" style="font-size:0.6rem;">PoC Public</span>
                     {% else %}<span class="badge" style="font-size:0.6rem;background:rgba(100,116,139,0.3);color:#94a3b8;">Theoretical</span>{% endif %}
+                  </td>
+                  <td style="padding:4px;text-align:center;font-size:0.7rem;">
+                    {% if cve.age_days is not none %}<span style="color:{% if cve.age_days > 365 %}#e74c3c{% elif cve.age_days > 180 %}#e67e22{% elif cve.age_days > 90 %}#f39c12{% else %}#27ae60{% endif %};">{{ cve.age_days }}d</span>{% else %}—{% endif %}
+                  </td>
+                  <td style="padding:4px;text-align:center;font-size:0.6rem;">
+                    {% if cve.easily_exploitable %}<span class="badge badge-amber" style="font-size:0.55rem;">Easy</span>{% endif %}
+                    {% if cve.widely_exploited %}<span class="badge badge-red" style="font-size:0.55rem;">Wide</span>{% endif %}
+                    {% if cve.zero_day %}<span class="badge badge-red" style="font-size:0.55rem;">0day</span>{% endif %}
+                    {% if cve.ransomware_association %}<span class="badge" style="font-size:0.55rem;background:#581c87;color:#d8b4fe;">{{ cve.ransomware_association | truncate(20) }}</span>{% endif %}
                   </td>
                   <td style="padding:4px;font-size:0.73rem;color:#cbd5e1;">{{ cve.description | default('') | truncate(120) }}</td>
                 </tr>
