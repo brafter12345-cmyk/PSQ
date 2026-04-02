@@ -362,19 +362,50 @@ class SecurityScanner:
                                 # If no CVSS, estimate from severity
                                 if not cvss and sev != "unknown":
                                     cvss = {"critical": 9.5, "high": 7.5, "medium": 5.0, "low": 2.5}.get(sev, 0)
+                                # Calculate CVE age from published date
+                                pub = ov.get("published", "")[:10]
+                                age_days = None
+                                if pub:
+                                    try:
+                                        from datetime import datetime as _dt
+                                        age_days = (_dt.utcnow() - _dt.strptime(pub, "%Y-%m-%d")).days
+                                    except (ValueError, TypeError):
+                                        pass
+
+                                # Parse CVSS vector for exploitability
+                                vector = ov.get("vector", "")
+                                easily_exploitable = ("AV:N" in vector and "AC:L" in vector and "PR:N" in vector) if vector else False
+
+                                # Check ransomware association
+                                from checkers_threats import ShodanVulnChecker as _SVC
+                                ransomware = _SVC.RANSOMWARE_CVE_MAP.get(cve_id.upper(), "")
+                                attack = _SVC.ATTACK_TECHNIQUE_MAP.get(cve_id.upper(), {})
+
+                                epss_val = ov.get("epss") or 0
                                 shodan_r.setdefault("cves", []).append({
                                     "cve_id": cve_id,
                                     "cvss_score": cvss,
                                     "severity": sev,
-                                    "epss_score": ov.get("epss") or 0,
+                                    "epss_score": epss_val,
                                     "description": ov.get("summary", "")[:200],
                                     "source": "osv.dev",
                                     "package": ov.get("package", ""),
                                     "detected_version": ov.get("detected_version", ""),
                                     "in_kev": False,
+                                    "published": pub,
+                                    "age_days": age_days,
+                                    "easily_exploitable": easily_exploitable,
+                                    "widely_exploited": epss_val > 0.4,
+                                    "zero_day": False,
+                                    "has_patch": True,
+                                    "ransomware_association": ransomware,
+                                    "attack_technique": attack.get("technique", ""),
+                                    "attack_technique_name": attack.get("name", ""),
+                                    "attack_groups": attack.get("groups", []),
+                                    "exploit_maturity": "theoretical",
                                 })
                                 existing_cve_ids.add(cve_id)
-                        # Update counts
+                        # Update counts including new indicators
                         all_cves = shodan_r.get("cves", [])
                         shodan_r["total_cves"] = len(all_cves)
                         shodan_r["critical_count"] = sum(1 for c in all_cves if c.get("severity") == "critical")
@@ -385,6 +416,20 @@ class SecurityScanner:
                         max_epss = max((c.get("epss_score", 0) for c in all_cves if c.get("epss_score")), default=0)
                         shodan_r["max_cvss"] = max_cvss
                         shodan_r["max_epss"] = max_epss
+                        shodan_r["zero_day_count"] = sum(1 for c in all_cves if c.get("zero_day"))
+                        shodan_r["easily_exploitable_count"] = sum(1 for c in all_cves if c.get("easily_exploitable"))
+                        shodan_r["widely_exploited_count"] = sum(1 for c in all_cves if c.get("widely_exploited"))
+                        shodan_r["malware_exploited_count"] = sum(1 for c in all_cves if c.get("ransomware_association"))
+                        # Patch management posture
+                        ages = [c.get("age_days") for c in all_cves if c.get("age_days") is not None]
+                        shodan_r["patch_management"] = {
+                            "oldest_unpatched_days": max(ages) if ages else 0,
+                            "average_age_days": round(sum(ages) / len(ages)) if ages else 0,
+                            "over_180_days": sum(1 for a in ages if a > 180),
+                            "90_to_180_days": sum(1 for a in ages if 90 <= a <= 180),
+                            "under_90_days": sum(1 for a in ages if a < 90),
+                            "total_cves_aged": len(ages),
+                        }
 
                 # --- Batch EPSS + CISA KEV lookup for OSV-enriched CVEs ---
                 try:
