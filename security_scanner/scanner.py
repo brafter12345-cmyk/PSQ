@@ -377,9 +377,8 @@ class SecurityScanner:
                                 easily_exploitable = ("AV:N" in vector and "AC:L" in vector and "PR:N" in vector) if vector else False
 
                                 # Check ransomware association
-                                from checkers_threats import ShodanVulnChecker as _SVC
-                                ransomware = _SVC.RANSOMWARE_CVE_MAP.get(cve_id.upper(), "")
-                                attack = _SVC.ATTACK_TECHNIQUE_MAP.get(cve_id.upper(), {})
+                                ransomware = ShodanVulnChecker.RANSOMWARE_CVE_MAP.get(cve_id.upper(), "")
+                                attack = ShodanVulnChecker.ATTACK_TECHNIQUE_MAP.get(cve_id.upper(), {})
 
                                 epss_val = ov.get("epss") or 0
                                 shodan_r.setdefault("cves", []).append({
