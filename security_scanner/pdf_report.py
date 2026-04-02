@@ -2017,47 +2017,180 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
             story.append(Spacer(1, 4 * mm))
 
         # Top 5 remediation items from risk mitigations
-        mit = ins_data.get("financial_impact", {}).get("risk_mitigations", {})
-        findings = mit.get("findings", [])
-        if findings:
-            # Sort by estimated savings descending, take top 5
-            sorted_findings = sorted(findings,
-                                     key=lambda f: f.get("estimated_annual_savings_zar", 0),
-                                     reverse=True)[:5]
-            story += section_header("TOP 5 REMEDIATION PRIORITIES", S)
-            story.append(Spacer(1, 2 * mm))
-            is_zar_mit = fin.get("currency") == "ZAR" if fin else True
-            cur_mit = "R" if is_zar_mit else "$"
-            for i, f in enumerate(sorted_findings, 1):
-                sev = f.get("severity", "Medium")
-                savings = f.get("estimated_annual_savings_zar", 0)
-                rec_text = f.get("recommendation", "")
-                story.append(Paragraph(
-                    f'<font name="Helvetica-Bold" color="{C_BLUE}">{i}.</font>&nbsp;&nbsp;'
-                    f'<b>[{sev}]</b> {rec_text} — saves <b>{cur_mit} {savings:,.0f}</b>/year',
-                    S["rec_body"]
-                ))
-                story.append(Spacer(1, 2 * mm))
-        elif recs:
-            # Fallback to top 5 general recommendations
-            story += section_header("TOP 5 REMEDIATION PRIORITIES", S)
-            story.append(Spacer(1, 2 * mm))
-            for i, rec in enumerate(recs[:5], 1):
-                story.append(Paragraph(
-                    f'<font name="Helvetica-Bold" color="{C_BLUE}">{i}.</font>&nbsp;&nbsp;{rec}',
-                    S["rec_body"]
-                ))
-                story.append(Spacer(1, 2 * mm))
+        # ── Why This Matters — The Reality of a Cyber Breach ──────────────
+        story.append(PageBreak())
+        story += section_header("WHY THIS MATTERS", S)
+        story.append(Spacer(1, 3 * mm))
 
-        # Note about full report
-        story.append(Spacer(1, 6 * mm))
-        story.append(HRFlowable(width=INNER_W, thickness=0.5, color=C_GREY_2))
+        # Financial exposure recap
+        total_likely = fin.get("total", {}).get("most_likely", 0) if fin else 0
+        mc_data = fin.get("monte_carlo", {}).get("total", {}) if fin else {}
+        mc_p50 = mc_data.get("p50", total_likely)
+        mc_p95 = mc_data.get("p95", 0)
+        cur_cta = "R" if (fin and fin.get("currency") == "ZAR") else "$"
+
+        # Count critical findings
+        cred_risk = cats.get("credential_risk", {}).get("risk_level", "LOW")
+        hr_employees = cats.get("hudson_rock", {}).get("compromised_employees", 0)
+        ix_total = cats.get("intelx", {}).get("total_results", 0)
+        dh_total = cats.get("dehashed", {}).get("total_entries", 0)
+        hrp_critical = cats.get("high_risk_protocols", {}).get("critical_count", 0)
+
+        story.append(Paragraph(
+            f"<b>Your Estimated Financial Exposure</b>", S["cat_title"]))
+        story.append(Spacer(1, 2 * mm))
+        story.append(Paragraph(
+            f"Based on this assessment, your organisation faces an estimated annual cyber loss of "
+            f"<b>{cur_cta} {mc_p50:,.0f}</b> (median scenario). In a worst-case event, losses could reach "
+            f"<b>{cur_cta} {mc_p95:,.0f}</b>. These figures are derived from a Monte Carlo simulation of "
+            f"10,000 scenarios modelling data breach, ransomware, and business interruption events "
+            f"specific to your industry and risk profile.",
+            S["body"]))
+        story.append(Spacer(1, 4 * mm))
+
+        # The human cost of a breach
+        story.append(Paragraph(
+            f"<b>The Reality of a Cyber Breach</b>", S["cat_title"]))
+        story.append(Spacer(1, 2 * mm))
+        story.append(Paragraph(
+            "The financial numbers only tell part of the story. When a South African organisation "
+            "suffers a data breach, the impact extends far beyond the balance sheet:",
+            S["body"]))
+        story.append(Spacer(1, 2 * mm))
+
+        # IBM 2025 SA statistics
+        stat_style = ParagraphStyle("stat", fontSize=10, fontName="Helvetica",
+                                     textColor=C_BLACK, leading=14, spaceBefore=2, spaceAfter=2,
+                                     leftIndent=12, bulletIndent=6)
+
+        stats = [
+            "<b>R44.1 million</b> — the average cost of a data breach in South Africa in 2025 "
+            "(IBM Cost of a Data Breach Report). Even with the 17% decline from 2024, this represents "
+            "a potentially business-ending event for most SMEs.",
+
+            "<b>241 days</b> — the average time to identify and contain a breach. For nearly 8 months, "
+            "attackers may have access to your systems, data, and client information before the breach "
+            "is even discovered.",
+
+            "<b>Only 35% of organisations fully recover</b> from a data breach. Of those that do recover, "
+            "76% need more than 100 days to return to normal operations. During this period, business "
+            "operations are disrupted, client trust is eroded, and revenue is lost.",
+
+            "<b>Over 60% of SMBs that experience severe data loss shut down within 6 months</b> "
+            "of the incident. Without adequate insurance coverage and a response plan, a single "
+            "cyber event can be an existential threat to the business.",
+
+            "<b>86% of breached organisations experience operational disruption</b> — not just data loss, "
+            "but inability to process orders, serve clients, or access critical systems. Staff cannot work, "
+            "deadlines are missed, and contractual obligations go unmet.",
+
+            "<b>24 days average downtime</b> following a ransomware attack. For nearly a month, "
+            "your business may be unable to operate while systems are restored, data is recovered, "
+            "and forensic investigations are conducted.",
+        ]
+        for stat in stats:
+            story.append(Paragraph(f"\u2022 {stat}", stat_style))
+        story.append(Spacer(1, 4 * mm))
+
+        # Personalised risk context
+        story.append(Paragraph(
+            f"<b>What This Means for Your Organisation</b>", S["cat_title"]))
+        story.append(Spacer(1, 2 * mm))
+
+        risk_paras = []
+        if hr_employees > 0:
+            risk_paras.append(
+                f"This assessment detected <b>active infostealer malware</b> on {hr_employees} employee "
+                f"device(s). This is not a historical finding — it means credentials are being stolen "
+                f"<b>right now</b> and sold to criminal buyers. Without immediate intervention, a breach "
+                f"is not a matter of <i>if</i>, but <i>when</i>."
+            )
+        if ix_total > 0:
+            risk_paras.append(
+                f"We found <b>{ix_total} references</b> to your organisation in dark web databases. "
+                f"This means stolen data associated with your business is circulating in criminal "
+                f"networks where it can be purchased by anyone with malicious intent."
+            )
+        if dh_total > 0:
+            risk_paras.append(
+                f"<b>{dh_total} credential records</b> linked to your domain were found in breach "
+                f"databases. These include email addresses and potentially passwords that attackers "
+                f"use for credential stuffing — systematically trying stolen passwords across "
+                f"multiple systems until they find one that works."
+            )
+        if hrp_critical > 0:
+            risk_paras.append(
+                f"<b>{hrp_critical} critical service(s)</b> (databases, remote access) are directly "
+                f"exposed to the internet. An attacker does not need sophisticated tools to exploit "
+                f"these — a simple connection attempt with stolen credentials could grant immediate "
+                f"access to your most sensitive business data."
+            )
+        if cred_risk in ("CRITICAL", "HIGH"):
+            risk_paras.append(
+                f"Your overall credential risk is classified as <b>{cred_risk}</b>. "
+                f"This means there is a significantly elevated probability of unauthorised access "
+                f"to your systems using compromised credentials."
+            )
+        if not risk_paras:
+            risk_paras.append(
+                "While this assessment did not identify critical immediate threats, the cyber "
+                "landscape evolves rapidly. New vulnerabilities are discovered daily, and threat "
+                "actors continuously scan for targets. Maintaining adequate cyber insurance ensures "
+                "your organisation is protected against unforeseen events."
+            )
+
+        for para in risk_paras:
+            story.append(Paragraph(para, S["body"]))
+            story.append(Spacer(1, 2 * mm))
+        story.append(Spacer(1, 4 * mm))
+
+        # Call to action
+        story.append(Paragraph(
+            f"<b>Protect Your Business — Next Steps</b>", S["cat_title"]))
+        story.append(Spacer(1, 2 * mm))
+
+        cta_style = ParagraphStyle("cta", fontSize=10, fontName="Helvetica",
+                                    textColor=C_BLACK, leading=14, spaceBefore=2, spaceAfter=4,
+                                    leftIndent=12, bulletIndent=6)
+
+        cta_items = [
+            "<b>Cyber Insurance Coverage</b> — Speak to your Phishield broker about a tailored cyber "
+            "insurance policy that covers data breach response costs, ransomware negotiation and payment, "
+            "business interruption losses, regulatory fines (POPIA), and third-party liability. "
+            f"Based on this assessment, a minimum cover of <b>{cur_cta} {ins_rec.get('minimum_cover_zar', ins_rec.get('suggested_deductible', 0)):,.0f}</b> "
+            f"is recommended, with an optimal cover of <b>{cur_cta} {ins_rec.get('recommended_cover_zar', ins_rec.get('recommended_coverage', 0)):,.0f}</b>."
+            if ins_rec else
+            "<b>Cyber Insurance Coverage</b> — Speak to your Phishield broker about a tailored cyber "
+            "insurance policy that covers data breach response costs, ransomware negotiation, "
+            "business interruption losses, regulatory fines (POPIA), and third-party liability.",
+
+            "<b>Vulnerability Remediation</b> — The vulnerabilities identified in this report can be "
+            "addressed through professional remediation services. A qualified cybersecurity partner can "
+            "help secure exposed services, patch critical vulnerabilities, implement MFA, and strengthen "
+            "your overall security posture — often reducing your insurance premium in the process.",
+
+            "<b>Continuous Monitoring</b> — Cyber risk is not static. New vulnerabilities are discovered "
+            "daily, and your attack surface changes as your business evolves. Ongoing monitoring ensures "
+            "emerging threats are detected before they are exploited.",
+        ]
+        for item in cta_items:
+            story.append(Paragraph(f"\u2022 {item}", cta_style))
+        story.append(Spacer(1, 4 * mm))
+
+        # Contact block
+        story.append(HRFlowable(width=INNER_W, thickness=0.5, color=C_BLUE))
         story.append(Spacer(1, 3 * mm))
         story.append(Paragraph(
-            "<i>For the complete technical assessment, full vulnerability details, and comprehensive "
-            "remediation roadmap, please refer to the Full Technical Report.</i>",
-            ParagraphStyle("note", fontSize=9, fontName="Helvetica-Oblique",
-                           textColor=C_BLUE, leading=13, alignment=TA_CENTER)
+            "<b>To discuss your cyber insurance options or arrange a remediation assessment, "
+            "contact your Phishield broker or visit www.phishield.com</b>",
+            ParagraphStyle("contact", fontSize=11, fontName="Helvetica-Bold",
+                           textColor=C_BLUE, leading=15, alignment=TA_CENTER)
+        ))
+        story.append(Spacer(1, 3 * mm))
+        story.append(Paragraph(
+            "PHISHIELD UMA (Pty) Ltd | Authorised Financial Services Provider | FSP 46418",
+            ParagraphStyle("fsp", fontSize=8, fontName="Helvetica",
+                           textColor=C_GREY_3, leading=11, alignment=TA_CENTER)
         ))
 
     else:
