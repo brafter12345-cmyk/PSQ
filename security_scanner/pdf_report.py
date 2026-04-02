@@ -1971,7 +1971,7 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
     story.append(build_summary_table(results, S))
 
     # ── Attacker's View ──────────────────────────────────────────────────────
-    story.append(Spacer(1, 4 * mm))
+    story.append(PageBreak())
     story += _build_attackers_view(results, S)
 
     # ── Report type branching ───────────────────────────────────────────────
