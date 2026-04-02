@@ -1722,6 +1722,59 @@ def _build_vulnerability_posture(results: dict, S) -> list:
     parts.append(matrix_tbl)
     parts.append(Spacer(1, 3 * mm))
 
+    # Threat indicator row (Zero-days, Malware exploited, Exploited in wild, Easily exploitable, Widely exploited)
+    kev_count = sum(1 for c in all_cves if c.get("in_kev"))
+    threat_data = [
+        [Paragraph("<b>Zero-days</b>", header_style),
+         Paragraph("<b>Malware exploited</b>", header_style),
+         Paragraph("<b>Exploited in wild</b>", header_style),
+         Paragraph("<b>Easily exploitable</b>", header_style),
+         Paragraph("<b>Widely exploited</b>", header_style)],
+        [Paragraph(f"<b>{zero_days}</b>", val_style),
+         Paragraph(f"<b>{malware_count}</b>", val_style),
+         Paragraph(f"<b>{kev_count}</b>", val_style),
+         Paragraph(f"<b>{easily_exploitable}</b>", val_style),
+         Paragraph(f"<b>{widely_exploited}</b>", val_style)],
+        [Paragraph(f"{zero_days} instance(s)", lbl_style),
+         Paragraph(f"{malware_count} instance(s)", lbl_style),
+         Paragraph(f"{kev_count} instance(s)", lbl_style),
+         Paragraph(f"{easily_exploitable} instance(s)", lbl_style),
+         Paragraph(f"{widely_exploited} instance(s)", lbl_style)],
+    ]
+    threat_col_w = INNER_W / 5
+    threat_tbl = Table(threat_data, colWidths=[threat_col_w] * 5)
+    _threat_grey = colors.HexColor("#475569")
+    threat_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, 0), _threat_grey),
+        ("BACKGROUND",    (0, 1), (-1, 1), C_GREY_1),
+        ("BACKGROUND",    (0, 2), (-1, 2), C_WHITE),
+        ("BOX",           (0, 0), (-1, -1), 0.5, C_GREY_2),
+        ("INNERGRID",     (0, 0), (-1, -1), 0.25, C_GREY_2),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, 0), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 4),
+        ("TOPPADDING",    (0, 1), (-1, 1), 6),
+        ("BOTTOMPADDING", (0, 1), (-1, 1), 6),
+        ("TOPPADDING",    (0, 2), (-1, 2), 2),
+        ("BOTTOMPADDING", (0, 2), (-1, 2), 4),
+    ]))
+    parts.append(threat_tbl)
+    parts.append(Spacer(1, 2 * mm))
+
+    # Plain-English legend for threat indicators
+    legend_style = ParagraphStyle("vp_legend", fontSize=7.5, fontName="Helvetica",
+                                   textColor=C_GREY_4, leading=10, leftIndent=4)
+    legend_items = [
+        "<b>Zero-days:</b> Vulnerabilities with no vendor patch available — no fix exists yet, requiring alternative mitigations.",
+        "<b>Malware exploited:</b> Vulnerabilities known to be used by ransomware groups or malware campaigns to attack organisations.",
+        "<b>Exploited in wild:</b> Confirmed by CISA (US Cybersecurity Agency) as actively exploited by attackers right now.",
+        "<b>Easily exploitable:</b> Can be exploited remotely over the internet with no special tools, passwords, or user interaction required.",
+        "<b>Widely exploited:</b> High probability of mass exploitation — automated attack tools are scanning the internet for this vulnerability.",
+    ]
+    for item in legend_items:
+        parts.append(Paragraph(item, legend_style))
+    parts.append(Spacer(1, 3 * mm))
+
     # Narrative paragraph
     narrative = (
         f"This assessment identified <b>{total}</b> known vulnerabilities on the assessed infrastructure"
@@ -2164,12 +2217,10 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
     story.append(Spacer(1, 2 * mm))
     story.append(build_summary_table(results, S))
 
-    # ── Vulnerability Posture ────────────────────────────────────────────────
-    story.append(Spacer(1, 4 * mm))
-    story += _build_vulnerability_posture(results, S)
-
-    # ── Attacker's View ──────────────────────────────────────────────────────
+    # ── Vulnerability Posture + Attacker's View (page 2) ────────────────────
     story.append(PageBreak())
+    story += _build_vulnerability_posture(results, S)
+    story.append(Spacer(1, 4 * mm))
     story += _build_attackers_view(results, S)
 
     # ── Report type branching ───────────────────────────────────────────────
