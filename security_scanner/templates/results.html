@@ -1178,7 +1178,8 @@
             {% if vuln.get('cves') %}
             <details style="padding:4px 14px 8px;border-top:1px solid rgba(30,58,138,0.06);">
               <summary style="cursor:pointer;font-size:0.8rem;color:#60a5fa;font-weight:600;padding:4px 0;">&#9654; Show {{ vuln.get('cves', []) | length }} enriched CVE(s)</summary>
-              <table style="width:100%;font-size:0.78rem;margin-top:6px;border-collapse:collapse;">
+              <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
+              <table style="min-width:700px;font-size:0.78rem;margin-top:6px;border-collapse:collapse;">
                 {# Vulnerability indicator summary strip #}
                 {% set pm = vuln.get('patch_management', {}) %}
                 {% if pm %}
@@ -1227,6 +1228,7 @@
                 </tr>
                 {% endfor %}
               </table>
+              </div>
             </details>
             {% endif %}
           </div>
