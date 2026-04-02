@@ -318,24 +318,26 @@ class SecurityScanner:
             all_cpes.update(agg_shodan.get("cpe_list", []))
 
             osv_vulns = osv.query_cpe_list(list(all_cpes)) if all_cpes else []
+            # Always store OSV results for diagnostics
+            osv_crit = sum(1 for v in osv_vulns if v.get("severity") == "critical")
+            osv_high = sum(1 for v in osv_vulns if v.get("severity") == "high")
+            osv_issues = []
+            if osv_crit > 0:
+                osv_issues.append(f"{osv_crit} critical vulnerability(ies) found via version analysis (OSV.dev)")
+            if osv_high > 0:
+                osv_issues.append(f"{osv_high} high-severity vulnerability(ies) found via version analysis (OSV.dev)")
+            results["categories"]["osv_vulns"] = {
+                "status": "completed",
+                "source": "osv.dev",
+                "total_vulns": len(osv_vulns),
+                "vulns": osv_vulns,
+                "cpes_queried": list(all_cpes),
+                "ips_with_cpes": list(ip_cpe_map.keys()),
+                "critical_count": osv_crit,
+                "high_count": osv_high,
+                "issues": osv_issues,
+            }
             if osv_vulns:
-                results["categories"]["osv_vulns"] = {
-                    "status": "completed",
-                    "source": "osv.dev",
-                    "total_vulns": len(osv_vulns),
-                    "vulns": osv_vulns,
-                    "critical_count": sum(1 for v in osv_vulns if v.get("severity") == "critical"),
-                    "high_count": sum(1 for v in osv_vulns if v.get("severity") == "high"),
-                    "issues": [],
-                }
-                crit = results["categories"]["osv_vulns"]["critical_count"]
-                high = results["categories"]["osv_vulns"]["high_count"]
-                if crit > 0:
-                    results["categories"]["osv_vulns"]["issues"].append(
-                        f"{crit} critical vulnerability(ies) found via version analysis (OSV.dev)")
-                if high > 0:
-                    results["categories"]["osv_vulns"]["issues"].append(
-                        f"{high} high-severity vulnerability(ies) found via version analysis (OSV.dev)")
 
                 # --- Merge OSV CVEs back into per-IP cards ---
                 for ip, cpes in ip_cpe_map.items():
