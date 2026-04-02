@@ -1592,6 +1592,200 @@ def build_summary_table(results: dict, S) -> Table:
 # Main entry point
 # ---------------------------------------------------------------------------
 
+def _build_vulnerability_posture(results: dict, S) -> list:
+    """Build Vulnerability Posture summary with severity/age matrix and narrative."""
+    parts = []
+    cats = results.get("categories", {})
+
+    # Collect all CVEs from per-IP results
+    all_cves = []
+    per_ip = cats.get("per_ip", {})
+    for ip, checkers in per_ip.items():
+        shodan = checkers.get("shodan_vulns", {})
+        for cve in shodan.get("cves", []):
+            all_cves.append(cve)
+
+    # Also check aggregated shodan
+    agg_shodan = cats.get("shodan_vulns", {})
+    if not all_cves and agg_shodan.get("cves"):
+        all_cves = agg_shodan.get("cves", [])
+
+    total = len(all_cves)
+    if total == 0:
+        # No CVEs — still show the posture block with clean result
+        parts.append(Paragraph("<b>Vulnerability Posture</b>", S["cat_title"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph(
+            "No known vulnerabilities were detected on the assessed infrastructure. "
+            "This is a positive indicator, however it does not guarantee the absence of "
+            "vulnerabilities — only that none were identified through passive external scanning.",
+            S["body"]))
+        return parts
+
+    # Count by severity
+    critical = sum(1 for c in all_cves if c.get("severity") == "critical")
+    high = sum(1 for c in all_cves if c.get("severity") == "high")
+    medium = sum(1 for c in all_cves if c.get("severity") == "medium")
+    low = sum(1 for c in all_cves if c.get("severity") == "low")
+
+    # Count by age bucket
+    ages = [c.get("age_days") for c in all_cves if c.get("age_days") is not None]
+    over_180 = sum(1 for a in ages if a > 180)
+    d90_to_180 = sum(1 for a in ages if 90 <= a <= 180)
+    under_90 = sum(1 for a in ages if a < 90)
+    oldest = max(ages) if ages else 0
+    avg_age = round(sum(ages) / len(ages)) if ages else 0
+
+    # Count indicators
+    easily_exploitable = sum(1 for c in all_cves if c.get("easily_exploitable"))
+    widely_exploited = sum(1 for c in all_cves if c.get("widely_exploited"))
+    zero_days = sum(1 for c in all_cves if c.get("zero_day"))
+    malware_count = sum(1 for c in all_cves if c.get("ransomware_association"))
+    ransomware_names = list(set(
+        c.get("ransomware_association", "") for c in all_cves if c.get("ransomware_association")
+    ))[:5]
+
+    # Patch management rating
+    if oldest > 365:
+        pm_rating = "Very Poor"
+        pm_color = C_CRITICAL
+    elif oldest > 180:
+        pm_rating = "Poor"
+        pm_color = C_RED
+    elif oldest > 90:
+        pm_rating = "Fair"
+        pm_color = C_AMBER
+    else:
+        pm_rating = "Good"
+        pm_color = C_GREEN
+
+    parts.append(Paragraph("<b>Vulnerability Posture</b>", S["cat_title"]))
+    parts.append(Spacer(1, 2 * mm))
+
+    # Severity + Age matrix table (PrimeLogic style)
+    header_style = ParagraphStyle("vp_hdr", fontSize=7, fontName="Helvetica-Bold",
+                                   textColor=C_WHITE, alignment=TA_CENTER, leading=10)
+    val_style = ParagraphStyle("vp_val", fontSize=14, fontName="Helvetica-Bold",
+                                textColor=C_BLACK, alignment=TA_CENTER, leading=18)
+    lbl_style = ParagraphStyle("vp_lbl", fontSize=6, fontName="Helvetica",
+                                textColor=C_GREY_3, alignment=TA_CENTER, leading=9)
+
+    matrix_data = [
+        # Headers
+        [Paragraph("<b>Critical</b>", header_style),
+         Paragraph("<b>High</b>", header_style),
+         Paragraph("<b>Medium</b>", header_style),
+         Paragraph("<b>&gt; 180 days</b>", header_style),
+         Paragraph("<b>&lt; 180 days</b>", header_style),
+         Paragraph("<b>&lt; 90 days</b>", header_style)],
+        # Values
+        [Paragraph(f"<b>{critical}</b>", val_style),
+         Paragraph(f"<b>{high}</b>", val_style),
+         Paragraph(f"<b>{medium + low}</b>", val_style),
+         Paragraph(f"<b>{over_180}</b>", val_style),
+         Paragraph(f"<b>{d90_to_180}</b>", val_style),
+         Paragraph(f"<b>{under_90}</b>", val_style)],
+        # Labels
+        [Paragraph(f"{critical} instance(s)", lbl_style),
+         Paragraph(f"{high} instance(s)", lbl_style),
+         Paragraph(f"{medium + low} instance(s)", lbl_style),
+         Paragraph(f"{over_180} instance(s)", lbl_style),
+         Paragraph(f"{d90_to_180} instance(s)", lbl_style),
+         Paragraph(f"{under_90} instance(s)", lbl_style)],
+    ]
+
+    col_w = INNER_W / 6
+    matrix_tbl = Table(matrix_data, colWidths=[col_w] * 6)
+    matrix_tbl.setStyle(TableStyle([
+        # Header row styling
+        ("BACKGROUND",    (0, 0), (2, 0), C_CRITICAL_BG),
+        ("BACKGROUND",    (0, 0), (0, 0), C_CRITICAL),
+        ("BACKGROUND",    (1, 0), (1, 0), C_RED),
+        ("BACKGROUND",    (2, 0), (2, 0), C_AMBER),
+        ("BACKGROUND",    (3, 0), (3, 0), colors.HexColor("#1e40af")),
+        ("BACKGROUND",    (4, 0), (4, 0), colors.HexColor("#2563eb")),
+        ("BACKGROUND",    (5, 0), (5, 0), colors.HexColor("#3b82f6")),
+        # Value row
+        ("BACKGROUND",    (0, 1), (-1, 1), C_GREY_1),
+        ("BACKGROUND",    (0, 2), (-1, 2), C_WHITE),
+        # Grid
+        ("BOX",           (0, 0), (-1, -1), 0.5, C_GREY_2),
+        ("INNERGRID",     (0, 0), (-1, -1), 0.25, C_GREY_2),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, 0), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), 4),
+        ("TOPPADDING",    (0, 1), (-1, 1), 6),
+        ("BOTTOMPADDING", (0, 1), (-1, 1), 6),
+        ("TOPPADDING",    (0, 2), (-1, 2), 2),
+        ("BOTTOMPADDING", (0, 2), (-1, 2), 4),
+    ]))
+    parts.append(matrix_tbl)
+    parts.append(Spacer(1, 3 * mm))
+
+    # Narrative paragraph
+    narrative = (
+        f"This assessment identified <b>{total}</b> known vulnerabilities on the assessed infrastructure"
+    )
+    if critical > 0:
+        narrative += f", of which <b>{critical}</b> are classified as critical severity"
+    if high > 0:
+        narrative += f" and <b>{high}</b> as high severity"
+    narrative += ". "
+
+    if over_180 > 0:
+        narrative += (
+            f"<b>{over_180}</b> vulnerabilit{'y has' if over_180 == 1 else 'ies have'} "
+            f"remained unpatched for over 180 days"
+        )
+        if oldest > 365:
+            narrative += (
+                f" — the oldest being <b>{oldest} days</b> old, indicating that software updates "
+                f"have not been applied for over {oldest // 365} year(s)"
+            )
+        narrative += ". "
+
+    if easily_exploitable > 0:
+        narrative += (
+            f"<b>{easily_exploitable}</b> vulnerabilit{'y is' if easily_exploitable == 1 else 'ies are'} "
+            f"easily exploitable — requiring no authentication and accessible directly from the internet. "
+        )
+
+    if widely_exploited > 0:
+        narrative += (
+            f"<b>{widely_exploited}</b> {'is' if widely_exploited == 1 else 'are'} widely exploited "
+            f"with a high probability of mass exploitation. "
+        )
+
+    if malware_count > 0:
+        narrative += (
+            f"<b>{malware_count}</b> vulnerabilit{'y is' if malware_count == 1 else 'ies are'} "
+            f"associated with known ransomware campaigns ({', '.join(ransomware_names)}). "
+        )
+    else:
+        narrative += "No vulnerabilities were associated with known ransomware campaigns. "
+
+    if zero_days > 0:
+        narrative += (
+            f"<b>{zero_days}</b> vulnerabilit{'y has' if zero_days == 1 else 'ies have'} "
+            f"no vendor patch available. "
+        )
+    else:
+        narrative += "No active zero-day exploits were identified. "
+
+    narrative += (
+        f"The overall patch management posture is rated as "
+        f"<b><font color='{pm_color}'>{pm_rating}</font></b>"
+    )
+    if avg_age > 0:
+        narrative += f" (average vulnerability age: {avg_age} days)"
+    narrative += "."
+
+    parts.append(Paragraph(narrative, S["body"]))
+    parts.append(Spacer(1, 2 * mm))
+
+    return parts
+
+
 def _build_attackers_view(results: dict, S) -> list:
     """Build an Attacker's View section that maps findings to the cyber kill chain."""
     cats = results.get("categories", {})
@@ -1969,6 +2163,10 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
     story.append(Paragraph("<b>Executive Summary</b>", S["cat_title"]))
     story.append(Spacer(1, 2 * mm))
     story.append(build_summary_table(results, S))
+
+    # ── Vulnerability Posture ────────────────────────────────────────────────
+    story.append(Spacer(1, 4 * mm))
+    story += _build_vulnerability_posture(results, S)
 
     # ── Attacker's View ──────────────────────────────────────────────────────
     story.append(PageBreak())
