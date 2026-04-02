@@ -177,6 +177,7 @@
     <div style="text-align:center;margin-bottom:20px;">
       <h2 style="margin-bottom:6px;">Scanning <strong>{{ domain }}</strong></h2>
       <p style="color:var(--muted);font-size:.82rem;" id="scanSubtitle">Initializing checks…</p>
+      <p style="color:var(--blue);font-size:.75rem;font-weight:600;margin-top:4px;" id="scanElapsed">Elapsed: 0:00</p>
     </div>
     <div class="progress-bar-wrap">
       <div class="progress-bar-fill" id="progressFill" style="width:0%"></div>
@@ -206,6 +207,23 @@
     let totalCheckers = 0;
     let doneCount = 0;
     const perIpCheckers = {};
+
+    // Elapsed time counter
+    const scanStartTime = Date.now();
+    let currentChecker = '';
+    const elapsedEl = document.getElementById('scanElapsed');
+    const subtitleEl = document.getElementById('scanSubtitle');
+    const elapsedTimer = setInterval(() => {
+      const secs = Math.floor((Date.now() - scanStartTime) / 1000);
+      const mins = Math.floor(secs / 60);
+      const remSecs = secs % 60;
+      elapsedEl.textContent = `Elapsed: ${mins}:${remSecs.toString().padStart(2, '0')}`;
+      // Animate dots on current checker to show activity
+      if (currentChecker) {
+        const dots = '.'.repeat((secs % 3) + 1);
+        subtitleEl.textContent = `${currentChecker}${dots}`;
+      }
+    }, 1000);
 
     const sectionsEl = document.getElementById('scanSections');
     manifest.forEach(section => {
@@ -270,19 +288,33 @@
       const data = JSON.parse(e.data);
       if (data.type === 'complete') {
         evtSource.close();
+        clearInterval(elapsedTimer);
         document.getElementById('progressFill').style.width = '100%';
         document.getElementById('progressText').textContent = `${totalCheckers} / ${totalCheckers}`;
-        document.getElementById('scanSubtitle').textContent = 'All checks complete!';
+        const totalSecs = Math.floor((Date.now() - scanStartTime) / 1000);
+        const totalMins = Math.floor(totalSecs / 60);
+        const totalRemSecs = totalSecs % 60;
+        document.getElementById('scanSubtitle').textContent = `All checks complete!`;
+        elapsedEl.textContent = `Completed in ${totalMins}:${totalRemSecs.toString().padStart(2, '0')}`;
+        elapsedEl.style.color = 'var(--low)';
+        currentChecker = '';
         setTimeout(() => window.location.reload(), 1200);
         return;
       }
       if (data.type === 'error') {
         evtSource.close();
+        clearInterval(elapsedTimer);
+        currentChecker = '';
         document.getElementById('scanSubtitle').textContent = 'Scan failed: ' + (data.message || 'unknown error');
         return;
       }
       const checker = data.checker;
       const status = data.status;
+      // Track currently running checker for subtitle display
+      if (status === 'running') {
+        const label = checker.split(':')[0].replace(/_/g, ' ');
+        currentChecker = label;
+      }
       if (checker === 'ip_discovery' && status === 'done' && data.ips && data.ips.length > 0) {
         const card = document.getElementById('ipCard');
         card.classList.add('visible');
