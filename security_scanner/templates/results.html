@@ -1206,13 +1206,13 @@
                     {% else %}<span class="badge" style="font-size:0.6rem;background:rgba(100,116,139,0.3);color:#94a3b8;">Theoretical</span>{% endif %}
                   </td>
                   <td style="padding:4px;text-align:center;font-size:0.7rem;">
-                    {% if cve.age_days is not none %}<span style="color:{% if cve.age_days > 365 %}#e74c3c{% elif cve.age_days > 180 %}#e67e22{% elif cve.age_days > 90 %}#f39c12{% else %}#27ae60{% endif %};">{{ cve.age_days }}d</span>{% else %}—{% endif %}
+                    {% if cve.get('age_days') is not none %}<span style="color:{% if cve.get('age_days', 0) > 365 %}#e74c3c{% elif cve.get('age_days', 0) > 180 %}#e67e22{% elif cve.get('age_days', 0) > 90 %}#f39c12{% else %}#27ae60{% endif %};">{{ cve.get('age_days', 0) }}d</span>{% else %}—{% endif %}
                   </td>
                   <td style="padding:4px;text-align:center;font-size:0.6rem;">
-                    {% if cve.easily_exploitable %}<span class="badge badge-amber" style="font-size:0.55rem;">Easy</span>{% endif %}
-                    {% if cve.widely_exploited %}<span class="badge badge-red" style="font-size:0.55rem;">Wide</span>{% endif %}
-                    {% if cve.zero_day %}<span class="badge badge-red" style="font-size:0.55rem;">0day</span>{% endif %}
-                    {% if cve.ransomware_association %}<span class="badge" style="font-size:0.55rem;background:#581c87;color:#d8b4fe;">{{ cve.ransomware_association | truncate(20) }}</span>{% endif %}
+                    {% if cve.get('easily_exploitable') %}<span class="badge badge-amber" style="font-size:0.55rem;">Easy</span>{% endif %}
+                    {% if cve.get('widely_exploited') %}<span class="badge badge-red" style="font-size:0.55rem;">Wide</span>{% endif %}
+                    {% if cve.get('zero_day') %}<span class="badge badge-red" style="font-size:0.55rem;">0day</span>{% endif %}
+                    {% if cve.get('ransomware_association') %}<span class="badge" style="font-size:0.55rem;background:#581c87;color:#d8b4fe;">{{ cve.get('ransomware_association', '') | truncate(20) }}</span>{% endif %}
                   </td>
                   <td style="padding:4px;font-size:0.73rem;color:#cbd5e1;">{{ cve.description | default('') | truncate(120) }}</td>
                 </tr>
