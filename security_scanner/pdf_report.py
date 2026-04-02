@@ -1707,7 +1707,193 @@ def _build_attackers_view(results: dict, S) -> list:
     return parts
 
 
-def generate_pdf(results: dict) -> bytes:
+def _build_narrative_summary(results: dict, S) -> list:
+    """Build conversational narrative paragraphs for the broker summary report."""
+    cats = results.get("categories", {})
+    ins = results.get("insurance", {})
+    domain = results.get("domain_scanned", "Unknown")
+    parts = []
+
+    parts.append(Paragraph("<b>Assessment Narrative</b>", S["cat_title"]))
+    parts.append(Spacer(1, 2 * mm))
+
+    # ── 1. Business Context ──────────────────────────────────────────────────
+    parts.append(Paragraph("<b>Business Context</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+
+    ip_data = cats.get("external_ips", {})
+    ip_count = ip_data.get("total_unique_ips", 0)
+    sub_count = cats.get("subdomains", {}).get("total_count", 0)
+    asn_count = len(ip_data.get("asns", [])) if ip_data.get("asns") else 0
+    dns_ports = cats.get("dns_infrastructure", {}).get("open_ports", [])
+    svc_count = len(dns_ports)
+
+    fin = ins.get("financial_impact", {})
+    industry = fin.get("industry", "")
+    revenue = fin.get("annual_revenue_zar", 0) or fin.get("annual_revenue", 0)
+
+    biz_text = (f"This assessment evaluated the external-facing digital infrastructure of <b>{domain}</b>.")
+    if industry:
+        biz_text += f" The organisation operates in the <b>{industry}</b> sector"
+        if revenue:
+            cur = "R" if fin.get("currency") == "ZAR" else "$"
+            biz_text += f" with reported annual revenue of <b>{cur} {revenue:,.0f}</b>"
+        biz_text += "."
+    biz_text += (f" The scan discovered <b>{ip_count}</b> external IP address(es)")
+    if asn_count:
+        biz_text += f" across <b>{asn_count}</b> ASN(s)"
+    biz_text += f", <b>{sub_count}</b> subdomain(s), and <b>{svc_count}</b> open service(s)."
+    parts.append(Paragraph(biz_text, S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+
+    # ── 2. Encryption & Web Security ─────────────────────────────────────────
+    parts.append(Paragraph("<b>Encryption &amp; Web Security</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+
+    ssl = cats.get("ssl", {})
+    ssl_grade = ssl.get("grade", "?")
+    ws = cats.get("website_security", {})
+    https_enforced = ws.get("https_enforced", False)
+    hh_score = cats.get("http_headers", {}).get("score", 0)
+    waf = cats.get("waf", {}).get("detected", False)
+
+    if ssl_grade in ("A+", "A"):
+        grade_meaning = "confirms strong encryption and a well-configured certificate chain"
+    elif ssl_grade == "B":
+        grade_meaning = "indicates acceptable encryption with minor configuration improvements possible"
+    elif ssl_grade == "C":
+        grade_meaning = "indicates moderate encryption weaknesses that should be addressed"
+    else:
+        grade_meaning = "indicates weak encryption configuration requiring urgent remediation"
+
+    enc_text = (f"The SSL/TLS assessment returned a grade of <b>{ssl_grade}</b>, which {grade_meaning}. ")
+    enc_text += f"HTTPS enforcement is <b>{'active' if https_enforced else 'not active'}</b>. "
+    enc_text += f"Security headers coverage stands at <b>{hh_score}%</b>. "
+    enc_text += f"Web Application Firewall (WAF) protection is <b>{'detected' if waf else 'not detected'}</b>."
+    parts.append(Paragraph(enc_text, S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+
+    # ── 3. Email Security Posture ────────────────────────────────────────────
+    parts.append(Paragraph("<b>Email Security Posture</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+
+    em = cats.get("email_security", {})
+    spf = em.get("spf", {})
+    dkim = em.get("dkim", {})
+    dmarc = em.get("dmarc", {})
+
+    spf_status = "present" if spf.get("present") else "missing"
+    dkim_status = "present" if dkim.get("selectors_found") else "missing"
+    dmarc_status = "present" if dmarc.get("present") else "missing"
+    dmarc_policy = dmarc.get("policy", "none") if dmarc.get("present") else "N/A"
+
+    email_text = (f"SPF record is <b>{spf_status}</b>. "
+                  f"DKIM is <b>{dkim_status}</b>. "
+                  f"DMARC is <b>{dmarc_status}</b>")
+    if dmarc.get("present"):
+        email_text += f" with policy set to <b>{dmarc_policy}</b>"
+    email_text += ". "
+
+    missing_count = sum(1 for s in [spf_status, dkim_status, dmarc_status] if s == "missing")
+    if missing_count == 0:
+        email_text += "All three email authentication mechanisms are in place, providing strong protection against phishing and business email compromise (BEC)."
+    elif missing_count == 1:
+        email_text += "One email authentication mechanism is missing, leaving a partial gap that attackers could exploit for phishing or BEC attacks."
+    else:
+        email_text += f"With <b>{missing_count}</b> authentication mechanisms missing, the domain is significantly vulnerable to email spoofing, phishing, and BEC attacks."
+    parts.append(Paragraph(email_text, S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+
+    # ── 4. Credential & Dark Web Exposure ────────────────────────────────────
+    parts.append(Paragraph("<b>Credential &amp; Dark Web Exposure</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+
+    dh = cats.get("dehashed", {})
+    hr = cats.get("hudson_rock", {})
+    ix = cats.get("intelx", {})
+    cr = cats.get("credential_risk", {})
+
+    cred_parts = []
+    dh_total = dh.get("total_entries", 0)
+    dh_emails = dh.get("unique_emails", 0)
+    dh_sources = dh.get("breach_sources", [])
+    if dh.get("status") == "no_api_key":
+        cred_parts.append("Dehashed credential search was not performed (no API key configured).")
+    elif dh_total > 0:
+        src_text = ", ".join(dh_sources[:6]) if dh_sources else "various sources"
+        cred_parts.append(f"Dehashed identified <b>{dh_emails}</b> email(s) across <b>{dh_total}</b> breach record(s) from sources including {src_text}.")
+    else:
+        cred_parts.append("Dehashed returned no exposed credentials.")
+
+    hr_emp = hr.get("compromised_employees", 0)
+    hr_usr = hr.get("compromised_users", 0)
+    if hr_emp > 0:
+        cred_parts.append(f"Hudson Rock detected <b>{hr_emp}</b> employee device(s) with <b>active infostealer</b> infections.")
+    elif hr_usr > 0:
+        cred_parts.append(f"Hudson Rock detected <b>{hr_usr}</b> compromised user credential(s).")
+    else:
+        cred_parts.append("Hudson Rock reports no active infostealer infections.")
+
+    ix_total = ix.get("total_results", 0)
+    ix_darkweb = ix.get("darkweb_count", 0)
+    ix_pastes = ix.get("paste_count", 0)
+    if ix.get("status") == "no_api_key":
+        cred_parts.append("IntelX dark web monitoring was not performed (no API key configured).")
+    elif ix_total > 0:
+        cred_parts.append(f"IntelX found <b>{ix_darkweb}</b> dark web mention(s) and <b>{ix_pastes}</b> paste reference(s).")
+    else:
+        cred_parts.append("IntelX returned no dark web mentions.")
+
+    cr_level = cr.get("risk_level", "")
+    if cr_level:
+        cred_parts.append(f"Overall credential risk level: <b>{cr_level}</b>.")
+
+    parts.append(Paragraph(" ".join(cred_parts), S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+
+    # ── 5. Network & Infrastructure ──────────────────────────────────────────
+    parts.append(Paragraph("<b>Network &amp; Infrastructure</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+
+    port_count = len(dns_ports)
+    high_risk_ports = [p for p in dns_ports if p.get("risk") in ("high", "critical")]
+    hrp_data = cats.get("high_risk_protocols", {})
+    exposed_svcs = hrp_data.get("exposed_services", [])
+    bl = cats.get("dnsbl", {})
+    is_blacklisted = bl.get("blacklisted", False)
+    cdn = cats.get("cloud_cdn", {})
+    cdn_detected = cdn.get("cdn_detected") or cdn.get("cloud_detected", False)
+
+    net_text = f"The primary IP has <b>{port_count}</b> open port(s). "
+    if high_risk_ports:
+        svc_names = [f"{p.get('service', 'unknown')} ({p.get('port', '?')})" for p in high_risk_ports[:5]]
+        net_text += f"High-risk exposed services include: <b>{', '.join(svc_names)}</b>. "
+    elif exposed_svcs:
+        svc_names = [f"{s.get('service', 'unknown')} ({s.get('port', '?')})" for s in exposed_svcs[:5]]
+        net_text += f"Exposed services include: <b>{', '.join(svc_names)}</b>. "
+    else:
+        net_text += "No high-risk services were detected. "
+    net_text += f"CDN/WAF protection is <b>{'active' if cdn_detected else 'not detected'}</b>. "
+    net_text += f"Blacklist status: <b>{'LISTED — requires immediate attention' if is_blacklisted else 'clean'}</b>."
+    parts.append(Paragraph(net_text, S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+
+    # ── 6. Compliance Snapshot ───────────────────────────────────────────────
+    compliance = results.get("compliance", {})
+    if compliance:
+        parts.append(Paragraph("<b>Compliance Snapshot</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        comp_lines = []
+        for framework, fw_data in compliance.items():
+            pct = fw_data.get("overall_pct", 0)
+            comp_lines.append(f"<b>{framework}</b>: {pct}% aligned")
+        parts.append(Paragraph("  |  ".join(comp_lines), S["body"]))
+        parts.append(Spacer(1, 3 * mm))
+
+    return parts
+
+
+def generate_pdf(results: dict, report_type: str = "full") -> bytes:
     buffer = io.BytesIO()
     domain    = results.get("domain_scanned", "Unknown")
     timestamp = results.get("scan_timestamp", datetime.utcnow().isoformat())
@@ -1788,82 +1974,171 @@ def generate_pdf(results: dict) -> bytes:
     story.append(Spacer(1, 4 * mm))
     story += _build_attackers_view(results, S)
 
-    # ── Insurance Analytics ─────────────────────────────────────────────────
-    if results.get("insurance"):
-        story.append(PageBreak())
-        story += section_header("INSURANCE ANALYTICS", S)
-        story += cat_rsi(results, S)
-        story += cat_dbi(results, S)
-        story += cat_financial_impact(results.get("insurance", {}), S)
-        story += cat_risk_mitigations(results.get("insurance", {}), S)
-        story += cat_remediation(results, S)
+    # ── Report type branching ───────────────────────────────────────────────
+    if report_type == "summary":
+        # Narrative summary paragraphs
+        story.append(Spacer(1, 4 * mm))
+        story += _build_narrative_summary(results, S)
 
-    story.append(PageBreak())
-
-    # ── Discovery ─────────────────────────────────────────────────────────────
-    story += section_header("DISCOVERY", S)
-    story += cat_web_ranking(cats, S)
-
-    # ── Core Security ────────────────────────────────────────────────────────
-    story += section_header("CORE SECURITY", S)
-    story += cat_ssl(cats, S)
-    story += cat_headers(cats, S)
-    story += cat_waf(cats, S)
-    story += cat_website(cats, S)
-
-    # ── Information Security ──────────────────────────────────────────────────
-    story += section_header("INFORMATION SECURITY", S)
-    story += cat_info_disclosure(cats, S)
-
-    # ── Email Security ───────────────────────────────────────────────────────
-    story += section_header("EMAIL SECURITY", S)
-    story += cat_email(cats, S)
-    story += cat_email_hardening(cats, S)
-
-    # ── Network & Infrastructure ─────────────────────────────────────────────
-    story += section_header("NETWORK & INFRASTRUCTURE", S)
-    story += cat_dns(cats, S)
-    story += cat_hrp(cats, S)
-    story += cat_cloud(cats, S)
-    story += cat_vpn(cats, S)
-
-    # ── Exposure & Reputation ────────────────────────────────────────────────
-    story += section_header("EXPOSURE & REPUTATION", S)
-    story += cat_breaches(cats, S)
-    story += cat_dnsbl(cats, S)
-    story += cat_admin(cats, S)
-    story += cat_subdomains(cats, S)
-    story += cat_shodan(cats, S)
-    story += cat_dehashed(cats, S)
-    story += cat_hudson_rock(cats, S)
-    story += cat_intelx(cats, S)
-    story += cat_credential_risk(cats, S)
-    story += cat_virustotal(cats, S)
-    story += cat_fraudulent_domains(cats, S)
-
-    # ── Technology & Governance ──────────────────────────────────────────────
-    story += section_header("TECHNOLOGY & GOVERNANCE", S)
-    story += cat_tech(cats, S)
-    story += cat_domain(cats, S)
-    story += cat_securitytrails(cats, S)
-    story += cat_privacy_compliance(cats, S)
-    story += cat_security_policy(cats, S)
-    story += cat_payment(cats, S)
-
-    # ── Compliance Framework Mapping ─────────────────────────────────────────
-    if results.get("compliance"):
-        story += section_header("COMPLIANCE FRAMEWORK MAPPING", S)
-        story += cat_compliance_frameworks(results, S)
-
-    # ── Recommendations ──────────────────────────────────────────────────────
-    if recs:
-        story += section_header("REMEDIATION RECOMMENDATIONS", S)
-        for i, rec in enumerate(recs, 1):
-            story.append(Paragraph(
-                f'<font name="Helvetica-Bold" color="{C_BLUE}">{i}.</font>&nbsp;&nbsp;{rec}',
-                S["rec_body"]
-            ))
+        # Financial Impact headline only
+        ins_data = results.get("insurance", {})
+        fin = ins_data.get("financial_impact", {})
+        if fin and (fin.get("currency") or fin.get("status") == "completed"):
+            story.append(PageBreak())
+            story += section_header("FINANCIAL IMPACT SUMMARY", S)
             story.append(Spacer(1, 2 * mm))
+
+            is_zar = fin.get("currency") == "ZAR"
+            cur = "R" if is_zar else "$"
+
+            if is_zar:
+                eal = fin.get("estimated_annual_loss", {})
+                most_likely = eal.get("most_likely", 0)
+                mc = fin.get("monte_carlo", {})
+                mc_t = mc.get("total", {})
+                mc_p50 = mc_t.get("p50", 0)
+                ins_rec = fin.get("insurance_recommendation", {})
+                rec_cover = ins_rec.get("recommended_cover_zar", 0)
+            else:
+                total = fin.get("total", {})
+                most_likely = total.get("most_likely", 0)
+                mc = fin.get("monte_carlo", {})
+                mc_t = mc.get("total", {})
+                mc_p50 = mc_t.get("p50", 0)
+                ins_rec = fin.get("insurance_recommendations", {})
+                rec_cover = ins_rec.get("recommended_coverage", 0)
+
+            fin_text = (f"Estimated annual loss (most likely): <b>{cur} {most_likely:,.0f}</b>")
+            if mc_p50:
+                fin_text += f"  |  Monte Carlo P50 (median): <b>{cur} {mc_p50:,.0f}</b>"
+            if rec_cover:
+                fin_text += f"  |  Recommended insurance cover: <b>{cur} {rec_cover:,.0f}</b>"
+            story.append(Paragraph(fin_text, S["body"]))
+            story.append(Spacer(1, 4 * mm))
+
+        # Top 5 remediation items from risk mitigations
+        mit = ins_data.get("financial_impact", {}).get("risk_mitigations", {})
+        findings = mit.get("findings", [])
+        if findings:
+            # Sort by estimated savings descending, take top 5
+            sorted_findings = sorted(findings,
+                                     key=lambda f: f.get("estimated_annual_savings_zar", 0),
+                                     reverse=True)[:5]
+            story += section_header("TOP 5 REMEDIATION PRIORITIES", S)
+            story.append(Spacer(1, 2 * mm))
+            is_zar_mit = fin.get("currency") == "ZAR" if fin else True
+            cur_mit = "R" if is_zar_mit else "$"
+            for i, f in enumerate(sorted_findings, 1):
+                sev = f.get("severity", "Medium")
+                savings = f.get("estimated_annual_savings_zar", 0)
+                rec_text = f.get("recommendation", "")
+                story.append(Paragraph(
+                    f'<font name="Helvetica-Bold" color="{C_BLUE}">{i}.</font>&nbsp;&nbsp;'
+                    f'<b>[{sev}]</b> {rec_text} — saves <b>{cur_mit} {savings:,.0f}</b>/year',
+                    S["rec_body"]
+                ))
+                story.append(Spacer(1, 2 * mm))
+        elif recs:
+            # Fallback to top 5 general recommendations
+            story += section_header("TOP 5 REMEDIATION PRIORITIES", S)
+            story.append(Spacer(1, 2 * mm))
+            for i, rec in enumerate(recs[:5], 1):
+                story.append(Paragraph(
+                    f'<font name="Helvetica-Bold" color="{C_BLUE}">{i}.</font>&nbsp;&nbsp;{rec}',
+                    S["rec_body"]
+                ))
+                story.append(Spacer(1, 2 * mm))
+
+        # Note about full report
+        story.append(Spacer(1, 6 * mm))
+        story.append(HRFlowable(width=INNER_W, thickness=0.5, color=C_GREY_2))
+        story.append(Spacer(1, 3 * mm))
+        story.append(Paragraph(
+            "<i>For the complete technical assessment, full vulnerability details, and comprehensive "
+            "remediation roadmap, please refer to the Full Technical Report.</i>",
+            ParagraphStyle("note", fontSize=9, fontName="Helvetica-Oblique",
+                           textColor=C_BLUE, leading=13, alignment=TA_CENTER)
+        ))
+
+    else:
+        # ── Full report — all sections included ─────────────────────────────
+
+        # ── Insurance Analytics ─────────────────────────────────────────────
+        if results.get("insurance"):
+            story.append(PageBreak())
+            story += section_header("INSURANCE ANALYTICS", S)
+            story += cat_rsi(results, S)
+            story += cat_dbi(results, S)
+            story += cat_financial_impact(results.get("insurance", {}), S)
+            story += cat_risk_mitigations(results.get("insurance", {}), S)
+            story += cat_remediation(results, S)
+
+        story.append(PageBreak())
+
+        # ── Discovery ───────────────────────────────────────────────────────
+        story += section_header("DISCOVERY", S)
+        story += cat_web_ranking(cats, S)
+
+        # ── Core Security ───────────────────────────────────────────────────
+        story += section_header("CORE SECURITY", S)
+        story += cat_ssl(cats, S)
+        story += cat_headers(cats, S)
+        story += cat_waf(cats, S)
+        story += cat_website(cats, S)
+
+        # ── Information Security ────────────────────────────────────────────
+        story += section_header("INFORMATION SECURITY", S)
+        story += cat_info_disclosure(cats, S)
+
+        # ── Email Security ──────────────────────────────────────────────────
+        story += section_header("EMAIL SECURITY", S)
+        story += cat_email(cats, S)
+        story += cat_email_hardening(cats, S)
+
+        # ── Network & Infrastructure ────────────────────────────────────────
+        story += section_header("NETWORK & INFRASTRUCTURE", S)
+        story += cat_dns(cats, S)
+        story += cat_hrp(cats, S)
+        story += cat_cloud(cats, S)
+        story += cat_vpn(cats, S)
+
+        # ── Exposure & Reputation ───────────────────────────────────────────
+        story += section_header("EXPOSURE & REPUTATION", S)
+        story += cat_breaches(cats, S)
+        story += cat_dnsbl(cats, S)
+        story += cat_admin(cats, S)
+        story += cat_subdomains(cats, S)
+        story += cat_shodan(cats, S)
+        story += cat_dehashed(cats, S)
+        story += cat_hudson_rock(cats, S)
+        story += cat_intelx(cats, S)
+        story += cat_credential_risk(cats, S)
+        story += cat_virustotal(cats, S)
+        story += cat_fraudulent_domains(cats, S)
+
+        # ── Technology & Governance ─────────────────────────────────────────
+        story += section_header("TECHNOLOGY & GOVERNANCE", S)
+        story += cat_tech(cats, S)
+        story += cat_domain(cats, S)
+        story += cat_securitytrails(cats, S)
+        story += cat_privacy_compliance(cats, S)
+        story += cat_security_policy(cats, S)
+        story += cat_payment(cats, S)
+
+        # ── Compliance Framework Mapping ────────────────────────────────────
+        if results.get("compliance"):
+            story += section_header("COMPLIANCE FRAMEWORK MAPPING", S)
+            story += cat_compliance_frameworks(results, S)
+
+        # ── Recommendations ─────────────────────────────────────────────────
+        if recs:
+            story += section_header("REMEDIATION RECOMMENDATIONS", S)
+            for i, rec in enumerate(recs, 1):
+                story.append(Paragraph(
+                    f'<font name="Helvetica-Bold" color="{C_BLUE}">{i}.</font>&nbsp;&nbsp;{rec}',
+                    S["rec_body"]
+                ))
+                story.append(Spacer(1, 2 * mm))
 
     # ── Disclaimer ───────────────────────────────────────────────────────────
     story.append(Spacer(1, 6 * mm))

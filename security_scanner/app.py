@@ -788,9 +788,11 @@ def download_pdf(scan_id: str):
     from pdf_report import generate_pdf
     results = json.loads(row["results"])
     results["scan_id"] = scan_id
-    pdf_bytes = generate_pdf(results)
+    report_type = request.args.get("type", "full")
+    pdf_bytes = generate_pdf(results, report_type=report_type)
 
-    filename = f"cyber-risk-{row['domain']}-{results.get('scan_timestamp','')[:10]}.pdf"
+    type_suffix = "-summary" if report_type == "summary" else ""
+    filename = f"cyber-risk-{row['domain']}-{results.get('scan_timestamp','')[:10]}{type_suffix}.pdf"
     return send_file(
         io.BytesIO(pdf_bytes),
         mimetype="application/pdf",
