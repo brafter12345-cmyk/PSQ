@@ -460,7 +460,12 @@ class SecurityScanner:
                         for ip, cve_entry, cid in all_osv_cve_ids:
                             if cid in epss_data:
                                 cve_entry["epss_score"] = epss_data[cid]["epss_score"]
-                        # Update per-IP counts
+                                # Recalculate flags now that real EPSS is available
+                                cve_entry["widely_exploited"] = cve_entry["epss_score"] > 0.4
+                                # Upgrade exploit maturity if EPSS is high
+                                if cve_entry["epss_score"] > 0.5 and cve_entry.get("exploit_maturity") == "theoretical":
+                                    cve_entry["exploit_maturity"] = "poc_public"
+                        # Recalculate per-IP aggregate counts with updated flags
                         for ip in per_ip_results:
                             shodan_r = per_ip_results[ip].get("shodan_vulns", {})
                             all_cves = shodan_r.get("cves", [])
@@ -468,6 +473,8 @@ class SecurityScanner:
                                 shodan_r["max_epss"] = max(
                                     (c.get("epss_score", 0) for c in all_cves if c.get("epss_score")), default=0)
                                 shodan_r["kev_count"] = sum(1 for c in all_cves if c.get("in_kev"))
+                                shodan_r["widely_exploited_count"] = sum(1 for c in all_cves if c.get("widely_exploited"))
+                                shodan_r["high_epss_count"] = sum(1 for c in all_cves if c.get("epss_score", 0) > 0.5)
                 except Exception:
                     pass
 
