@@ -1083,7 +1083,7 @@
     {% set ea_cvss = extip_agg.get('max_cvss', 0) if extip_agg else 0 %}
     {% set ea_epss = extip_agg.get('max_epss', 0) if extip_agg else 0 %}
     {% set extip_tl = 'tl-crimson' if ea_crit > 0 or ea_kev > 0 else ('tl-red' if ea_high > 0 else ('tl-amber' if ea_total > 0 else 'tl-green')) %}
-    <div class="cat-card">
+    <div class="cat-card" style="grid-column: 1 / -1;">
       <div class="cat-header" onclick="toggle(this)">
         <div class="cat-left"><div class="traffic-light {{ extip_tl }}"></div><div class="cat-title">CVE / Known Vulnerabilities</div></div>
         <div style="display:flex;align-items:center;gap:10px;"><span class="cat-grade">{{ extip.total_unique_ips | default(0) }} IPs found</span><span class="chevron">&#9660;</span></div>
