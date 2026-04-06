@@ -177,8 +177,8 @@ def build_styles():
                                        textColor=C_BLUE, leading=22)
     S["section_hdr"] = ParagraphStyle("section_hdr", fontSize=11, fontName="Helvetica-Bold",
                                        textColor=C_WHITE, leading=14, leftIndent=4)
-    S["cat_title"]   = ParagraphStyle("cat_title",   fontSize=9,  fontName="Helvetica-Bold",
-                                       textColor=C_NAVY, leading=12)
+    S["cat_title"]   = ParagraphStyle("cat_title",   fontSize=10, fontName="Helvetica-Bold",
+                                       textColor=C_NAVY, leading=14)
     S["body"]        = ParagraphStyle("body",         fontSize=8,  leading=11, textColor=C_BLACK)
     S["body_muted"]  = ParagraphStyle("body_muted",   fontSize=7,  leading=10, textColor=C_GREY_4)
     S["issue"]       = ParagraphStyle("issue",        fontSize=8, leading=10, textColor=C_RED,
@@ -249,7 +249,7 @@ def section_header(title: str, S: dict) -> list:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ("LEFTPADDING",   (0, 0), (-1, -1), 0),
     ]))
-    return [Spacer(1, 4 * mm), tbl, Spacer(1, 2 * mm)]
+    return [Spacer(1, 4 * mm), tbl, Spacer(1, 3 * mm)]
 
 
 def badge_text(text: str, bg, fg=C_WHITE) -> Table:
@@ -435,7 +435,7 @@ def build_cat_card(title: str, tl_col, summary: str, data_rows: list, issues: li
         ("GRID",          (0, 0), (-1, -1), 0.25, C_GREY_2),
     ]))
 
-    parts = [title_tbl]
+    parts = [Spacer(1, 1 * mm), title_tbl]
     if data_tbl:
         parts.append(data_tbl)
     parts.append(issues_block)
@@ -1861,7 +1861,7 @@ def _build_attackers_view(results: dict, S) -> list:
     parts.append(Paragraph(
         "<i>This section maps the scan findings to a real-world attack scenario, showing how a cybercriminal "
         "would use the identified weaknesses to compromise this organisation. Each phase represents a step "
-        "in a typical cyber attack.</i>", S["body_muted"]))
+        "in a typical attack.</i>", S["body_muted"]))
     parts.append(Spacer(1, 3 * mm))
 
     rows = []
@@ -2035,6 +2035,21 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
     story.append(Paragraph("<b>Risk Indicator Legend</b>", S["body_muted"]))
     story.append(Spacer(1, 1 * mm))
     story.append(_build_legend(S))
+    story.append(Spacer(1, 3 * mm))
+
+    # Key terms glossary
+    glossary_style = ParagraphStyle("glossary", fontSize=7, fontName="Helvetica",
+                                     textColor=C_GREY_4, leading=9)
+    story.append(Paragraph(
+        "<b>Key Terms:</b> CVE = publicly catalogued security vulnerability | "
+        "CVSS = severity score (0–10, higher = more dangerous) | "
+        "EPSS = probability of exploitation in next 30 days | "
+        "CISA KEV = confirmed actively exploited by attackers | "
+        "RSI = Ransomware Susceptibility Index | "
+        "FAIR = Factor Analysis of Information Risk (financial modelling methodology) | "
+        "WAF = Web Application Firewall | MFA = Multi-Factor Authentication | "
+        "RDP = Remote Desktop Protocol",
+        glossary_style))
     story.append(Spacer(1, 4 * mm))
 
     # Executive summary table
@@ -2086,9 +2101,7 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
             story.append(Paragraph(fin_text, S["body"]))
             story.append(Spacer(1, 4 * mm))
 
-        # Top 5 remediation items from risk mitigations
         # ── Why This Matters — The Reality of a Cyber Breach ──────────────
-        story.append(PageBreak())
         story += section_header("WHY THIS MATTERS", S)
         story.append(Spacer(1, 3 * mm))
 
@@ -2169,14 +2182,14 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         risk_paras = []
         if hr_employees > 0:
             risk_paras.append(
-                f"This assessment detected <b>active infostealer malware</b> on {hr_employees} employee "
+                f"This assessment detected <b>active credential-stealing malware (infostealer)</b> on {hr_employees} employee "
                 f"device(s). This is not a historical finding — it means credentials are being stolen "
                 f"<b>right now</b> and sold to criminal buyers. Without immediate intervention, a breach "
                 f"is not a matter of <i>if</i>, but <i>when</i>."
             )
         if ix_total > 0:
             risk_paras.append(
-                f"We found <b>{ix_total} references</b> to your organisation in dark web databases. "
+                f"We found <b>{ix_total} references</b> to your organisation in criminal online marketplaces (dark web). "
                 f"This means stolen data associated with your business is circulating in criminal "
                 f"networks where it can be purchased by anyone with malicious intent."
             )
@@ -2184,7 +2197,7 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
             risk_paras.append(
                 f"<b>{dh_total} credential records</b> linked to your domain were found in breach "
                 f"databases. These include email addresses and potentially passwords that attackers "
-                f"use for credential stuffing — systematically trying stolen passwords across "
+                f"use for automated password attacks (credential stuffing) — systematically trying stolen passwords across "
                 f"multiple systems until they find one that works."
             )
         if hrp_critical > 0:
