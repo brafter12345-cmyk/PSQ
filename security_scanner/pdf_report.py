@@ -249,7 +249,10 @@ def section_header(title: str, S: dict) -> list:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ("LEFTPADDING",   (0, 0), (-1, -1), 0),
     ]))
-    return [Spacer(1, 4 * mm), tbl, Spacer(1, 3 * mm)]
+    tbl.keepWithNext = True  # Prevent orphaned header — must stay with next content
+    trailing = Spacer(1, 3 * mm)
+    trailing.keepWithNext = True  # Spacer also stays with next content
+    return [Spacer(1, 4 * mm), tbl, trailing]
 
 
 def badge_text(text: str, bg, fg=C_WHITE) -> Table:
@@ -734,7 +737,10 @@ def cat_shodan(d, S):
     total = crit + high + med + low
     col   = C_CRITICAL if crit > 0 else (C_RED if high > 0 else (C_AMBER if med > 0 else C_GREEN))
     source = "Full API" if sv.get("data_source") == "shodan_full_api" else "InternetDB"
-    summary = f"{total} CVE(s)" if total > 0 else "Clean"
+    # Include OSV-enriched CVEs in total if available
+    osv_total = d.get("osv_vulns", {}).get("total_vulns", 0)
+    display_total = max(total, osv_total) if osv_total > 0 else total
+    summary = f"{display_total} CVE(s)" if display_total > 0 else ("No CVEs detected" if total == 0 else "Clean")
 
     rows = [
         ("IP scanned",   sv.get("ip") or "—"),
@@ -787,7 +793,7 @@ def cat_shodan(d, S):
         if desc:
             rows.append(("  Description", desc))
 
-    return build_cat_card(f"CVE / Known Vulnerabilities (Shodan {source})", col, summary, rows, sv.get("issues", []), S)
+    return build_cat_card("CVE / Known Vulnerabilities", col, summary, rows, sv.get("issues", []), S)
 
 
 def cat_dehashed(d, S):
