@@ -12,7 +12,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    HRFlowable, PageBreak, KeepTogether
+    HRFlowable, PageBreak, KeepTogether, CondPageBreak
 )
 from reportlab.graphics.shapes import Drawing, Rect, Circle, Line, String
 from reportlab.graphics import renderPDF
@@ -249,9 +249,12 @@ def section_header(title: str, S: dict) -> list:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ("LEFTPADDING",   (0, 0), (-1, -1), 0),
     ]))
-    tbl.keepWithNext = True  # Prevent orphaned header — must stay with next content
+    tbl.keepWithNext = True
     trailing = Spacer(1, 3 * mm)
-    trailing.keepWithNext = True  # Spacer also stays with next content
+    trailing.keepWithNext = True
+    # TODO: keepWithNext doesn't reliably bond across KeepTogether blocks in
+    # ReportLab. Fix requires embedding section header inside the first cat
+    # card's KeepTogether — architectural change deferred to optimisation phase.
     return [Spacer(1, 4 * mm), tbl, trailing]
 
 
@@ -332,9 +335,11 @@ def _colour_issue(text: str) -> str:
     return t
 
 
-def issues_cell(issues: list, S) -> Paragraph:
+def issues_cell(issues: list, S, fallback: str = "") -> Paragraph:
     if not issues:
-        return Paragraph("<font color='#16a34a'>No issues detected</font>", S["body"])
+        msg = fallback or "No issues detected"
+        colour = "#6b7280" if fallback else "#16a34a"  # grey for context, green for clean
+        return Paragraph(f"<font color='{colour}'>{msg}</font>", S["body"])
     lines = "<br/>".join(f"\u2022 {_colour_issue(i)}" for i in issues[:6])
     if len(issues) > 6:
         lines += f"<br/>\u2022 \u2026and {len(issues) - 6} more"
@@ -367,9 +372,10 @@ def _cat_table(rows, bgs, col_widths, S):
     return tbl
 
 
-def build_cat_card(title: str, tl_col, summary: str, data_rows: list, issues: list, S) -> list:
+def build_cat_card(title: str, tl_col, summary: str, data_rows: list, issues: list, S, fallback: str = "") -> list:
     """
     data_rows: list of (key, value) tuples
+    fallback: context-aware message shown when issues list is empty
     Returns a list of flowables for one category card.
     """
     # Title bar
@@ -428,7 +434,7 @@ def build_cat_card(title: str, tl_col, summary: str, data_rows: list, issues: li
 
     data_tbl = _cat_table(rows, bgs, [40 * mm, INNER_W - 40 * mm], S) if rows else None
 
-    issues_para = issues_cell(issues, S)
+    issues_para = issues_cell(issues, S, fallback=fallback)
     issues_block = Table([[issues_para]], colWidths=[INNER_W])
     issues_block.setStyle(TableStyle([
         ("TOPPADDING",    (0, 0), (-1, -1), 4),
@@ -463,18 +469,65 @@ def cat_ssl(d, S):
     cip  = ssl.get("cipher_suite", {})
     grade = ssl.get("grade", "?")
     col = _tl(grade in ("A+", "A", "B"), grade == "C")
+    legacy = tls.get("TLS 1.0") or tls.get("TLS 1.1")
+    days_left = cert.get("days_until_expiry")
     rows = [
         ("Grade",         grade),
         ("Subject",       cert.get("subject", "—")),
         ("Issuer",        cert.get("issuer", "—")),
         ("Expiry",        cert.get("expiry_date", "—")),
-        ("Days left",     cert.get("days_until_expiry", "—")),
-        ("TLS 1.0/1.1",   ("Enabled — RISK" if tls.get("TLS 1.0") or tls.get("TLS 1.1") else "Disabled")),
+        ("Days left",     days_left if days_left else "—"),
+        ("TLS 1.0/1.1",   ("Enabled — RISK" if legacy else "Disabled")),
         ("TLS 1.2/1.3",   ("Supported" if tls.get("TLS 1.2") or tls.get("TLS 1.3") else "Not detected")),
         ("Cipher",        f"{cip.get('name','—')} ({'Weak' if cip.get('is_weak') else 'Strong'})"),
         ("HSTS",          "Present" if ssl.get("hsts") else "Missing"),
     ]
-    return build_cat_card("SSL / TLS", col, f"Grade: {grade}", rows, ssl.get("issues", []), S)
+    fb = "Certificate and encryption configuration meets current standards." if grade in ("A+", "A", "B") else "Review TLS configuration — weak ciphers or legacy protocols may be in use."
+    parts = build_cat_card("SSL / TLS", col, f"Grade: {grade}", rows, ssl.get("issues", []), S, fallback=fb)
+
+    # Narrative
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if grade in ("A+", "A"):
+        parts.append(Paragraph(
+            "This server has a strong SSL/TLS configuration. Data transmitted between users and the website "
+            "is encrypted using modern protocols and ciphers, making interception extremely difficult.",
+            S["body"]))
+    elif grade == "B":
+        parts.append(Paragraph(
+            "SSL/TLS configuration is acceptable but has room for improvement. Encryption is in place, "
+            "though minor configuration changes could strengthen the overall posture.",
+            S["body"]))
+    elif grade in ("C", "D"):
+        parts.append(Paragraph(
+            "The SSL/TLS configuration has notable weaknesses. While basic encryption is present, legacy protocols "
+            "or weak cipher suites may allow sophisticated attackers to intercept or downgrade encrypted connections.",
+            S["body"]))
+    else:
+        parts.append(Paragraph(
+            "SSL/TLS configuration is poor or could not be fully assessed. Without strong encryption, "
+            "data transmitted between users and the server is at risk of interception (man-in-the-middle attacks).",
+            S["body"]))
+    parts.append(Spacer(1, 2 * mm))
+
+    # Build dynamic recommendations
+    recs = []
+    if legacy:
+        recs.append("Disable TLS 1.0 and TLS 1.1 — these legacy protocols have known vulnerabilities and are no longer considered secure.")
+    if cip.get("is_weak"):
+        recs.append("Replace weak cipher suites with modern alternatives (AES-256-GCM, ChaCha20-Poly1305).")
+    if not ssl.get("hsts"):
+        recs.append("Enable HTTP Strict Transport Security (HSTS) to prevent protocol downgrade attacks.")
+    if days_left and isinstance(days_left, (int, float)) and days_left < 30:
+        recs.append(f"Certificate expires in {int(days_left)} days — renew immediately to prevent service disruption and browser warnings.")
+    if not recs:
+        recs.append("Maintain current configuration and monitor for newly deprecated protocols or cipher suites.")
+    parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    for i, r in enumerate(recs, 1):
+        parts.append(Paragraph(f"{i}. {r}", S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_email(d, S):
@@ -492,7 +545,48 @@ def cat_email(d, S):
         ("MX",     f"{len(mx.get('records', []))} record(s)"),
         ("Score",  f"{score}/10"),
     ]
-    return build_cat_card("Email Authentication (SPF/DKIM/DMARC)", col, f"Score {score}/10", rows, em.get("issues", []), S)
+    fb = "Email authentication is well configured — SPF, DKIM, and DMARC are in place." if score >= 8 else "Email authentication gaps increase susceptibility to phishing and spoofing attacks."
+    parts = build_cat_card("Email Authentication (SPF/DKIM/DMARC)", col, f"Score {score}/10", rows, em.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if score >= 8:
+        parts.append(Paragraph(
+            "Email authentication is well configured. SPF, DKIM, and DMARC work together to prevent attackers from "
+            "sending emails that appear to come from your domain (email spoofing). This is one of the most effective "
+            "defences against business email compromise (BEC) and phishing attacks targeting your staff or clients.",
+            S["body"]))
+    elif score >= 5:
+        parts.append(Paragraph(
+            "Email authentication is partially configured. Some protections are in place, but gaps remain that "
+            "could allow attackers to spoof emails from your domain. Phishing emails impersonating your organisation "
+            "could reach clients, partners, or staff inboxes without being flagged.",
+            S["body"]))
+    else:
+        parts.append(Paragraph(
+            "Email authentication is weak or misconfigured. Without proper SPF, DKIM, and DMARC records, "
+            "anyone can send emails that appear to come from your domain. This makes your organisation a prime "
+            "target for business email compromise (BEC) — the most financially damaging category of cybercrime.",
+            S["body"]))
+    parts.append(Spacer(1, 2 * mm))
+    recs = []
+    if not spf.get("present"):
+        recs.append("Publish an SPF record to specify which mail servers are authorised to send email on behalf of your domain.")
+    elif spf.get("dangerous"):
+        recs.append("URGENT: Your SPF record uses '+all' which allows ANY server to send as your domain — change to '-all' or '~all'.")
+    if not dm.get("present"):
+        recs.append("Configure a DMARC record with at minimum p=quarantine to instruct receiving servers to flag spoofed emails.")
+    elif dm.get("policy") == "none":
+        recs.append("Upgrade DMARC policy from 'none' (monitor only) to 'quarantine' or 'reject' to actively block spoofed emails.")
+    if not dkim.get("selectors_found"):
+        recs.append("Enable DKIM signing on your mail server to cryptographically verify that emails originate from your domain.")
+    if recs:
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        for i, r in enumerate(recs, 1):
+            parts.append(Paragraph(f"{i}. {r}", S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_email_hardening(d, S):
@@ -508,7 +602,38 @@ def cat_email_hardening(d, S):
         ("DANE/TLSA", "Present" if dane.get("present") else "Not configured"),
         ("Score",   f"{score}/10"),
     ]
-    return build_cat_card("Advanced Email Hardening (MTA-STS/DANE/BIMI)", col, f"Score {score}/10", rows, eh.get("issues", []), S)
+    fb = "Advanced email protections are well configured." if score >= 7 else "Advanced email hardening (MTA-STS, DANE, BIMI) is partially or not configured — these controls help prevent email interception."
+    parts = build_cat_card("Advanced Email Hardening (MTA-STS/DANE/BIMI)", col, f"Score {score}/10", rows, eh.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if score >= 7:
+        parts.append(Paragraph(
+            "Advanced email hardening controls are in place. MTA-STS enforces encrypted email transport, "
+            "DANE/TLSA provides certificate pinning for mail servers, and BIMI displays your verified brand logo "
+            "in recipients' inboxes — increasing trust and reducing phishing susceptibility.",
+            S["body"]))
+    else:
+        parts.append(Paragraph(
+            "Advanced email hardening is not fully configured. These are next-generation email security controls "
+            "that go beyond basic SPF/DKIM/DMARC. While not yet widely adopted, they provide meaningful additional "
+            "protection against email interception and brand impersonation.",
+            S["body"]))
+    parts.append(Spacer(1, 2 * mm))
+    recs = []
+    if not mts.get("present"):
+        recs.append("Configure MTA-STS to enforce TLS encryption for inbound email, preventing downgrade attacks.")
+    if not dane.get("present"):
+        recs.append("Implement DANE/TLSA records if your DNS provider supports DNSSEC — this pins your mail server certificates.")
+    if not bimi.get("present"):
+        recs.append("Set up BIMI to display your brand logo in email clients — this helps recipients identify legitimate emails from your domain.")
+    if recs:
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        for i, r in enumerate(recs, 1):
+            parts.append(Paragraph(f"{i}. {r}", S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_headers(d, S):
@@ -517,7 +642,36 @@ def cat_headers(d, S):
     col   = _tl(score >= 80, score >= 50)
     rows  = [(name, "Present" if data.get("present") else "MISSING")
              for name, data in hh.get("headers", {}).items()]
-    return build_cat_card("HTTP Security Headers", col, f"{score}% coverage", rows, hh.get("issues", []), S)
+    fb = "All recommended security headers are present." if score >= 80 else f"Only {score}% of recommended security headers are configured — missing headers leave the site vulnerable to clickjacking, XSS, and data injection."
+    parts = build_cat_card("HTTP Security Headers", col, f"{score}% coverage", rows, hh.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if score >= 80:
+        parts.append(Paragraph(
+            "Security headers are well configured. These HTTP response headers instruct browsers to enforce "
+            "security policies, preventing common web attacks such as clickjacking, cross-site scripting (XSS), "
+            "and content injection.",
+            S["body"]))
+    else:
+        missing = [name for name, data in hh.get("headers", {}).items() if not data.get("present")]
+        parts.append(Paragraph(
+            f"Only {score}% of recommended security headers are present. Missing headers "
+            f"({', '.join(missing[:4])}{' and more' if len(missing) > 4 else ''}) leave the website "
+            "vulnerable to browser-based attacks. These headers are free to implement and require only "
+            "web server configuration changes.",
+            S["body"]))
+    parts.append(Spacer(1, 2 * mm))
+    parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if score < 80:
+        parts.append(Paragraph("1. Add missing security headers to your web server configuration (Apache, Nginx, or CDN).", S["body"]))
+        parts.append(Paragraph("2. Prioritise Content-Security-Policy (CSP) and X-Frame-Options as they prevent the most common attacks.", S["body"]))
+        parts.append(Paragraph("3. Test header changes using securityheaders.com before deploying to production.", S["body"]))
+    else:
+        parts.append(Paragraph("1. Maintain current header configuration and review periodically for new recommended headers.", S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_waf(d, S):
@@ -527,7 +681,35 @@ def cat_waf(d, S):
         ("WAF detected",  waf.get("waf_name", "None detected") if waf.get("detected") else "Not detected"),
         ("All detected",  ", ".join(waf.get("all_detected", [])) or "—"),
     ]
-    return build_cat_card("WAF / DDoS Protection", col, "Detected" if waf.get("detected") else "Not detected", rows, waf.get("issues", []), S)
+    fb = "Web application firewall is in place, providing protection against common web attacks." if waf.get("detected") else "No web application firewall detected — the site has no automated protection against SQL injection, XSS, or DDoS attacks."
+    parts = build_cat_card("WAF / DDoS Protection", col, "Detected" if waf.get("detected") else "Not detected", rows, waf.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if waf.get("detected"):
+        parts.append(Paragraph(
+            f"A web application firewall ({waf.get('waf_name', 'WAF')}) was detected protecting this website. "
+            "WAFs filter malicious traffic before it reaches the web application, blocking common attacks such as "
+            "SQL injection, cross-site scripting, and automated bot activity. This significantly reduces the "
+            "attack surface exposed to the internet.",
+            S["body"]))
+    else:
+        parts.append(Paragraph(
+            "No web application firewall was detected. Without a WAF, the website is directly exposed to automated "
+            "attack tools that scan for and exploit web application vulnerabilities. This is one of the most "
+            "cost-effective security controls available and is strongly recommended.",
+            S["body"]))
+    parts.append(Spacer(1, 2 * mm))
+    if not waf.get("detected"):
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Deploy a cloud-based WAF such as Cloudflare, AWS WAF, or Akamai — these can be enabled without infrastructure changes.", S["body"]))
+        parts.append(Paragraph("2. Enable DDoS protection to prevent volumetric attacks from taking the website offline.", S["body"]))
+        parts.append(Paragraph("3. Configure WAF rules to block OWASP Top 10 attack patterns as a minimum baseline.", S["body"]))
+        parts.append(Spacer(1, 3 * mm))
+    else:
+        parts.append(Spacer(1, 1 * mm))
+    return parts
 
 
 def cat_dns(d, S):
@@ -566,7 +748,47 @@ def cat_dns(d, S):
             rows.append(("  OSV.dev CVEs", ", ".join(osv_ids)))
             if len(p["osv_vulns"]) > 5:
                 rows.append(("", f"...and {len(p['osv_vulns']) - 5} more"))
-    return build_cat_card("DNS & Open Ports", col, f"{len(ports)} open port(s)", rows, dns.get("issues", []), S)
+    fb = "Minimal attack surface — only essential ports are exposed." if len(high) == 0 and len(ports) <= 2 else (f"{len(high)} high-risk port(s) exposed — each is a potential entry point for attackers." if high else f"{len(ports)} ports open — review whether all exposed services are necessary.")
+    parts = build_cat_card("DNS & Open Ports", col, f"{len(ports)} open port(s)", rows, dns.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if len(ports) <= 2 and not high:
+        parts.append(Paragraph(
+            "Only essential services (typically HTTP/HTTPS) are exposed to the internet. A minimal attack surface "
+            "means fewer entry points for attackers to probe, significantly reducing the risk of unauthorised access.",
+            S["body"]))
+    elif high:
+        high_names = ", ".join(f"{p['port']}/{p['service']}" for p in high[:4])
+        parts.append(Paragraph(
+            f"High-risk ports are exposed to the internet ({high_names}). These services are frequently targeted "
+            "by automated attack tools and ransomware operators. Exposed database ports (MySQL, PostgreSQL, MongoDB) "
+            "and remote access services (RDP, SSH, FTP) are among the top initial access vectors in cyber incidents.",
+            S["body"]))
+    else:
+        parts.append(Paragraph(
+            f"{len(ports)} ports are open on this server. While no high-risk ports were identified, each open port "
+            "represents a potential attack vector. Regular review ensures only necessary services remain exposed.",
+            S["body"]))
+    parts.append(Spacer(1, 2 * mm))
+    if high or len(ports) > 5:
+        recs = []
+        if high:
+            recs.append("Close or firewall high-risk ports that do not need public internet access. Use VPN for remote administration.")
+        if any(p['port'] == 3306 for p in ports):
+            recs.append("MySQL (port 3306) should never be exposed to the internet — restrict to localhost or private network.")
+        if any(p['port'] == 21 for p in ports):
+            recs.append("Replace FTP (port 21) with SFTP — FTP transmits credentials in cleartext.")
+        if len(ports) > 5:
+            recs.append("Review all open ports and close any services that are not required for business operations.")
+        if not recs:
+            recs.append("Conduct regular port audits and close unnecessary services to reduce attack surface.")
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        for i, r in enumerate(recs, 1):
+            parts.append(Paragraph(f"{i}. {r}", S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_hrp(d, S):
@@ -592,8 +814,33 @@ def cat_hrp(d, S):
             rows.append(("  Underwriting impact", s["underwriting_impact"]))
     if not rows:
         rows = [("Status", "No critical services exposed")]
-    return build_cat_card("Database & Service Exposure", col,
-                          f"{len(svcs)} critical exposure(s)", rows, hrp.get("issues", []), S)
+    fb = "No high-risk database or remote access services are publicly exposed." if not svcs else f"{len(svcs)} critical service(s) directly accessible from the internet — immediate remediation required."
+    parts = build_cat_card("Database & Service Exposure", col,
+                          f"{len(svcs)} critical exposure(s)", rows, hrp.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if svcs:
+        svc_names = ", ".join(s['service'] for s in svcs[:4])
+        parts.append(Paragraph(
+            f"Critical services ({svc_names}) are directly accessible from the internet. "
+            "These services should never be publicly exposed — they are primary targets for automated attack tools "
+            "and ransomware operators. Exposed databases risk complete data exfiltration, while remote access "
+            "services are routinely brute-forced to gain initial network access.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Immediately firewall all exposed database and remote access ports from public internet access.", S["body"]))
+        parts.append(Paragraph("2. Use a VPN or SSH tunnel for any remote administration requirements.", S["body"]))
+        parts.append(Paragraph("3. Audit server firewall rules to ensure only web traffic (ports 80/443) is publicly accessible.", S["body"]))
+    else:
+        parts.append(Paragraph(
+            "No critical database or remote access services are exposed to the public internet. "
+            "This is a strong indicator of proper network segmentation and firewall configuration.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_cloud(d, S):
@@ -604,7 +851,26 @@ def cat_cloud(d, S):
         ("Hosting type", cdn.get("hosting_type", "Unknown")),
         ("IP addresses", ", ".join(cdn.get("ip_addresses", [])) or "—"),
     ]
-    return build_cat_card("Cloud & CDN Infrastructure", C_BLUE, cdn.get("provider") or "Unknown", rows, cdn.get("issues", []), S)
+    fb = "Cloud and CDN infrastructure detected — provides caching and basic DDoS mitigation." if cdn.get("cdn_detected") else "No CDN detected — the origin server is directly exposed, increasing latency and DDoS risk."
+    parts = build_cat_card("Cloud & CDN Infrastructure", C_BLUE, cdn.get("provider") or "Unknown", rows, cdn.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if cdn.get("cdn_detected"):
+        parts.append(Paragraph(
+            f"A CDN ({cdn.get('provider', 'content delivery network')}) is in use, which provides performance "
+            "benefits (faster page loads) and basic security protections (DDoS mitigation, origin IP masking). "
+            "CDNs act as a reverse proxy, meaning attackers interact with the CDN edge servers rather than "
+            "your origin infrastructure directly.",
+            S["body"]))
+    else:
+        parts.append(Paragraph(
+            "No content delivery network (CDN) was detected. The origin server IP address is directly exposed, "
+            "which means attackers can target the server directly with DDoS attacks or attempt to exploit "
+            "web server vulnerabilities without CDN-layer filtering.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_vpn(d, S):
@@ -614,9 +880,42 @@ def cat_vpn(d, S):
         ("RDP exposed",  "YES — CRITICAL" if vpn.get("rdp_exposed") else "No"),
         ("VPN detected", vpn.get("vpn_name") or ("Detected" if vpn.get("vpn_detected") else "Not detected")),
     ]
-    return build_cat_card("VPN & Remote Access", col,
+    fb = "CRITICAL: RDP is exposed to the internet — this is the #1 ransomware entry vector." if vpn.get("rdp_exposed") else ("VPN gateway detected — verify MFA is enforced on all remote access." if vpn.get("vpn_detected") else "No VPN/remote access gateway detected — remote access method unknown.")
+    parts = build_cat_card("VPN & Remote Access", col,
                           "RDP EXPOSED" if vpn.get("rdp_exposed") else (vpn.get("vpn_name") or "None detected"),
-                          rows, vpn.get("issues", []), S)
+                          rows, vpn.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if vpn.get("rdp_exposed"):
+        parts.append(Paragraph(
+            "Remote Desktop Protocol (RDP) is exposed directly to the internet. RDP is the single most common "
+            "entry point for ransomware attacks — automated tools continuously scan the internet for open RDP ports "
+            "and attempt brute-force login. Once access is gained, attackers can deploy ransomware across "
+            "the entire network within hours.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. IMMEDIATE: Block RDP (port 3389) from public internet access at the firewall.", S["body"]))
+        parts.append(Paragraph("2. Require VPN connection before RDP access is permitted.", S["body"]))
+        parts.append(Paragraph("3. Enable Network Level Authentication (NLA) and enforce MFA on all RDP sessions.", S["body"]))
+        parts.append(Paragraph("4. Review RDP access logs for signs of brute-force attempts or unauthorised logins.", S["body"]))
+    elif vpn.get("vpn_detected"):
+        parts.append(Paragraph(
+            f"A VPN gateway ({vpn.get('vpn_name', 'VPN')}) was detected, which is positive — it indicates remote "
+            "access is channelled through an encrypted tunnel rather than being directly exposed. Ensure multi-factor "
+            "authentication (MFA) is enforced on the VPN and that the VPN firmware is kept up to date, as VPN "
+            "appliance vulnerabilities are frequently exploited by ransomware groups.",
+            S["body"]))
+    else:
+        parts.append(Paragraph(
+            "No VPN or remote access gateway was detected from external scanning. This could mean remote access "
+            "is handled through a cloud-based solution (e.g. Azure AD, Zscaler) that doesn't expose a public gateway, "
+            "or that no remote access infrastructure exists. Verify how staff access internal systems remotely.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_breaches(d, S):
@@ -631,7 +930,33 @@ def cat_breaches(d, S):
     if br.get("breaches"):
         for b in br["breaches"][:4]:
             rows.append((b.get("name", "—"), f"{b.get('date','?')} — {b.get('pwn_count', 0):,} accounts"))
-    return build_cat_card("Credential Exposure (HIBP)", col, f"{count} breach(es)", rows, br.get("issues", []), S)
+    fb = "No breaches found in Have I Been Pwned — no known credential exposure for this domain." if count == 0 else f"{count} breach(es) found — staff credentials may have been exposed. Password resets and MFA enforcement recommended."
+    parts = build_cat_card("Credential Exposure (HIBP)", col, f"{count} breach(es)", rows, br.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if count == 0:
+        parts.append(Paragraph(
+            "No known data breaches were found for email addresses on this domain in the Have I Been Pwned database. "
+            "This database tracks over 700 publicly disclosed breaches. A clean result is a positive indicator, "
+            "though it does not guarantee zero exposure — some breaches are not publicly disclosed.",
+            S["body"]))
+    else:
+        data_types = ", ".join(br.get("data_classes", [])[:4]) or "various data types"
+        parts.append(Paragraph(
+            f"This domain appears in {count} known data breach(es), exposing {data_types}. "
+            "When staff credentials appear in breaches, attackers use automated tools to test those passwords "
+            "against other services (credential stuffing). If employees reuse passwords across work and personal "
+            "accounts, a breach on one service can lead to compromise of corporate systems.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Force password resets for all staff email accounts, prioritising those in the most recent breaches.", S["body"]))
+        parts.append(Paragraph("2. Enable multi-factor authentication (MFA) on all accounts to prevent credential stuffing.", S["body"]))
+        parts.append(Paragraph("3. Implement a password policy that prevents reuse of previously breached passwords.", S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_dnsbl(d, S):
@@ -643,8 +968,34 @@ def cat_dnsbl(d, S):
         ("Domain blacklists", ", ".join(bl.get("domain_listings", [])) or "Clean"),
         ("Status",            "BLACKLISTED" if all_listed else "Not listed"),
     ]
-    return build_cat_card("IP / Domain Reputation (DNSBL)", col,
-                          "Blacklisted" if all_listed else "Clean", rows, bl.get("issues", []), S)
+    fb = "Domain/IP is blacklisted — emails may be blocked and reputation is compromised." if all_listed else "Not listed on any checked blacklists — domain reputation is clean."
+    parts = build_cat_card("IP / Domain Reputation (DNSBL)", col,
+                          "Blacklisted" if all_listed else "Clean", rows, bl.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if all_listed:
+        lists = ", ".join(all_listed[:4])
+        parts.append(Paragraph(
+            f"This domain or IP is listed on security blacklists ({lists}). Blacklisting typically occurs when "
+            "an IP has been associated with spam, malware distribution, or other malicious activity. This can cause "
+            "email deliverability issues (emails going to spam/junk folders) and may indicate that the server has "
+            "been compromised and is being used for malicious purposes.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Investigate why the IP/domain was blacklisted — check for compromised accounts sending spam.", S["body"]))
+        parts.append(Paragraph("2. Submit delisting requests to each blacklist provider after resolving the underlying issue.", S["body"]))
+        parts.append(Paragraph("3. Monitor email deliverability and set up alerts for future blacklist appearances.", S["body"]))
+    else:
+        parts.append(Paragraph(
+            "This domain and its IP addresses are not listed on any of the checked DNS-based blacklists. "
+            "A clean reputation means emails from this domain are less likely to be flagged as spam, and "
+            "the IP has not been associated with known malicious activity.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_admin(d, S):
@@ -652,8 +1003,33 @@ def cat_admin(d, S):
     exposed = adm.get("exposed", [])
     col   = C_CRITICAL if adm.get("critical_count", 0) > 0 else (C_RED if adm.get("high_count", 0) > 0 else C_GREEN)
     rows  = [(e["path"], f"HTTP {e['status']} — {e['risk'].upper()}") for e in exposed[:8]] or [("Status", "No sensitive paths exposed")]
-    return build_cat_card("Exposed Admin Panels & Sensitive Paths", col,
-                          f"{len(exposed)} path(s) found", rows, adm.get("issues", []), S)
+    fb = f"{len(exposed)} admin or sensitive path(s) accessible from the internet — restrict access via IP whitelisting or VPN." if exposed else "No sensitive admin panels or configuration paths detected on the public website."
+    parts = build_cat_card("Exposed Admin Panels & Sensitive Paths", col,
+                          f"{len(exposed)} path(s) found", rows, adm.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if exposed:
+        crit_count = adm.get("critical_count", 0)
+        parts.append(Paragraph(
+            f"{len(exposed)} sensitive path(s) were found accessible from the public internet"
+            f"{f', including {crit_count} critical exposure(s)' if crit_count else ''}. "
+            "Exposed admin panels, configuration files, and development tools give attackers direct insight into "
+            "the application's architecture and may provide authentication bypass or default credential opportunities.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Restrict access to admin panels using IP whitelisting, VPN, or network-level access controls.", S["body"]))
+        parts.append(Paragraph("2. Remove or rename default admin paths (/admin, /wp-admin, /phpmyadmin) where possible.", S["body"]))
+        parts.append(Paragraph("3. Ensure all admin interfaces require strong authentication with MFA enabled.", S["body"]))
+    else:
+        parts.append(Paragraph(
+            "No sensitive admin panels, configuration files, or development tools were found accessible from "
+            "the public internet. This reduces the risk of attackers discovering administrative entry points.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_subdomains(d, S):
@@ -665,9 +1041,36 @@ def cat_subdomains(d, S):
         ("Risky subdomains", len(risky)),
         ("Risky names",      ", ".join(risky[:6]) or "None"),
     ]
-    return build_cat_card("Subdomain Exposure (CT Logs)", col,
+    fb = f"{len(risky)} subdomain(s) with risky names (e.g. dev, staging, admin) — verify these are not publicly accessible." if risky else f"{subs.get('total_count',0)} subdomain(s) discovered — none flagged as risky."
+    parts = build_cat_card("Subdomain Exposure (CT Logs)", col,
                           f"{subs.get('total_count',0)} found, {len(risky)} risky",
-                          rows, subs.get("issues", []), S)
+                          rows, subs.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    total = subs.get("total_count", 0)
+    if risky:
+        risky_list = ", ".join(risky[:5])
+        parts.append(Paragraph(
+            f"{total} subdomain(s) were discovered via Certificate Transparency logs, of which {len(risky)} "
+            f"have potentially sensitive names ({risky_list}). Subdomains named 'dev', 'staging', 'test', or 'admin' "
+            "often run with weaker security controls and may expose internal tools, unpatched software, or "
+            "debug interfaces that attackers can exploit as an alternative entry point.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Restrict access to development and staging subdomains using IP whitelisting or VPN.", S["body"]))
+        parts.append(Paragraph("2. Ensure non-production subdomains do not contain real customer data.", S["body"]))
+        parts.append(Paragraph("3. Apply the same security standards (HTTPS, authentication, patching) to all subdomains.", S["body"]))
+    else:
+        parts.append(Paragraph(
+            f"{total} subdomain(s) were discovered via Certificate Transparency logs. None have names that suggest "
+            "exposed development, staging, or administrative environments. This is a positive indicator of "
+            "controlled subdomain management.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_tech(d, S):
@@ -680,8 +1083,33 @@ def cat_tech(d, S):
     js_libs = ts.get("js_libraries", [])
     if js_libs:
         rows.append(("JS Libraries", ", ".join(f"{l['library']} {l['version']}" for l in js_libs)))
-    return build_cat_card("Technology Stack & EOL Software", col,
-                          f"{len(eols)} EOL component(s)", rows, ts.get("issues", []), S)
+    fb = f"{len(eols)} end-of-life component(s) detected — these no longer receive security patches and are vulnerable to known exploits." if eols else "No end-of-life software detected — technology stack appears current."
+    parts = build_cat_card("Technology Stack & EOL Software", col,
+                          f"{len(eols)} EOL component(s)", rows, ts.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if eols:
+        eol_names = ", ".join(e["software"] for e in eols[:3])
+        parts.append(Paragraph(
+            f"End-of-life software ({eol_names}) was detected. Software that has reached end-of-life no longer "
+            "receives security patches from the vendor, meaning any newly discovered vulnerabilities will remain "
+            "permanently unpatched. Attackers specifically target EOL software because exploits are reliable "
+            "and will never be fixed.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Upgrade all end-of-life software to currently supported versions.", S["body"]))
+        parts.append(Paragraph("2. If immediate upgrade is not possible, isolate EOL systems behind a WAF and restrict access.", S["body"]))
+        parts.append(Paragraph("3. Establish a software lifecycle management process to track vendor support timelines.", S["body"]))
+    else:
+        parts.append(Paragraph(
+            "No end-of-life software was detected in the externally visible technology stack. All identified "
+            "components appear to be within their vendor support lifecycle, meaning security patches are available.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_domain(d, S):
@@ -695,9 +1123,33 @@ def cat_domain(d, S):
         ("Age",            f"{age} days ({round(age/365,1)} years)" if age else "Unknown"),
         ("WHOIS privacy",  "Protected" if di.get("privacy_protected") else "Public"),
     ]
-    return build_cat_card("Domain Intelligence (WHOIS)", col,
+    fb = "Domain registration details are healthy — established domain with no age-related risk flags." if not di.get("issues") and age and age > 365 else "Review domain registration — new or expiring domains increase phishing and impersonation risk."
+    parts = build_cat_card("Domain Intelligence (WHOIS)", col,
                           f"Age: {round(age/365,1)}y" if age else "Unknown",
-                          rows, di.get("issues", []), S)
+                          rows, di.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if age and age > 730:
+        parts.append(Paragraph(
+            f"This domain has been registered for {round(age/365,1)} years, indicating an established web presence. "
+            "Older domains generally have higher trust scores with email providers and search engines. "
+            "Domain age is used by underwriters as a proxy for business maturity.",
+            S["body"]))
+    elif age and age < 365:
+        parts.append(Paragraph(
+            f"This domain is less than one year old ({round(age/365,1)} years). Newly registered domains are "
+            "statistically more likely to be associated with fraud or phishing. From an underwriting perspective, "
+            "domain age below 1 year is a risk factor worth noting.",
+            S["body"]))
+    else:
+        parts.append(Paragraph(
+            "Domain registration details provide context about the organisation's online presence maturity. "
+            "Registration information, expiry dates, and WHOIS privacy settings all contribute to overall "
+            "domain trust assessment.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_security_policy(d, S):
@@ -710,8 +1162,31 @@ def cat_security_policy(d, S):
         ("robots.txt",     f"Present — {sp.get('robots_txt',{}).get('disallows_count',0)} disallow rules"
                            if sp.get("robots_txt", {}).get("present") else "Not found"),
     ]
-    return build_cat_card("Security Policy & Vulnerability Disclosure", col,
-                          "VDP present" if stxt.get("present") else "No VDP", rows, sp.get("issues", []), S)
+    fb = "Vulnerability disclosure policy is published — demonstrates mature security practices." if stxt.get("present") else "No security.txt or vulnerability disclosure policy found — makes responsible reporting of security issues difficult."
+    parts = build_cat_card("Security Policy & Vulnerability Disclosure", col,
+                          "VDP present" if stxt.get("present") else "No VDP", rows, sp.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if stxt.get("present"):
+        parts.append(Paragraph(
+            "A security.txt file or vulnerability disclosure policy (VDP) is published. This is an industry "
+            "best practice that provides security researchers with a responsible way to report vulnerabilities "
+            "they discover. Organisations with a VDP typically learn about and fix security issues faster.",
+            S["body"]))
+    else:
+        parts.append(Paragraph(
+            "No security.txt file or vulnerability disclosure policy was found. Without a published VDP, security "
+            "researchers who discover vulnerabilities have no official channel to report them. This can result in "
+            "issues going unreported or being disclosed publicly before the organisation can respond.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Create a security.txt file at /.well-known/security.txt with a contact email for security reports.", S["body"]))
+        parts.append(Paragraph("2. Consider establishing a formal Vulnerability Disclosure Policy (VDP) on your website.", S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_payment(d, S):
@@ -723,9 +1198,38 @@ def cat_payment(d, S):
         ("Page HTTPS",           "Yes" if pay.get("payment_page_https") else ("N/A" if not pay.get("has_payment_page") else "NO — CRITICAL")),
         ("Self-hosted card form", "YES — PCI risk" if pay.get("self_hosted_payment_form") else "No"),
     ]
-    return build_cat_card("Payment Security (PCI)", col,
+    fb = "CRITICAL: Self-hosted payment form detected — PCI DSS compliance risk. Use a tokenised payment provider." if pay.get("self_hosted_payment_form") else ("Payment processing uses a recognised third-party provider — reduces PCI scope." if pay.get("has_payment_page") else "No payment page detected on this domain.")
+    parts = build_cat_card("Payment Security (PCI)", col,
                           pay.get("payment_provider") or ("PCI Risk" if pay.get("self_hosted_payment_form") else "N/A"),
-                          rows, pay.get("issues", []), S)
+                          rows, pay.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if pay.get("self_hosted_payment_form"):
+        parts.append(Paragraph(
+            "A self-hosted payment form was detected, meaning card data may be processed directly on this server. "
+            "This significantly increases PCI DSS compliance scope and liability. If cardholder data is compromised, "
+            "the organisation faces regulatory penalties, card brand fines, and reputational damage.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. URGENT: Migrate to a tokenised payment provider (Stripe, PayFast, PayGate) that handles card data externally.", S["body"]))
+        parts.append(Paragraph("2. Ensure the payment page is served exclusively over HTTPS with a valid certificate.", S["body"]))
+        parts.append(Paragraph("3. If self-hosting is required, engage a PCI QSA (Qualified Security Assessor) for formal compliance assessment.", S["body"]))
+    elif pay.get("has_payment_page"):
+        parts.append(Paragraph(
+            f"Payment processing is handled by {pay.get('payment_provider', 'a third-party provider')}, "
+            "which significantly reduces PCI DSS compliance scope. The organisation does not appear to directly "
+            "handle or store cardholder data.",
+            S["body"]))
+    else:
+        parts.append(Paragraph(
+            "No payment processing functionality was detected on this website. If the organisation does not "
+            "process online payments, this check is not applicable.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_shodan(d, S):
@@ -793,7 +1297,48 @@ def cat_shodan(d, S):
         if desc:
             rows.append(("  Description", desc))
 
-    return build_cat_card("CVE / Known Vulnerabilities", col, summary, rows, sv.get("issues", []), S)
+    fb = f"{display_total} known vulnerabilit{'y' if display_total == 1 else 'ies'} detected — review severity breakdown above for patching priority." if display_total > 0 else "No known CVEs detected for this IP — infrastructure appears patched and current."
+    parts = build_cat_card("CVE / Known Vulnerabilities", col, summary, rows, sv.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    wpn = sv.get("weaponized_count", 0)
+    if crit > 0 or wpn > 0:
+        parts.append(Paragraph(
+            f"{'Critical' if crit > 0 else 'Weaponized'} vulnerabilities were detected on this infrastructure. "
+            "These are known security flaws in the software running on this server that have publicly available "
+            "exploit code. Attackers use automated tools to scan for and exploit these vulnerabilities — often within "
+            "hours of public disclosure. Unpatched critical CVEs are the leading cause of data breaches globally.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. URGENT: Patch all critical and weaponized CVEs immediately — these have known exploit code in active use.", S["body"]))
+        parts.append(Paragraph("2. Establish a patch management policy with defined SLAs (critical: 48hrs, high: 7 days, medium: 30 days).", S["body"]))
+        parts.append(Paragraph("3. Subscribe to vendor security advisories for all deployed software.", S["body"]))
+    elif high > 0:
+        parts.append(Paragraph(
+            f"{high} high-severity CVE(s) were detected. While no critical or weaponized exploits were found, "
+            "high-severity vulnerabilities can still be chained together by skilled attackers to achieve "
+            "significant impact. Timely patching remains essential.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Schedule patching for all high-severity CVEs within 7 days.", S["body"]))
+        parts.append(Paragraph("2. Monitor EPSS scores — if any high CVE's exploitation probability increases, escalate to critical priority.", S["body"]))
+    elif display_total > 0:
+        parts.append(Paragraph(
+            f"{display_total} CVE(s) of medium or low severity were detected. These represent known weaknesses "
+            "but are less likely to be exploited in isolation. Address during regular maintenance cycles.",
+            S["body"]))
+    else:
+        parts.append(Paragraph(
+            "No known CVEs were detected for the software versions running on this infrastructure. "
+            "This suggests the server software is up to date with current security patches — a strong positive indicator.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_dehashed(d, S):
@@ -821,7 +1366,8 @@ def cat_dehashed(d, S):
         rows.append(("Affected emails", " | ".join(dh["sample_emails"][:5])))
     if dh.get("breach_sources"):
         rows.append(("Breach sources", " | ".join(dh["breach_sources"][:8])))
-    parts = build_cat_card("Dehashed Credential Leaks", col, summary, rows, dh.get("issues", []), S)
+    fb = f"{total} credential record(s) found in leak databases — see breach details below." if total > 0 else ("Dehashed API unavailable — credential leak check could not be completed." if is_error else "No leaked credentials found in Dehashed databases for this domain.")
+    parts = build_cat_card("Dehashed Credential Leaks", col, summary, rows, dh.get("issues", []), S, fallback=fb)
 
     # Breach details OUTSIDE the table
     details = dh.get("breach_details", [])
@@ -866,7 +1412,8 @@ def cat_hudson_rock(d, S):
         ("Compromised users", users),
         ("Third-party exposures", third),
     ]
-    parts = build_cat_card("Infostealer Detection (Hudson Rock)", col, summary, rows, hr.get("issues", []), S)
+    fb = "ACTIVE infostealer infection detected — credentials are being exfiltrated in real-time." if employees > 0 else ("Third-party supply chain exposure detected via compromised vendor credentials." if third > 0 else "No infostealer infections detected across employee or user devices.")
+    parts = build_cat_card("Infostealer Detection (Hudson Rock)", col, summary, rows, hr.get("issues", []), S, fallback=fb)
 
     # Narrative interpretation OUTSIDE the table
     if employees > 0:
@@ -946,7 +1493,8 @@ def cat_intelx(d, S):
         rows.append(("RECENT FINDINGS", ""))
         for rec in recent[:8]:
             rows.append((f"  {rec.get('date', '')}", f"{rec.get('name', 'Unknown')} ({rec.get('media', '')})"))
-    parts = build_cat_card("Dark Web Monitoring (IntelX)", col, summary, rows, ix.get("issues", []), S)
+    fb = f"{darkweb} dark web mention(s) found — stolen data may be actively traded on criminal forums." if darkweb > 0 else (f"{total} reference(s) found in leak databases — see interpretation below." if total > 0 else "No references found on dark web forums or leak databases.")
+    parts = build_cat_card("Dark Web Monitoring (IntelX)", col, summary, rows, ix.get("issues", []), S, fallback=fb)
 
     # Plain-English interpretation OUTSIDE the table
     parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
@@ -1027,7 +1575,11 @@ def cat_credential_risk(d, S):
             verified = " [Verified]" if src.get("verified") else ""
             data = ", ".join(src.get("data_exposed", [])[:4]) if src.get("data_exposed") else "Unknown"
             rows.append((f"  {src.get('name', 'Unknown')}", f"Date: {src.get('breach_date', 'Unknown')}{pw_flag}{verified} | Data: {data}"))
-    parts = build_cat_card("Credential Risk Assessment", col, level, rows, [], S)
+    fb = {"CRITICAL": "CRITICAL credential risk — active compromise detected. Immediate incident response required.",
+           "HIGH": "HIGH credential risk — recent breaches with password exposure. Force resets and enable MFA.",
+           "MEDIUM": "MODERATE credential risk — historical exposure detected. Review password policies and MFA coverage.",
+           "LOW": "Low credential risk — no significant exposure. Continue monitoring."}.get(level, "Credential risk assessment complete — see details above.")
+    parts = build_cat_card("Credential Risk Assessment", col, level, rows, [], S, fallback=fb)
 
     # Assessment summary OUTSIDE the table
     summary_text = cr.get("summary", "")
@@ -1117,7 +1669,8 @@ def cat_virustotal(d, S):
         rows.append(("Categories", " | ".join(list(vt["categories"].values())[:5])))
     for eng in vt.get("flagging_engines", [])[:5]:
         rows.append((eng.get("engine", ""), f"{eng.get('category', '')} — {eng.get('result', '')}"))
-    parts = build_cat_card("VirusTotal Reputation", col, summary, rows, vt.get("issues", []), S)
+    fb = f"{mal} security engine(s) flagged this domain as malicious — see interpretation below." if mal > 0 else (f"{sus} engine(s) flagged as suspicious — warrants monitoring." if sus > 0 else "Clean reputation across all security engines — no malicious indicators.")
+    parts = build_cat_card("VirusTotal Reputation", col, summary, rows, vt.get("issues", []), S, fallback=fb)
 
     # Interpretation OUTSIDE the table
     parts.append(Paragraph("<b>Interpretation</b>", S["cat_title"]))
@@ -1145,7 +1698,26 @@ def cat_securitytrails(d, S):
         rows.append(("Alexa rank", f"#{st['alexa_rank']:,}"))
     if st.get("associated_domains"):
         rows.append(("Top associated", " | ".join(st["associated_domains"][:5])))
-    return build_cat_card("DNS Intelligence (SecurityTrails)", col, summary, rows, st.get("issues", []), S)
+    fb = "DNS intelligence collected — provides historical context for domain infrastructure." if status != "no_api_key" else "SecurityTrails API not configured — historical DNS intelligence unavailable."
+    parts = build_cat_card("DNS Intelligence (SecurityTrails)", col, summary, rows, st.get("issues", []), S, fallback=fb)
+
+    if status != "no_api_key":
+        parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        if assoc > 50:
+            parts.append(Paragraph(
+                f"{assoc} associated domains share infrastructure with this domain. A high number of associated "
+                "domains can indicate shared hosting, which means a compromise of any co-hosted site could "
+                "potentially impact this domain. It also expands the attack surface that needs to be monitored.",
+                S["body"]))
+        else:
+            parts.append(Paragraph(
+                "DNS intelligence provides historical context about the domain's infrastructure — including "
+                "current and historical DNS records, associated domains, and hosting changes. This data helps "
+                "assess infrastructure stability and identify potential shared-hosting risks.",
+                S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_privacy_compliance(d, S):
@@ -1163,7 +1735,43 @@ def cat_privacy_compliance(d, S):
             rows.append(("Sections present", " | ".join(pc["sections_found"])))
         if pc.get("sections_missing"):
             rows.append(("Sections missing", " | ".join(pc["sections_missing"])))
-    return build_cat_card("Privacy Policy Compliance", col, summary, rows, pc.get("issues", []), S)
+    fb = f"Privacy policy found with {pct}% completeness — review missing sections for POPIA compliance." if found and pct < 80 else ("Privacy policy is comprehensive and meets key compliance requirements." if found else "No privacy policy found — required under POPIA for any organisation processing personal information.")
+    parts = build_cat_card("Privacy Policy Compliance", col, summary, rows, pc.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if not found:
+        parts.append(Paragraph(
+            "No privacy policy was found on this website. Under POPIA (Protection of Personal Information Act), "
+            "any organisation that processes personal information must have a publicly accessible privacy policy "
+            "detailing how data is collected, used, stored, and protected. Absence of a privacy policy is a "
+            "compliance gap and a regulatory risk.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Publish a POPIA-compliant privacy policy on the website, accessible from every page.", S["body"]))
+        parts.append(Paragraph("2. Include required sections: purpose of processing, data categories, retention periods, data subject rights, and Information Officer details.", S["body"]))
+    elif pct < 80:
+        missing = pc.get("sections_missing", [])
+        missing_str = ", ".join(missing[:3]) if missing else "various sections"
+        parts.append(Paragraph(
+            f"A privacy policy was found but is only {pct}% complete. Missing sections ({missing_str}) "
+            "may leave the organisation exposed to regulatory action under POPIA. A comprehensive privacy policy "
+            "is both a legal requirement and a trust signal for clients.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph(f"1. Add missing sections to the privacy policy: {missing_str}.", S["body"]))
+        parts.append(Paragraph("2. Have the updated policy reviewed by a POPIA compliance specialist.", S["body"]))
+    else:
+        parts.append(Paragraph(
+            "The privacy policy is comprehensive and covers the key sections required for POPIA compliance. "
+            "This demonstrates mature data governance practices.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def _finding_colour(text: str) -> str:
@@ -1186,6 +1794,17 @@ def cat_compliance_frameworks(data, S):
         return []
 
     story = []
+
+    # External-scan disclaimer
+    story.append(Paragraph(
+        "<b>Note:</b> This compliance assessment is based on <b>externally observable indicators only</b>. "
+        "An external scan can typically assess 60–80% of a framework's controls — those related to encryption, "
+        "access controls, network security, and public-facing configurations. Controls requiring internal assessment "
+        "(e.g. staff training, incident response procedures, internal access management) cannot be evaluated "
+        "externally and are marked as NO_DATA. A full compliance audit would require internal assessment.",
+        S["body"]))
+    story.append(Spacer(1, 4 * mm))
+
     for framework, fw_data in compliance.items():
         pct = fw_data.get("overall_pct", 0)
         col = C_GREEN if pct >= 75 else (C_AMBER if pct >= 50 else C_RED)
@@ -1197,7 +1816,13 @@ def cat_compliance_frameworks(data, S):
             for finding in ctrl.get("findings", [])[:3]:
                 fc = _finding_colour(finding)
                 rows.append(("", f"  <font color='{fc}'>↳ {finding[:120]}</font>"))
-        story += build_cat_card(f"{framework}", col, f"{pct}% aligned", rows, [], S)
+        # Count assessable vs NO_DATA
+        total_ctrl = len(fw_data.get("controls", {}))
+        no_data_count = sum(1 for c in fw_data.get("controls", {}).values() if c.get("status") == "no_data")
+        assessable = total_ctrl - no_data_count
+        fb = (f"{pct}% alignment based on {assessable} of {total_ctrl} externally assessable controls. "
+              f"{'Remaining controls require internal assessment.' if no_data_count > 0 else ''}")
+        story += build_cat_card(f"{framework}", col, f"{pct}% aligned", rows, [], S, fallback=fb)
     return story
 
 
@@ -1213,7 +1838,41 @@ def cat_website(d, S):
         ("Cookie Secure",  "OK" if ck.get("secure", True) else "Issues"),
         ("Cookie HttpOnly","OK" if ck.get("httponly", True) else "Issues"),
     ]
-    return build_cat_card("Website Security", col, f"{score}%", rows, ws.get("issues", []), S)
+    fb = "Website security configuration is strong — HTTPS enforced with secure cookie settings." if score >= 80 else f"Website security score of {score}% — review HTTPS enforcement, mixed content, and cookie security settings."
+    parts = build_cat_card("Website Security", col, f"{score}%", rows, ws.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if score >= 80:
+        parts.append(Paragraph(
+            "Website security fundamentals are well implemented. HTTPS is enforced, cookies are configured "
+            "with Secure and HttpOnly flags, and no mixed content issues were detected. This protects user "
+            "sessions from hijacking and ensures data integrity between the browser and server.",
+            S["body"]))
+    else:
+        issues_list = []
+        if not ws.get("https_enforced"):
+            issues_list.append("HTTPS not enforced")
+        if ws.get("mixed_content"):
+            issues_list.append("mixed content detected")
+        if not ck.get("secure", True):
+            issues_list.append("insecure cookie flags")
+        parts.append(Paragraph(
+            f"Website security score is {score}%"
+            f"{' — issues include: ' + ', '.join(issues_list) if issues_list else ''}. "
+            "These are foundational web security controls that protect user sessions and data transmission.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        if not ws.get("https_enforced"):
+            parts.append(Paragraph("1. Enforce HTTPS across all pages using server-side redirects (HTTP 301 to HTTPS).", S["body"]))
+        if ws.get("mixed_content"):
+            parts.append(Paragraph("2. Fix mixed content by ensuring all resources (images, scripts, CSS) are loaded over HTTPS.", S["body"]))
+        if not ck.get("secure", True) or not ck.get("httponly", True):
+            parts.append(Paragraph("3. Set Secure and HttpOnly flags on all session cookies to prevent interception and XSS theft.", S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_web_ranking(d, S):
@@ -1228,7 +1887,8 @@ def cat_web_ranking(d, S):
             ("Popularity",  wr.get("popularity", "Unranked")),
             ("Rank Band",   wr.get("rank_label", "Unranked")),
         ]
-        return build_cat_card("Web Ranking (Tranco)", col, wr.get("rank_label", "Unranked"), rows, wr.get("issues", []), S)
+        fb = f"Ranked #{rank:,} in Tranco top 1M — established web presence." if wr.get("ranked") else "Not in the Tranco top 1M — lower traffic volume, which is typical for SME websites."
+        parts = build_cat_card("Web Ranking (Tranco)", col, wr.get("rank_label", "Unranked"), rows, wr.get("issues", []), S, fallback=fb)
     else:
         score = wr.get("score", 30)
         col = _tl(score >= 70, score >= 40)
@@ -1237,9 +1897,20 @@ def cat_web_ranking(d, S):
             ("In List", "Yes" if wr.get("in_list") else "No"),
             ("Score", f"{score}/100"),
         ]
-        return build_cat_card("Web Ranking (Tranco)", col,
+        fb = f"Ranked #{rank:,} — established web presence." if rank else "Not ranked in Tranco top 1M — typical for SME websites."
+        parts = build_cat_card("Web Ranking (Tranco)", col,
                               f"#{rank:,}" if rank else "Unranked",
-                              rows, wr.get("issues", []), S)
+                              rows, wr.get("issues", []), S, fallback=fb)
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    parts.append(Paragraph(
+        "Web ranking from the Tranco list (a research-grade domain popularity list) provides context about "
+        "website traffic volume. Higher-traffic websites are more attractive targets for attackers but also "
+        "tend to have more mature security practices. Unranked sites are common for SMEs and do not indicate "
+        "a security concern.",
+        S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_info_disclosure(d, S):
@@ -1252,8 +1923,32 @@ def cat_info_disclosure(d, S):
         rows.append((p.get("path", ""), f"{p.get('risk_level','').upper()} — {p.get('description','')}"))
     if len(exposed) > 5:
         rows.append(("...", f"+{len(exposed)-5} more"))
-    return build_cat_card("Information Disclosure", col, f"{score}%",
-                          rows, info.get("issues", []), S)
+    fb = f"{len(exposed)} sensitive path(s) exposed — internal files or configuration may be accessible to attackers." if exposed else "No sensitive files or configuration paths are publicly accessible."
+    parts = build_cat_card("Information Disclosure", col, f"{score}%",
+                          rows, info.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if exposed:
+        parts.append(Paragraph(
+            f"{len(exposed)} path(s) were found that may expose sensitive information such as configuration files, "
+            "version control data (.git), environment files (.env), or backup files. These files can reveal "
+            "database credentials, API keys, internal architecture, and other information that significantly "
+            "aids attackers in planning targeted attacks.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Block access to all exposed sensitive paths in your web server configuration.", S["body"]))
+        parts.append(Paragraph("2. Remove .git, .env, and backup files from the public web root entirely.", S["body"]))
+        parts.append(Paragraph("3. Audit server configuration to prevent directory listing and file enumeration.", S["body"]))
+    else:
+        parts.append(Paragraph(
+            "No sensitive configuration files, version control data, or backup files were found accessible "
+            "from the public website. This reduces the risk of information leakage to attackers.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_fraudulent_domains(d, S):
@@ -1266,7 +1961,33 @@ def cat_fraudulent_domains(d, S):
     ]
     for dom in fd.get("domains", [])[:5]:
         rows.append((dom.get("type", "lookalike"), f"{dom.get('domain','')} ({dom.get('cert_issuer','')})"))
-    return build_cat_card("Fraudulent Domains (Typosquat)", col, f"{found} found", rows, fd.get("issues", []), S)
+    fb = f"{found} lookalike domain(s) detected — these could be used for phishing attacks against staff or customers." if found > 0 else "No active lookalike domains detected — low brand impersonation risk."
+    parts = build_cat_card("Fraudulent Domains (Typosquat)", col, f"{found} found", rows, fd.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if found > 0:
+        parts.append(Paragraph(
+            f"{found} domain(s) that closely resemble your organisation's domain were found with active DNS records "
+            "or SSL certificates. These lookalike domains are commonly used in phishing attacks — attackers register "
+            "domains like 'yourdoma1n.com' or 'yourdomain-secure.com' to trick staff or clients into entering "
+            "credentials on a fake login page.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Investigate each lookalike domain to determine if it is being used for phishing.", S["body"]))
+        parts.append(Paragraph("2. Submit takedown requests to the registrars of confirmed malicious domains.", S["body"]))
+        parts.append(Paragraph("3. Register common typo variants of your domain defensively to prevent future abuse.", S["body"]))
+        parts.append(Paragraph("4. Alert staff to the existence of these lookalike domains and reinforce phishing awareness.", S["body"]))
+    else:
+        parts.append(Paragraph(
+            "No active lookalike domains were detected. This means no one has registered domains that closely "
+            "mimic your brand for phishing purposes. Consider defensively registering common typo variants "
+            "to maintain this position.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_rsi(results, S):
@@ -1284,9 +2005,37 @@ def cat_rsi(results, S):
     ]
     for f in rsi.get("contributing_factors", [])[:8]:
         rows.append((f"  P{f['priority']}: {f['factor']}", f"+{f['impact']:.2f}"))
-    return build_cat_card("Ransomware Susceptibility Index (RSI)", col,
+    fb = f"RSI score of {score:.2f} — {'high ransomware susceptibility, prioritise remediation steps below.' if score >= 0.50 else 'moderate risk, review contributing factors.' if score >= 0.25 else 'low ransomware susceptibility based on current external posture.'}"
+    parts = build_cat_card("Ransomware Susceptibility Index (RSI)", col,
                           f"{score:.2f} — {rsi.get('risk_label', '')}",
-                          rows, [], S)
+                          rows, [], S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if score >= 0.75:
+        parts.append(Paragraph(
+            "This organisation has a high ransomware susceptibility score, driven by the contributing factors listed "
+            "above. Multiple external risk indicators align with the attack patterns commonly seen in successful "
+            "ransomware incidents. Immediate remediation of the highest-priority factors is strongly recommended.",
+            S["body"]))
+    elif score >= 0.50:
+        parts.append(Paragraph(
+            "Moderate-to-high ransomware susceptibility. Several external risk factors were identified that, "
+            "in combination, create meaningful exposure to ransomware attacks. Addressing the top contributing "
+            "factors would materially reduce this risk.",
+            S["body"]))
+    elif score >= 0.25:
+        parts.append(Paragraph(
+            "Moderate ransomware susceptibility. Some risk factors are present but the overall external posture "
+            "provides reasonable protection. Address contributing factors during planned maintenance cycles.",
+            S["body"]))
+    else:
+        parts.append(Paragraph(
+            "Low ransomware susceptibility based on externally observable indicators. The organisation's external "
+            "security posture does not exhibit the common risk patterns associated with ransomware victims.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_dbi(results, S):
@@ -1298,9 +2047,21 @@ def cat_dbi(results, S):
     rows = [("DBI Score", f"{score}/{dbi.get('max_score', 100)} — {dbi.get('label', '')}")]
     for key, comp in dbi.get("components", {}).items():
         rows.append((key.replace("_", " ").capitalize(), f"{comp.get('value', '')} ({comp.get('points', 0)}/{comp.get('max', 0)} pts)"))
-    return build_cat_card("Data Breach Index (DBI)", col,
+    fb = f"DBI score {score}/100 — {'strong data breach resilience.' if score >= 80 else 'moderate breach resilience, review component scores.' if score >= 40 else 'weak breach resilience, multiple exposure factors identified.'}"
+    parts = build_cat_card("Data Breach Index (DBI)", col,
                           f"{score}/100 — {dbi.get('label', '')}",
-                          rows, [], S)
+                          rows, [], S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    parts.append(Paragraph(
+        "The Data Breach Index (DBI) measures the organisation's resilience to data breach events based on "
+        "externally observable factors including credential exposure, encryption strength, data handling practices, "
+        "and breach history. A higher score indicates stronger resilience. Component scores above show which "
+        "areas contribute most to the overall rating.",
+        S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_remediation(results, S):
@@ -1322,9 +2083,10 @@ def cat_remediation(results, S):
     ]
     for i, step in enumerate(steps[:10], 1):
         rows.append((f"#{i} (P{step['priority']})", f"{step['action']} — saves {cur} {step['annual_savings_estimate']:,.0f}/yr"))
+    fb = f"{len(steps)} prioritised remediation steps could reduce annual expected loss by {cur} {savings:,.0f}."
     return build_cat_card("Remediation Roadmap — Before/After", col,
                           f"{len(steps)} steps — {cur} {savings:,.0f} savings",
-                          rows, [], S)
+                          rows, [], S, fallback=fb)
 
 
 def cat_ransomware_risk(d, S):
@@ -1342,7 +2104,8 @@ def cat_ransomware_risk(d, S):
         rows.append(("Annual Revenue", f"R {rsi['annual_revenue_zar']:,.0f}"))
     for f in rsi.get("contributing_factors", [])[:5]:
         rows.append((f["factor"], f"+{f['impact']}"))
-    return build_cat_card("Ransomware Susceptibility (RSI)", col, f"{score}", rows, rsi.get("issues", []), S)
+    fb = f"RSI {score}/1.0 — {'high susceptibility to ransomware attacks.' if score >= 0.5 else 'moderate ransomware risk.' if score >= 0.25 else 'low ransomware susceptibility.'}"
+    return build_cat_card("Ransomware Susceptibility (RSI)", col, f"{score}", rows, rsi.get("issues", []), S, fallback=fb)
 
 
 def cat_data_breach_index(d, S):
@@ -1359,7 +2122,8 @@ def cat_data_breach_index(d, S):
         ("Sensitive Data Exposed", "Yes" if dbi.get("has_sensitive_data") else "No"),
         ("Credential Leaks",       f"{dbi.get('credential_leaks', 0):,}"),
     ]
-    return build_cat_card("Data Breach Index (DBI)", col, f"{score}/100", rows, dbi.get("issues", []), S)
+    fb = f"DBI {score}/100 — {'strong breach resilience.' if score >= 75 else 'moderate risk exposure.' if score >= 50 else 'elevated breach risk based on current posture.'}"
+    return build_cat_card("Data Breach Index (DBI)", col, f"{score}/100", rows, dbi.get("issues", []), S, fallback=fb)
 
 
 def cat_financial_impact(d, S):
@@ -1374,7 +2138,7 @@ def cat_financial_impact(d, S):
             ("", "\u2022 Insurance coverage recommendations (minimum and recommended)"),
             ("", "\u2022 Per-finding cost reduction estimates"),
         ]
-        return build_cat_card("Financial Impact (FAIR Model)", C_BLUE, "Revenue required", rows, [], S)
+        return build_cat_card("Financial Impact (FAIR Model)", C_BLUE, "Revenue required", rows, [], S, fallback="Annual revenue is required to calculate financial impact estimates.")
 
     is_zar = fin.get("currency") == "ZAR"
     cur    = "R" if is_zar else "$"
@@ -1485,8 +2249,9 @@ def cat_financial_impact(d, S):
             ("Recommended Coverage",  f"{cur} {ins.get('recommended_coverage', 0):,.0f}"),
         ])
 
+    fb = f"Estimated most likely annual loss of {cur} {most_l:,.0f} based on FAIR quantitative risk model with Monte Carlo simulation."
     return build_cat_card("Financial Impact (FAIR Model)", col,
-                          f"{cur} {most_l:,.0f}", rows, fin.get("issues", []), S)
+                          f"{cur} {most_l:,.0f}", rows, fin.get("issues", []), S, fallback=fb)
 
 
 def cat_risk_mitigations(d, S):
@@ -1530,8 +2295,9 @@ def cat_risk_mitigations(d, S):
     rows.append(("", ""))
     rows.append(("Note", "Savings are modelled projections based on FAIR methodology"))
 
+    fb = f"Implementing all recommendations could reduce annual expected loss by {cur} {total_savings:,.0f} ({reduction_pct}%)."
     return build_cat_card("Risk Mitigation Recommendations", C_GREEN,
-                          f"Save {cur} {total_savings:,.0f}", rows, [], S)
+                          f"Save {cur} {total_savings:,.0f}", rows, [], S, fallback=fb)
 
 
 # ---------------------------------------------------------------------------
@@ -2161,7 +2927,6 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         ins_data = results.get("insurance", {})
         fin = ins_data.get("financial_impact", {})
         if fin and (fin.get("currency") or fin.get("status") == "completed"):
-            story.append(PageBreak())
             story += section_header("FINANCIAL IMPACT SUMMARY", S)
             story.append(Spacer(1, 2 * mm))
 
@@ -2368,15 +3133,12 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
 
         # ── Insurance Analytics ─────────────────────────────────────────────
         if results.get("insurance"):
-            story.append(PageBreak())
             story += section_header("INSURANCE ANALYTICS", S)
             story += cat_rsi(results, S)
             story += cat_dbi(results, S)
             story += cat_financial_impact(results.get("insurance", {}), S)
             story += cat_risk_mitigations(results.get("insurance", {}), S)
             story += cat_remediation(results, S)
-
-        story.append(PageBreak())
 
         # ── Discovery ───────────────────────────────────────────────────────
         story += section_header("DISCOVERY", S)
@@ -2436,6 +3198,12 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         # ── Recommendations ─────────────────────────────────────────────────
         if recs:
             story += section_header("REMEDIATION RECOMMENDATIONS", S)
+            story.append(Paragraph(
+                "The following prioritised recommendations are derived from the findings throughout this report. "
+                "Each recommendation addresses a specific vulnerability or configuration gap identified during the "
+                "scan. Detailed context and per-finding guidance is provided within each section above.",
+                S["body"]))
+            story.append(Spacer(1, 3 * mm))
             for i, rec in enumerate(recs, 1):
                 story.append(Paragraph(
                     f'<font name="Helvetica-Bold" color="{C_BLUE}">{i}.</font>&nbsp;&nbsp;{rec}',

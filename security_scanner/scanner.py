@@ -478,7 +478,12 @@ class SecurityScanner:
                 except Exception:
                     pass
 
-                # --- Re-aggregate External IPs with enriched data ---
+                # --- Re-aggregate after OSV enrichment updated per-IP data ---
+                # Shodan counts were set BEFORE OSV added CVEs — re-aggregate now
+                for checker_name in self.IP_LEVEL_CHECKERS:
+                    results["categories"][checker_name] = self._aggregate_ip_results(
+                        per_ip_results, checker_name
+                    )
                 results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
                     all_ips, per_ip_results, ip_sources=ip_sources
                 )
@@ -548,6 +553,9 @@ class SecurityScanner:
         results["overall_risk_score"] = risk_score
         results["risk_level"] = risk_level
         results["recommendations"] = recommendations
+        # Propagate scan completeness metadata to top level
+        if "_scan_completeness" in cat_results:
+            results["_scan_completeness"] = cat_results.pop("_scan_completeness")
         results["compliance"] = scorer.compliance_summary(cat_results)
 
         # --- Phase 6: Insurance Analytics ---

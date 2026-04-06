@@ -529,9 +529,48 @@ class RiskScorer:
         "Privacy policy missing critical sections": "Update your privacy policy to include all required sections for POPIA/GDPR compliance.",
     }
 
+    # Statuses that indicate a checker failed and should be excluded from scoring
+    _FAILED_STATUSES = {"error", "timeout"}
+    # Statuses that indicate a checker was intentionally skipped (no API key,
+    # toggle off) — these should NOT count as failures in the completeness warning
+    _SKIPPED_STATUSES = {"no_api_key", "auth_failed", "disabled", "skipped"}
+
+    def _is_failed(self, checker_data: dict) -> bool:
+        """Return True if this checker errored/timed out and should be excluded."""
+        return checker_data.get("status") in self._FAILED_STATUSES
+
     def calculate(self, results: dict) -> tuple:
         def inv(score_0_100):
             return 100 - score_0_100
+
+        # --- Detect failed vs skipped checkers and exclude from scoring ---
+        # Failed (error/timeout): checker ran but broke — unreliable data.
+        # Skipped (no_api_key/disabled): intentionally not run — not a failure.
+        # Both are excluded from weighting, but only failures trigger the
+        # incomplete scan warning.
+        failed_checkers = []   # Genuine failures — flag in warning
+        skipped_checkers = []  # Intentionally skipped — no warning
+        for name in self.WEIGHTS:
+            data = results.get(name, {})
+            if isinstance(data, dict):
+                if self._is_failed(data):
+                    failed_checkers.append(name)
+                elif data.get("status") in self._SKIPPED_STATUSES:
+                    skipped_checkers.append(name)
+
+        # Build effective weights — zero out failed + skipped, redistribute
+        excluded = set(failed_checkers + skipped_checkers)
+        effective_weights = dict(self.WEIGHTS)
+        excluded_weight = sum(effective_weights.get(f, 0) for f in excluded)
+        for f in excluded:
+            effective_weights[f] = 0
+        # Redistribute excluded weight proportionally across remaining checkers
+        remaining_weight = sum(v for v in effective_weights.values())
+        if remaining_weight > 0 and excluded_weight > 0:
+            scale = (remaining_weight + excluded_weight) / remaining_weight
+            for k in effective_weights:
+                if effective_weights[k] > 0:
+                    effective_weights[k] *= scale
 
         # Per-category risk (0-100 scale, higher = more risky)
         ssl_risk = inv(results.get("ssl", {}).get("score", 50))
@@ -637,37 +676,38 @@ class RiskScorer:
         fin_risk = inv(fin_res.get("score", 50)) if fin_res.get("status") == "completed" else 0
 
         weighted = (
-            ssl_risk         * self.WEIGHTS.get("ssl", 0) +
-            email_risk       * self.WEIGHTS.get("email_security", 0) +
-            email_hard_risk  * self.WEIGHTS.get("email_hardening", 0) +
-            breach_risk      * self.WEIGHTS.get("breaches", 0) +
-            header_risk      * self.WEIGHTS.get("http_headers", 0) +
-            website_risk     * self.WEIGHTS.get("website_security", 0) +
-            admin_risk       * self.WEIGHTS.get("exposed_admin", 0) +
-            hrisk            * self.WEIGHTS.get("high_risk_protocols", 0) +
-            dnsbl_risk       * self.WEIGHTS.get("dnsbl", 0) +
-            tech_risk        * self.WEIGHTS.get("tech_stack", 0) +
-            pay_risk         * self.WEIGHTS.get("payment_security", 0) +
-            vpn_risk         * self.WEIGHTS.get("vpn_remote", 0) +
-            sub_risk         * self.WEIGHTS.get("subdomains", 0) +
-            shodan_risk      * self.WEIGHTS.get("shodan_vulns", 0) +
-            dehashed_risk    * self.WEIGHTS.get("dehashed", 0) +
-            vt_risk          * self.WEIGHTS.get("virustotal", 0) +
-            st_risk          * self.WEIGHTS.get("securitytrails", 0) +
-            fd_risk          * self.WEIGHTS.get("fraudulent_domains", 0) +
-            pc_risk          * self.WEIGHTS.get("privacy_compliance", 0) +
-            wr_risk          * self.WEIGHTS.get("web_ranking", 0) +
-            id_risk          * self.WEIGHTS.get("info_disclosure", 0) +
-            ext_ip_risk      * self.WEIGHTS.get("external_ips", 0) +
-            rsi_risk         * self.WEIGHTS.get("ransomware_risk", 0) +
-            dbi_risk         * self.WEIGHTS.get("data_breach_index", 0) +
-            fin_risk         * self.WEIGHTS.get("financial_impact", 0)
+            ssl_risk         * effective_weights.get("ssl", 0) +
+            email_risk       * effective_weights.get("email_security", 0) +
+            email_hard_risk  * effective_weights.get("email_hardening", 0) +
+            breach_risk      * effective_weights.get("breaches", 0) +
+            header_risk      * effective_weights.get("http_headers", 0) +
+            website_risk     * effective_weights.get("website_security", 0) +
+            admin_risk       * effective_weights.get("exposed_admin", 0) +
+            hrisk            * effective_weights.get("high_risk_protocols", 0) +
+            dnsbl_risk       * effective_weights.get("dnsbl", 0) +
+            tech_risk        * effective_weights.get("tech_stack", 0) +
+            pay_risk         * effective_weights.get("payment_security", 0) +
+            vpn_risk         * effective_weights.get("vpn_remote", 0) +
+            sub_risk         * effective_weights.get("subdomains", 0) +
+            shodan_risk      * effective_weights.get("shodan_vulns", 0) +
+            dehashed_risk    * effective_weights.get("dehashed", 0) +
+            vt_risk          * effective_weights.get("virustotal", 0) +
+            st_risk          * effective_weights.get("securitytrails", 0) +
+            fd_risk          * effective_weights.get("fraudulent_domains", 0) +
+            pc_risk          * effective_weights.get("privacy_compliance", 0) +
+            wr_risk          * effective_weights.get("web_ranking", 0) +
+            id_risk          * effective_weights.get("info_disclosure", 0) +
+            ext_ip_risk      * effective_weights.get("external_ips", 0) +
+            rsi_risk         * effective_weights.get("ransomware_risk", 0) +
+            dbi_risk         * effective_weights.get("data_breach_index", 0) +
+            fin_risk         * effective_weights.get("financial_impact", 0)
         )
 
         risk_score = round(weighted * 10)
 
         # WAF bonus — reduce score by up to 50 points
-        if results.get("waf", {}).get("detected"):
+        # Only apply if WAF checker actually ran successfully
+        if results.get("waf", {}).get("detected") and "waf" not in failed_checkers:
             risk_score = max(0, risk_score - 50)
 
         risk_score = min(1000, risk_score)
@@ -697,6 +737,30 @@ class RiskScorer:
             recommendations.append(
                 f"Domain found in {breach_count} breach(es). Enforce strong passwords, "
                 "implement credential monitoring, and review affected user accounts."
+            )
+
+        # Attach scan completeness metadata
+        # Only genuine failures count against completeness — skipped (no API key,
+        # toggle off) are expected and don't indicate an incomplete scan.
+        assessable = len(self.WEIGHTS) - len(skipped_checkers)
+        scan_completeness = {
+            "total_checkers": len(self.WEIGHTS),
+            "assessable_checkers": assessable,
+            "failed_checkers": failed_checkers,
+            "skipped_checkers": skipped_checkers,
+            "failed_count": len(failed_checkers),
+            "completeness_pct": round((1 - len(failed_checkers) / assessable) * 100) if assessable > 0 else 100,
+            "score_reliable": len(failed_checkers) == 0,
+        }
+        # Store in results so it can be accessed by PDF/HTML
+        results["_scan_completeness"] = scan_completeness
+
+        if failed_checkers:
+            recommendations.insert(0,
+                f"WARNING: {len(failed_checkers)} checker(s) failed during this scan "
+                f"({', '.join(failed_checkers)}). The risk score is based on "
+                f"{scan_completeness['completeness_pct']}% of available data. "
+                f"A re-scan is recommended for a complete assessment."
             )
 
         return risk_score, risk_level, recommendations

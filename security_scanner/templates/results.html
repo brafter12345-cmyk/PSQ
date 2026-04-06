@@ -397,15 +397,15 @@
         <div class="stat-lbl">Email Security</div>
       </div>
       <div class="stat">
-        <div class="stat-val {% if cats.breaches.breach_count > 5 %}color-red{% elif cats.breaches.breach_count > 0 %}color-amber{% else %}color-green{% endif %}">{{ cats.breaches.breach_count | default(0) }}</div>
+        <div class="stat-val {% if cats.breaches.get('breach_count', 0) > 5 %}color-red{% elif cats.breaches.get('breach_count', 0) > 0 %}color-amber{% else %}color-green{% endif %}">{{ cats.breaches.get('breach_count', 0) }}</div>
         <div class="stat-lbl">Breaches</div>
       </div>
       <div class="stat">
-        <div class="stat-val {% if cats.exposed_admin.get('critical_count', 0) > 0 %}color-red{% elif cats.exposed_admin.get('high_count', 0) > 0 %}color-amber{% else %}color-green{% endif %}">{{ (cats.exposed_admin.critical_count | default(0)) + (cats.exposed_admin.high_count | default(0)) }}</div>
+        <div class="stat-val {% if cats.exposed_admin.get('critical_count', 0) > 0 %}color-red{% elif cats.exposed_admin.get('high_count', 0) > 0 %}color-amber{% else %}color-green{% endif %}">{{ cats.exposed_admin.get('critical_count', 0) + cats.exposed_admin.get('high_count', 0) }}</div>
         <div class="stat-lbl">Exposed Panels</div>
       </div>
       <div class="stat">
-        <div class="stat-val {% if cats.high_risk_protocols.get('critical_count', 0) > 0 %}color-red{% else %}color-green{% endif %}">{{ cats.high_risk_protocols.critical_count | default(0) }}</div>
+        <div class="stat-val {% if cats.high_risk_protocols.get('critical_count', 0) > 0 %}color-red{% else %}color-green{% endif %}">{{ cats.high_risk_protocols.get('critical_count', 0) }}</div>
         <div class="stat-lbl">DB/Service Leaks</div>
       </div>
       <div class="stat">
@@ -1009,11 +1009,11 @@
 
     <!-- High-Risk Protocol Exposure -->
     {% set hrp = results.categories.high_risk_protocols %}
-    {% set hrp_tl = 'tl-crimson' if hrp.critical_count > 0 else 'tl-green' %}
+    {% set hrp_tl = 'tl-crimson' if hrp.get('critical_count', 0) > 0 else 'tl-green' %}
     <div class="cat-card">
       <div class="cat-header" onclick="toggle(this)">
         <div class="cat-left"><div class="traffic-light {{ hrp_tl }}"></div><div class="cat-title">Database &amp; Service Exposure</div></div>
-        <div style="display:flex;align-items:center;gap:10px;"><span class="cat-grade {% if hrp.critical_count > 0 %}color-red{% endif %}">{{ hrp.critical_count | default(0) }} critical</span><span class="chevron">&#9660;</span></div>
+        <div style="display:flex;align-items:center;gap:10px;"><span class="cat-grade {% if hrp.get('critical_count', 0) > 0 %}color-red{% endif %}">{{ hrp.get('critical_count', 0) }} critical</span><span class="chevron">&#9660;</span></div>
       </div>
       <div class="cat-body">
         {% if hrp.exposed_services %}
@@ -1259,16 +1259,16 @@
 
     <!-- Credential Exposure -->
     {% set br = results.categories.breaches %}
-    {% set br_tl = 'tl-crimson' if br.breach_count > 5 else ('tl-red' if br.breach_count > 0 else 'tl-green') %}
+    {% set br_tl = 'tl-crimson' if br.get('breach_count', 0) > 5 else ('tl-red' if br.get('breach_count', 0) > 0 else 'tl-green') %}
     <div class="cat-card">
       <div class="cat-header" onclick="toggle(this)">
         <div class="cat-left"><div class="traffic-light {{ br_tl }}"></div><div class="cat-title">Credential Exposure (HIBP)</div></div>
-        <div style="display:flex;align-items:center;gap:10px;"><span class="cat-grade">{{ br.breach_count | default(0) }} breach{% if br.breach_count != 1 %}es{% endif %}</span><span class="chevron">&#9660;</span></div>
+        <div style="display:flex;align-items:center;gap:10px;"><span class="cat-grade">{{ br.get('breach_count', 0) }} breach{% if br.get('breach_count', 0) != 1 %}es{% endif %}</span><span class="chevron">&#9660;</span></div>
       </div>
       <div class="cat-body">
         {% if br.status == 'requires_api_key' %}
         <p style="color:var(--muted);font-size:.82rem;margin-top:8px;">&#128274; Set <code>HIBP_API_KEY</code> env var for domain breach lookup.</p>
-        {% elif br.breach_count == 0 %}
+        {% elif br.get('breach_count', 0) == 0 %}
         <p style="color:var(--low);font-size:.82rem;margin-top:8px;">&#10003; No known breaches for this domain.</p>
         {% else %}
         <table class="kv-table">
@@ -1309,11 +1309,11 @@
 
     <!-- Exposed Admin Panels -->
     {% set adm = results.categories.exposed_admin %}
-    {% set adm_tl = 'tl-crimson' if adm.critical_count > 0 else ('tl-red' if adm.high_count > 0 else 'tl-green') %}
+    {% set adm_tl = 'tl-crimson' if adm.get('critical_count', 0) > 0 else ('tl-red' if adm.get('high_count', 0) > 0 else 'tl-green') %}
     <div class="cat-card">
       <div class="cat-header" onclick="toggle(this)">
         <div class="cat-left"><div class="traffic-light {{ adm_tl }}"></div><div class="cat-title">Exposed Admin &amp; Sensitive Paths</div></div>
-        <div style="display:flex;align-items:center;gap:10px;"><span class="cat-grade {% if adm.critical_count > 0 %}color-red{% endif %}">{{ (adm.exposed | length) if adm.exposed else 0 }} found</span><span class="chevron">&#9660;</span></div>
+        <div style="display:flex;align-items:center;gap:10px;"><span class="cat-grade {% if adm.get('critical_count', 0) > 0 %}color-red{% endif %}">{{ (adm.exposed | length) if adm.exposed else 0 }} found</span><span class="chevron">&#9660;</span></div>
       </div>
       <div class="cat-body">
         {% if adm.exposed %}
@@ -1361,14 +1361,14 @@
 
     <!-- Dehashed Credential Leaks -->
     {% set dh = results.categories.dehashed %}
-    {% set dh_tl = 'tl-crimson' if dh.total_entries > 50 else ('tl-red' if dh.total_entries > 10 else ('tl-amber' if dh.total_entries > 0 else 'tl-green')) %}
+    {% set dh_tl = 'tl-crimson' if dh.get('total_entries', 0) > 50 else ('tl-red' if dh.get('total_entries', 0) > 10 else ('tl-amber' if dh.get('total_entries', 0) > 0 else 'tl-green')) %}
     {% if dh.status == 'no_api_key' %}{% set dh_tl = 'tl-blue' %}{% endif %}
     <div class="cat-card">
       <div class="cat-header" onclick="toggle(this)">
         <div class="cat-left"><div class="traffic-light {{ dh_tl }}"></div><div class="cat-title">Dehashed Credential Leaks</div></div>
         <div style="display:flex;align-items:center;gap:10px;">
           <span class="cat-grade">
-            {% if dh.status == 'no_api_key' %}No API key{% elif dh.total_entries > 0 %}{{ dh.total_entries }} records{% else %}Clean{% endif %}
+            {% if dh.get('status') == 'no_api_key' %}No API key{% elif dh.get('total_entries', 0) > 0 %}{{ dh.get('total_entries', 0) }} records{% else %}Clean{% endif %}
           </span>
           <span class="chevron">&#9660;</span>
         </div>
@@ -1378,7 +1378,7 @@
         <p style="font-size:.82rem;color:var(--muted);padding:8px 0;">Set <code>DEHASHED_EMAIL</code> and <code>DEHASHED_API_KEY</code> environment variables to enable Dehashed credential leak scanning.</p>
         {% else %}
         <table class="kv-table">
-          <tr><td>Total records</td><td>{% if dh.total_entries > 0 %}<span class="badge badge-red">{{ dh.total_entries }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+          <tr><td>Total records</td><td>{% if dh.get('total_entries', 0) > 0 %}<span class="badge badge-red">{{ dh.get('total_entries', 0) }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
           <tr><td>Unique emails</td><td>{{ dh.unique_emails | default(0) }}</td></tr>
           <tr><td>Passwords leaked</td><td>{% if dh.has_passwords %}<span class="badge badge-red">Yes</span>{% else %}No{% endif %}</td></tr>
         </table>
@@ -1394,22 +1394,22 @@
     <!-- Hudson Rock Infostealer Detection -->
     {% set hr = results.categories.get('hudson_rock', {}) %}
     {% set hr_total = (hr.compromised_employees | default(0)) + (hr.compromised_users | default(0)) %}
-    {% set hr_tl = 'tl-crimson' if hr.compromised_employees > 0 else ('tl-red' if hr.compromised_users > 0 else ('tl-amber' if hr.third_party_exposures > 0 else 'tl-green')) %}
+    {% set hr_tl = 'tl-crimson' if hr.get('compromised_employees', 0) > 0 else ('tl-red' if hr.get('compromised_users', 0) > 0 else ('tl-amber' if hr.get('third_party_exposures', 0) > 0 else 'tl-green')) %}
     <div class="cat-card">
       <div class="cat-header" onclick="toggle(this)">
         <div class="cat-left"><div class="traffic-light {{ hr_tl }}"></div><div class="cat-title">Infostealer Detection (Hudson Rock)</div></div>
         <div style="display:flex;align-items:center;gap:10px;">
           <span class="cat-grade {% if hr_total > 0 %}color-red{% endif %}">
-            {% if hr_total > 0 %}{{ hr_total }} compromised{% elif hr.third_party_exposures > 0 %}{{ hr.third_party_exposures }} third-party{% else %}Clean{% endif %}
+            {% if hr_total > 0 %}{{ hr_total }} compromised{% elif hr.get('third_party_exposures', 0) > 0 %}{{ hr.get('third_party_exposures', 0) }} third-party{% else %}Clean{% endif %}
           </span>
           <span class="chevron">&#9660;</span>
         </div>
       </div>
       <div class="cat-body">
         <table class="kv-table">
-          <tr><td>Compromised employees</td><td>{% if hr.compromised_employees > 0 %}<span class="badge badge-red">{{ hr.compromised_employees }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
-          <tr><td>Compromised users</td><td>{% if hr.compromised_users > 0 %}<span class="badge badge-red">{{ hr.compromised_users }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
-          <tr><td>Third-party exposures</td><td>{% if hr.third_party_exposures > 0 %}<span class="badge badge-amber">{{ hr.third_party_exposures }}</span>{% else %}0{% endif %}</td></tr>
+          <tr><td>Compromised employees</td><td>{% if hr.get('compromised_employees', 0) > 0 %}<span class="badge badge-red">{{ hr.get('compromised_employees', 0) }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+          <tr><td>Compromised users</td><td>{% if hr.get('compromised_users', 0) > 0 %}<span class="badge badge-red">{{ hr.get('compromised_users', 0) }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+          <tr><td>Third-party exposures</td><td>{% if hr.get('third_party_exposures', 0) > 0 %}<span class="badge badge-amber">{{ hr.get('third_party_exposures', 0) }}</span>{% else %}0{% endif %}</td></tr>
         </table>
         {% if hr.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in hr.issues %}<li class="issue-item"><span class="issue-icon issue-err">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
         {% if not hr.issues %}<p style="color:var(--low);font-size:.82rem;margin-top:8px;">No active infostealer infections detected.</p>{% endif %}
@@ -1419,20 +1419,20 @@
     <!-- IntelX Dark Web Monitoring -->
     {% set ix = results.categories.get('intelx', {}) %}
     {% if ix and ix.status != 'no_api_key' %}
-    {% set ix_tl = 'tl-crimson' if ix.darkweb_count > 0 else ('tl-red' if ix.paste_count > 5 else ('tl-amber' if ix.total_results > 0 else 'tl-green')) %}
+    {% set ix_tl = 'tl-crimson' if ix.get('darkweb_count', 0) > 0 else ('tl-red' if ix.get('paste_count', 0) > 5 else ('tl-amber' if ix.get('total_results', 0) > 0 else 'tl-green')) %}
     <div class="cat-card">
       <div class="cat-header" onclick="toggle(this)">
         <div class="cat-left"><div class="traffic-light {{ ix_tl }}"></div><div class="cat-title">Dark Web Monitoring (IntelX)</div></div>
         <div style="display:flex;align-items:center;gap:10px;">
-          <span class="cat-grade {% if ix.darkweb_count > 0 %}color-red{% endif %}">{{ ix.total_results }} result(s)</span>
+          <span class="cat-grade {% if ix.get('darkweb_count', 0) > 0 %}color-red{% endif %}">{{ ix.get('total_results', 0) }} result(s)</span>
           <span class="chevron">&#9660;</span>
         </div>
       </div>
       <div class="cat-body">
         <table class="kv-table">
           <tr><td>Total references</td><td>{{ ix.total_results }}</td></tr>
-          <tr><td>Dark web mentions</td><td>{% if ix.darkweb_count > 0 %}<span class="badge badge-red">{{ ix.darkweb_count }}</span>{% else %}0{% endif %}</td></tr>
-          <tr><td>Paste site mentions</td><td>{% if ix.paste_count > 0 %}<span class="badge badge-amber">{{ ix.paste_count }}</span>{% else %}0{% endif %}</td></tr>
+          <tr><td>Dark web mentions</td><td>{% if ix.get('darkweb_count', 0) > 0 %}<span class="badge badge-red">{{ ix.get('darkweb_count', 0) }}</span>{% else %}0{% endif %}</td></tr>
+          <tr><td>Paste site mentions</td><td>{% if ix.get('paste_count', 0) > 0 %}<span class="badge badge-amber">{{ ix.get('paste_count', 0) }}</span>{% else %}0{% endif %}</td></tr>
           <tr><td>Leak database entries</td><td>{{ ix.leak_count | default(0) }}</td></tr>
         </table>
         {% if ix.recent_results %}
@@ -1454,12 +1454,12 @@
     <!-- Credential Risk Assessment -->
     {% set cr = results.categories.get('credential_risk', {}) %}
     {% if cr and cr.risk_level %}
-    {% set cr_tl = 'tl-crimson' if cr.risk_level == 'CRITICAL' else ('tl-red' if cr.risk_level == 'HIGH' else ('tl-amber' if cr.risk_level == 'MEDIUM' else 'tl-green')) %}
+    {% set cr_tl = 'tl-crimson' if cr.get('risk_level') == 'CRITICAL' else ('tl-red' if cr.get('risk_level') == 'HIGH' else ('tl-amber' if cr.get('risk_level') == 'MEDIUM' else 'tl-green')) %}
     <div class="cat-card" style="grid-column: 1 / -1;">
       <div class="cat-header" onclick="toggle(this)">
         <div class="cat-left"><div class="traffic-light {{ cr_tl }}"></div><div class="cat-title">Credential Risk Assessment</div></div>
         <div style="display:flex;align-items:center;gap:10px;">
-          <span class="cat-grade" style="{% if cr.risk_level == 'CRITICAL' %}color:var(--critical);{% elif cr.risk_level == 'HIGH' %}color:var(--red);{% elif cr.risk_level == 'MEDIUM' %}color:var(--medium);{% else %}color:var(--low);{% endif %}">{{ cr.risk_level }}</span>
+          <span class="cat-grade" style="{% if cr.get('risk_level') == 'CRITICAL' %}color:var(--critical);{% elif cr.get('risk_level') == 'HIGH' %}color:var(--red);{% elif cr.get('risk_level') == 'MEDIUM' %}color:var(--medium);{% else %}color:var(--low);{% endif %}">{{ cr.get('risk_level', 'N/A') }}</span>
           <span class="chevron">&#9660;</span>
         </div>
       </div>
