@@ -41,62 +41,62 @@ C_BLACK     = colors.HexColor("#0f172a")
 # Brief descriptions for common CVEs referenced in the protocol knowledge base
 CVE_DESCRIPTIONS = {
     # FTP
-    "CVE-2015-3306": "ProFTPD mod_copy — unauthenticated remote file copy/write",
-    "CVE-2019-12815": "ProFTPD mod_copy — arbitrary file copy without auth",
-    "CVE-2010-4221": "ProFTPD — remote stack buffer overflow (RCE)",
+    "CVE-2015-3306": "ProFTPD mod_copy — unauthenticated remote file copy/write — UNDERWRITING: enables data exfiltration via unauthenticated file access",
+    "CVE-2019-12815": "ProFTPD mod_copy — arbitrary file copy without auth — UNDERWRITING: enables data theft without credentials",
+    "CVE-2010-4221": "ProFTPD — remote stack buffer overflow (RCE) — UNDERWRITING: enables full server takeover via file transfer service",
     # SSH
-    "CVE-2024-6387": "regreSSHion — unauthenticated RCE in OpenSSH (critical)",
-    "CVE-2023-48795": "Terrapin — SSH prefix truncation attack",
-    "CVE-2016-20012": "OpenSSH — username enumeration via timing",
+    "CVE-2024-6387": "regreSSHion — unauthenticated RCE in OpenSSH (critical) — UNDERWRITING: enables full server takeover; primary ransomware deployment vector",
+    "CVE-2023-48795": "Terrapin — SSH prefix truncation attack — UNDERWRITING: degrades SSH encryption; facilitates data interception",
+    "CVE-2016-20012": "OpenSSH — username enumeration via timing — UNDERWRITING: facilitates targeted brute-force attacks against valid accounts",
     # Telnet
-    "CVE-2020-10188": "Telnetd — remote code execution via buffer overflow",
-    "CVE-2011-4862": "FreeBSD telnetd — encryption key ID buffer overflow (RCE)",
+    "CVE-2020-10188": "Telnetd — remote code execution via buffer overflow — UNDERWRITING: unencrypted protocol; enables full system compromise",
+    "CVE-2011-4862": "FreeBSD telnetd — encryption key ID buffer overflow (RCE) — UNDERWRITING: legacy protocol RCE; indicates poor patch management",
     # SMTP
-    "CVE-2021-3156": "Sudo heap overflow — local privilege escalation",
-    "CVE-2020-28018": "Exim — use-after-free leading to RCE",
-    "CVE-2011-1720": "Postfix — memory corruption via SASL",
+    "CVE-2021-3156": "Sudo heap overflow — local privilege escalation — UNDERWRITING: post-compromise privilege escalation to root access",
+    "CVE-2020-28018": "Exim — use-after-free leading to RCE — UNDERWRITING: mail server compromise enables email interception and BEC attacks",
+    "CVE-2011-1720": "Postfix — memory corruption via SASL — UNDERWRITING: mail server compromise enables data interception",
     # POP3/IMAP
-    "CVE-2021-33515": "Dovecot — STARTTLS command injection",
-    "CVE-2019-11500": "Dovecot — buffer overflow in mail processing (RCE)",
+    "CVE-2021-33515": "Dovecot — STARTTLS command injection — UNDERWRITING: enables email credential interception",
+    "CVE-2019-11500": "Dovecot — buffer overflow in mail processing (RCE) — UNDERWRITING: mail server RCE enables full email system compromise",
     # MySQL
-    "CVE-2012-2122": "MySQL — authentication bypass via timing attack",
-    "CVE-2016-6662": "MySQL — remote root code execution via config file",
-    "CVE-2020-14812": "MySQL Server — denial of service via optimizer",
+    "CVE-2012-2122": "MySQL — authentication bypass via timing attack — UNDERWRITING: enables immediate database access without credentials",
+    "CVE-2016-6662": "MySQL — remote root code execution via config file — UNDERWRITING: enables full database and OS-level compromise",
+    "CVE-2020-14812": "MySQL Server — denial of service via optimizer — UNDERWRITING: enables service disruption; business interruption risk",
     # RDP
-    "CVE-2019-0708": "BlueKeep — unauthenticated RCE in RDP (wormable, critical)",
-    "CVE-2019-1181": "DejaBlue — RDP RCE affecting newer Windows versions",
-    "CVE-2019-1182": "DejaBlue — RDP RCE variant (wormable)",
+    "CVE-2019-0708": "BlueKeep — unauthenticated RCE in RDP (wormable, critical) — UNDERWRITING: wormable; caused WannaCry/NotPetya global outbreaks",
+    "CVE-2019-1181": "DejaBlue — RDP RCE affecting newer Windows versions — UNDERWRITING: wormable RDP exploit; lateral movement risk",
+    "CVE-2019-1182": "DejaBlue — RDP RCE variant (wormable) — UNDERWRITING: wormable; enables rapid lateral spread across networks",
     # PostgreSQL
-    "CVE-2023-5868": "PostgreSQL — privilege escalation via aggregate functions",
-    "CVE-2019-9193": "PostgreSQL — authenticated RCE via COPY FROM PROGRAM",
-    "CVE-2023-39417": "PostgreSQL — SQL injection in extension scripts",
+    "CVE-2023-5868": "PostgreSQL — privilege escalation via aggregate functions — UNDERWRITING: enables database privilege escalation to admin",
+    "CVE-2019-9193": "PostgreSQL — authenticated RCE via COPY FROM PROGRAM — UNDERWRITING: enables OS command execution from database access",
+    "CVE-2023-39417": "PostgreSQL — SQL injection in extension scripts — UNDERWRITING: enables database compromise via extension vulnerabilities",
     # VNC
-    "CVE-2006-2369": "RealVNC — authentication bypass (no password required)",
-    "CVE-2019-15681": "TightVNC — heap buffer overflow (RCE)",
+    "CVE-2006-2369": "RealVNC — authentication bypass (no password required) — UNDERWRITING: enables unauthenticated remote desktop control",
+    "CVE-2019-15681": "TightVNC — heap buffer overflow (RCE) — UNDERWRITING: enables remote desktop takeover; data exfiltration risk",
     # SMB
-    "CVE-2017-0144": "EternalBlue — SMBv1 RCE (WannaCry, NotPetya)",
-    "CVE-2020-0796": "SMBGhost — SMBv3 RCE (wormable, critical)",
-    "CVE-2017-0145": "EternalRomance — SMBv1 RCE variant",
+    "CVE-2017-0144": "EternalBlue — SMBv1 RCE (WannaCry, NotPetya) — UNDERWRITING: caused $10B+ in global losses via WannaCry/NotPetya",
+    "CVE-2020-0796": "SMBGhost — SMBv3 RCE (wormable, critical) — UNDERWRITING: wormable; enables lateral movement across networks",
+    "CVE-2017-0145": "EternalRomance — SMBv1 RCE variant — UNDERWRITING: used in NotPetya; enables ransomware lateral spread",
     # Redis
-    "CVE-2022-0543": "Redis — Lua sandbox escape (RCE)",
-    "CVE-2021-32761": "Redis — integer overflow in BITFIELD (heap corruption)",
+    "CVE-2022-0543": "Redis — Lua sandbox escape (RCE) — UNDERWRITING: enables remote code execution on cache/database servers",
+    "CVE-2021-32761": "Redis — integer overflow in BITFIELD (heap corruption) — UNDERWRITING: enables cache server compromise and data manipulation",
     # Elasticsearch
-    "CVE-2015-1427": "Elasticsearch — Groovy scripting RCE (unauthenticated)",
-    "CVE-2014-3120": "Elasticsearch — MVEL scripting RCE",
+    "CVE-2015-1427": "Elasticsearch — Groovy scripting RCE (unauthenticated) — UNDERWRITING: unauthenticated RCE; full data extraction possible",
+    "CVE-2014-3120": "Elasticsearch — MVEL scripting RCE — UNDERWRITING: enables remote code execution on search/analytics infrastructure",
     # MongoDB
-    "CVE-2015-7882": "MongoDB — authentication bypass",
-    "CVE-2013-1892": "MongoDB — nativeHelper buffer overflow (RCE)",
+    "CVE-2015-7882": "MongoDB — authentication bypass — UNDERWRITING: enables unauthenticated database access; mass data theft risk",
+    "CVE-2013-1892": "MongoDB — nativeHelper buffer overflow (RCE) — UNDERWRITING: enables full database server compromise",
     # MSSQL
-    "CVE-2020-0618": "SQL Server — deserialization RCE",
-    "CVE-2019-1068": "SQL Server — remote code execution",
+    "CVE-2020-0618": "SQL Server — deserialization RCE — UNDERWRITING: enables remote code execution on enterprise database servers",
+    "CVE-2019-1068": "SQL Server — remote code execution — UNDERWRITING: enables full compromise of enterprise database infrastructure",
     # CouchDB
-    "CVE-2017-12635": "CouchDB — privilege escalation to admin",
-    "CVE-2017-12636": "CouchDB — arbitrary command execution",
+    "CVE-2017-12635": "CouchDB — privilege escalation to admin — UNDERWRITING: enables unauthorized admin access to document databases",
+    "CVE-2017-12636": "CouchDB — arbitrary command execution — UNDERWRITING: enables OS-level compromise via database service",
     # Docker
-    "CVE-2019-5736": "runc — container escape to host (critical)",
+    "CVE-2019-5736": "runc — container escape to host (critical) — UNDERWRITING: container escape; compromises entire hosting infrastructure",
     # SNMP
-    "CVE-2017-6736": "Cisco SNMP — remote code execution",
-    "CVE-2002-0012": "SNMP — community string brute-force / info disclosure",
+    "CVE-2017-6736": "Cisco SNMP — remote code execution — UNDERWRITING: enables network infrastructure takeover",
+    "CVE-2002-0012": "SNMP — community string brute-force / info disclosure — UNDERWRITING: enables network topology discovery and device enumeration",
 }
 
 PAGE_W, PAGE_H = A4
@@ -815,27 +815,36 @@ def cat_dehashed(d, S):
         rows.append(("Affected emails", " | ".join(dh["sample_emails"][:5])))
     if dh.get("breach_sources"):
         rows.append(("Breach sources", " | ".join(dh["breach_sources"][:8])))
-    # Show individual breach records
+    parts = build_cat_card("Dehashed Credential Leaks", col, summary, rows, dh.get("issues", []), S)
+
+    # Breach details OUTSIDE the table
     details = dh.get("breach_details", [])
     if details:
-        rows.append(("", ""))
-        rows.append(("BREACH DETAILS", ""))
-        for i, d in enumerate(details[:10]):
-            pw_flag = " [PASSWORD EXPOSED]" if d.get("has_password") else (" [HASH EXPOSED]" if d.get("has_hash") else "")
-            user_str = f" (user: {d['username']})" if d.get("username") else ""
-            rows.append((f"  {d.get('database', 'Unknown')}", f"{d.get('email', 'N/A')}{user_str}{pw_flag}"))
+        parts.append(Paragraph("<b>Breach Details</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        detail_lines = []
+        for i, det in enumerate(details[:10]):
+            pw_flag = " [PASSWORD EXPOSED]" if det.get("has_password") else (" [HASH EXPOSED]" if det.get("has_hash") else "")
+            user_str = f" (user: {det['username']})" if det.get("username") else ""
+            detail_lines.append(f"{det.get('database', 'Unknown')}: {det.get('email', 'N/A')}{user_str}{pw_flag}")
         if len(details) > 10:
-            rows.append(("", f"...and {len(details) - 10} more records"))
-    # Remediation advice
+            detail_lines.append(f"...and {len(details) - 10} more records")
+        for line in detail_lines:
+            parts.append(Paragraph(f"\u2022 {line}", S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+
+    # Remediation advice OUTSIDE the table
     if total > 0:
-        rows.append(("", ""))
-        rows.append(("REMEDIATION", ""))
-        rows.append(("  1. Password resets", "Force password resets for all identified email addresses across all company systems"))
-        rows.append(("  2. MFA enforcement", "Enable multi-factor authentication on all accounts, especially those with exposed credentials"))
-        rows.append(("  3. Credential monitoring", "Enroll in continuous breach monitoring to detect future exposures"))
+        parts.append(Paragraph("<b>Remediation</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Force password resets for all identified email addresses across all company systems.", S["body"]))
+        parts.append(Paragraph("2. Enable multi-factor authentication on all accounts, especially those with exposed credentials.", S["body"]))
+        parts.append(Paragraph("3. Enroll in continuous breach monitoring to detect future exposures.", S["body"]))
         if dh.get("has_passwords"):
-            rows.append(("  4. Password audit", "CRITICAL: Plaintext passwords found — audit all systems for password reuse immediately"))
-    return build_cat_card("Dehashed Credential Leaks", col, summary, rows, dh.get("issues", []), S)
+            parts.append(Paragraph("4. CRITICAL: Plaintext passwords found — audit all systems for password reuse immediately.", S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+    parts.append(Spacer(1, 1 * mm))
+    return parts
 
 
 def cat_hudson_rock(d, S):
@@ -851,39 +860,61 @@ def cat_hudson_rock(d, S):
         ("Compromised users", users),
         ("Third-party exposures", third),
     ]
-    if employees > 0:
-        rows.append(("", ""))
-        rows.append(("INTERPRETATION", "Employee devices are ACTIVELY infected with infostealer malware (Raccoon, RedLine, Vidar). "
-                      "Credentials are being exfiltrated in real-time and sold on dark web markets. "
-                      "Immediate incident response required: isolate devices, force password resets, engage forensics."))
-    elif third > 0:
-        rows.append(("", ""))
-        rows.append(("INTERPRETATION", "Third-party supply chain exposure detected. A vendor or partner connected to this domain "
-                      "has compromised credentials. Review shared access and enforce MFA on all integrations."))
-    elif total == 0 and third == 0:
-        rows.append(("", ""))
-        rows.append(("INTERPRETATION", "No active infostealer infections detected on employee or user devices. "
-                      "This indicates healthy endpoint security posture."))
+    parts = build_cat_card("Infostealer Detection (Hudson Rock)", col, summary, rows, hr.get("issues", []), S)
 
-    rows.append(("", ""))
-    rows.append(("WHAT THIS MEANS", ""))
+    # Narrative interpretation OUTSIDE the table
     if employees > 0:
-        rows.append(("", "Infostealer malware (such as RedLine, Raccoon, or Vidar) has been detected on devices "
-                      "belonging to employees of this organisation. This type of malware silently runs in the background "
-                      "and captures everything — saved passwords from web browsers, banking credentials, email logins, "
-                      "VPN access details, and even session cookies that allow attackers to bypass MFA. "
-                      "The stolen data is automatically uploaded to criminal servers and sold within hours. "
-                      "This is not a historical breach — it indicates CURRENT, ACTIVE compromise."))
+        parts.append(Paragraph("<b>Interpretation</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph(
+            "Employee devices are ACTIVELY infected with infostealer malware (Raccoon, RedLine, Vidar). "
+            "Credentials are being exfiltrated in real-time and sold on dark web markets. "
+            "Immediate incident response required: isolate devices, force password resets, engage forensics.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
     elif third > 0:
-        rows.append(("", "A third-party vendor or partner connected to this organisation has been found in infostealer databases. "
-                      "This means a supplier, contractor, or service provider who interacts with your systems has had their "
-                      "credentials stolen. Attackers frequently use compromised vendor access as a backdoor into larger "
-                      "organisations (supply chain attacks). Review all shared access and API integrations with external partners."))
+        parts.append(Paragraph("<b>Interpretation</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph(
+            "Third-party supply chain exposure detected. A vendor or partner connected to this domain "
+            "has compromised credentials. Review shared access and enforce MFA on all integrations.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+    elif total == 0 and third == 0:
+        parts.append(Paragraph("<b>Interpretation</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph(
+            "No active infostealer infections detected on employee or user devices. "
+            "This indicates healthy endpoint security posture.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if employees > 0:
+        parts.append(Paragraph(
+            "Infostealer malware (such as RedLine, Raccoon, or Vidar) has been detected on devices "
+            "belonging to employees of this organisation. This type of malware silently runs in the background "
+            "and captures everything — saved passwords from web browsers, banking credentials, email logins, "
+            "VPN access details, and even session cookies that allow attackers to bypass MFA. "
+            "The stolen data is automatically uploaded to criminal servers and sold within hours. "
+            "This is not a historical breach — it indicates CURRENT, ACTIVE compromise.",
+            S["body"]))
+    elif third > 0:
+        parts.append(Paragraph(
+            "A third-party vendor or partner connected to this organisation has been found in infostealer databases. "
+            "This means a supplier, contractor, or service provider who interacts with your systems has had their "
+            "credentials stolen. Attackers frequently use compromised vendor access as a backdoor into larger "
+            "organisations (supply chain attacks). Review all shared access and API integrations with external partners.",
+            S["body"]))
     else:
-        rows.append(("", "No infostealer infections were detected. This check scans a database of over 34 million compromised "
-                      "devices worldwide. A clean result means no employee or user devices associated with this domain "
-                      "appear in known infostealer databases. This is a positive security indicator."))
-    return build_cat_card("Infostealer Detection (Hudson Rock)", col, summary, rows, hr.get("issues", []), S)
+        parts.append(Paragraph(
+            "No infostealer infections were detected. This check scans a database of over 34 million compromised "
+            "devices worldwide. A clean result means no employee or user devices associated with this domain "
+            "appear in known infostealer databases. This is a positive security indicator.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_intelx(d, S):
@@ -909,38 +940,57 @@ def cat_intelx(d, S):
         rows.append(("RECENT FINDINGS", ""))
         for rec in recent[:8]:
             rows.append((f"  {rec.get('date', '')}", f"{rec.get('name', 'Unknown')} ({rec.get('media', '')})"))
-    # Plain-English interpretation
-    rows.append(("", ""))
-    rows.append(("WHAT THIS MEANS", ""))
+    parts = build_cat_card("Dark Web Monitoring (IntelX)", col, summary, rows, ix.get("issues", []), S)
+
+    # Plain-English interpretation OUTSIDE the table
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
     if darkweb > 0:
-        rows.append(("", f"We found {darkweb} mention(s) of this domain on dark web criminal forums. "
-                      "This means stolen data (login credentials, personal information, or internal documents) "
-                      "associated with your organisation is actively being bought and sold by cybercriminals. "
-                      "This is a strong indicator of elevated cyber risk and potential for targeted attacks."))
-        rows.append(("", ""))
-        rows.append(("RECOMMENDED ACTION", "1. Immediately force password resets for all staff accounts. "
-                      "2. Enable multi-factor authentication (MFA) on all systems. "
-                      "3. Engage a forensic investigator to determine the source of the leak. "
-                      "4. Notify affected individuals as required under POPIA Section 22."))
+        parts.append(Paragraph(
+            f"We found {darkweb} mention(s) of this domain on dark web criminal forums. "
+            "This means stolen data (login credentials, personal information, or internal documents) "
+            "associated with your organisation is actively being bought and sold by cybercriminals. "
+            "This is a strong indicator of elevated cyber risk and potential for targeted attacks.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Action</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph(
+            "1. Immediately force password resets for all staff accounts. "
+            "2. Enable multi-factor authentication (MFA) on all systems. "
+            "3. Engage a forensic investigator to determine the source of the leak. "
+            "4. Notify affected individuals as required under POPIA Section 22.",
+            S["body"]))
     elif total > 0:
-        rows.append(("", f"We found {total} reference(s) to this domain in dark web leak databases. "
-                      "These entries are typically 'infostealer logs' — records created when malware on someone's "
-                      "computer silently captures everything they type, including passwords and banking details. "
-                      "The stolen data is then packaged and uploaded to criminal databases where it can be "
-                      "purchased by other attackers."))
-        rows.append(("", ""))
-        rows.append(("", "In simple terms: someone who has (or had) login access to your systems had their "
-                      "personal device infected with spyware. The passwords they used for your systems may now "
-                      "be in criminal hands."))
-        rows.append(("", ""))
-        rows.append(("RECOMMENDED ACTION", "1. Force password resets for all staff, especially those using personal devices. "
-                      "2. Enable MFA — even if passwords are stolen, MFA prevents unauthorised access. "
-                      "3. Consider endpoint security solutions (antivirus, EDR) for all devices accessing company systems. "
-                      "4. Educate staff about the risks of downloading unverified software."))
+        parts.append(Paragraph(
+            f"We found {total} reference(s) to this domain in dark web leak databases. "
+            "These entries are typically 'infostealer logs' — records created when malware on someone's "
+            "computer silently captures everything they type, including passwords and banking details. "
+            "The stolen data is then packaged and uploaded to criminal databases where it can be "
+            "purchased by other attackers.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph(
+            "In simple terms: someone who has (or had) login access to your systems had their "
+            "personal device infected with spyware. The passwords they used for your systems may now "
+            "be in criminal hands.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Action</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph(
+            "1. Force password resets for all staff, especially those using personal devices. "
+            "2. Enable MFA — even if passwords are stolen, MFA prevents unauthorised access. "
+            "3. Consider endpoint security solutions (antivirus, EDR) for all devices accessing company systems. "
+            "4. Educate staff about the risks of downloading unverified software.",
+            S["body"]))
     else:
-        rows.append(("", "No references to this domain were found on dark web forums, paste sites, or leak databases. "
-                      "This is a positive indicator — there is no evidence of stolen credentials being traded online."))
-    return build_cat_card("Dark Web Monitoring (IntelX)", col, summary, rows, ix.get("issues", []), S)
+        parts.append(Paragraph(
+            "No references to this domain were found on dark web forums, paste sites, or leak databases. "
+            "This is a positive indicator — there is no evidence of stolen credentials being traded online.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_credential_risk(d, S):
@@ -961,30 +1011,7 @@ def cat_credential_risk(d, S):
         rows.append(("RISK FACTORS", ""))
         for f in factors:
             rows.append(("", f))
-    # Summary + plain English
-    summary_text = cr.get("summary", "")
-    if summary_text:
-        rows.append(("", ""))
-        rows.append(("ASSESSMENT", summary_text))
-    rows.append(("", ""))
-    rows.append(("WHAT THIS MEANS", ""))
-    if level == "CRITICAL":
-        rows.append(("", "One or more employee devices are actively infected with credential-stealing malware. "
-                      "This is the highest severity finding — attackers have real-time access to stolen passwords "
-                      "and can log into your systems at any time. Treat this as an active security incident."))
-    elif level == "HIGH":
-        rows.append(("", "Staff credentials (usernames and passwords) have been found in recent data breaches. "
-                      "While these may have been changed since the breach, attackers routinely use stolen passwords "
-                      "to attempt access to other systems (credential stuffing). The risk of unauthorised access "
-                      "is significantly elevated."))
-    elif level == "MEDIUM":
-        rows.append(("", "Historical credential exposure has been detected in older data breaches. "
-                      "The risk is moderate — passwords may have been changed since the breach, but "
-                      "organisations with poor password hygiene or no MFA remain vulnerable."))
-    else:
-        rows.append(("", "No significant credential exposure detected. This is a positive indicator of "
-                      "good security practices. Continue monitoring and maintain MFA enforcement."))
-    # Enriched breach timeline
+    # Enriched breach timeline (keep in table as data)
     enriched = d.get("dehashed", {}).get("enriched_sources", [])
     if enriched:
         rows.append(("", ""))
@@ -994,7 +1021,45 @@ def cat_credential_risk(d, S):
             verified = " [Verified]" if src.get("verified") else ""
             data = ", ".join(src.get("data_exposed", [])[:4]) if src.get("data_exposed") else "Unknown"
             rows.append((f"  {src.get('name', 'Unknown')}", f"Date: {src.get('breach_date', 'Unknown')}{pw_flag}{verified} | Data: {data}"))
-    return build_cat_card("Credential Risk Assessment", col, level, rows, [], S)
+    parts = build_cat_card("Credential Risk Assessment", col, level, rows, [], S)
+
+    # Assessment summary OUTSIDE the table
+    summary_text = cr.get("summary", "")
+    if summary_text:
+        parts.append(Paragraph("<b>Assessment</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph(summary_text, S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+
+    # What This Means OUTSIDE the table
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if level == "CRITICAL":
+        parts.append(Paragraph(
+            "One or more employee devices are actively infected with credential-stealing malware. "
+            "This is the highest severity finding — attackers have real-time access to stolen passwords "
+            "and can log into your systems at any time. Treat this as an active security incident.",
+            S["body"]))
+    elif level == "HIGH":
+        parts.append(Paragraph(
+            "Staff credentials (usernames and passwords) have been found in recent data breaches. "
+            "While these may have been changed since the breach, attackers routinely use stolen passwords "
+            "to attempt access to other systems (credential stuffing). The risk of unauthorised access "
+            "is significantly elevated.",
+            S["body"]))
+    elif level == "MEDIUM":
+        parts.append(Paragraph(
+            "Historical credential exposure has been detected in older data breaches. "
+            "The risk is moderate — passwords may have been changed since the breach, but "
+            "organisations with poor password hygiene or no MFA remain vulnerable.",
+            S["body"]))
+    else:
+        parts.append(Paragraph(
+            "No significant credential exposure detected. This is a positive indicator of "
+            "good security practices. Continue monitoring and maintain MFA enforcement.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_virustotal(d, S):
@@ -1033,8 +1098,6 @@ def cat_virustotal(d, S):
         interp += f" Community reputation score is negative ({rep}) — users have flagged concerns."
 
     rows = [
-        ("INTERPRETATION",       interp),
-        ("",                     ""),
         ("Malicious detections", f"{mal} of {total_engines} engines"),
         ("Suspicious detections", f"{sus} of {total_engines} engines"),
         ("Harmless",             harmless),
@@ -1048,7 +1111,14 @@ def cat_virustotal(d, S):
         rows.append(("Categories", " | ".join(list(vt["categories"].values())[:5])))
     for eng in vt.get("flagging_engines", [])[:5]:
         rows.append((eng.get("engine", ""), f"{eng.get('category', '')} — {eng.get('result', '')}"))
-    return build_cat_card("VirusTotal Reputation", col, summary, rows, vt.get("issues", []), S)
+    parts = build_cat_card("VirusTotal Reputation", col, summary, rows, vt.get("issues", []), S)
+
+    # Interpretation OUTSIDE the table
+    parts.append(Paragraph("<b>Interpretation</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    parts.append(Paragraph(interp, S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_securitytrails(d, S):
@@ -1290,8 +1360,15 @@ def cat_financial_impact(d, S):
     fin = d.get("financial_impact", {})
     # Accept ZAR results (currency key present) or legacy completed status
     if not fin or (not fin.get("currency") and fin.get("status") != "completed"):
-        return build_cat_card("Financial Impact (FAIR Model)", C_BLUE, "N/A",
-                              [("Status", "Revenue not provided — skipped")], [], S)
+        rows = [
+            ("Status", "Financial impact analysis requires annual revenue input"),
+            ("", "Re-run this assessment with annual revenue (ZAR) to generate:"),
+            ("", "\u2022 Estimated annual cyber loss (min/likely/max scenarios)"),
+            ("", "\u2022 Monte Carlo confidence intervals (10,000 simulations)"),
+            ("", "\u2022 Insurance coverage recommendations (minimum and recommended)"),
+            ("", "\u2022 Per-finding cost reduction estimates"),
+        ]
+        return build_cat_card("Financial Impact (FAIR Model)", C_BLUE, "Revenue required", rows, [], S)
 
     is_zar = fin.get("currency") == "ZAR"
     cur    = "R" if is_zar else "$"
@@ -1677,8 +1754,11 @@ def _build_vulnerability_posture(results: dict, S) -> list:
     # Severity + Age matrix table (PrimeLogic style)
     header_style = ParagraphStyle("vp_hdr", fontSize=7, fontName="Helvetica-Bold",
                                    textColor=C_WHITE, alignment=TA_CENTER, leading=10)
-    val_style = ParagraphStyle("vp_val", fontSize=14, fontName="Helvetica-Bold",
-                                textColor=C_BLACK, alignment=TA_CENTER, leading=18)
+    # Conditional font size for large numbers to prevent cell overflow
+    val_size = 14 if total < 100 else 12
+    val_leading = 18 if total < 100 else 16
+    val_style = ParagraphStyle("vp_val", fontSize=val_size, fontName="Helvetica-Bold",
+                                textColor=C_BLACK, alignment=TA_CENTER, leading=val_leading)
     lbl_style = ParagraphStyle("vp_lbl", fontSize=6, fontName="Helvetica",
                                 textColor=C_GREY_3, alignment=TA_CENTER, leading=9)
 
@@ -1736,17 +1816,23 @@ def _build_vulnerability_posture(results: dict, S) -> list:
 
     # Threat indicator row (Zero-days, Malware exploited, Exploited in wild, Easily exploitable, Widely exploited)
     kev_count = sum(1 for c in all_cves if c.get("in_kev"))
+    # Conditional font size for threat indicator values
+    threat_max = max(zero_days, malware_count, kev_count, easily_exploitable, widely_exploited)
+    threat_val_size = 14 if threat_max < 100 else 12
+    threat_val_leading = 18 if threat_max < 100 else 16
+    threat_val_style = ParagraphStyle("vp_threat_val", fontSize=threat_val_size, fontName="Helvetica-Bold",
+                                       textColor=C_BLACK, alignment=TA_CENTER, leading=threat_val_leading)
     threat_data = [
         [Paragraph("<b>Zero-days</b>", header_style),
          Paragraph("<b>Malware exploited</b>", header_style),
          Paragraph("<b>Exploited in wild</b>", header_style),
          Paragraph("<b>Easily exploitable</b>", header_style),
          Paragraph("<b>Widely exploited</b>", header_style)],
-        [Paragraph(f"<b>{zero_days}</b>", val_style),
-         Paragraph(f"<b>{malware_count}</b>", val_style),
-         Paragraph(f"<b>{kev_count}</b>", val_style),
-         Paragraph(f"<b>{easily_exploitable}</b>", val_style),
-         Paragraph(f"<b>{widely_exploited}</b>", val_style)],
+        [Paragraph(f"<b>{zero_days}</b>", threat_val_style),
+         Paragraph(f"<b>{malware_count}</b>", threat_val_style),
+         Paragraph(f"<b>{kev_count}</b>", threat_val_style),
+         Paragraph(f"<b>{easily_exploitable}</b>", threat_val_style),
+         Paragraph(f"<b>{widely_exploited}</b>", threat_val_style)],
         [Paragraph(f"{zero_days} instance(s)", lbl_style),
          Paragraph(f"{malware_count} instance(s)", lbl_style),
          Paragraph(f"{kev_count} instance(s)", lbl_style),
