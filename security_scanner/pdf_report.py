@@ -192,14 +192,14 @@ def build_styles():
     S["disclaimer"]  = ParagraphStyle("disclaimer",   fontSize=7,  leading=10, textColor=C_GREY_4)
     S["kv_key"]      = ParagraphStyle("kv_key",       fontSize=8, textColor=C_GREY_4, leading=10)
     S["kv_val"]      = ParagraphStyle("kv_val",       fontSize=8, textColor=C_BLACK,  leading=10)
-    S["stat"]        = ParagraphStyle("stat",         fontSize=10, fontName="Helvetica",
-                                       textColor=C_BLACK, leading=14, spaceBefore=2, spaceAfter=2,
+    S["stat"]        = ParagraphStyle("stat",         fontSize=8, fontName="Helvetica",
+                                       textColor=C_BLACK, leading=11, spaceBefore=2, spaceAfter=2,
                                        leftIndent=12, bulletIndent=6)
-    S["cta"]         = ParagraphStyle("cta",          fontSize=10, fontName="Helvetica",
-                                       textColor=C_BLACK, leading=14, spaceBefore=2, spaceAfter=4,
+    S["cta"]         = ParagraphStyle("cta",          fontSize=8, fontName="Helvetica",
+                                       textColor=C_BLACK, leading=11, spaceBefore=2, spaceAfter=3,
                                        leftIndent=12, bulletIndent=6)
-    S["contact"]     = ParagraphStyle("contact",      fontSize=11, fontName="Helvetica-Bold",
-                                       textColor=C_BLUE, leading=15, alignment=TA_CENTER)
+    S["contact"]     = ParagraphStyle("contact",      fontSize=9, fontName="Helvetica-Bold",
+                                       textColor=C_BLUE, leading=13, alignment=TA_CENTER)
     S["fsp"]         = ParagraphStyle("fsp",          fontSize=8, fontName="Helvetica",
                                        textColor=C_GREY_3, leading=11, alignment=TA_CENTER)
     S["vp_legend"]   = ParagraphStyle("vp_legend",    fontSize=8, fontName="Helvetica",
