@@ -1179,7 +1179,17 @@
             <details style="padding:4px 14px 8px;border-top:1px solid rgba(30,58,138,0.06);">
               <summary style="cursor:pointer;font-size:0.8rem;color:#60a5fa;font-weight:600;padding:4px 0;">&#9654; Show {{ vuln.get('cves', []) | length }} enriched CVE(s)</summary>
               <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;">
-              <table style="min-width:700px;font-size:0.78rem;margin-top:6px;border-collapse:collapse;">
+              <table style="width:100%;font-size:0.78rem;margin-top:6px;border-collapse:collapse;table-layout:fixed;">
+                <colgroup>
+                  <col style="width:140px;"><!-- CVE -->
+                  <col style="width:85px;"><!-- CVSS -->
+                  <col style="width:55px;"><!-- EPSS -->
+                  <col style="width:35px;"><!-- KEV -->
+                  <col style="width:80px;"><!-- Maturity -->
+                  <col style="width:45px;"><!-- Age -->
+                  <col style="width:55px;"><!-- Flags -->
+                  <col><!-- Description - takes remaining space -->
+                </colgroup>
                 {# Vulnerability indicator summary strip #}
                 {% set pm = vuln.get('patch_management', {}) %}
                 {% if pm %}
@@ -1224,7 +1234,7 @@
                     {% if cve.get('zero_day') %}<span class="badge badge-red" style="font-size:0.55rem;">0day</span>{% endif %}
                     {% if cve.get('ransomware_association') %}<span class="badge" style="font-size:0.55rem;background:#581c87;color:#d8b4fe;">{{ cve.get('ransomware_association', '') | truncate(20) }}</span>{% endif %}
                   </td>
-                  <td style="padding:4px;font-size:0.73rem;color:#cbd5e1;">{{ cve.description | default('') | truncate(120) }}</td>
+                  <td style="padding:4px;font-size:0.73rem;color:#cbd5e1;word-wrap:break-word;overflow-wrap:break-word;">{{ cve.description | default('') }}</td>
                 </tr>
                 {% endfor %}
               </table>
