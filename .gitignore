@@ -23,3 +23,6 @@ security_scanner/scanner.db
 # Screenshots and generated output
 SME Rating Engine/manual_screenshots/
 SME Rating Engine/Quotes/
+# Test fixtures - large JSON baselines are local-only (regenerate from any scan)
+security_scanner/test_fixtures/phishield_baseline.json
+security_scanner/test_fixtures/test_*.pdf
