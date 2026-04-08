@@ -1129,6 +1129,33 @@ class DehashedChecker:
     API_URL_V2 = "https://api.dehashed.com/v2/search"
     API_URL_V1 = "https://api.dehashed.com/search"
 
+    # Hash type detection patterns (order matters — check specific patterns first)
+    HASH_PATTERNS = [
+        ("bcrypt",  re.compile(r'^\$2[aby]\$\d{2}\$.{53}$')),
+        ("argon2",  re.compile(r'^\$argon2(i|d|id)\$')),
+        ("scrypt",  re.compile(r'^\$s0\$')),
+        ("SHA-512", re.compile(r'^[a-fA-F0-9]{128}$')),
+        ("SHA-256", re.compile(r'^[a-fA-F0-9]{64}$')),
+        ("SHA-1",   re.compile(r'^[a-fA-F0-9]{40}$')),
+        ("MD5",     re.compile(r'^[a-fA-F0-9]{32}$')),
+        ("NTLM",    re.compile(r'^[a-fA-F0-9]{32}$')),  # Same as MD5 — context-dependent
+    ]
+    WEAK_HASH_TYPES = {"MD5", "SHA-1", "NTLM"}
+    STRONG_HASH_TYPES = {"bcrypt", "argon2", "scrypt", "SHA-256", "SHA-512"}
+
+    @classmethod
+    def _classify_hash(cls, hash_string: str) -> str:
+        """Identify hash type from its string representation."""
+        if not hash_string or not isinstance(hash_string, str):
+            return "unknown"
+        h = hash_string.strip()
+        if not h or len(h) < 8:
+            return "unknown"
+        for name, pattern in cls.HASH_PATTERNS:
+            if pattern.match(h):
+                return name
+        return "unknown"
+
     def check(self, domain: str, email: str = None, api_key: str = None) -> dict:
         result = {
             "status": "completed",
@@ -1199,6 +1226,13 @@ class DehashedChecker:
             has_pw = False
             breach_sources = set()
             breach_details = []
+            # Credential breakdown tracking
+            plaintext_count = 0
+            hashed_count = 0
+            hash_types = {}
+            corporate_count = 0
+            personal_count = 0
+
             for entry in entries:
                 # v2 API returns email as list, v1 as string
                 em = entry.get("email", "")
@@ -1218,6 +1252,22 @@ class DehashedChecker:
                 if pw or hpw:
                     has_pw = True
 
+                # Credential type classification
+                hash_type = "unknown"
+                if pw and str(pw).strip():
+                    plaintext_count += 1
+                elif hpw and str(hpw).strip():
+                    hashed_count += 1
+                    hash_type = self._classify_hash(str(hpw))
+                    hash_types[hash_type] = hash_types.get(hash_type, 0) + 1
+
+                # Corporate vs personal email classification
+                email_str_raw = ", ".join(em) if isinstance(em, list) else (em or "")
+                if domain.lower() in email_str_raw.lower():
+                    corporate_count += 1
+                elif email_str_raw:
+                    personal_count += 1
+
                 db_name = entry.get("database_name", "Unknown source")
                 if db_name:
                     breach_sources.add(db_name)
@@ -1233,6 +1283,7 @@ class DehashedChecker:
                     "database": db_name,
                     "has_password": bool(pw),
                     "has_hash": bool(hpw),
+                    "hash_type": hash_type if hpw else None,
                 })
 
             result["unique_emails"] = len(emails_seen)
@@ -1243,19 +1294,43 @@ class DehashedChecker:
             result["breach_sources"] = list(breach_sources)
             result["breach_details"] = breach_details[:20]
 
+            # Credential breakdown summary
+            weak_hash_count = sum(v for k, v in hash_types.items() if k in self.WEAK_HASH_TYPES)
+            strong_hash_count = sum(v for k, v in hash_types.items() if k in self.STRONG_HASH_TYPES)
+            result["credential_breakdown"] = {
+                "plaintext_count": plaintext_count,
+                "hashed_count": hashed_count,
+                "hash_types": hash_types,
+                "weak_hash_count": weak_hash_count,
+                "strong_hash_count": strong_hash_count,
+                "corporate_count": corporate_count,
+                "personal_count": personal_count,
+            }
+
             if total > 0:
                 src_list = ", ".join(list(breach_sources)[:5])
                 result["issues"].append(
                     f"{total} credential record(s) found in Dehashed for this domain "
                     f"(sources: {src_list}) — notify affected users and enforce password reset"
                 )
-            if has_pw:
+            if plaintext_count > 0:
                 result["issues"].append(
-                    "Plaintext or hashed passwords found in leaked records — "
-                    "enforce immediate password reset and review authentication systems"
+                    f"{plaintext_count} plaintext password(s) found — immediate credential stuffing risk"
+                )
+            if weak_hash_count > 0:
+                weak_names = ", ".join(k for k in hash_types if k in self.WEAK_HASH_TYPES)
+                result["issues"].append(
+                    f"{weak_hash_count} credential(s) use weak hashing ({weak_names}) — easily crackable with modern tools"
+                )
+            if has_pw and not plaintext_count and not weak_hash_count:
+                result["issues"].append(
+                    "Hashed passwords found in leaked records — "
+                    "enforce password reset and review authentication systems"
                 )
 
-            penalty = min(100, total * 2)
+            # Enhanced scoring: plaintext more severe than hashes
+            penalty = min(100, plaintext_count * 5 + weak_hash_count * 3 +
+                          strong_hash_count * 1 + max(0, total - plaintext_count - hashed_count) * 2)
             result["score"] = max(0, 100 - penalty)
 
         except Exception as e:

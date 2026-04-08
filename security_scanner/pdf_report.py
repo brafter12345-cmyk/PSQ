@@ -481,6 +481,8 @@ def cat_ssl(d, S):
         ("TLS 1.2/1.3",   ("Supported" if tls.get("TLS 1.2") or tls.get("TLS 1.3") else "Not detected")),
         ("Cipher",        f"{cip.get('name','—')} ({'Weak' if cip.get('is_weak') else 'Strong'})"),
         ("HSTS",          "Present" if ssl.get("hsts") else "Missing"),
+        ("OCSP Stapling", "Enabled" if ssl.get("ocsp_stapling") else ("Not enabled" if ssl.get("ocsp_stapling") is False else "Unknown")),
+        ("CAA Records",   f"Restrictive ({', '.join(ssl.get('caa_policy',{}).get('issue',[])[:3])})" if ssl.get("caa_policy",{}).get("restrictive") else ("Present but not restrictive" if ssl.get("caa_records") else "None — any CA can issue")),
     ]
     fb = "Certificate and encryption configuration meets current standards." if grade in ("A+", "A", "B") else "Review TLS configuration — weak ciphers or legacy protocols may be in use."
     parts = build_cat_card("SSL / TLS", col, f"Grade: {grade}", rows, ssl.get("issues", []), S, fallback=fb)
@@ -594,12 +596,14 @@ def cat_email_hardening(d, S):
     mts  = eh.get("mta_sts", {})
     bimi = eh.get("bimi", {})
     dane = eh.get("dane", {})
+    tlsrpt = eh.get("tls_rpt", {})
     score= eh.get("score", 0)
     col  = _tl(score >= 7, score >= 3)
     rows = [
         ("MTA-STS", f"Present — mode: {mts.get('mode','?')}" if mts.get("present") else "Not configured"),
         ("BIMI",    "Present" + (" + VMC" if bimi.get("has_vmc") else "") if bimi.get("present") else "Not configured"),
         ("DANE/TLSA", "Present" if dane.get("present") else "Not configured"),
+        ("TLS-RPT", f"Present — reports to: {tlsrpt.get('rua','?')}" if tlsrpt.get("present") else "Not configured"),
         ("Score",   f"{score}/10"),
     ]
     fb = "Advanced email protections are well configured." if score >= 7 else "Advanced email hardening (MTA-STS, DANE, BIMI) is partially or not configured — these controls help prevent email interception."
@@ -627,6 +631,8 @@ def cat_email_hardening(d, S):
         recs.append("Implement DANE/TLSA records if your DNS provider supports DNSSEC — this pins your mail server certificates.")
     if not bimi.get("present"):
         recs.append("Set up BIMI to display your brand logo in email clients — this helps recipients identify legitimate emails from your domain.")
+    if not tlsrpt.get("present"):
+        recs.append("Configure TLS-RPT (RFC 8460) to receive reports about email TLS delivery failures — helps detect MitM attacks on email transport.")
     if recs:
         parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
         parts.append(Spacer(1, 1 * mm))
@@ -642,6 +648,16 @@ def cat_headers(d, S):
     col   = _tl(score >= 80, score >= 50)
     rows  = [(name, "Present" if data.get("present") else "MISSING")
              for name, data in hh.get("headers", {}).items()]
+    # CSP quality detail
+    csp_q = hh.get("csp_quality")
+    if csp_q:
+        rows.append(("", ""))
+        rows.append(("CSP Quality Score", f"{csp_q.get('score', 0)}/100"))
+        if csp_q.get("dangerous"):
+            for d_item in csp_q["dangerous"][:3]:
+                rows.append(("  CSP Issue", d_item))
+        if csp_q.get("missing_critical"):
+            rows.append(("  Missing directives", ", ".join(csp_q["missing_critical"])))
     fb = "All recommended security headers are present." if score >= 80 else f"Only {score}% of recommended security headers are configured — missing headers leave the site vulnerable to clickjacking, XSS, and data injection."
     parts = build_cat_card("HTTP Security Headers", col, f"{score}% coverage", rows, hh.get("issues", []), S, fallback=fb)
 
@@ -718,11 +734,13 @@ def cat_dns(d, S):
     high = [p for p in ports if p.get("risk") == "high"]
     col  = _tl(len(high) == 0 and len(ports) <= 2, len(high) == 0)
     port_str = ", ".join(f"{p['port']}/{p['service']}" for p in ports) or "None"
+    zt = dns.get("zone_transfer", {})
     rows = [
         ("Open ports",    port_str),
         ("High-risk ports", ", ".join(f"{p['port']}/{p['service']}" for p in high) or "None"),
         ("Server header", dns.get("server_info", {}).get("Server", "—")),
         ("Reverse DNS",   dns.get("reverse_dns") or "—"),
+        ("Zone transfer (AXFR)", f"VULNERABLE — {zt.get('records_leaked',0)} records leaked via {', '.join(zt.get('vulnerable_ns',[]))}" if zt.get("vulnerable") else ("Protected" if zt.get("tested") else "Not tested")),
     ]
     # Per-port exploit intel with group separators and risk-level colours
     risky = [p for p in ports if p.get("risk") in ("high", "medium", "critical")]
@@ -1035,12 +1053,16 @@ def cat_admin(d, S):
 def cat_subdomains(d, S):
     subs  = d.get("subdomains", {})
     risky = subs.get("risky_subdomains", [])
-    col   = C_AMBER if risky else C_GREEN
+    takeover = subs.get("takeover_vulnerable", [])
+    col   = C_CRITICAL if takeover else (C_AMBER if risky else C_GREEN)
     rows  = [
         ("Total subdomains", subs.get("total_count", 0)),
         ("Risky subdomains", len(risky)),
         ("Risky names",      ", ".join(risky[:6]) or "None"),
+        ("Takeover vulnerable", f"{len(takeover)} CRITICAL" if takeover else "None detected"),
     ]
+    for tv in takeover[:5]:
+        rows.append((f"  {tv.get('subdomain','')}", f"CNAME → {tv.get('cname_target','')} ({tv.get('service','')}) — TAKEOVER POSSIBLE"))
     fb = f"{len(risky)} subdomain(s) with risky names (e.g. dev, staging, admin) — verify these are not publicly accessible." if risky else f"{subs.get('total_count',0)} subdomain(s) discovered — none flagged as risky."
     parts = build_cat_card("Subdomain Exposure (CT Logs)", col,
                           f"{subs.get('total_count',0)} found, {len(risky)} risky",
@@ -1356,12 +1378,18 @@ def cat_dehashed(d, S):
     status_text = ("API key not configured" if status == "no_api_key" else
                    "API endpoint unavailable — check subscription" if is_error else
                    "Completed")
+    cb = dh.get("credential_breakdown", {})
     rows = [
         ("Status",        status_text),
         ("Total records", total),
         ("Unique emails", dh.get("unique_emails", 0)),
         ("Passwords in leaks", "Yes — CRITICAL" if dh.get("has_passwords") else "No"),
     ]
+    if cb:
+        rows.append(("Plaintext passwords", f"{cb.get('plaintext_count', 0)} — IMMEDIATE RISK" if cb.get('plaintext_count') else "0"))
+        rows.append(("Hashed credentials", f"{cb.get('hashed_count', 0)} ({', '.join(f'{k}: {v}' for k, v in cb.get('hash_types', {}).items())})" if cb.get('hashed_count') else "0"))
+        rows.append(("Weak hashes (MD5/SHA-1)", f"{cb.get('weak_hash_count', 0)} — easily crackable" if cb.get('weak_hash_count') else "0"))
+        rows.append(("Corporate vs Personal", f"{cb.get('corporate_count', 0)} corporate | {cb.get('personal_count', 0)} personal"))
     if dh.get("sample_emails"):
         rows.append(("Affected emails", " | ".join(dh["sample_emails"][:5])))
     if dh.get("breach_sources"):

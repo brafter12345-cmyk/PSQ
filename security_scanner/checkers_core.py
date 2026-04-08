@@ -35,6 +35,7 @@ class SSLChecker:
             # HSTS + CAA always via separate checks
             result["hsts"] = self._check_hsts(domain)
             result["caa_records"] = self._check_caa(domain)
+            result["caa_policy"] = self._parse_caa(result["caa_records"])
 
             # Calculate grade from all collected data
             grade, score, issues = self._calculate_grade(
@@ -239,6 +240,27 @@ class SSLChecker:
         except Exception:
             return []
 
+    def _parse_caa(self, caa_records: list) -> dict:
+        """Parse CAA records into structured policy data.
+        CAA records look like: '0 issue "letsencrypt.org"', '0 issuewild ";"', '0 iodef "mailto:..."'
+        """
+        result = {"issue": [], "issuewild": [], "iodef": [], "restrictive": False}
+        for rec in caa_records:
+            parts = str(rec).split(None, 2)  # e.g. ['0', 'issue', '"letsencrypt.org"']
+            if len(parts) >= 3:
+                tag = parts[1].lower()
+                value = parts[2].strip('"').strip()
+                if tag == "issue":
+                    result["issue"].append(value)
+                elif tag == "issuewild":
+                    result["issuewild"].append(value)
+                elif tag == "iodef":
+                    result["iodef"].append(value)
+        # Restrictive = at least one 'issue' tag that limits which CAs can issue
+        # A value of ";" means "no CA is allowed" (deny). Any non-empty, non-";" value restricts to specific CAs.
+        result["restrictive"] = len(result["issue"]) > 0
+        return result
+
     def _calculate_grade(self, cert, tls, cipher, hsts,
                          ocsp_stapling=None, cert_chain_valid=None,
                          key_size=None, caa_records=None) -> tuple:
@@ -285,7 +307,7 @@ class SSLChecker:
             ded += 5; issues.append("OCSP stapling not enabled — slower certificate revocation checks")
         # CAA records
         if caa_records is not None and len(caa_records) == 0:
-            ded += 3; issues.append("No CAA records — any CA can issue certificates for this domain")
+            ded += 5; issues.append("No CAA records — any CA can issue certificates for this domain")
 
         score = max(0, 100 - ded)
         grade = ("A+" if score >= 95 else "A" if score >= 85 else "B" if score >= 70
@@ -497,6 +519,7 @@ class EmailHardeningChecker:
             "mta_sts": {"present": False, "mode": None},
             "bimi": {"present": False, "has_vmc": False},
             "dane": {"present": False},
+            "tls_rpt": {"present": False, "rua": None},
             "issues": [], "score": 0,
         }
         if not DNS_AVAILABLE or not REQUESTS_AVAILABLE:
@@ -505,8 +528,9 @@ class EmailHardeningChecker:
             result["mta_sts"] = self._check_mta_sts(domain)
             result["bimi"] = self._check_bimi(domain)
             result["dane"] = self._check_dane(domain)
+            result["tls_rpt"] = self._check_tls_rpt(domain)
             result["score"], result["issues"] = self._calculate_score(
-                result["mta_sts"], result["bimi"], result["dane"])
+                result["mta_sts"], result["bimi"], result["dane"], result["tls_rpt"])
         except Exception as e:
             result["status"] = "error"; result["error"] = str(e)
         return result
@@ -558,7 +582,26 @@ class EmailHardeningChecker:
             pass
         return {"present": False}
 
-    def _calculate_score(self, mta_sts, bimi, dane) -> tuple:
+    def _check_tls_rpt(self, domain: str) -> dict:
+        """Check for TLS-RPT (RFC 8460) — _smtp._tls.{domain} TXT record."""
+        try:
+            answers = dns.resolver.resolve(f"_smtp._tls.{domain}", "TXT", lifetime=5)
+            for rdata in answers:
+                txt = "".join(s.decode() if isinstance(s, bytes) else s for s in rdata.strings)
+                if "v=TLSRPTv1" in txt:
+                    # Extract reporting URI (rua=mailto:... or rua=https://...)
+                    rua = None
+                    m = re.search(r"rua=([^;\s]+)", txt)
+                    if m:
+                        rua = m.group(1)
+                    return {"present": True, "rua": rua}
+        except Exception:
+            pass
+        return {"present": False, "rua": None}
+
+    def _calculate_score(self, mta_sts, bimi, dane, tls_rpt=None) -> tuple:
+        if tls_rpt is None:
+            tls_rpt = {"present": False}
         score, issues = 0, []
         if mta_sts["present"]:
             score += 4
@@ -574,6 +617,10 @@ class EmailHardeningChecker:
             score += 1
         else:
             issues.append("DANE/TLSA not configured for mail servers")
+        if tls_rpt["present"]:
+            score += 1
+        else:
+            issues.append("TLS-RPT not configured — no reporting of email TLS delivery failures")
         return min(score, 10), issues
 
 
@@ -582,8 +629,9 @@ class EmailHardeningChecker:
 # ---------------------------------------------------------------------------
 
 class HTTPHeaderChecker:
+    # CSP presence: 10 pts, CSP quality: 0-10 pts, total CSP weight = 20
     HEADERS = {
-        "content-security-policy": ("Content-Security-Policy", 20),
+        "content-security-policy": ("Content-Security-Policy", 10),
         "x-frame-options": ("X-Frame-Options", 15),
         "x-content-type-options": ("X-Content-Type-Options", 15),
         "strict-transport-security": ("Strict-Transport-Security", 20),
@@ -591,8 +639,84 @@ class HTTPHeaderChecker:
         "permissions-policy": ("Permissions-Policy", 15),
     }
 
+    # Dangerous CSP patterns
+    CSP_DANGEROUS = {
+        "'unsafe-inline'": "Allows inline scripts — defeats most XSS protections",
+        "'unsafe-eval'":   "Allows eval() — enables code injection attacks",
+        "*":               "Wildcard source — any domain can load resources",
+        "data:":           "data: URIs in script-src — enables XSS via encoded payloads",
+    }
+    # Critical CSP directives that should be present
+    CSP_CRITICAL_DIRECTIVES = ["default-src", "script-src", "frame-ancestors", "object-src", "base-uri"]
+
+    def _analyze_csp(self, csp_value: str) -> dict:
+        """Parse and score a Content-Security-Policy header value."""
+        result = {
+            "score": 0,            # 0-100 quality score
+            "directives": {},      # parsed directive → [sources]
+            "dangerous": [],       # list of dangerous patterns found
+            "missing_critical": [],  # critical directives not present
+        }
+        if not csp_value:
+            return result
+
+        # Parse directives: "default-src 'self'; script-src 'self' cdn.example.com"
+        for directive_str in csp_value.split(";"):
+            directive_str = directive_str.strip()
+            if not directive_str:
+                continue
+            parts = directive_str.split()
+            if parts:
+                directive_name = parts[0].lower()
+                sources = [s.lower() for s in parts[1:]] if len(parts) > 1 else []
+                result["directives"][directive_name] = sources
+
+        # Check for dangerous patterns
+        script_src = result["directives"].get("script-src", result["directives"].get("default-src", []))
+        style_src = result["directives"].get("style-src", result["directives"].get("default-src", []))
+        all_sources = []
+        for sources in result["directives"].values():
+            all_sources.extend(sources)
+
+        for pattern, description in self.CSP_DANGEROUS.items():
+            if pattern == "*":
+                # Check wildcard in script-src specifically
+                if "*" in script_src:
+                    result["dangerous"].append(f"Wildcard (*) in script-src — {description}")
+            elif pattern == "data:":
+                if "data:" in script_src:
+                    result["dangerous"].append(f"data: in script-src — {description}")
+            else:
+                if pattern in script_src or pattern in style_src:
+                    result["dangerous"].append(f"{pattern} detected — {description}")
+
+        # Check for missing critical directives
+        for directive in self.CSP_CRITICAL_DIRECTIVES:
+            if directive not in result["directives"]:
+                result["missing_critical"].append(directive)
+
+        # Calculate quality score (0-100)
+        score = 50  # Base score for having CSP at all
+        # Deductions for dangerous patterns
+        score -= len(result["dangerous"]) * 15
+        # Deductions for missing critical directives
+        score -= len(result["missing_critical"]) * 8
+        # Bonus for restrictive policies
+        if "'self'" in script_src and "'unsafe-inline'" not in script_src and "'unsafe-eval'" not in script_src:
+            score += 20  # Restrictive script-src
+        if "frame-ancestors" in result["directives"]:
+            score += 10  # Anti-clickjacking
+        if "'none'" in result["directives"].get("object-src", []):
+            score += 10  # Blocks Flash/plugins
+        if "'none'" in result["directives"].get("base-uri", []):
+            score += 10  # Prevents base tag hijacking
+
+        result["score"] = max(0, min(100, score))
+        return result
+
     def check(self, domain: str) -> dict:
-        result = {"status": "completed", "headers": {}, "score": 0, "issues": []}
+        result = {"status": "completed", "headers": {}, "score": 0, "issues": [],
+                  "csp_quality": None}
         if not REQUESTS_AVAILABLE:
             result["status"] = "error"; result["error"] = "requests not installed"; return result
         try:
@@ -608,6 +732,25 @@ class HTTPHeaderChecker:
                     earned += weight
                 else:
                     result["issues"].append(f"Missing security header: {label}")
+
+            # CSP quality analysis (adds up to 10 bonus points to the total weight)
+            csp_val = headers_lower.get("content-security-policy")
+            if csp_val:
+                csp_quality = self._analyze_csp(csp_val)
+                result["csp_quality"] = csp_quality
+                # Add CSP quality bonus (0-10 points on top of base CSP presence weight)
+                csp_bonus = round(csp_quality["score"] / 10)  # 0-10 pts
+                earned += csp_bonus
+                total_weight += 10  # CSP quality weight
+                # Add issues for dangerous CSP patterns
+                for danger in csp_quality["dangerous"]:
+                    result["issues"].append(f"CSP quality issue: {danger}")
+                if csp_quality["missing_critical"]:
+                    result["issues"].append(
+                        f"CSP missing critical directives: {', '.join(csp_quality['missing_critical'])}")
+            else:
+                total_weight += 10  # Still count quality weight even if CSP absent
+
             result["score"] = round((earned / total_weight) * 100) if total_weight else 0
         except Exception as e:
             result["status"] = "error"; result["error"] = str(e)

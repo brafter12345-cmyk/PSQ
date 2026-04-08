@@ -28,6 +28,39 @@ class SubdomainChecker:
         "cpanel", "owa", "exchange", "ftp", "intranet",
     ]
 
+    # Subdomain takeover signatures: CNAME target patterns → (service, HTTP fingerprint)
+    TAKEOVER_SIGNATURES = {
+        "github.io":               ("GitHub Pages",  "There isn't a GitHub Pages site here"),
+        "s3.amazonaws.com":        ("AWS S3",        "NoSuchBucket"),
+        "s3-website":              ("AWS S3",        "NoSuchBucket"),
+        "herokuapp.com":           ("Heroku",        "No such app"),
+        "herokudns.com":           ("Heroku",        "No such app"),
+        "azurewebsites.net":       ("Azure",         "404 Web Site not found"),
+        "cloudapp.net":            ("Azure",         None),
+        "trafficmanager.net":      ("Azure TM",      None),
+        "blob.core.windows.net":   ("Azure Blob",    "BlobNotFound"),
+        "ghost.io":                ("Ghost",         "Domain is not configured"),
+        "myshopify.com":           ("Shopify",       "Sorry, this shop is currently unavailable"),
+        "shopifycloud.com":        ("Shopify",       None),
+        "surge.sh":                ("Surge",         "project not found"),
+        "bitbucket.io":            ("Bitbucket",     "Repository not found"),
+        "wordpress.com":           ("WordPress.com", "Do you want to register"),
+        "pantheonsite.io":         ("Pantheon",      "404 error unknown site"),
+        "unbouncepages.com":       ("Unbounce",      "The requested URL was not found"),
+        "zendesk.com":             ("Zendesk",       "Help Center Closed"),
+        "teamwork.com":            ("Teamwork",      None),
+        "helpjuice.com":           ("Helpjuice",     "We could not find what you're looking for"),
+        "helpscoutdocs.com":       ("HelpScout",     "No settings were found"),
+        "cargo.site":              ("Cargo",         None),
+        "statuspage.io":           ("Statuspage",    None),
+        "fastly.net":              ("Fastly",        "Fastly error: unknown domain"),
+        "netlify.app":             ("Netlify",       "Not Found - Request ID"),
+        "fly.dev":                 ("Fly.io",        None),
+        "vercel.app":              ("Vercel",        None),
+        "render.onrender.com":     ("Render",        None),
+        "cname.vercel-dns.com":    ("Vercel",        None),
+    }
+
     @staticmethod
     def _resolves(hostname: str) -> list:
         """Try to resolve a hostname, return list of IPs or empty list."""
@@ -36,6 +69,58 @@ class SubdomainChecker:
             return list(set(addr[4][0] for addr in answers))
         except Exception:
             return []
+
+    def _check_cname_takeover(self, subdomain: str) -> Optional[dict]:
+        """Check if a subdomain's CNAME points to an unclaimed/dangling service.
+        Returns takeover info dict if vulnerable, None otherwise."""
+        if not DNS_AVAILABLE:
+            return None
+        try:
+            answers = dns.resolver.resolve(subdomain, "CNAME", lifetime=3)
+            cname_target = str(answers[0].target).rstrip(".")
+        except Exception:
+            return None  # No CNAME record — not vulnerable to CNAME takeover
+
+        # Check CNAME target against known-vulnerable service patterns
+        for pattern, (service, fingerprint) in self.TAKEOVER_SIGNATURES.items():
+            if pattern in cname_target.lower():
+                # CNAME matches a known service — check if the target is dangling
+                # A dangling CNAME means the target doesn't resolve (NXDOMAIN) or
+                # returns a known "not configured" page
+                is_dangling = False
+                try:
+                    socket.getaddrinfo(cname_target, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+                    # Target resolves — check HTTP fingerprint if available
+                    if fingerprint:
+                        try:
+                            r = requests.get(f"https://{subdomain}", timeout=5,
+                                             headers={"User-Agent": USER_AGENT},
+                                             allow_redirects=True, verify=False)
+                            if fingerprint.lower() in r.text.lower():
+                                is_dangling = True
+                        except Exception:
+                            try:
+                                r = requests.get(f"http://{subdomain}", timeout=5,
+                                                 headers={"User-Agent": USER_AGENT},
+                                                 allow_redirects=True)
+                                if fingerprint.lower() in r.text.lower():
+                                    is_dangling = True
+                            except Exception:
+                                pass
+                except socket.gaierror:
+                    # CNAME target doesn't resolve — dangling!
+                    is_dangling = True
+
+                if is_dangling:
+                    return {
+                        "subdomain": subdomain,
+                        "cname_target": cname_target,
+                        "service": service,
+                        "risk": "critical",
+                    }
+                else:
+                    return None  # CNAME matches pattern but target is live
+        return None  # CNAME doesn't match any known-vulnerable patterns
 
     def check(self, domain: str) -> dict:
         result = {
@@ -118,6 +203,26 @@ class SubdomainChecker:
         for ips in resolved_ips.values():
             all_ips.update(ips)
         result["unique_ips_found"] = len(all_ips)
+
+        # --- Check for subdomain takeover vulnerabilities ---
+        takeover_vulnerable = []
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            futures = {ex.submit(self._check_cname_takeover, sub): sub for sub in subdomains[:60]}
+            for future in as_completed(futures, timeout=30):
+                try:
+                    result_to = future.result(timeout=5)
+                    if result_to:
+                        takeover_vulnerable.append(result_to)
+                except Exception:
+                    pass
+        result["takeover_vulnerable"] = takeover_vulnerable
+        if takeover_vulnerable:
+            for tv in takeover_vulnerable:
+                result["issues"].append(
+                    f"CRITICAL: Subdomain takeover possible — {tv['subdomain']} CNAME points to "
+                    f"unclaimed {tv['service']} ({tv['cname_target']})"
+                )
+            result["score"] = max(0, result["score"] - len(takeover_vulnerable) * 15)
 
         # --- Identify risky subdomains ---
         risky = [s for s in subdomains if any(k in s for k in self.RISKY_KEYWORDS)]
@@ -321,6 +426,7 @@ class DNSInfrastructureChecker:
         result = {
             "status": "completed", "dns_records": {}, "reverse_dns": None,
             "open_ports": [], "server_info": {}, "issues": [], "risk_score": 0,
+            "zone_transfer": {"tested": False, "vulnerable": False, "ns_tested": 0, "records_leaked": 0},
         }
         if ip:
             result["ip"] = ip
@@ -328,12 +434,42 @@ class DNSInfrastructureChecker:
             if DNS_AVAILABLE:
                 result["dns_records"] = self._get_dns_records(domain)
                 result["reverse_dns"] = self._get_reverse_dns(domain, ip=ip)
+                result["zone_transfer"] = self._check_zone_transfer(domain, result["dns_records"])
             result["open_ports"] = self._scan_ports(domain, ip=ip)
             result["server_info"] = self._fingerprint_server(domain)
-            result["risk_score"], result["issues"] = self._assess_risk(result["open_ports"])
+            result["risk_score"], result["issues"] = self._assess_risk(
+                result["open_ports"], result.get("zone_transfer"))
         except Exception as e:
             result["status"] = "error"; result["error"] = str(e)
         return result
+
+    def _check_zone_transfer(self, domain: str, dns_records: dict) -> dict:
+        """Attempt AXFR zone transfer against each NS server. Most will refuse (expected).
+        A successful transfer is a CRITICAL finding — full DNS zone disclosure."""
+        zt = {"tested": False, "vulnerable": False, "ns_tested": 0,
+              "records_leaked": 0, "vulnerable_ns": []}
+        ns_servers = dns_records.get("NS", [])
+        if not ns_servers:
+            return zt
+        zt["tested"] = True
+        try:
+            import dns.query
+            import dns.zone
+        except ImportError:
+            return zt
+        for ns in ns_servers[:4]:  # Test up to 4 NS servers
+            ns = ns.rstrip(".")
+            zt["ns_tested"] += 1
+            try:
+                zone = dns.zone.from_xfr(dns.query.xfr(ns, domain, lifetime=5))
+                record_count = len(zone.nodes)
+                if record_count > 0:
+                    zt["vulnerable"] = True
+                    zt["records_leaked"] += record_count
+                    zt["vulnerable_ns"].append(ns)
+            except Exception:
+                pass  # Refused/timeout is expected and safe
+        return zt
 
     def _get_dns_records(self, domain: str) -> dict:
         records = {}
@@ -470,7 +606,7 @@ class DNSInfrastructureChecker:
             pass
         return info
 
-    def _assess_risk(self, open_ports: list) -> tuple:
+    def _assess_risk(self, open_ports: list, zone_transfer: dict = None) -> tuple:
         issues, score = [], 0
         for p in open_ports:
             # Enrich port data with exploit intelligence
@@ -492,6 +628,15 @@ class DNSInfrastructureChecker:
                 score += 15
                 issues.append(f"Medium-risk port open: {p['port']} ({p['service']}) — {desc}" if desc
                               else f"Medium-risk port open: {p['port']} ({p['service']})")
+        # Zone transfer vulnerability
+        if zone_transfer and zone_transfer.get("vulnerable"):
+            score += 50
+            ns_list = ", ".join(zone_transfer.get("vulnerable_ns", []))
+            issues.append(
+                f"CRITICAL: Zone transfer (AXFR) permitted on {ns_list} — "
+                f"{zone_transfer.get('records_leaked', 0)} DNS records disclosed. "
+                "Attacker can enumerate entire DNS zone including internal hostnames."
+            )
         return min(score, 150), issues
 
 
