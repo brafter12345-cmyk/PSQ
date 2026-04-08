@@ -858,111 +858,154 @@ class RansomwareIndex:
     Calculates 0.0-1.0 ransomware susceptibility score from scan results.
     Higher = more susceptible. Uses existing checker outputs + user-provided
     industry/revenue context for multipliers.
+
+    Calibration notes (2026-04-08):
+    - Base starts at 0.05 (inherent internet exposure risk)
+    - Factors are additive with diminishing returns above 0.50 raw score
+    - Industry multipliers are modest (1.0-1.15) to avoid inflating mid-range scores
+    - Size multiplier: SMEs neutral (1.0), large enterprises slightly lower (0.95)
+    - Target distribution: clean domain ~0.10-0.15, moderate issues ~0.30-0.50,
+      serious issues ~0.50-0.75, critical (RDP+CVEs+creds) ~0.75-0.90
+    - Score of 0.90+ should only occur with RDP exposed + CISA KEV CVEs + active compromise
     """
+    # Industry multipliers: modest — higher-targeted industries get small uplift
     INDUSTRY_MULTIPLIER = {
-        "healthcare": 1.3, "legal": 1.3, "finance": 1.2,
-        "government": 1.2, "manufacturing": 1.1, "retail": 1.1,
-        "education": 1.1, "tech": 1.0, "other": 1.1,
+        "healthcare": 1.15, "legal": 1.12, "finance": 1.10,
+        "financial services": 1.10, "government": 1.12, "manufacturing": 1.05,
+        "retail": 1.05, "education": 1.05, "tech": 1.0,
+        "technology": 1.0, "other": 1.0,
     }
+
+    @staticmethod
+    def _diminishing(raw_score: float) -> float:
+        """Apply diminishing returns above 0.50 to prevent score inflation.
+        Below 0.50: linear (1:1). Above 0.50: each additional 0.10 raw gives
+        progressively less. Approaches 1.0 asymptotically.
+        Formula: if raw <= 0.5: return raw. Else: 0.5 + 0.5 * (1 - e^(-2*(raw-0.5)))
+        """
+        if raw_score <= 0.50:
+            return raw_score
+        import math
+        excess = raw_score - 0.50
+        return 0.50 + 0.50 * (1 - math.exp(-2.0 * excess))
 
     def calculate(self, categories: dict, industry: str = "other",
                   annual_revenue: float = 0) -> dict:
-        base = 0.10
+        base = 0.05  # Inherent internet exposure risk
         factors = []
 
-        # RDP exposed: +0.35 (strongest signal)
-        if categories.get("vpn_remote", {}).get("rdp_exposed"):
-            base += 0.35
-            factors.append({"factor": "RDP (port 3389) exposed to internet", "impact": 0.35, "priority": 1})
+        # --- P1: Critical findings (strongest ransomware signals) ---
 
-        # Exposed database/service ports: +0.15 each, cap 0.30
+        # RDP exposed: +0.25 (strongest single signal — #1 ransomware vector)
+        if categories.get("vpn_remote", {}).get("rdp_exposed"):
+            base += 0.25
+            factors.append({"factor": "RDP (port 3389) exposed to internet", "impact": 0.25, "priority": 1})
+
+        # Exposed database/service ports: +0.10 each, cap 0.20
         exposed = categories.get("high_risk_protocols", {}).get("exposed_services", [])
         db_ports = [s for s in exposed if s.get("port") in (27017, 6379, 9200, 5432, 1433, 5984, 3306)]
-        db_impact = min(0.30, len(db_ports) * 0.15)
+        db_impact = min(0.20, len(db_ports) * 0.10)
         if db_impact > 0:
             base += db_impact
             factors.append({"factor": f"{len(db_ports)} exposed database port(s)", "impact": round(db_impact, 2), "priority": 1})
 
-        # KEV CVEs: +0.10 each, cap 0.25
+        # KEV CVEs: +0.08 each, cap 0.20 (confirmed actively exploited)
         cves = categories.get("shodan_vulns", {}).get("cves", [])
         kev_count = sum(1 for c in cves if c.get("in_kev"))
-        kev_impact = min(0.25, kev_count * 0.10)
+        kev_impact = min(0.20, kev_count * 0.08)
         if kev_impact > 0:
             base += kev_impact
             factors.append({"factor": f"{kev_count} CISA KEV CVE(s) — actively exploited", "impact": round(kev_impact, 2), "priority": 1})
 
-        # High EPSS CVEs (>0.5): +0.05 each, cap 0.15
+        # --- P2: High-impact findings ---
+
+        # High EPSS CVEs (>0.5): +0.04 each, cap 0.12
         high_epss = sum(1 for c in cves if c.get("epss_score", 0) > 0.5)
-        epss_impact = min(0.15, high_epss * 0.05)
+        epss_impact = min(0.12, high_epss * 0.04)
         if epss_impact > 0:
             base += epss_impact
             factors.append({"factor": f"{high_epss} high-EPSS CVE(s) (>50% exploit probability)", "impact": round(epss_impact, 2), "priority": 2})
 
-        # Other critical/high CVEs: +0.03 each, cap 0.10
+        # Other critical/high CVEs: +0.02 each, cap 0.08
         other_crit = sum(1 for c in cves if c.get("severity") in ("critical", "high") and not c.get("in_kev"))
-        other_impact = min(0.10, other_crit * 0.03)
+        other_impact = min(0.08, other_crit * 0.02)
         if other_impact > 0:
             base += other_impact
             factors.append({"factor": f"{other_crit} unpatched critical/high CVE(s)", "impact": round(other_impact, 2), "priority": 2})
 
-        # Leaked credentials > 100: +0.10
-        dehashed = categories.get("dehashed", {})
-        if dehashed.get("total_entries", 0) > 100:
-            base += 0.10
-            factors.append({"factor": f"{dehashed['total_entries']} credential leaks (Dehashed)", "impact": 0.10, "priority": 2})
-        elif dehashed.get("total_entries", 0) > 0:
-            base += 0.05
-            factors.append({"factor": f"{dehashed['total_entries']} credential leaks (Dehashed)", "impact": 0.05, "priority": 3})
-
-        # Breach history: +0.05 if recent breach
-        breaches = categories.get("breaches", {})
-        if breaches.get("breach_count", 0) > 3:
-            base += 0.05
-            factors.append({"factor": f"{breaches['breach_count']} historical breaches", "impact": 0.05, "priority": 3})
-
-        # No DMARC: +0.05
-        dmarc = categories.get("email_security", {}).get("dmarc", {})
-        if not dmarc.get("present"):
-            base += 0.05
-            factors.append({"factor": "No DMARC record — phishing/BEC vector", "impact": 0.05, "priority": 3})
-        elif dmarc.get("policy") == "none":
-            base += 0.03
-            factors.append({"factor": "DMARC policy is 'none' — not enforced", "impact": 0.03, "priority": 3})
-
-        # No WAF: +0.05
-        if not categories.get("waf", {}).get("detected"):
-            base += 0.05
-            factors.append({"factor": "No WAF detected", "impact": 0.05, "priority": 3})
-
-        # Weak SSL: +0.05
-        ssl_grade = categories.get("ssl", {}).get("grade", "F")
-        if ssl_grade in ("D", "E", "F"):
-            base += 0.05
-            factors.append({"factor": f"Weak SSL (grade {ssl_grade})", "impact": 0.05, "priority": 3})
-
-        # Blacklisted IPs: +0.05
+        # Blacklisted IPs: +0.04
         if categories.get("dnsbl", {}).get("blacklisted"):
-            base += 0.05
-            factors.append({"factor": "IP/domain blacklisted", "impact": 0.05, "priority": 2})
+            base += 0.04
+            factors.append({"factor": "IP/domain blacklisted", "impact": 0.04, "priority": 2})
 
-        # Information disclosure: +0.03 per critical exposure
+        # Information disclosure: +0.02 per critical exposure, cap 0.06
         info = categories.get("info_disclosure", {})
         crit_exposed = sum(1 for p in info.get("exposed_paths", []) if p.get("risk_level") == "critical")
         if crit_exposed > 0:
-            info_impact = min(0.10, crit_exposed * 0.03)
+            info_impact = min(0.06, crit_exposed * 0.02)
             base += info_impact
             factors.append({"factor": f"{crit_exposed} critical file(s) exposed", "impact": round(info_impact, 2), "priority": 2})
 
-        # Apply multipliers
-        ind_mult = self.INDUSTRY_MULTIPLIER.get(industry, 1.1)
-        if annual_revenue > 0 and annual_revenue < 20_000_000:
-            size_mult = 1.2
-        elif annual_revenue >= 500_000_000:
-            size_mult = 0.9
+        # --- P3: Contributing factors (weaker signals, hygiene indicators) ---
+
+        # Leaked credentials: scaled by volume
+        dehashed = categories.get("dehashed", {})
+        dh_total = dehashed.get("total_entries", 0)
+        if dh_total > 100:
+            base += 0.06
+            factors.append({"factor": f"{dh_total} credential leaks (Dehashed)", "impact": 0.06, "priority": 2})
+        elif dh_total > 10:
+            base += 0.04
+            factors.append({"factor": f"{dh_total} credential leaks (Dehashed)", "impact": 0.04, "priority": 3})
+        elif dh_total > 0:
+            base += 0.02
+            factors.append({"factor": f"{dh_total} credential leaks (Dehashed)", "impact": 0.02, "priority": 3})
+
+        # Breach history: +0.03 if significant
+        breaches = categories.get("breaches", {})
+        if breaches.get("breach_count", 0) > 3:
+            base += 0.03
+            factors.append({"factor": f"{breaches['breach_count']} historical breaches", "impact": 0.03, "priority": 3})
+
+        # No DMARC: +0.03 / policy none: +0.02
+        dmarc = categories.get("email_security", {}).get("dmarc", {})
+        if not dmarc.get("present"):
+            base += 0.03
+            factors.append({"factor": "No DMARC record — phishing/BEC vector", "impact": 0.03, "priority": 3})
+        elif dmarc.get("policy") == "none":
+            base += 0.02
+            factors.append({"factor": "DMARC policy is 'none' — not enforced", "impact": 0.02, "priority": 3})
+
+        # No WAF: +0.03
+        if not categories.get("waf", {}).get("detected"):
+            base += 0.03
+            factors.append({"factor": "No WAF detected", "impact": 0.03, "priority": 3})
+
+        # Weak SSL: +0.03
+        ssl_grade = categories.get("ssl", {}).get("grade", "F")
+        if ssl_grade in ("D", "E", "F"):
+            base += 0.03
+            factors.append({"factor": f"Weak SSL (grade {ssl_grade})", "impact": 0.03, "priority": 3})
+
+        # --- Apply diminishing returns + multipliers ---
+        # Diminishing returns prevents stacking of many moderate findings
+        # from pushing the score unrealistically close to 1.0
+        raw_score = base
+        adjusted = self._diminishing(raw_score)
+
+        ind_key = industry.lower().strip() if industry else "other"
+        ind_mult = self.INDUSTRY_MULTIPLIER.get(ind_key, 1.0)
+
+        # Size multiplier: large enterprises assumed to have better internal
+        # defences not visible externally. SMEs are neutral (1.0).
+        if annual_revenue >= 500_000_000:
+            size_mult = 0.95
+        elif annual_revenue >= 100_000_000:
+            size_mult = 0.98
         else:
             size_mult = 1.0
 
-        rsi = min(1.0, round(base * ind_mult * size_mult, 3))
+        rsi = min(1.0, round(adjusted * ind_mult * size_mult, 3))
 
         label = ("Critical" if rsi >= 0.75 else "High" if rsi >= 0.50
                  else "Medium" if rsi >= 0.25 else "Low")
