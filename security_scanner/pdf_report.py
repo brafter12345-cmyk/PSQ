@@ -2112,9 +2112,17 @@ def cat_remediation(results, S):
     for i, step in enumerate(steps[:10], 1):
         rows.append((f"#{i} (P{step['priority']})", f"{step['action']} — saves {cur} {step['annual_savings_estimate']:,.0f}/yr"))
     fb = f"{len(steps)} prioritised remediation steps could reduce annual expected loss by {cur} {savings:,.0f}."
-    return build_cat_card("Remediation Roadmap — Before/After", col,
+    parts = build_cat_card("Remediation Roadmap — Before/After", col,
                           f"{len(steps)} steps — {cur} {savings:,.0f} savings",
                           rows, [], S, fallback=fb)
+    parts.append(Paragraph(
+        "<i>Note: Estimated costs are indicative ranges based on typical SA market rates and are intended "
+        "as a guide for prioritising quick wins and identifying \"bang for buck\" remediation. Actual costs "
+        "will vary based on the organisation's size, existing infrastructure, and whether work is performed "
+        "in-house or outsourced. These figures should be used as a conversation starter, not a project quote.</i>",
+        S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
 
 
 def cat_ransomware_risk(d, S):
@@ -2321,7 +2329,7 @@ def cat_risk_mitigations(d, S):
                       f"{cur} {savings:,.0f}"))
 
     rows.append(("", ""))
-    rows.append(("Note", "Savings are modelled projections based on FAIR methodology"))
+    rows.append(("Note", "Savings are modelled projections based on FAIR methodology. Cost estimates are indicative SA market ranges for prioritisation, not project quotes."))
 
     fb = f"Implementing all recommendations could reduce annual expected loss by {cur} {total_savings:,.0f} ({reduction_pct}%)."
     return build_cat_card("Risk Mitigation Recommendations", C_GREEN,
