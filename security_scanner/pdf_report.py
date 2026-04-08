@@ -241,7 +241,8 @@ def _header_footer(canvas, doc, domain, timestamp):
 # Section helpers
 # ---------------------------------------------------------------------------
 
-def section_header(title: str, S: dict) -> list:
+def _section_header_banner(title: str, S: dict) -> Table:
+    """Return just the navy banner Table for a section header."""
     tbl = Table([[Paragraph(f"  {title}", S["section_hdr"])]], colWidths=[INNER_W])
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, -1), C_NAVY),
@@ -249,13 +250,50 @@ def section_header(title: str, S: dict) -> list:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
         ("LEFTPADDING",   (0, 0), (-1, -1), 0),
     ]))
+    return tbl
+
+
+def section_header(title: str, S: dict) -> list:
+    tbl = _section_header_banner(title, S)
     tbl.keepWithNext = True
     trailing = Spacer(1, 3 * mm)
     trailing.keepWithNext = True
-    # TODO: keepWithNext doesn't reliably bond across KeepTogether blocks in
-    # ReportLab. Fix requires embedding section header inside the first cat
-    # card's KeepTogether — architectural change deferred to optimisation phase.
     return [Spacer(1, 4 * mm), tbl, trailing]
+
+
+def section_with_first_card(title: str, S: dict, card_flowables: list) -> list:
+    """Combine a section header with the first card's KeepTogether to prevent
+    orphaned headers. The section banner is placed inside the KeepTogether so
+    ReportLab treats header + card as one atomic block.
+
+    card_flowables: the list returned by a cat_* function (first element is
+    typically a KeepTogether).
+    """
+    if not card_flowables:
+        return section_header(title, S)
+
+    banner = _section_header_banner(title, S)
+
+    # If the first flowable is a KeepTogether, inject the banner inside it
+    if isinstance(card_flowables[0], KeepTogether):
+        kt = card_flowables[0]
+        # Prepend banner + spacer into the KeepTogether's internal flowables
+        inner = [Spacer(1, 4 * mm), banner, Spacer(1, 3 * mm)] + list(kt._content)
+        card_flowables[0] = KeepTogether(inner)
+    else:
+        # Fallback: wrap banner + enough flowables to prevent orphan.
+        # Pull items until we hit the first KeepTogether (which is the actual card)
+        # or up to 5 items, whichever comes first.
+        first_items = [Spacer(1, 4 * mm), banner, Spacer(1, 3 * mm)]
+        to_keep = 0
+        for j, fl in enumerate(card_flowables):
+            to_keep = j + 1
+            first_items.append(fl)
+            if isinstance(fl, KeepTogether) or to_keep >= 5:
+                break
+        card_flowables = [KeepTogether(first_items)] + card_flowables[to_keep:]
+
+    return card_flowables
 
 
 def badge_text(text: str, bg, fg=C_WHITE) -> Table:
@@ -2963,8 +3001,7 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         ins_data = results.get("insurance", {})
         fin = ins_data.get("financial_impact", {})
         if fin and (fin.get("currency") or fin.get("status") == "completed"):
-            story += section_header("FINANCIAL IMPACT SUMMARY", S)
-            story.append(Spacer(1, 2 * mm))
+            fin_banner = _section_header_banner("FINANCIAL IMPACT SUMMARY", S)
 
             is_zar = fin.get("currency") == "ZAR"
             cur = "R" if is_zar else "$"
@@ -2991,12 +3028,14 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
                 fin_text += f"  |  Monte Carlo P50 (median): <b>{cur} {mc_p50:,.0f}</b>"
             if rec_cover:
                 fin_text += f"  |  Recommended insurance cover: <b>{cur} {rec_cover:,.0f}</b>"
-            story.append(Paragraph(fin_text, S["body"]))
-            story.append(Spacer(1, 4 * mm))
+            # Wrap header + financial text as atomic block
+            story.append(KeepTogether([
+                Spacer(1, 4 * mm), fin_banner, Spacer(1, 3 * mm),
+                Paragraph(fin_text, S["body"]), Spacer(1, 4 * mm)
+            ]))
 
         # ── Why This Matters — The Reality of a Cyber Breach ──────────────
-        story += section_header("WHY THIS MATTERS", S)
-        story.append(Spacer(1, 3 * mm))
+        why_banner = _section_header_banner("WHY THIS MATTERS", S)
 
         # Financial exposure recap
         total_likely = fin.get("total", {}).get("most_likely", 0) if fin else 0
@@ -3013,17 +3052,20 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         dh_total = cats.get("dehashed", {}).get("total_entries", 0)
         hrp_critical = cats.get("high_risk_protocols", {}).get("critical_count", 0)
 
-        story.append(Paragraph(
-            f"<b>Your Estimated Financial Exposure</b>", S["cat_title"]))
-        story.append(Spacer(1, 2 * mm))
-        story.append(Paragraph(
-            f"Based on this assessment, your organisation faces an estimated annual cyber loss of "
-            f"<b>{cur_cta} {mc_p50:,.0f}</b> (median scenario). In a worst-case event, losses could reach "
-            f"<b>{cur_cta} {mc_p95:,.0f}</b>. These figures are derived from a Monte Carlo simulation of "
-            f"10,000 scenarios modelling data breach, ransomware, and business interruption events "
-            f"specific to your industry and risk profile.",
-            S["body"]))
-        story.append(Spacer(1, 4 * mm))
+        # Wrap WHY THIS MATTERS header with first content block
+        story.append(KeepTogether([
+            Spacer(1, 4 * mm), why_banner, Spacer(1, 3 * mm),
+            Paragraph(f"<b>Your Estimated Financial Exposure</b>", S["cat_title"]),
+            Spacer(1, 2 * mm),
+            Paragraph(
+                f"Based on this assessment, your organisation faces an estimated annual cyber loss of "
+                f"<b>{cur_cta} {mc_p50:,.0f}</b> (median scenario). In a worst-case event, losses could reach "
+                f"<b>{cur_cta} {mc_p95:,.0f}</b>. These figures are derived from a Monte Carlo simulation of "
+                f"10,000 scenarios modelling data breach, ransomware, and business interruption events "
+                f"specific to your industry and risk profile.",
+                S["body"]),
+            Spacer(1, 4 * mm),
+        ]))
 
         # The human cost of a breach
         story.append(Paragraph(
@@ -3169,43 +3211,36 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
 
         # ── Insurance Analytics ─────────────────────────────────────────────
         if results.get("insurance"):
-            story += section_header("INSURANCE ANALYTICS", S)
-            story += cat_rsi(results, S)
+            story += section_with_first_card("INSURANCE ANALYTICS", S, cat_rsi(results, S))
             story += cat_dbi(results, S)
             story += cat_financial_impact(results.get("insurance", {}), S)
             story += cat_risk_mitigations(results.get("insurance", {}), S)
             story += cat_remediation(results, S)
 
         # ── Discovery ───────────────────────────────────────────────────────
-        story += section_header("DISCOVERY", S)
-        story += cat_web_ranking(cats, S)
+        story += section_with_first_card("DISCOVERY", S, cat_web_ranking(cats, S))
 
         # ── Core Security ───────────────────────────────────────────────────
-        story += section_header("CORE SECURITY", S)
-        story += cat_ssl(cats, S)
+        story += section_with_first_card("CORE SECURITY", S, cat_ssl(cats, S))
         story += cat_headers(cats, S)
         story += cat_waf(cats, S)
         story += cat_website(cats, S)
 
         # ── Information Security ────────────────────────────────────────────
-        story += section_header("INFORMATION SECURITY", S)
-        story += cat_info_disclosure(cats, S)
+        story += section_with_first_card("INFORMATION SECURITY", S, cat_info_disclosure(cats, S))
 
         # ── Email Security ──────────────────────────────────────────────────
-        story += section_header("EMAIL SECURITY", S)
-        story += cat_email(cats, S)
+        story += section_with_first_card("EMAIL SECURITY", S, cat_email(cats, S))
         story += cat_email_hardening(cats, S)
 
         # ── Network & Infrastructure ────────────────────────────────────────
-        story += section_header("NETWORK & INFRASTRUCTURE", S)
-        story += cat_dns(cats, S)
+        story += section_with_first_card("NETWORK & INFRASTRUCTURE", S, cat_dns(cats, S))
         story += cat_hrp(cats, S)
         story += cat_cloud(cats, S)
         story += cat_vpn(cats, S)
 
         # ── Exposure & Reputation ───────────────────────────────────────────
-        story += section_header("EXPOSURE & REPUTATION", S)
-        story += cat_breaches(cats, S)
+        story += section_with_first_card("EXPOSURE & REPUTATION", S, cat_breaches(cats, S))
         story += cat_dnsbl(cats, S)
         story += cat_admin(cats, S)
         story += cat_subdomains(cats, S)
@@ -3218,8 +3253,7 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         story += cat_fraudulent_domains(cats, S)
 
         # ── Technology & Governance ─────────────────────────────────────────
-        story += section_header("TECHNOLOGY & GOVERNANCE", S)
-        story += cat_tech(cats, S)
+        story += section_with_first_card("TECHNOLOGY & GOVERNANCE", S, cat_tech(cats, S))
         story += cat_domain(cats, S)
         story += cat_securitytrails(cats, S)
         story += cat_privacy_compliance(cats, S)
@@ -3228,18 +3262,18 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
 
         # ── Compliance Framework Mapping ────────────────────────────────────
         if results.get("compliance"):
-            story += section_header("COMPLIANCE FRAMEWORK MAPPING", S)
-            story += cat_compliance_frameworks(results, S)
+            story += section_with_first_card("COMPLIANCE FRAMEWORK MAPPING", S, cat_compliance_frameworks(results, S))
 
         # ── Recommendations ─────────────────────────────────────────────────
         if recs:
-            story += section_header("REMEDIATION RECOMMENDATIONS", S)
-            story.append(Paragraph(
+            # Wrap header + intro as a single KeepTogether to prevent orphan
+            banner = _section_header_banner("REMEDIATION RECOMMENDATIONS", S)
+            intro = Paragraph(
                 "The following prioritised recommendations are derived from the findings throughout this report. "
                 "Each recommendation addresses a specific vulnerability or configuration gap identified during the "
                 "scan. Detailed context and per-finding guidance is provided within each section above.",
-                S["body"]))
-            story.append(Spacer(1, 3 * mm))
+                S["body"])
+            story.append(KeepTogether([Spacer(1, 4 * mm), banner, Spacer(1, 3 * mm), intro, Spacer(1, 3 * mm)]))
             for i, rec in enumerate(recs, 1):
                 story.append(Paragraph(
                     f'<font name="Helvetica-Bold" color="{C_BLUE}">{i}.</font>&nbsp;&nbsp;{rec}',
