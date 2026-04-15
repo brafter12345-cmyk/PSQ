@@ -166,6 +166,34 @@
           </div>
         </div>
 
+        <div style="margin:10px 0 6px;font-size:.76rem;font-weight:600;color:var(--muted,#94a3b8);text-transform:uppercase;letter-spacing:.5px;">Regulatory Exposure</div>
+
+        <div class="field">
+          <div class="toggle-row">
+            <label class="toggle">
+              <input type="checkbox" id="gdpr-check" name="gdpr_applicable" />
+              <span class="toggle-slider"></span>
+            </label>
+            <div>
+              <div class="toggle-label">Company processes EU personal data (GDPR)</div>
+              <div class="toggle-note">Increases regulatory/third-party liability exposure. Applies to companies with EU customers, subsidiaries, or data processing.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="toggle-row">
+            <label class="toggle">
+              <input type="checkbox" id="pci-check" name="pci_applicable" />
+              <span class="toggle-slider"></span>
+            </label>
+            <div>
+              <div class="toggle-label">Company processes card data (PCI DSS)</div>
+              <div class="toggle-note">Adds PCI fine exposure + card reissue costs. Applies to companies storing/processing payment card data.</div>
+            </div>
+          </div>
+        </div>
+
         <div class="field">
           <label class="field-label" for="client-ips">Additional External IPs (optional)</label>
           <div style="display:flex;gap:10px;align-items:flex-start;">
@@ -258,6 +286,10 @@ form.addEventListener('submit', async (e) => {
   if (document.getElementById('fraud-check').checked) body.include_fraudulent_domains = true;
   if (!document.getElementById('dehashed-check').checked) body.skip_dehashed = true;
   if (!document.getElementById('intelx-check').checked) body.skip_intelx = true;
+
+  // Regulatory exposure flags
+  if (document.getElementById('gdpr-check').checked) body.gdpr_applicable = true;
+  if (document.getElementById('pci-check').checked) body.pci_applicable = true;
 
   // Parse client-supplied IPs
   const ipText = document.getElementById('client-ips').value.trim();

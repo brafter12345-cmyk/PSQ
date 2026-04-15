@@ -574,11 +574,12 @@
         </div>
         {% endif %}
 
-        {# Scenario breakdown #}
-        <div style="font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Scenario Breakdown</div>
+        {# Cost category breakdown (4-category IBM-aligned view) #}
+        {% set sc4 = fin.scenarios_4cat if fin.scenarios_4cat is defined else {} %}
+        <div style="font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Cost Category Breakdown</div>
         <table class="kv-table" style="margin-bottom:14px;">
           <tr style="border-bottom:2px solid var(--border);">
-            <td style="width:180px;font-weight:600;">Data Breach Loss</td>
+            <td style="width:200px;font-weight:600;">Data Breach Exposure</td>
             <td>R {{ '{:,.0f}'.format(db.estimated_loss | default(0)) }} <span style="color:var(--muted);">(P={{ '%.1f'|format((db.probability | default(0)) * 100) }}%)</span></td>
           </tr>
           <tr>
@@ -589,18 +590,21 @@
             <td style="color:var(--muted);padding-left:20px;">POPIA regulatory</td>
             <td>R {{ '{:,.0f}'.format(db.regulatory_fine | default(0)) }}</td>
           </tr>
+          {% if sc4 %}
+          <tr style="border-bottom:2px solid var(--border);">
+            <td style="font-weight:600;">Detection & Escalation</td>
+            <td>R {{ '{:,.0f}'.format(sc4.detection_escalation.estimated_loss | default(0)) }} <span style="color:var(--muted);">DFIR, forensics, triage</span></td>
+          </tr>
+          <tr style="border-bottom:2px solid var(--border);">
+            <td style="font-weight:600;">Ransom Demand</td>
+            <td>R {{ '{:,.0f}'.format(sc4.ransom_demand.estimated_loss | default(0)) }} <span style="color:var(--muted);">(RSI={{ '%.2f'|format(rw.rsi_score | default(0)) }})</span></td>
+          </tr>
+          {% else %}
           <tr style="border-bottom:2px solid var(--border);">
             <td style="font-weight:600;">Ransomware Loss</td>
             <td>R {{ '{:,.0f}'.format(rw.estimated_loss | default(0)) }} <span style="color:var(--muted);">(RSI={{ '%.2f'|format(rw.rsi_score | default(0)) }})</span></td>
           </tr>
-          <tr>
-            <td style="color:var(--muted);padding-left:20px;">Avg downtime</td>
-            <td>{{ rw.avg_downtime_days | default(22) }} days</td>
-          </tr>
-          <tr>
-            <td style="color:var(--muted);padding-left:20px;">Ransom estimate</td>
-            <td>R {{ '{:,.0f}'.format(rw.ransom_estimate | default(0)) }}</td>
-          </tr>
+          {% endif %}
           <tr style="border-bottom:2px solid var(--border);">
             <td style="font-weight:600;">Bus. Interruption</td>
             <td>R {{ '{:,.0f}'.format(bi.estimated_loss | default(0)) }} <span style="color:var(--muted);">(P={{ '%.1f'|format((bi.probability | default(0)) * 100) }}%)</span></td>

@@ -869,11 +869,32 @@ class RansomwareIndex:
     - Score of 0.90+ should only occur with RDP exposed + CISA KEV CVEs + active compromise
     """
     # Industry multipliers: modest — higher-targeted industries get small uplift
+    # RSI Industry Multiplier — ransomware-specific targeting frequency.
+    # Distinct from general breach TEF (Section 12): ransomware targeting
+    # differs from breach targeting (e.g., manufacturing is #1 ransomware
+    # target but not #1 breach target).
+    # BASELINE: Global data (Sophos 2025 sector reports, Check Point Q3 2025).
+    # SA-specific adjustment applied to Public Sector only (known SA attacks).
+    # All other values require SA calibration — use "Your Value" in Section 3b.
     INDUSTRY_MULTIPLIER = {
-        "healthcare": 1.15, "legal": 1.12, "finance": 1.10,
-        "financial services": 1.10, "government": 1.12, "manufacturing": 1.05,
-        "retail": 1.05, "education": 1.05, "tech": 1.0,
-        "technology": 1.0, "other": 1.0,
+        "manufacturing": 1.30, "industrial": 1.30, "industrial / manufacturing": 1.30,
+        "healthcare": 1.25,
+        "retail": 1.20,
+        "financial services": 1.15, "finance": 1.15,
+        "hospitality": 1.15,
+        "energy": 1.15,
+        "public sector": 1.25, "government": 1.25,  # SA-specific: Transnet, DoJ, NHLS attacks
+        "education": 1.10, "research": 0.90,
+        "legal": 1.10,
+        "technology": 1.05, "tech": 1.05,
+        "services": 1.05,
+        "communications": 1.00, "media": 1.00, "entertainment": 1.00, "pharmaceuticals": 1.00,
+        "transportation": 0.95, "consumer": 0.95,
+        "mining": 0.90,
+        "wholesale trade": 0.85,
+        "agriculture": 0.80,
+        "construction": 0.80,
+        "other": 1.00,
     }
 
     @staticmethod
@@ -909,6 +930,27 @@ class RansomwareIndex:
             base += db_impact
             factors.append({"factor": f"{len(db_ports)} exposed database port(s)", "impact": round(db_impact, 2), "priority": 1})
 
+        # Credential Risk Assessment (composite from Dehashed + Hudson Rock +
+        # IntelX + HIBP enrichment). Uses the multi-layered credential
+        # assessment to determine if credentials are static (old/changed)
+        # or dynamic (active/traded). Replaces individual Dehashed/breach
+        # count factors. Sophos SA 2025: credentials are #1 root cause (34%).
+        cred_risk = categories.get("credential_risk", {})
+        cred_level = cred_risk.get("risk_level", "LOW")
+        if cred_level == "CRITICAL":
+            # Active infostealer or real-time credential exfiltration
+            base += 0.20
+            factors.append({"factor": "CRITICAL credential risk — active compromise detected (infostealer/dark web)", "impact": 0.20, "priority": 1})
+        elif cred_level == "HIGH":
+            # Recent breaches with passwords, dark web mentions, or high volume leaks
+            base += 0.15
+            factors.append({"factor": "HIGH credential risk — recent breaches with password exposure or dark web trading", "impact": 0.15, "priority": 1})
+        elif cred_level == "MEDIUM":
+            # Historical exposure, email-only leaks, older breaches
+            base += 0.08
+            factors.append({"factor": "MEDIUM credential risk — historical credential exposure detected", "impact": 0.08, "priority": 2})
+        # LOW = no contribution to RSI
+
         # KEV CVEs: +0.08 each, cap 0.20 (confirmed actively exploited)
         cves = categories.get("shodan_vulns", {}).get("cves", [])
         kev_count = sum(1 for c in cves if c.get("in_kev"))
@@ -933,59 +975,39 @@ class RansomwareIndex:
             base += other_impact
             factors.append({"factor": f"{other_crit} unpatched critical/high CVE(s)", "impact": round(other_impact, 2), "priority": 2})
 
-        # Blacklisted IPs: +0.04
-        if categories.get("dnsbl", {}).get("blacklisted"):
-            base += 0.04
-            factors.append({"factor": "IP/domain blacklisted", "impact": 0.04, "priority": 2})
+        # NOTE: Blacklisted IPs removed from RSI — reputation signal, not a
+        # direct ransomware entry vector. Retained in overall posture score / DBI.
 
-        # Information disclosure: +0.02 per critical exposure, cap 0.06
+        # Information disclosure: +0.02 per critical exposure, cap 0.08
         info = categories.get("info_disclosure", {})
         crit_exposed = sum(1 for p in info.get("exposed_paths", []) if p.get("risk_level") == "critical")
         if crit_exposed > 0:
-            info_impact = min(0.06, crit_exposed * 0.02)
+            info_impact = min(0.08, crit_exposed * 0.02)
             base += info_impact
             factors.append({"factor": f"{crit_exposed} critical file(s) exposed", "impact": round(info_impact, 2), "priority": 2})
 
-        # --- P3: Contributing factors (weaker signals, hygiene indicators) ---
+        # --- P3: Contributing factors (email vector + hygiene) ---
 
-        # Leaked credentials: scaled by volume
-        dehashed = categories.get("dehashed", {})
-        dh_total = dehashed.get("total_entries", 0)
-        if dh_total > 100:
-            base += 0.06
-            factors.append({"factor": f"{dh_total} credential leaks (Dehashed)", "impact": 0.06, "priority": 2})
-        elif dh_total > 10:
-            base += 0.04
-            factors.append({"factor": f"{dh_total} credential leaks (Dehashed)", "impact": 0.04, "priority": 3})
-        elif dh_total > 0:
-            base += 0.02
-            factors.append({"factor": f"{dh_total} credential leaks (Dehashed)", "impact": 0.02, "priority": 3})
-
-        # Breach history: +0.03 if significant
-        breaches = categories.get("breaches", {})
-        if breaches.get("breach_count", 0) > 3:
-            base += 0.03
-            factors.append({"factor": f"{breaches['breach_count']} historical breaches", "impact": 0.03, "priority": 3})
-
-        # No DMARC: +0.03 / policy none: +0.02
+        # No DMARC: +0.08 / policy none: +0.05
+        # Sophos SA 2025: malicious email = 22% of attacks
         dmarc = categories.get("email_security", {}).get("dmarc", {})
         if not dmarc.get("present"):
-            base += 0.03
-            factors.append({"factor": "No DMARC record — phishing/BEC vector", "impact": 0.03, "priority": 3})
+            base += 0.08
+            factors.append({"factor": "No DMARC record — phishing/BEC vector", "impact": 0.08, "priority": 2})
         elif dmarc.get("policy") == "none":
-            base += 0.02
-            factors.append({"factor": "DMARC policy is 'none' — not enforced", "impact": 0.02, "priority": 3})
+            base += 0.05
+            factors.append({"factor": "DMARC policy is 'none' — not enforced", "impact": 0.05, "priority": 3})
 
-        # No WAF: +0.03
+        # No WAF: +0.05
         if not categories.get("waf", {}).get("detected"):
-            base += 0.03
-            factors.append({"factor": "No WAF detected", "impact": 0.03, "priority": 3})
+            base += 0.05
+            factors.append({"factor": "No WAF detected", "impact": 0.05, "priority": 3})
 
-        # Weak SSL: +0.03
+        # Weak SSL: +0.05
         ssl_grade = categories.get("ssl", {}).get("grade", "F")
         if ssl_grade in ("D", "E", "F"):
-            base += 0.03
-            factors.append({"factor": f"Weak SSL (grade {ssl_grade})", "impact": 0.03, "priority": 3})
+            base += 0.05
+            factors.append({"factor": f"Weak SSL (grade {ssl_grade})", "impact": 0.05, "priority": 3})
 
         # --- Apply diminishing returns + multipliers ---
         # Diminishing returns prevents stacking of many moderate findings
@@ -996,14 +1018,35 @@ class RansomwareIndex:
         ind_key = industry.lower().strip() if industry else "other"
         ind_mult = self.INDUSTRY_MULTIPLIER.get(ind_key, 1.0)
 
-        # Size multiplier: large enterprises assumed to have better internal
-        # defences not visible externally. SMEs are neutral (1.0).
-        if annual_revenue >= 500_000_000:
-            size_mult = 0.95
+        # Size multiplier: reflects security maturity by company size.
+        # Baseline 1.0 at R200M-R300M (~100 employees, Sophos SA 2025 median).
+        # Smaller = more vulnerable (58% cite lack of expertise per Sophos),
+        # but uplift is modest because the scanner already captures actual
+        # posture — the size multiplier only adds what the scanner can't see.
+        # Larger = better internal defences not visible externally.
+        # Revenue bands aligned with SME Rating Engine.
+        if annual_revenue >= 1_000_000_000:
+            size_mult = 0.85    # Enterprise — mature security, DFIR retainers, MDR
+        elif annual_revenue >= 500_000_000:
+            size_mult = 0.90    # Large corporate — CISO, SOC likely
+        elif annual_revenue >= 300_000_000:
+            size_mult = 0.96    # Corporate — established security programme
+        elif annual_revenue >= 200_000_000:
+            size_mult = 1.00    # Baseline — ~100 employees, Sophos SA median
+        elif annual_revenue >= 150_000_000:
+            size_mult = 1.016   # Upper medium — approaching baseline
         elif annual_revenue >= 100_000_000:
-            size_mult = 0.98
+            size_mult = 1.032   # Medium — growing security awareness
+        elif annual_revenue >= 75_000_000:
+            size_mult = 1.048   # Medium — dedicated IT, limited security
+        elif annual_revenue >= 50_000_000:
+            size_mult = 1.06    # Small/medium — emerging IT function
+        elif annual_revenue >= 25_000_000:
+            size_mult = 1.08    # Small — some IT awareness, still constrained
+        elif annual_revenue >= 10_000_000:
+            size_mult = 1.10    # Small — limited budget, shared IT role
         else:
-            size_mult = 1.0
+            size_mult = 1.12    # Micro — no dedicated IT, owner-managed
 
         rsi = min(1.0, round(adjusted * ind_mult * size_mult, 3))
 
@@ -1090,13 +1133,21 @@ class FinancialImpactCalculator:
     # Average ransom demand as % of revenue (capped)
     RANSOM_PCT = 0.03  # 3% of annual revenue
 
+    # ------------------------------------------------------------------
+    # Regulatory exposure: Each jurisdiction computed independently and
+    # summed. POPIA capped at R10M, GDPR at 4% uncapped, PCI at R1M
+    # scaled by non-compliance, other jurisdictions at R2M each.
+    # Replaces the previous multiplier approach — see GAP-008/009.
+    # ------------------------------------------------------------------
+
     def calculate(self, categories: dict, rsi_result: dict,
                   annual_revenue: float, industry: str = "other",
-                  annual_revenue_zar: int = 0) -> dict:
+                  annual_revenue_zar: int = 0,
+                  regulatory_flags: dict = None) -> dict:
 
         # Use ZAR path when ZAR revenue is provided (SA-specific model)
         if annual_revenue_zar > 0:
-            return self._calculate_zar(categories, rsi_result, annual_revenue_zar, industry)
+            return self._calculate_zar(categories, rsi_result, annual_revenue_zar, industry, regulatory_flags)
 
         daily_revenue = annual_revenue / 365 if annual_revenue > 0 else 5_000
 
@@ -1258,90 +1309,497 @@ class FinancialImpactCalculator:
         output["risk_mitigations"] = self._build_mitigations(categories, output)
         return output
 
+    # ------------------------------------------------------------------
+    # Threat Event Frequency (TEF) multipliers per industry
+    # FAIR: Loss Event Frequency = TEF × Vulnerability
+    # TEF reflects how often an industry is targeted by threat actors,
+    # independent of the organisation's security posture (Vulnerability).
+    # Range: 0.80-1.45 (deliberately modest to avoid probability inflation).
+    # Sources: Verizon DBIR 2025, IBM 2025, Sophos SA 2025, SABRIC 2024.
+    # Tuneable via FAIR parameters doc Section 12.
+    # ------------------------------------------------------------------
+    THREAT_EVENT_FREQUENCY = {
+        "Financial Services": 1.45, "Finance": 1.45,
+        "Healthcare": 1.40,
+        "Public Sector": 1.35, "Government": 1.35,
+        "Retail": 1.25,
+        "Hospitality": 1.20,
+        "Manufacturing": 1.15, "Industrial": 1.15, "Industrial / Manufacturing": 1.15,
+        "Technology": 1.10, "Tech": 1.10,
+        "Energy": 1.10,
+        "Education": 1.10, "Research": 0.90,
+        "Services": 1.05, "Legal": 1.05,
+        "Communications": 1.05,
+        "Media": 1.00, "Entertainment": 1.00, "Pharmaceuticals": 1.00,
+        "Transportation": 0.95, "Consumer": 0.95,
+        "Mining": 0.90,
+        "Wholesale Trade": 0.85,
+        "Agriculture": 0.80,
+        "Construction": 0.80,
+        "Other": 1.00,
+    }
+
+    # ------------------------------------------------------------------
+    # Incident-type split ratios (tuneable via FAIR parameters doc)
+    # Each ratio defines what fraction of the parent probability driver
+    # (RSI or p_breach) applies to that incident type.
+    # ------------------------------------------------------------------
+    # Split ratios calibrated from Sophos SA 2025:
+    # - 60% of attacks resulted in encryption
+    # - 39% of encrypted attacks also had data stolen
+    # - True double extortion = 60% × 39% = ~23% (rounded to 0.25)
+    # - Encryption only (no exfil) = 60% - 23% = ~37% (rounded to 0.40)
+    # - Wiper/destructive = ~5% (unchanged)
+    # Breach-family ratios unchanged pending further SA data.
+    INCIDENT_SPLIT_RATIOS = {
+        "double_extortion":   0.25,  # Sophos SA: 60% encrypt × 39% also exfil = ~23%
+        "ransomware_only":    0.40,  # Sophos SA: encryption without exfiltration
+        "wiper_destructive":  0.05,  # Destructive attack (wiper, no ransom demand)
+        "silent_breach":      0.50,  # Breaches discovered late / no demand
+        "data_extortion":     0.20,  # Breaches with extortion demand (no encryption)
+        "opportunistic_breach": 0.30,  # Remaining breaches (opportunistic / automated)
+    }
+
     def _calculate_zar(self, categories: dict, rsi_result: dict,
-                       annual_revenue_zar: int, industry: str) -> dict:
-        """SA-specific ZAR calculation using IBM 2025 SA breach cost data and POPIA fines."""
+                       annual_revenue_zar: int, industry: str,
+                       regulatory_flags: dict = None) -> dict:
+        """SA-specific ZAR calculation using incident-type decomposition.
+
+        Architecture: Rather than three independent scenarios, the model
+        defines six incident types that each assemble a subset of five
+        shared cost components (C1-C5). Results are then aggregated into
+        four reporting categories for the report and frontend.
+
+        Cost Components:
+            C1 = Record/breach costs (IBM cost-per-record x estimated records)
+            C2 = Regulatory fine (POPIA base + jurisdictional exposure multiplier)
+            C3 = Revenue loss from downtime (daily_revenue x days x impact)
+            C4 = Ransom payment (tiered by company size)
+            C5 = Incident response (DFIR, negotiation, recovery)
+
+        Reallocation: BI factor (per industry) and regulatory exposure
+        multiplier work as a conservation-of-cost mechanism. The IBM
+        total breach cost is the anchor; BI factor and regulatory
+        exposure shift the allocation across pillars without inflating
+        or deflating the total.
+        """
+        import numpy as np
+
         # Normalise industry key
         industry_key = industry.title()
         industry_data = SA_INDUSTRY_COSTS.get(industry_key, SA_INDUSTRY_COSTS["Other"])
         rsi_score = rsi_result.get("rsi_score", 0.1)
         daily_revenue = annual_revenue_zar / 365
 
-        # --- Scenario 1: Data Breach (ZAR) ---
-        overall_score = categories.get("_overall_score", 500)  # fallback
-        p_breach = min(1.0, max(0.0, ((100 - overall_score / 10) / 100) * industry_data["multiplier"] * 0.3))
-        estimated_records = max(100, annual_revenue_zar // 50_000)
-        cost_per_record = industry_data["cost_per_record"]
-        regulatory_fine = annual_revenue_zar * 0.02  # POPIA max ~2% of annual turnover
-        data_breach_loss = p_breach * (estimated_records * cost_per_record + regulatory_fine)
+        # ── Probability drivers (from scanner signals) ──
+        # FAIR decomposition: Loss Event Frequency = TEF × Vulnerability
+        #   - Vulnerability = f(scanner posture score) — how likely a threat
+        #     event succeeds given the organisation's defences
+        #   - TEF = f(industry targeting frequency) — how often the industry
+        #     is targeted by threat actors, independent of defences
+        # NOTE: The industry COST multiplier is decoupled from probability
+        # (see GAP-008). TEF is a separate, modest factor based on actual
+        # breach frequency data (Verizon DBIR, IBM, Sophos, SABRIC).
+        overall_score = categories.get("_overall_score", 500)
+        vulnerability = (100 - overall_score / 10) / 100  # 0.0 (perfect) to 1.0 (worst)
+        tef = self.THREAT_EVENT_FREQUENCY.get(industry_key, self.THREAT_EVENT_FREQUENCY.get("Other", 1.0))
+        p_breach = min(1.0, max(0.0, vulnerability * tef * 0.3))
 
-        # --- Scenario 2: Ransomware (ZAR) ---
-        avg_downtime_days = 22
-        if annual_revenue_zar < 50_000_000:
-            ransom_estimate = 500_000
-            ir_cost = 500_000
-        elif annual_revenue_zar < 200_000_000:
-            ransom_estimate = 2_500_000
-            ir_cost = 1_500_000
-        elif annual_revenue_zar < 500_000_000:
-            ransom_estimate = 10_000_000
-            ir_cost = 3_000_000
-        else:
-            ransom_estimate = 50_000_000
-            ir_cost = 5_000_000
-        ransomware_loss = rsi_score * (avg_downtime_days * daily_revenue * 0.5 + ransom_estimate + ir_cost)
-
-        # --- Scenario 3: Business Interruption (ZAR) ---
         waf_detected = categories.get("waf", {}).get("detected", False)
         cdn_detected = categories.get("cloud_cdn", {}).get("cdn_detected", False)
         single_asn = categories.get("external_ips", {}).get("unique_asns", 2) <= 1
-        p_interruption = min(0.5, 0.05 + (0.05 if not waf_detected else 0) + (0.05 if not cdn_detected else 0) + (0.05 if single_asn else 0))
-        impact_factor = min(0.8, 0.3 + (0.15 if not waf_detected else 0) + (0.15 if not cdn_detected else 0) + (0.1 if single_asn else 0))
-        bi_loss = p_interruption * (5 * daily_revenue * impact_factor)
+        p_interruption = min(0.5, 0.05
+                             + (0.05 if not waf_detected else 0)
+                             + (0.05 if not cdn_detected else 0)
+                             + (0.05 if single_asn else 0))
 
-        most_likely = round(data_breach_loss + ransomware_loss + bi_loss)
+        # ── Total breach magnitude (IBM anchor, scaled by revenue) ──
+        # Uses graduated elasticity: flatter for small companies (less aggressive),
+        # steeper for large (scales faster). Median at R200M = IBM SA average.
+        IBM_BREACH_TOTAL = 49_220_000  # R49.22M ransom-inclusive (IBM R44.1M + Sophos R5.12M avg ransom)
+        MEDIAN_REVENUE = 200_000_000   # R200M — SA mid-market reference point
+        C4_PROPORTION = 0.1040         # Ransom share from claims data (ransom-inclusive)
 
-        # --- Monte Carlo Simulation (ZAR) ---
-        # Each parameter is sampled from a PERT distribution around its
-        # point estimate, using ±30-50% ranges based on parameter uncertainty.
-        import numpy as np
-        np.random.seed(42)  # Reproducible results for same input
+        if annual_revenue_zar >= 1_000_000_000:
+            elasticity = 0.35
+        elif annual_revenue_zar >= 500_000_000:
+            elasticity = 0.38
+        elif annual_revenue_zar >= 200_000_000:
+            elasticity = 0.40
+        elif annual_revenue_zar >= 100_000_000:
+            elasticity = 0.44
+        elif annual_revenue_zar >= 50_000_000:
+            elasticity = 0.48
+        elif annual_revenue_zar >= 25_000_000:
+            elasticity = 0.52
+        elif annual_revenue_zar >= 10_000_000:
+            elasticity = 0.58
+        else:
+            elasticity = 0.60
+
+        revenue_ratio = annual_revenue_zar / MEDIAN_REVENUE
+        revenue_scale = revenue_ratio ** elasticity  # Revenue scaling factor (reused)
+
+        # Graduated industry multiplier: for high-risk industries (mult > 1.0),
+        # the premium graduates from 1.0 at micro company toward the full
+        # multiplier at the median (R200M). Small companies don't hold the
+        # same density of sensitive data as large ones in the same industry.
+        # Low-risk industries (mult <= 1.0) stay constant — the discount
+        # reflects data type, not company size.
+        raw_multiplier = industry_data["multiplier"]
+        if raw_multiplier > 1.0:
+            graduation = min(1.0, annual_revenue_zar / MEDIAN_REVENUE)
+            effective_multiplier = 1.0 + (raw_multiplier - 1.0) * graduation
+        else:
+            effective_multiplier = raw_multiplier
+
+        total_breach_magnitude = IBM_BREACH_TOTAL * effective_multiplier * revenue_scale
+        # Revenue-scaled total WITHOUT industry multiplier (for C4 ransom calculation)
+        total_breach_base = IBM_BREACH_TOTAL * revenue_scale
+
+        # Cost-per-record retained as reference metric (not used in calculation)
+        cost_per_record = industry_data["cost_per_record"]
+        estimated_records = max(100, annual_revenue_zar // 50_000)  # reference only
+
+        # ── Cost Component C2: Regulatory fines (independent per jurisdiction) ──
+        # Each jurisdiction has its own fine calculation, computed independently
+        # and summed. This replaces the previous multiplier approach.
+        reg_flags = regulatory_flags or {}
+
+        # POPIA: 2% of turnover, capped at R10M (Section 107)
+        c2_popia = min(10_000_000, annual_revenue_zar * 0.02)
+
+        # GDPR: 4% of global turnover, uncapped (if EU data processed)
+        c2_gdpr = annual_revenue_zar * 0.04 if reg_flags.get("gdpr") else 0
+
+        # PCI DSS: R1M mid-case, scaled by non-compliance.
+        # LIMITATION: External scanner can only assess ~30% of PCI requirements
+        # (10 control areas out of ~250+ sub-requirements). Internal controls
+        # like access management, logging, network segmentation, key management
+        # are invisible. The scanner's PCI score is capped by external visibility
+        # to avoid overstating compliance. Full PCI assessment requires internal audit.
+        if reg_flags.get("pci"):
+            EXTERNAL_PCI_VISIBILITY = 0.30  # we can vouch for ~30% of PCI surface
+            raw_pci_score = categories.get("_compliance_summary", {}).get(
+                "PCI DSS v4.0", {}).get("overall_pct", 50) / 100  # 0.0-1.0
+            adjusted_pci_compliance = raw_pci_score * EXTERNAL_PCI_VISIBILITY
+            c2_pci = 1_000_000 * (1 - adjusted_pci_compliance)
+        else:
+            c2_pci = 0
+
+        # Other jurisdictions: R2M estimated per additional regulated jurisdiction
+        extra_jurisdictions = reg_flags.get("other_jurisdictions", 0)
+        c2_other = extra_jurisdictions * 2_000_000
+
+        c2_regulatory_fine = c2_popia + c2_gdpr + c2_pci + c2_other
+
+        # ── Cost Component C3: Revenue loss from downtime ──
+        # Calculated per-incident-type with specific duration and impact
+        # (see incident type definitions below)
+
+        # ── Cost Component C4: Ransom payment (proportional, NOT industry-scaled) ──
+        # 10.40% of revenue-scaled total WITHOUT industry multiplier.
+        # Ransom demands are driven by company size/ability to pay, not industry.
+        # A R200M bank and R200M farm face similar ransom demands.
+        # Derived from IBM + Sophos SA 2025: R8M × 64% = R5.12M / R49.22M = 10.40%
+        c4_ransom = round(total_breach_base * C4_PROPORTION)
+
+        # ── Cost Component C5: Incident response / D&E cost (tiered) ──
+        # Aligned with SME revenue bands. Small company IR is typically
+        # R250K-R500K (basic DFIR engagement). Scales with infrastructure
+        # complexity, not industry. See Gap Analysis D&E floor discussion.
+        if annual_revenue_zar >= 1_000_000_000:
+            c5_ir = 5_000_000    # Enterprise — full-scale response
+        elif annual_revenue_zar >= 500_000_000:
+            c5_ir = 4_000_000    # Large corporate — CISO + external team
+        elif annual_revenue_zar >= 200_000_000:
+            c5_ir = 2_500_000    # Corporate — full DFIR team
+        elif annual_revenue_zar >= 100_000_000:
+            c5_ir = 1_500_000    # Upper mid-market
+        elif annual_revenue_zar >= 75_000_000:
+            c5_ir = 1_000_000    # Medium — multi-system response
+        elif annual_revenue_zar >= 50_000_000:
+            c5_ir = 750_000      # Mid-market — moderate complexity
+        elif annual_revenue_zar >= 25_000_000:
+            c5_ir = 500_000      # Small/medium — standard engagement
+        elif annual_revenue_zar >= 10_000_000:
+            c5_ir = 350_000      # Small — limited scope
+        else:
+            c5_ir = 250_000      # Micro — basic DFIR engagement
+
+        # ── BI Factor (from industry lookup table) ──
+        # Controls proportional allocation of direct operational downtime.
+        # Ranges from 0.05 (construction) to 1.75 (banks).
+        # TODO: Wire up sub-industry BI factor from lookup table when
+        # sub-industry selection is added to scanner UI. For now, use
+        # industry-level default of 1.0.
+        bi_factor = 1.0  # Default; will be overridden by sub-industry lookup
+
+        # ── Cost Component C3: Business interruption (SA average 25 days) ──
+        # C3 = downtime × daily_revenue × impact_factor × BI_factor
+        # impact_factor (0.50) = average revenue impact across recovery period
+        #   (not binary — reflects systematic recovery from ~90% loss on day 1
+        #   to ~10% loss by end of recovery)
+        # BI_factor = industry-specific IT dependency (from Section 1 lookup)
+        SA_AVG_DOWNTIME = 25  # SA average recovery days (Sophos SA 2025 + global data)
+        IMPACT_FACTOR = 0.50  # Average revenue loss across recovery period
+        c3_bi = SA_AVG_DOWNTIME * daily_revenue * IMPACT_FACTOR * bi_factor
+
+        # ── Cost Component C1: Post-breach liability (RESIDUAL) ──
+        # C1 = total_breach_magnitude - C2 - C3 - C4 - C5
+        # Captures: third-party liability, data restoration, multimedia claims,
+        # notification costs, computer crime — everything not covered by C2-C5.
+        # Anchored to IBM data via total_breach_magnitude.
+        c1_liability = max(0, total_breach_magnitude - c2_regulatory_fine - c3_bi - c4_ransom - c5_ir)
+
+        # ── Split ratios ──
+        R = self.INCIDENT_SPLIT_RATIOS
+
+        # ── Incident Type Definitions ──
+        # Each incident type assembles a subset of C1-C5 with its own
+        # probability driver. C3 uses SA_AVG_DOWNTIME × IMPACT_FACTOR × BI_factor
+        # for all incident types (BI impact is industry-driven, not incident-driven).
+        # Per-incident downtime variation handled by MC simulation PERT ranges.
+
+        incidents = {}
+
+        # 1. Double extortion ransomware: exfiltration + encryption + demand
+        p_dbl = rsi_score * R["double_extortion"]
+        cost_dbl = c1_liability + c2_regulatory_fine + c3_bi + c4_ransom + c5_ir
+        incidents["double_extortion"] = {
+            "label": "Double Extortion Ransomware",
+            "probability": round(p_dbl, 4),
+            "expected_loss": round(p_dbl * cost_dbl),
+            "components": {"C1": round(p_dbl * c1_liability), "C2": round(p_dbl * c2_regulatory_fine),
+                           "C3": round(p_dbl * c3_bi), "C4": round(p_dbl * c4_ransom), "C5": round(p_dbl * c5_ir)},
+            "downtime_days": SA_AVG_DOWNTIME,
+            "has_exfiltration": True, "has_ransom": True, "has_downtime": True,
+        }
+
+        # 2. Ransomware (no exfiltration): encryption + demand, no data stolen
+        #    No C1 (no data exfiltrated, no third-party liability)
+        p_rw = rsi_score * R["ransomware_only"]
+        cost_rw = c3_bi + c4_ransom + c5_ir
+        incidents["ransomware_only"] = {
+            "label": "Ransomware (No Exfiltration)",
+            "probability": round(p_rw, 4),
+            "expected_loss": round(p_rw * cost_rw),
+            "components": {"C3": round(p_rw * c3_bi), "C4": round(p_rw * c4_ransom), "C5": round(p_rw * c5_ir)},
+            "downtime_days": SA_AVG_DOWNTIME,
+            "has_exfiltration": False, "has_ransom": True, "has_downtime": True,
+        }
+
+        # 3. Destructive attack (wiper): no ransom, severe downtime, IR only
+        p_wiper = rsi_score * R["wiper_destructive"]
+        cost_wiper = c3_bi + c5_ir
+        incidents["wiper_destructive"] = {
+            "label": "Destructive Attack (Wiper)",
+            "probability": round(p_wiper, 4),
+            "expected_loss": round(p_wiper * cost_wiper),
+            "components": {"C3": round(p_wiper * c3_bi), "C5": round(p_wiper * c5_ir)},
+            "downtime_days": SA_AVG_DOWNTIME,
+            "has_exfiltration": False, "has_ransom": False, "has_downtime": True,
+        }
+
+        # 4. Silent data breach: exfiltration discovered late, no encryption
+        #    Full C1+C2, minimal C3 (2 days investigation), reduced C5
+        p_silent = p_breach * R["silent_breach"]
+        c3_silent = 2 * daily_revenue * IMPACT_FACTOR * bi_factor  # minimal downtime
+        c5_silent = c5_ir * 0.60  # lower IR (no encryption recovery)
+        cost_silent = c1_liability + c2_regulatory_fine + c3_silent + c5_silent
+        incidents["silent_breach"] = {
+            "label": "Silent Data Breach",
+            "probability": round(p_silent, 4),
+            "expected_loss": round(p_silent * cost_silent),
+            "components": {"C1": round(p_silent * c1_liability), "C2": round(p_silent * c2_regulatory_fine),
+                           "C3": round(p_silent * c3_silent), "C5": round(p_silent * c5_silent)},
+            "downtime_days": 2,
+            "has_exfiltration": True, "has_ransom": False, "has_downtime": True,
+        }
+
+        # 5. Data extortion (no encryption): exfiltration + demand, no lockout
+        #    Minimal downtime (3 days), reduced ransom (no operational leverage)
+        p_extort = p_breach * R["data_extortion"]
+        c3_extort = 3 * daily_revenue * IMPACT_FACTOR * bi_factor
+        c4_extort = c4_ransom * 0.40  # lower demand — no operational leverage
+        cost_extort = c1_liability + c2_regulatory_fine + c3_extort + c4_extort + c5_ir
+        incidents["data_extortion"] = {
+            "label": "Data Extortion (No Encryption)",
+            "probability": round(p_extort, 4),
+            "expected_loss": round(p_extort * cost_extort),
+            "components": {"C1": round(p_extort * c1_liability), "C2": round(p_extort * c2_regulatory_fine),
+                           "C3": round(p_extort * c3_extort), "C4": round(p_extort * c4_extort), "C5": round(p_extort * c5_ir)},
+            "downtime_days": 3,
+            "has_exfiltration": True, "has_ransom": True, "has_downtime": True,
+        }
+
+        # 6. Opportunistic breach: automated/bot-driven, no targeted demand
+        #    Minimal downtime (1 day), reduced C1 (smaller data set), reduced C5
+        p_opp = p_breach * R["opportunistic_breach"]
+        c3_opp = 1 * daily_revenue * IMPACT_FACTOR * bi_factor
+        c1_opp = c1_liability * 0.50  # smaller data set typically exposed
+        c5_opp = c5_ir * 0.40  # simpler response
+        cost_opp = c1_opp + c2_regulatory_fine + c3_opp + c5_opp
+        incidents["opportunistic_breach"] = {
+            "label": "Opportunistic Breach",
+            "probability": round(p_opp, 4),
+            "expected_loss": round(p_opp * cost_opp),
+            "components": {"C1": round(p_opp * c1_opp), "C2": round(p_opp * c2_regulatory_fine),
+                           "C3": round(p_opp * c3_opp), "C5": round(p_opp * c5_opp)},
+            "downtime_days": 1,
+            "has_exfiltration": True, "has_ransom": False, "has_downtime": True,
+        }
+
+        # 7. DDoS / infrastructure failure: pure availability event
+        #    Uses p_interruption, 5-day average, BI factor applies
+        c3_ddos = 5 * daily_revenue * IMPACT_FACTOR * bi_factor
+        cost_ddos = c3_ddos
+        incidents["ddos_infra"] = {
+            "label": "DDoS / Infrastructure Failure",
+            "probability": round(p_interruption, 4),
+            "expected_loss": round(p_interruption * cost_ddos),
+            "components": {"C3": round(p_interruption * c3_ddos)},
+            "downtime_days": 5,
+            "has_exfiltration": False, "has_ransom": False, "has_downtime": True,
+        }
+
+        # ── Aggregate into four reporting categories ──
+        # Data Breach Exposure        = C1 + C2 across incident types with exfiltration
+        # Detection & Escalation      = C5 across all incident types (DFIR, forensics, triage)
+        # Ransom Demand               = C4 across incident types with ransom demands
+        # Business Interruption       = C3 across ALL incident types
+        agg_breach = 0       # C1 + C2 total
+        agg_detection = 0    # C5 total (detection & escalation / IR)
+        agg_ransom = 0       # C4 total (ransom payment only)
+        agg_bi = 0           # C3 total
+        total_expected = 0
+
+        for inc in incidents.values():
+            comps = inc["components"]
+            agg_breach += comps.get("C1", 0) + comps.get("C2", 0)
+            agg_detection += comps.get("C5", 0)
+            agg_ransom += comps.get("C4", 0)
+            agg_bi += comps.get("C3", 0)
+            total_expected += inc["expected_loss"]
+
+        # Backward-compatible combined ransomware = C4 + C5
+        agg_ransomware = agg_ransom + agg_detection
+
+        most_likely = round(total_expected)
+
+        # ── Monte Carlo Simulation (ZAR) ──
+        # Hybrid approach: C2/C3/C5 sampled from their own PERT ranges,
+        # C4 proportional to sampled total, C1 as residual.
+        # Recovery time uses empirically-sourced SA confidence intervals:
+        # P5=3 days, mode=25 days, P95=120 days (Sophos SA 2025 + global data).
+        np.random.seed(42)
         N = self.MC_ITERATIONS
 
-        # Breach scenario samples
-        mc_p_breach = np.clip(self._pert_sample(p_breach * 0.5, p_breach, min(1.0, p_breach * 2.0), N), 0, 1)
-        mc_records = self._pert_sample(estimated_records * 0.3, estimated_records, estimated_records * 3.0, N)
-        mc_cpr = self._pert_sample(cost_per_record * 0.6, cost_per_record, cost_per_record * 1.5, N)
-        mc_reg_fine = self._pert_sample(regulatory_fine * 0.5, regulatory_fine, regulatory_fine * 2.0, N)
-        mc_breach = mc_p_breach * (mc_records * mc_cpr + mc_reg_fine)
-
-        # Ransomware scenario samples
+        # Probability driver samples
         mc_rsi = np.clip(self._pert_sample(rsi_score * 0.5, rsi_score, min(1.0, rsi_score * 2.0), N), 0, 1)
-        mc_downtime = self._pert_sample(7, avg_downtime_days, 45, N)  # 7-45 days range
-        mc_ransom = self._pert_sample(ransom_estimate * 0.3, ransom_estimate, ransom_estimate * 3.0, N)
-        mc_ir = self._pert_sample(ir_cost * 0.5, ir_cost, ir_cost * 2.5, N)
-        mc_ransomware = mc_rsi * (mc_downtime * daily_revenue * 0.5 + mc_ransom + mc_ir)
-
-        # BI scenario samples
+        mc_p_breach = np.clip(self._pert_sample(p_breach * 0.5, p_breach, min(1.0, p_breach * 2.0), N), 0, 1)
         mc_p_int = np.clip(self._pert_sample(p_interruption * 0.3, p_interruption, min(0.8, p_interruption * 3.0), N), 0, 1)
-        mc_bi_days = self._pert_sample(1, 5, 14, N)  # 1-14 days range
-        mc_impact = np.clip(self._pert_sample(impact_factor * 0.5, impact_factor, min(1.0, impact_factor * 1.5), N), 0, 1)
-        mc_bi = mc_p_int * (mc_bi_days * daily_revenue * mc_impact)
 
-        # Total loss distribution
-        mc_total = mc_breach + mc_ransomware + mc_bi
+        # Total breach magnitude samples (IBM anchor with elasticity)
+        mc_total_breach = self._pert_sample(
+            total_breach_magnitude * 0.5, total_breach_magnitude, total_breach_magnitude * 2.5, N)
+        # Base total (without industry multiplier) for C4 ransom
+        mc_total_base = self._pert_sample(
+            total_breach_base * 0.5, total_breach_base, total_breach_base * 2.5, N)
+
+        # Component samples
+        mc_c2 = self._pert_sample(c2_regulatory_fine * 0.5, c2_regulatory_fine, c2_regulatory_fine * 2.0, N)
+        mc_c4 = mc_total_base * C4_PROPORTION  # Ransom NOT industry-scaled
+        mc_c5 = self._pert_sample(c5_ir * 0.5, c5_ir, c5_ir * 2.5, N)
+
+        # C3: downtime sampled with SA empirical PERT(3, 25, 120) days
+        mc_dt = self._pert_sample(3, SA_AVG_DOWNTIME, 120, N)
+        mc_c3_full = mc_dt * daily_revenue * IMPACT_FACTOR * bi_factor
+
+        # C1: residual (clamped to >= 0)
+        mc_c1 = np.maximum(0, mc_total_breach - mc_c2 - mc_c3_full - mc_c4 - mc_c5)
+
+        # Per-iteration totals for each reporting category (4 categories)
+        mc_breach_total = np.zeros(N)
+        mc_detection_total = np.zeros(N)
+        mc_ransom_demand_total = np.zeros(N)
+        mc_bi_total = np.zeros(N)
+
+        # 1. Double extortion ransomware (C1+C2+C3+C4+C5)
+        mc_p = mc_rsi * R["double_extortion"]
+        mc_breach_total += mc_p * (mc_c1 + mc_c2)
+        mc_ransom_demand_total += mc_p * mc_c4
+        mc_detection_total += mc_p * mc_c5
+        mc_bi_total += mc_p * mc_c3_full
+
+        # 2. Ransomware (no exfiltration) (C3+C4+C5)
+        mc_p = mc_rsi * R["ransomware_only"]
+        mc_ransom_demand_total += mc_p * mc_c4
+        mc_detection_total += mc_p * mc_c5
+        mc_bi_total += mc_p * mc_c3_full
+
+        # 3. Wiper / destructive (C3+C5)
+        mc_p = mc_rsi * R["wiper_destructive"]
+        mc_detection_total += mc_p * mc_c5
+        mc_bi_total += mc_p * mc_c3_full
+
+        # 4. Silent data breach (C1+C2+C3_minimal+C5_partial)
+        mc_p = mc_p_breach * R["silent_breach"]
+        mc_c3_silent = self._pert_sample(1, 2, 5, N) * daily_revenue * IMPACT_FACTOR * bi_factor
+        mc_breach_total += mc_p * (mc_c1 + mc_c2)
+        mc_detection_total += mc_p * mc_c5 * 0.60
+        mc_bi_total += mc_p * mc_c3_silent
+
+        # 5. Data extortion (C1+C2+C3_minimal+C4_reduced+C5)
+        mc_p = mc_p_breach * R["data_extortion"]
+        mc_c3_extort = self._pert_sample(1, 3, 7, N) * daily_revenue * IMPACT_FACTOR * bi_factor
+        mc_breach_total += mc_p * (mc_c1 + mc_c2)
+        mc_ransom_demand_total += mc_p * mc_c4 * 0.40
+        mc_detection_total += mc_p * mc_c5
+        mc_bi_total += mc_p * mc_c3_extort
+
+        # 6. Opportunistic breach (C1_partial+C2+C3_minimal+C5_partial)
+        mc_p = mc_p_breach * R["opportunistic_breach"]
+        mc_c3_opp = self._pert_sample(0.5, 1, 3, N) * daily_revenue * IMPACT_FACTOR * bi_factor
+        mc_breach_total += mc_p * (mc_c1 * 0.50 + mc_c2)
+        mc_detection_total += mc_p * mc_c5 * 0.40
+        mc_bi_total += mc_p * mc_c3_opp
+
+        # 7. DDoS / infra failure (C3 only, 5-day avg)
+        mc_dt_ddos = self._pert_sample(1, 5, 14, N)
+        mc_c3_ddos = mc_dt_ddos * daily_revenue * IMPACT_FACTOR * bi_factor
+        mc_bi_total += mc_p_int * mc_c3_ddos
+
+        # Total and per-category stats
+        mc_total = mc_breach_total + mc_detection_total + mc_ransom_demand_total + mc_bi_total
         mc_stats = self._mc_percentiles(mc_total)
+        mc_breach_stats = self._mc_percentiles(mc_breach_total)
+        mc_detection_stats = self._mc_percentiles(mc_detection_total)
+        mc_ransom_demand_stats = self._mc_percentiles(mc_ransom_demand_total)
+        mc_bi_stats = self._mc_percentiles(mc_bi_total)
+        # Backward-compatible combined ransomware MC = C4 + C5
+        mc_ransom_stats = self._mc_percentiles(mc_ransom_demand_total + mc_detection_total)
 
-        # Per-scenario percentiles
-        mc_breach_stats = self._mc_percentiles(mc_breach)
-        mc_ransomware_stats = self._mc_percentiles(mc_ransomware)
-        mc_bi_stats = self._mc_percentiles(mc_bi)
-
-        # Use MC percentiles for min/max instead of fixed multipliers
         minimum = mc_stats["p5"]
         maximum = mc_stats["p95"]
-        recommended_cover = max(1_000_000, round(maximum * 1.2, -5))
-        minimum_cover = max(500_000, round(mc_stats["p50"], -5))
+        # Insurance cover recommendations aligned to product cover bands:
+        # SME bands: R1M, R2.5M, R5M, R7.5M, R10M, R15M
+        # Above R15M: R5M increments (R20M, R25M, R30M, ...)
+        # Recommended = P75, snapped to nearest cover band
+        # Minimum = P50, snapped to nearest cover band
+        SME_BANDS = [1_000_000, 2_500_000, 5_000_000, 7_500_000, 10_000_000, 15_000_000]
+
+        def snap_to_cover_band(value):
+            """Snap a value up to the nearest available cover limit."""
+            for band in SME_BANDS:
+                if value <= band:
+                    return band
+            # Above R15M: round up to nearest R5M
+            import math
+            return int(math.ceil(value / 5_000_000) * 5_000_000)
+
+        recommended_cover = snap_to_cover_band(most_likely)
+        minimum_cover = snap_to_cover_band(minimum)  # P5 snapped up
 
         if rsi_score >= 0.7:
             premium_tier = "Very High"
@@ -1353,13 +1811,15 @@ class FinancialImpactCalculator:
             premium_tier = "Low"
 
         loss_pct = most_likely / annual_revenue_zar if annual_revenue_zar > 0 else 0
-        if loss_pct >= 0.10:
+        # Thresholds recalibrated for hybrid engine (produces higher loss_pct
+        # than original model due to IBM-anchored breach magnitude).
+        if loss_pct >= 0.30:
             fin_score = 10
-        elif loss_pct >= 0.05:
+        elif loss_pct >= 0.15:
             fin_score = 30
-        elif loss_pct >= 0.02:
+        elif loss_pct >= 0.08:
             fin_score = 50
-        elif loss_pct >= 0.01:
+        elif loss_pct >= 0.04:
             fin_score = 70
         else:
             fin_score = 90
@@ -1374,31 +1834,94 @@ class FinancialImpactCalculator:
                 "most_likely": most_likely,
                 "maximum": maximum,
             },
+            # ── Backward-compatible 3-scenario views (for PDF/frontend templates) ──
             "scenarios": {
                 "data_breach": {
                     "probability": round(p_breach, 3),
-                    "estimated_loss": round(data_breach_loss),
+                    "estimated_loss": round(agg_breach),
                     "cost_per_record": cost_per_record,
                     "estimated_records": estimated_records,
-                    "regulatory_fine": round(regulatory_fine),
+                    "regulatory_fine": round(c2_regulatory_fine),
                     "monte_carlo": mc_breach_stats,
+                    "note": "Aggregated C1+C2 costs across all incident types involving data exfiltration",
                 },
                 "ransomware": {
                     "rsi_score": rsi_score,
-                    "estimated_loss": round(ransomware_loss),
-                    "avg_downtime_days": avg_downtime_days,
-                    "ransom_estimate": ransom_estimate,
-                    "monte_carlo": mc_ransomware_stats,
+                    "estimated_loss": round(agg_ransomware),
+                    "ransom_estimate": c4_ransom,
+                    "ir_cost": c5_ir,
+                    "monte_carlo": mc_ransom_stats,
+                    "note": "Combined C4+C5 for backward compatibility; see scenarios_4cat for split",
                 },
                 "business_interruption": {
                     "probability": round(p_interruption, 3),
-                    "estimated_loss": round(bi_loss),
+                    "estimated_loss": round(agg_bi),
                     "monte_carlo": mc_bi_stats,
+                    "note": "Aggregated C3 (revenue loss from downtime) across ALL incident types",
                 },
+            },
+            # ── 4-category breakdown (IBM-aligned) ──
+            "scenarios_4cat": {
+                "data_breach": {
+                    "label": "Data Breach Exposure",
+                    "components": "C1 + C2",
+                    "estimated_loss": round(agg_breach),
+                    "monte_carlo": mc_breach_stats,
+                    "ibm_equivalent": "Post-breach response + Notification",
+                    "note": "Record costs + regulatory fines across incident types with data exfiltration",
+                },
+                "detection_escalation": {
+                    "label": "Detection & Escalation",
+                    "components": "C5",
+                    "estimated_loss": round(agg_detection),
+                    "monte_carlo": mc_detection_stats,
+                    "ibm_equivalent": "Detection & escalation (~40% of IBM breach cost)",
+                    "note": "DFIR, forensics, triage, negotiation across all incident types",
+                },
+                "ransom_demand": {
+                    "label": "Ransom Demand",
+                    "components": "C4",
+                    "estimated_loss": round(agg_ransom),
+                    "monte_carlo": mc_ransom_demand_stats,
+                    "ibm_equivalent": "Not included in IBM breach costs (separate)",
+                    "note": "Extortion payment across incident types with ransom demands",
+                },
+                "business_interruption": {
+                    "label": "Business Interruption",
+                    "components": "C3",
+                    "estimated_loss": round(agg_bi),
+                    "monte_carlo": mc_bi_stats,
+                    "ibm_equivalent": "Lost business (~30% of IBM breach cost)",
+                    "note": "Revenue loss from downtime across ALL incident types",
+                },
+            },
+            # ── Incident-type detail (new — full decomposition) ──
+            "incident_types": incidents,
+            "cost_components": {
+                "C1_liability": round(c1_liability),
+                "C2_regulatory_fine": round(c2_regulatory_fine),
+                "C4_ransom_payment": c4_ransom,
+                "C5_incident_response": c5_ir,
+            },
+            "split_ratios": dict(R),
+            "probability_drivers": {
+                "vulnerability": round(vulnerability, 4),
+                "tef": tef,
+                "p_breach": round(p_breach, 4),
+                "formula": "p_breach = vulnerability × TEF × 0.3",
+            },
+            "regulatory_exposure": {
+                "flags": reg_flags,
+                "c2_popia": round(c2_popia),
+                "c2_gdpr": round(c2_gdpr),
+                "c2_pci": round(c2_pci),
+                "c2_other": round(c2_other),
+                "c2_total": round(c2_regulatory_fine),
+                "note": "C2 = POPIA (2% capped R10M) + GDPR (4% uncapped) + PCI (R1M × non-compliance) + other jurisdictions (R2M each)",
             },
             "monte_carlo": {
                 "iterations": N,
-                "method": "PERT distribution (lambda=4)",
+                "method": "PERT distribution (lambda=4), incident-type decomposition",
                 "total": mc_stats,
                 "confidence_interval_90": {
                     "lower": mc_stats["p5"],
@@ -1430,42 +1953,61 @@ class FinancialImpactCalculator:
         output["risk_mitigations"] = self._build_mitigations(categories, output)
         return output
 
+    # Mitigation reductions recalibrated to match hybrid engine:
+    # - RSI reductions aligned with new RSI contributing factor weights (Section 3a)
+    # - p_breach reductions = reductions in vulnerability component of
+    #   p_breach = vulnerability × TEF × 0.3 (expressed as vulnerability reduction)
+    # - BI reductions = reductions in p_interruption
+    # - "scenario" field indicates which incident-type family is affected
     MITIGATIONS = [
-        {"pattern": r"RDP.*exposed",                          "severity": "Critical", "scenario": "ransomware",             "rsi_reduction": 0.35, "label": "Block RDP from public internet and enforce VPN/Zero Trust access"},
-        {"pattern": r"SSL certificate has EXPIRED",           "severity": "Critical", "scenario": "data_breach",            "probability_reduction": 0.15, "label": "Renew SSL certificate immediately"},
-        {"pattern": r"listed in CISA KEV",                    "severity": "Critical", "scenario": "ransomware",             "rsi_reduction": 0.10, "label": "Patch CISA Known Exploited Vulnerabilities within 48 hours"},
-        {"pattern": r"critical CVE",                          "severity": "Critical", "scenario": "ransomware",             "rsi_reduction": 0.10, "label": "Patch critical CVEs on public-facing servers"},
-        {"pattern": r"CRITICAL:.*Sensitive file exposed",     "severity": "Critical", "scenario": "data_breach",            "probability_reduction": 0.10, "label": "Restrict access to exposed sensitive files"},
-        {"pattern": r"high.severity CVE|high CVE",            "severity": "High",     "scenario": "ransomware",             "rsi_reduction": 0.05, "label": "Patch high-severity CVEs within 30 days"},
+        # --- Critical: RSI reductions match new RSI factor weights ---
+        {"pattern": r"RDP.*exposed",                          "severity": "Critical", "scenario": "ransomware",             "rsi_reduction": 0.25, "label": "Block RDP from public internet and enforce VPN/Zero Trust access"},
+        {"pattern": r"SSL certificate has EXPIRED",           "severity": "Critical", "scenario": "data_breach",            "probability_reduction": 0.10, "label": "Renew SSL certificate immediately"},
+        {"pattern": r"listed in CISA KEV",                    "severity": "Critical", "scenario": "ransomware",             "rsi_reduction": 0.08, "label": "Patch CISA Known Exploited Vulnerabilities within 48 hours"},
+        {"pattern": r"critical CVE",                          "severity": "Critical", "scenario": "ransomware",             "rsi_reduction": 0.08, "label": "Patch critical CVEs on public-facing servers"},
+        {"pattern": r"CRITICAL:.*Sensitive file exposed",     "severity": "Critical", "scenario": "data_breach",            "probability_reduction": 0.08, "label": "Restrict access to exposed sensitive files"},
+        # --- High: aligned with rebalanced weights ---
+        {"pattern": r"high.severity CVE|high CVE",            "severity": "High",     "scenario": "ransomware",             "rsi_reduction": 0.04, "label": "Patch high-severity CVEs within 30 days"},
         {"pattern": r"No WAF detected",                       "severity": "High",     "scenario": "both",                   "rsi_reduction": 0.05, "bi_reduction": 0.05, "label": "Deploy a Web Application Firewall (WAF)"},
-        {"pattern": r"No SPF record|No DMARC record",         "severity": "High",     "scenario": "data_breach",            "probability_reduction": 0.05, "label": "Implement email authentication (SPF/DMARC/DKIM)"},
-        {"pattern": r"password.*leaked|Plaintext.*password",   "severity": "High",     "scenario": "data_breach",            "probability_reduction": 0.10, "label": "Force password resets for all leaked credentials"},
-        {"pattern": r"credential record.*found in Dehashed",  "severity": "High",     "scenario": "data_breach",            "probability_reduction": 0.08, "label": "Audit and rotate credentials exposed in data leaks"},
-        {"pattern": r"admin.*exposed|login.*exposed",          "severity": "High",     "scenario": "data_breach",            "probability_reduction": 0.05, "label": "Restrict access to admin and login panels"},
-        {"pattern": r"Telnet|FTP.*exposed|high.risk.*protocol","severity": "High",     "scenario": "ransomware",             "rsi_reduction": 0.15, "label": "Disable insecure protocols (Telnet, FTP, etc.)"},
-        {"pattern": r"SSL.*grade.*(C|D|F|T)",                  "severity": "High",     "scenario": "data_breach",            "probability_reduction": 0.08, "label": "Upgrade SSL/TLS configuration to grade A"},
-        {"pattern": r"HTTPS not enforced",                     "severity": "High",     "scenario": "data_breach",            "probability_reduction": 0.05, "label": "Enforce HTTPS across all endpoints"},
-        {"pattern": r"EOL software|end.of.life",               "severity": "High",     "scenario": "ransomware",             "rsi_reduction": 0.05, "label": "Update end-of-life software components"},
-        {"pattern": r"Self.hosted payment",                    "severity": "High",     "scenario": "data_breach",            "probability_reduction": 0.08, "label": "Migrate to PCI-compliant payment provider"},
+        {"pattern": r"No SPF record|No DMARC record",         "severity": "High",     "scenario": "data_breach",            "probability_reduction": 0.08, "label": "Implement email authentication (SPF/DMARC/DKIM)"},
+        {"pattern": r"password.*leaked|Plaintext.*password",   "severity": "High",     "scenario": "data_breach",            "probability_reduction": 0.08, "label": "Force password resets for all leaked credentials"},
+        {"pattern": r"credential record.*found in Dehashed",  "severity": "High",     "scenario": "data_breach",            "probability_reduction": 0.06, "label": "Audit and rotate credentials exposed in data leaks"},
+        {"pattern": r"admin.*exposed|login.*exposed",          "severity": "High",     "scenario": "data_breach",            "probability_reduction": 0.04, "label": "Restrict access to admin and login panels"},
+        {"pattern": r"Telnet|FTP.*exposed|high.risk.*protocol","severity": "High",     "scenario": "ransomware",             "rsi_reduction": 0.10, "label": "Disable insecure protocols (Telnet, FTP, etc.)"},
+        {"pattern": r"SSL.*grade.*(C|D|F|T)",                  "severity": "High",     "scenario": "data_breach",            "probability_reduction": 0.05, "label": "Upgrade SSL/TLS configuration to grade A"},
+        {"pattern": r"HTTPS not enforced",                     "severity": "High",     "scenario": "data_breach",            "probability_reduction": 0.04, "label": "Enforce HTTPS across all endpoints"},
+        {"pattern": r"EOL software|end.of.life",               "severity": "High",     "scenario": "ransomware",             "rsi_reduction": 0.04, "label": "Update end-of-life software components"},
+        {"pattern": r"Self.hosted payment",                    "severity": "High",     "scenario": "data_breach",            "probability_reduction": 0.06, "label": "Migrate to PCI-compliant payment provider"},
+        {"pattern": r"database port|MySQL|PostgreSQL|MongoDB|Redis|Elasticsearch", "severity": "High", "scenario": "data_breach", "probability_reduction": 0.06, "label": "Restrict database access to private networks/VPN"},
+        {"pattern": r"breach_count|known breach",              "severity": "High",     "scenario": "data_breach",            "probability_reduction": 0.04, "label": "Enforce password resets and MFA across all accounts"},
+        # --- Medium: minor improvements ---
         {"pattern": r"DNSSEC.*not enabled",                    "severity": "Medium",   "scenario": "data_breach",            "probability_reduction": 0.02, "label": "Enable DNSSEC for DNS integrity"},
         {"pattern": r"Missing security header|HSTS.*missing|X-Frame|Content-Security-Policy", "severity": "Medium", "scenario": "data_breach", "probability_reduction": 0.02, "label": "Implement security headers (HSTS, CSP, X-Frame-Options)"},
-        {"pattern": r"blacklist|blocklist|listed on",          "severity": "Medium",   "scenario": "data_breach",            "probability_reduction": 0.03, "label": "Resolve DNS blocklist entries"},
-        {"pattern": r"lookalike domain|typosquat|fraudulent",  "severity": "Medium",   "scenario": "data_breach",            "probability_reduction": 0.03, "label": "Monitor and take down fraudulent lookalike domains"},
+        {"pattern": r"blacklist|blocklist|listed on",          "severity": "Medium",   "scenario": "data_breach",            "probability_reduction": 0.02, "label": "Resolve DNS blocklist entries"},
+        {"pattern": r"lookalike domain|typosquat|fraudulent",  "severity": "Medium",   "scenario": "data_breach",            "probability_reduction": 0.02, "label": "Monitor and take down fraudulent lookalike domains"},
         {"pattern": r"single ASN|unique_asns.*1",              "severity": "Medium",   "scenario": "business_interruption",  "bi_reduction": 0.05, "label": "Add hosting redundancy across multiple providers"},
         {"pattern": r"No VPN.*detected",                       "severity": "Medium",   "scenario": "ransomware",             "rsi_reduction": 0.03, "label": "Implement VPN or Zero Trust Network Access for remote workers"},
         {"pattern": r"No DKIM",                                "severity": "Medium",   "scenario": "data_breach",            "probability_reduction": 0.02, "label": "Enable DKIM signing on your mail server"},
         {"pattern": r"No CDN detected",                        "severity": "Medium",   "scenario": "business_interruption",  "bi_reduction": 0.03, "label": "Deploy a CDN for DDoS resilience and availability"},
-        {"pattern": r"database port|MySQL|PostgreSQL|MongoDB|Redis|Elasticsearch", "severity": "High", "scenario": "data_breach", "probability_reduction": 0.08, "label": "Restrict database access to private networks/VPN"},
-        {"pattern": r"breach_count|known breach",              "severity": "High",     "scenario": "data_breach",            "probability_reduction": 0.05, "label": "Enforce password resets and MFA across all accounts"},
     ]
 
     def _build_mitigations(self, categories: dict, fin_output: dict) -> dict:
-        """Analyse scan findings and estimate per-finding cost reduction using FAIR methodology."""
-        # Get scenario losses — works for both USD and ZAR paths
+        """Analyse scan findings and estimate per-finding cost reduction.
+
+        Incident-type aware: mitigations reduce probabilities of specific
+        incident types rather than abstract scenarios. Each mitigation
+        specifies which probability driver it affects (rsi_reduction for
+        ransomware-family incidents, probability_reduction for breach-family
+        incidents, bi_reduction for DDoS/infra incidents).
+
+        Savings are calculated by summing the cost reduction across all
+        incident types that share the affected probability driver.
+        """
         scenarios = fin_output.get("scenarios", {})
         db_scenario = scenarios.get("data_breach", {})
         rw_scenario = scenarios.get("ransomware", {})
         bi_scenario = scenarios.get("business_interruption", {})
+        incidents = fin_output.get("incident_types", {})
 
         # ZAR path uses estimated_loss, USD path uses most_likely
         db_loss = db_scenario.get("estimated_loss", db_scenario.get("most_likely", 0))
@@ -1481,6 +2023,13 @@ class FinancialImpactCalculator:
                         "critical": {"count": 0, "total_savings_zar": 0},
                         "high": {"count": 0, "total_savings_zar": 0},
                         "medium": {"count": 0, "total_savings_zar": 0}}}
+
+        # Sum expected losses by probability driver family for proportional savings
+        rsi_family_loss = sum(inc["expected_loss"] for k, inc in incidents.items()
+                              if k in ("double_extortion", "ransomware_only", "wiper_destructive"))
+        breach_family_loss = sum(inc["expected_loss"] for k, inc in incidents.items()
+                                 if k in ("silent_breach", "data_extortion", "opportunistic_breach"))
+        ddos_loss = incidents.get("ddos_infra", {}).get("expected_loss", 0)
 
         # Collect all issues from every category for pattern matching
         all_issues = []
@@ -1507,18 +2056,21 @@ class FinancialImpactCalculator:
 
             savings = 0
 
+            # RSI reduction: affects ransomware-family incident types
             if "rsi_reduction" in mit:
                 if rsi_score > 0:
-                    savings += rw_loss * (mit["rsi_reduction"] / rsi_score)
+                    savings += rsi_family_loss * (mit["rsi_reduction"] / rsi_score)
 
+            # Probability reduction: affects breach-family incident types
             if "probability_reduction" in mit:
                 if p_breach > 0:
-                    savings += db_loss * (mit["probability_reduction"] / p_breach)
+                    savings += breach_family_loss * (mit["probability_reduction"] / p_breach)
 
+            # BI reduction: affects DDoS/infra incident type
             if "bi_reduction" in mit:
                 p_int = bi_scenario.get("probability", 0.05)
                 if p_int > 0:
-                    savings += bi_loss * (mit["bi_reduction"] / p_int)
+                    savings += ddos_loss * (mit["bi_reduction"] / p_int)
 
             savings = round(min(savings, current_loss))
 

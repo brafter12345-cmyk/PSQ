@@ -2217,6 +2217,7 @@ def cat_financial_impact(d, S):
     is_zar = fin.get("currency") == "ZAR"
     cur    = "R" if is_zar else "$"
     sc     = fin.get("scenarios", {})
+    sc4    = fin.get("scenarios_4cat", {})
     col    = C_CRITICAL if fin.get("score", 50) < 30 else (C_RED if fin.get("score", 50) < 50 else
               C_AMBER if fin.get("score", 50) < 70 else C_GREEN)
 
@@ -2272,9 +2273,8 @@ def cat_financial_impact(d, S):
             ("Data Breach Loss",      f"{cur} {sc.get('data_breach', {}).get('estimated_loss', 0):,.0f}  (P={sc.get('data_breach', {}).get('probability', 0)})"),
             ("  Records at risk",     f"{sc.get('data_breach', {}).get('estimated_records', 0):,} @ {cur}{sc.get('data_breach', {}).get('cost_per_record', 0):,.0f}/rec"),
             ("  POPIA regulatory",    f"{cur} {sc.get('data_breach', {}).get('regulatory_fine', 0):,.0f}"),
-            ("Ransomware Loss",       f"{cur} {sc.get('ransomware', {}).get('estimated_loss', 0):,.0f}  (RSI={sc.get('ransomware', {}).get('rsi_score', 0)})"),
-            ("  Avg downtime",        f"{sc.get('ransomware', {}).get('avg_downtime_days', 0)} days"),
-            ("  Ransom estimate",     f"{cur} {sc.get('ransomware', {}).get('ransom_estimate', 0):,.0f}"),
+            ("Detection & Escalation", f"{cur} {sc4.get('detection_escalation', {}).get('estimated_loss', 0):,.0f}") if sc4 else ("", ""),
+            ("Ransom Demand",         f"{cur} {sc4.get('ransom_demand', {}).get('estimated_loss', 0):,.0f}  (RSI={sc.get('ransomware', {}).get('rsi_score', 0)})") if sc4 else ("Ransomware Loss", f"{cur} {sc.get('ransomware', {}).get('estimated_loss', 0):,.0f}  (RSI={sc.get('ransomware', {}).get('rsi_score', 0)})"),
             ("Bus. Interruption",     f"{cur} {sc.get('business_interruption', {}).get('estimated_loss', 0):,.0f}  (P={sc.get('business_interruption', {}).get('probability', 0)})"),
             ("",                      ""),
             ("Min. Insurance Cover",  f"{cur} {ins.get('minimum_cover_zar', 0):,.0f}"),

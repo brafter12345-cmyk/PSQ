@@ -569,9 +569,11 @@ class SecurityScanner:
             # Financial Impact — default to ZAR (SA product); use 10M estimate if no revenue given
             fin_calc = FinancialImpactCalculator()
             _zar = annual_revenue_zar if annual_revenue_zar > 0 else 10_000_000
+            _reg_flags = getattr(self, '_regulatory_flags', None)
             fin_result = fin_calc.calculate(
                 cat_results, rsi_result, annual_revenue, industry,
-                annual_revenue_zar=_zar
+                annual_revenue_zar=_zar,
+                regulatory_flags=_reg_flags,
             )
             results["insurance"]["financial_impact"] = fin_result
 

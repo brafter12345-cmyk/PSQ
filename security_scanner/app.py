@@ -500,7 +500,8 @@ def auto_update_invoice_statuses():
 def run_scan(scan_id: str, domain: str, industry: str = "other",
              annual_revenue: float = 0, annual_revenue_zar: int = 0, country: str = "",
              include_fraudulent_domains: bool = False, client_ips: list = None,
-             skip_dehashed: bool = False, skip_intelx: bool = False):
+             skip_dehashed: bool = False, skip_intelx: bool = False,
+             regulatory_flags: dict = None):
     progress_q = queue.Queue()
     _scan_progress[scan_id] = progress_q
 
@@ -518,6 +519,7 @@ def run_scan(scan_id: str, domain: str, industry: str = "other",
                 shodan_api_key=SHODAN_API_KEY,
                 intelx_api_key=None if skip_intelx else INTELX_API_KEY,
             )
+            scanner._regulatory_flags = regulatory_flags
             results = scanner.scan(
                 domain, on_progress=on_progress,
                 industry=industry, annual_revenue=annual_revenue,
@@ -660,6 +662,19 @@ def start_scan():
     skip_dehashed = bool(data.get("skip_dehashed", False))
     skip_intelx = bool(data.get("skip_intelx", False))
 
+    # Regulatory exposure flags (default: POPIA only)
+    regulatory_flags = {}
+    if data.get("gdpr_applicable"):
+        regulatory_flags["gdpr"] = True
+    if data.get("pci_applicable"):
+        regulatory_flags["pci"] = True
+    try:
+        other_j = int(data.get("other_jurisdictions", 0))
+        if other_j > 0:
+            regulatory_flags["other_jurisdictions"] = other_j
+    except (ValueError, TypeError):
+        pass
+
     # Parse client-supplied IPs (optional)
     import ipaddress as _ipaddress
     raw_client_ips = data.get("client_ips", [])
@@ -703,7 +718,8 @@ def start_scan():
     t = threading.Thread(
         target=run_scan,
         args=(scan_id, domain, industry, annual_revenue, annual_revenue_zar, country,
-              include_fraudulent_domains, client_ips, skip_dehashed, skip_intelx),
+              include_fraudulent_domains, client_ips, skip_dehashed, skip_intelx,
+              regulatory_flags),
         daemon=True,
     )
     t.start()
