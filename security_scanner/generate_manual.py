@@ -21,14 +21,16 @@ font = style.font
 font.name = "Calibri"
 font.size = Pt(10)
 
-# Helper functions
+# Helper functions — consistent spacing, keep_with_next to prevent orphaning
 def add_h1(text):
     p = doc.add_paragraph()
     r = p.add_run(text)
     r.bold = True
     r.font.size = Emu(203200)
     r.font.color.rgb = RGBColor(0, 51, 102)
-    p.space_after = Pt(6)
+    p.paragraph_format.space_before = Pt(12)
+    p.paragraph_format.space_after = Pt(4)
+    p.paragraph_format.keep_with_next = True
     return p
 
 def add_h2(text):
@@ -37,7 +39,9 @@ def add_h2(text):
     r.bold = True
     r.font.size = Emu(165100)
     r.font.color.rgb = RGBColor(0, 51, 102)
-    p.space_after = Pt(4)
+    p.paragraph_format.space_before = Pt(10)
+    p.paragraph_format.space_after = Pt(3)
+    p.paragraph_format.keep_with_next = True
     return p
 
 def add_h3(text):
@@ -46,17 +50,21 @@ def add_h3(text):
     r.bold = True
     r.font.size = Pt(11)
     r.font.color.rgb = RGBColor(0, 51, 102)
-    p.space_after = Pt(2)
+    p.paragraph_format.space_before = Pt(8)
+    p.paragraph_format.space_after = Pt(2)
+    p.paragraph_format.keep_with_next = True
     return p
 
 def add_body(text):
     p = doc.add_paragraph(text)
     p.paragraph_format.space_after = Pt(4)
+    p.paragraph_format.widow_control = True
     return p
 
 def add_bullet(text):
     p = doc.add_paragraph(text, style="List Paragraph")
     p.paragraph_format.space_after = Pt(2)
+    p.paragraph_format.widow_control = True
     return p
 
 def add_callout(label, text):
@@ -72,6 +80,8 @@ def add_callout(label, text):
         r.font.color.rgb = RGBColor(0, 51, 153)
     p.add_run(text)
     p.paragraph_format.space_after = Pt(4)
+    p.paragraph_format.keep_with_next = True
+    p.paragraph_format.widow_control = True
     return p
 
 def add_table(headers, rows):
