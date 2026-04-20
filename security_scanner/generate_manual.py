@@ -185,7 +185,7 @@ toc_items = [
     "5.  Insurance Analytics (Deep Dive)",
     "    5.1  Ransomware Susceptibility Index (RSI)",
     "    5.2  Data Breach Index (DBI)",
-    "    5.3  Financial Impact (FAIR Model)",
+    "    5.3  Financial Impact (Hybrid Model)",
     "    5.4  Remediation Roadmap",
     "6.  PDF Reports",
     "    6.1  Full Technical Report",
@@ -223,7 +223,7 @@ add_body(
 )
 add_body(
     "The scanner produces a quantitative risk score (0\u20131000), a set of insurance-specific analytics "
-    "(Ransomware Susceptibility Index, Data Breach Index, and FAIR-based financial impact projections), "
+    "(Ransomware Susceptibility Index, Data Breach Index, and hybrid financial impact projections), "
     "and a prioritised remediation roadmap. These outputs are designed to support:"
 )
 add_bullet("Underwriting decisions \u2014 objective, data-driven risk assessment for cyber policy pricing.")
@@ -259,7 +259,7 @@ add_bullet("Phase 2: Domain-level checks \u2014 21 checkers run concurrently aga
 add_bullet("Phase 3: IP-level checks \u2014 4 checkers run per discovered IP (DNS/ports, high-risk protocols, blacklists, Shodan CVEs).")
 add_bullet("Phase 4: Aggregation and enrichment \u2014 merge per-IP results, OSV.dev CVE enrichment, credential risk classification, EPSS and CISA KEV lookups.")
 add_bullet("Phase 5: Scoring \u2014 calculate weighted risk score (0\u20131000) across all 25 scoring categories.")
-add_bullet("Phase 6: Insurance analytics \u2014 RSI, DBI, FAIR-based financial impact (Monte Carlo simulation), and remediation roadmap.")
+add_bullet("Phase 6: Insurance analytics \u2014 RSI, DBI, hybrid financial impact (Monte Carlo simulation), and remediation roadmap.")
 
 add_callout("TIP", "A typical scan takes 10\u201318 minutes depending on the target\u2019s infrastructure complexity and API response times. "
             "Progress is shown in real time via server-sent events.")
@@ -282,7 +282,7 @@ add_table(
         ["Network & Infrastructure", "DNS & Open Ports, High-Risk Protocols, Shodan CVEs, DNSBL, Cloud/CDN, VPN/Remote Access", "6"],
         ["Exposure & Reputation", "HIBP Breaches, Dehashed, Exposed Admin, VirusTotal, Subdomains, Hudson Rock, IntelX, Credential Risk, Fraudulent Domains", "9"],
         ["Technology & Governance", "Tech Stack/EOL, Domain Intel, SecurityTrails, Security Policy, Payment Security, Privacy Compliance", "6"],
-        ["Insurance Analytics", "RSI, DBI, Financial Impact (FAIR), Remediation Roadmap", "4"],
+        ["Insurance Analytics", "RSI, DBI, Financial Impact (Hybrid), Remediation Roadmap", "4"],
     ]
 )
 
@@ -341,7 +341,10 @@ add_table(
     [
         ["Domain", "Yes", "The primary domain to scan (e.g. example.co.za). Do not include https:// or paths."],
         ["Industry", "Recommended", "Select the closest matching industry. Used for RSI multipliers and financial impact calculations. Options include: Agriculture, Communications, Consumer, Education, Energy, Entertainment, Financial Services, Healthcare, Hospitality, Industrial/Manufacturing, Legal, Media, Pharmaceuticals, Public Sector, Research, Retail, Services, Technology, Transportation, Government, Other."],
+        ["Sub-Industry", "Recommended", "Appears after selecting an industry. Lists sub-industries for the selected sector. Refines the financial impact model for the specific sector. Type to search/filter."],
         ["Annual Revenue (ZAR)", "Recommended", "Annual revenue in South African Rand. Used for financial impact projections. If omitted, a default of R10,000,000 is assumed."],
+        ["GDPR Applicable", "Optional", "Enable if the company processes EU personal data. Adds GDPR regulatory exposure (4% of global turnover, uncapped) to the model."],
+        ["PCI DSS Applicable", "Optional", "Enable if the company stores/processes card data. Adds PCI fine exposure to the model."],
         ["Include Dehashed", "Optional", "Toggle on to query the Dehashed API for leaked credentials. Requires valid API key."],
         ["Include IntelX", "Optional", "Toggle on to query Intelligence X for dark web exposure. Requires valid API key."],
         ["Include Fraudulent Domains", "Optional", "Toggle on to scan for lookalike/typosquatting domains. This is a heavyweight check and adds several minutes."],
@@ -399,7 +402,7 @@ add_bullet("Admin Panels \u2014 number of exposed administrative interfaces foun
 add_bullet("DB Exposure \u2014 whether database ports (MongoDB, Redis, PostgreSQL, MySQL, etc.) are publicly accessible. None is green, any is red (critical).")
 add_bullet("Blacklisting \u2014 whether the domain or IP appears on DNS blacklists. Clean is green, listed is red.")
 add_bullet("RDP \u2014 whether Remote Desktop Protocol (port 3389) is exposed to the internet. Not exposed is green, exposed is red (critical).")
-add_bullet("Annual Loss \u2014 estimated probable annual loss from the FAIR model (median/P50 value in ZAR).")
+add_bullet("Annual Loss \u2014 estimated probable annual loss from the hybrid model (median/P50 value in ZAR).")
 add_bullet("Web Ranking \u2014 Tranco list ranking indicating the domain\u2019s relative popularity and visibility.")
 
 add_h2("3.3 Vulnerability Posture")
@@ -435,7 +438,7 @@ add_body(
 )
 add_bullet("Ransomware Susceptibility Index (RSI) \u2014 0.0 to 1.0 scale measuring ransomware exposure.")
 add_bullet("Data Breach Index (DBI) \u2014 0 to 100 score measuring historical breach exposure quality.")
-add_bullet("Financial Impact (FAIR Model) \u2014 Monte Carlo simulation producing confidence intervals for probable annual loss in ZAR.")
+add_bullet("Financial Impact (Hybrid Model) \u2014 Monte Carlo simulation producing confidence intervals for probable annual loss in ZAR.")
 add_bullet("Remediation Roadmap \u2014 prioritised steps with cost estimates and projected annual savings.")
 add_body("These are covered in detail in Section 5.")
 
@@ -917,39 +920,54 @@ add_table(
 add_body("DBI labels: Excellent (80+), Good (60\u201379), Fair (40\u201359), Poor (20\u201339), Critical (below 20).")
 add_body("Weight in overall score: 3%.")
 
-add_h2("5.3 Financial Impact (FAIR Model)")
+add_h2("5.3 Financial Impact Estimation (Hybrid Model)")
 add_body(
-    "The Financial Impact calculator uses an Open FAIR-inspired model with Monte Carlo simulation to "
-    "estimate probable annual loss across three scenarios:"
+    "The Financial Impact module uses a hybrid approach derived from FAIR (Factor Analysis of Information Risk) "
+    "methodology, anchored to IBM SA 2025 breach cost data (R49.22 million ransom-inclusive average), Sophos SA "
+    "2025 ransomware survey data, and actual South African insurance claims data. The model produces four cost "
+    "categories, seven incident types, and Monte Carlo confidence intervals for probable annual loss."
 )
 
-add_h3("Scenario 1: Data Breach")
-add_body("Estimates the cost of a data breach based on:")
-add_bullet("Breach probability \u2014 derived from breach history and security posture.")
-add_bullet("Estimated records at risk \u2014 calculated from annual revenue (1 record per R50,000 revenue).")
-add_bullet("Cost per record \u2014 industry-specific, sourced from IBM 2025 Cost of a Data Breach Report (SA data). "
-           "Ranges from R1,223 (Agriculture) to R3,273 (Public Sector/Government).")
-add_bullet("Regulatory fine \u2014 estimated at 2% of annual turnover (POPIA maximum).")
-
-add_h3("Scenario 2: Ransomware")
-add_body("Estimates ransomware impact based on:")
-add_bullet("RSI score as probability of occurrence.")
-add_bullet("Average downtime: 22 days (industry average for ransomware incidents).")
-add_bullet("Ransom demand \u2014 tiered by revenue: R500K (<R50M revenue), R2.5M (R50\u2013200M), R10M (R200\u2013500M), R50M (>R500M).")
-add_bullet("Incident response cost \u2014 tiered: R500K to R5M depending on organisation size.")
-add_bullet("Revenue loss during downtime \u2014 50% of daily revenue for the downtime period.")
-
-add_h3("Scenario 3: Business Interruption")
-add_body("Estimates non-ransomware business interruption:")
-add_bullet("Base probability: 5%, increased by missing WAF (+5%), missing CDN (+5%), single ASN (+5%).")
-add_bullet("Impact factor: 30\u201380% of daily revenue depending on infrastructure resilience.")
-add_bullet("Average downtime: 5 days.")
-
-add_h3("Monte Carlo Simulation")
+add_h3("Hybrid engine architecture")
 add_body(
-    "All three scenarios are simulated using 10,000 Monte Carlo iterations with PERT distributions "
-    "(lambda=4). Each parameter is sampled from a range around its point estimate to produce statistically "
-    "robust confidence intervals. The output includes:"
+    "The total breach magnitude is anchored to the IBM SA average cost (R49.22 million, ransom-inclusive) and "
+    "scaled by two factors: revenue scaling with graduated elasticity (smaller organisations experience "
+    "proportionally higher costs relative to revenue) and an industry multiplier with graduated severity "
+    "(high-risk industries such as financial services, healthcare, and legal receive an uplift reflecting "
+    "their higher regulatory exposure and historical claims frequency)."
+)
+add_body("The anchored magnitude is decomposed into five cost components:")
+add_bullet("C1: Post-breach liability (residual) \u2014 notification costs, credit monitoring, legal fees, reputational damage, and customer churn.")
+add_bullet("C2: Regulatory fines per jurisdiction \u2014 POPIA fines (up to R10 million), GDPR exposure (4% of global turnover, uncapped) if applicable, PCI DSS fines if applicable.")
+add_bullet("C3: Business interruption \u2014 revenue loss during recovery, using SA-calibrated PERT(3, 25, 120) days recovery time per Sophos SA 2025.")
+add_bullet("C4: Ransom/extortion \u2014 10.40% of total breach magnitude, proportional to the IBM SA data decomposition. Activated for ransomware-family incidents only.")
+add_bullet("C5: Incident response \u2014 forensics, containment, eradication, and recovery. Tiered by organisation size.")
+
+add_h3("Four reporting categories")
+add_body("The five cost components are grouped into four reporting categories aligned with standard insurance policy sections:")
+add_bullet("Data breach exposure: C1 (post-breach liability) + C2 (regulatory fines).")
+add_bullet("Detection and escalation: C5 (incident response).")
+add_bullet("Ransom demand: C4 (ransom/extortion).")
+add_bullet("Business interruption: C3 (revenue loss during recovery).")
+
+add_h3("Probability model")
+add_body(
+    "The probability of a breach event is calculated as p_breach = Vulnerability \u00d7 TEF \u00d7 0.30, where "
+    "Vulnerability is derived from scan findings and TEF (Threat Event Frequency) is the annual frequency of "
+    "attempted attacks for the organisation\u2019s industry and size profile. The 0.30 calibration factor aligns "
+    "modelled probabilities with observed SA claims frequencies."
+)
+add_body(
+    "The RSI score drives ransomware-family incidents specifically. Ransomware initial access vector weights "
+    "are calibrated to Sophos SA 2025 survey data: compromised credentials 34%, exploited vulnerabilities 28%, "
+    "malicious email (phishing) 22%, other vectors 16%."
+)
+
+add_h3("Monte Carlo simulation")
+add_body(
+    "The model runs 10,000 Monte Carlo iterations using PERT distributions (lambda=4). Key PERT parameters "
+    "include SA recovery time PERT(3, 25, 120) days, cost-per-record ranges by industry, and ransom demand "
+    "distributions calibrated to Sophos SA 2025 median payment data. The output includes:"
 )
 add_bullet("P5 (5th percentile) \u2014 optimistic scenario, 95% chance the actual loss exceeds this.")
 add_bullet("P25 (25th percentile) \u2014 lower quartile.")
@@ -957,10 +975,10 @@ add_bullet("P50 (50th percentile / median) \u2014 most likely loss, used as the 
 add_bullet("P75 (75th percentile) \u2014 upper quartile.")
 add_bullet("P95 (95th percentile) \u2014 pessimistic scenario, only 5% chance the actual loss exceeds this. Used for recommended coverage limit.")
 add_body("Insurance recommendations derived from the simulation:")
-add_bullet("Suggested deductible: 50% of P5.")
+add_bullet("Suggested deductible: RSI-scaled percentage (0.5%\u201320%) of the recommended coverage limit.")
 add_bullet("Expected annual loss: P50 (median).")
 add_bullet("Recommended coverage limit: P95 multiplied by 1.2 (20% safety margin).")
-add_body("All financial calculations use South African Rand (ZAR) with industry-specific cost data from IBM 2025.")
+add_body("All financial calculations use South African Rand (ZAR) with IBM SA and Sophos SA calibration data.")
 
 add_callout("NOTE", "Financial projections are indicative estimates based on external scanning data and industry averages. "
             "Actual losses depend on many internal factors (backup quality, incident response capability, cyber insurance "
@@ -1087,7 +1105,7 @@ add_table(
         ["Subdomains", "2%", "Risky subdomain exposure"],
         ["Privacy Compliance", "2%", "Privacy policy completeness"],
         ["Web Ranking", "2%", "Domain visibility/popularity"],
-        ["Financial Impact", "2%", "FAIR model loss estimate"],
+        ["Financial Impact", "2%", "Hybrid model loss estimate"],
         ["SecurityTrails DNS", "1%", "Historical DNS and infrastructure"],
     ]
 )
@@ -1212,7 +1230,7 @@ glossary = [
     ("DNSBL", "DNS-based Blacklist. Lists of IP addresses or domains known to be associated with spam, malware, or abuse. Email servers query DNSBLs to filter incoming mail."),
     ("DNSSEC", "Domain Name System Security Extensions. Adds cryptographic signatures to DNS records to prevent DNS spoofing and cache poisoning attacks."),
     ("EPSS", "Exploit Prediction Scoring System. A probability score (0.0\u20131.0) from FIRST.org predicting the likelihood that a CVE will be exploited in the wild within the next 30 days."),
-    ("FAIR", "Factor Analysis of Information Risk. A quantitative risk analysis framework that uses Monte Carlo simulation to estimate probable financial loss from cyber incidents."),
+    ("Hybrid Financial Impact Model (derived from FAIR)", "A quantitative risk analysis model that expresses cyber risk in financial terms. The Phishield scanner uses a hybrid approach derived from FAIR principles, anchored to IBM SA breach cost data and calibrated with Sophos SA 2025 and actual insurance claims data."),
     ("HSTS", "HTTP Strict Transport Security. An HTTP header that forces browsers to use HTTPS for all future connections to a domain, preventing protocol downgrade attacks."),
     ("KEV", "Known Exploited Vulnerabilities. A CISA-maintained catalog of CVEs with confirmed active exploitation in the wild. Federal agencies must patch KEV entries within mandated timeframes."),
     ("Kill Chain", "A model describing the stages of a cyber attack: Reconnaissance, Initial Access, Credential Access, Exploitation, and Impact."),
@@ -1250,7 +1268,7 @@ add_table(
     ["Version", "Date", "Changes"],
     [
         ["1.0", "April 2026", "Initial release covering all current scanner capabilities: 25+ checkers across 8 categories, "
-         "10 API integrations, RSI/DBI/FAIR insurance analytics, Monte Carlo simulation, compliance framework mapping "
+         "10 API integrations, RSI/DBI/hybrid financial impact analytics, Monte Carlo simulation, compliance framework mapping "
          "(POPIA, PCI DSS, ISO 27001, NIST CSF 2.0), subdomain takeover detection, AXFR testing, CSP quality analysis, "
          "TLS-RPT checking, credential parsing, CAA records, and remediation roadmap with cost estimates."],
     ]

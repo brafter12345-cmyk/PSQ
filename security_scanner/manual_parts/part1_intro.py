@@ -701,13 +701,35 @@ def _build_section_2(doc):
         "Transportation, Government, and Other."
     )
 
+    _h("add_bold_body")(doc, "Sub-Industry (searchable dropdown). ",
+        "Appears after selecting an industry. Lists sub-industries for the selected "
+        "sector. Refines the financial impact model for the specific sector by applying "
+        "more granular cost and frequency multipliers. Type to search and filter the "
+        "available options."
+    )
+
     _h("add_bold_body")(doc, "Annual Revenue (ZAR). ",
         "Enter the target organisation's annual revenue in South African Rand. This value "
         "is used to calculate the size multiplier for the RSI (larger organisations "
-        "represent larger risk exposure) and to calibrate the FAIR model's financial "
-        "impact estimates (loss magnitude scales with revenue). If the exact figure is "
-        "not known, use a reasonable estimate. Entering zero will cause the financial "
-        "impact estimates to default to industry averages."
+        "represent larger risk exposure) and to calibrate the hybrid financial impact "
+        "model's loss magnitude estimates (which scale with revenue using graduated "
+        "elasticity). If the exact figure is not known, use a reasonable estimate. "
+        "Entering zero will cause the financial impact estimates to default to "
+        "industry averages."
+    )
+
+    _h("add_bold_body")(doc, "GDPR Applicable (toggle). ",
+        "Enable if the company processes EU personal data. When enabled, the financial "
+        "impact model adds GDPR regulatory exposure (4% of global turnover, uncapped) "
+        "to the C2 regulatory fines component. This significantly increases the "
+        "regulatory fine estimate for organisations with EU data processing obligations."
+    )
+
+    _h("add_bold_body")(doc, "PCI DSS Applicable (toggle). ",
+        "Enable if the company stores or processes payment card data. When enabled, "
+        "the financial impact model adds PCI fine exposure to the C2 regulatory fines "
+        "component. PCI fines can range from $5,000 to $100,000 per month depending "
+        "on the severity and duration of non-compliance."
     )
 
     _h("add_bold_body")(doc, "Include Dehashed (toggle). ",
