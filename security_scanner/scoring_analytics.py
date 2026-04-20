@@ -1119,6 +1119,41 @@ class FinancialImpactCalculator:
             "std_dev": round(float(np.std(samples))),
         }
 
+    # RSI-to-deductible lookup table.  Non-linear: gentle at low risk,
+    # accelerating at high risk.  Deductible is a % of recommended cover.
+    _DEDUCTIBLE_TABLE = [
+        # (RSI threshold, deductible %)
+        (0.10, 0.005),   # 0.5%
+        (0.20, 0.010),   # 1.0%
+        (0.30, 0.015),   # 1.5%
+        (0.40, 0.025),   # 2.5%
+        (0.50, 0.035),   # 3.5%
+        (0.60, 0.050),   # 5.0%
+        (0.70, 0.070),   # 7.0%
+        (0.80, 0.100),   # 10.0%
+        (0.90, 0.140),   # 14.0%
+        (1.00, 0.200),   # 20.0%
+    ]
+
+    @classmethod
+    def _rsi_deductible_pct(cls, rsi: float) -> float:
+        """Interpolate deductible % from RSI score (0.0-1.0)."""
+        rsi_clamped = max(0.10, min(1.0, rsi))
+        tbl = cls._DEDUCTIBLE_TABLE
+        for i in range(len(tbl) - 1):
+            lo_rsi, lo_pct = tbl[i]
+            hi_rsi, hi_pct = tbl[i + 1]
+            if rsi_clamped <= hi_rsi:
+                t = (rsi_clamped - lo_rsi) / (hi_rsi - lo_rsi)
+                return lo_pct + t * (hi_pct - lo_pct)
+        return tbl[-1][1]
+
+    @classmethod
+    def _rsi_deductible(cls, rsi: float, coverage_limit: float) -> float:
+        """Calculate suggested deductible (ZAR) from RSI and coverage limit."""
+        pct = cls._rsi_deductible_pct(rsi)
+        return round(max(10000, coverage_limit) * pct, -3)
+
     # Industry cost-per-record (IBM/Ponemon averages)
     COST_PER_RECORD = {
         "healthcare": 239, "finance": 219, "tech": 183,
@@ -1143,11 +1178,13 @@ class FinancialImpactCalculator:
     def calculate(self, categories: dict, rsi_result: dict,
                   annual_revenue: float, industry: str = "other",
                   annual_revenue_zar: int = 0,
-                  regulatory_flags: dict = None) -> dict:
+                  regulatory_flags: dict = None,
+                  sub_industry: str = None) -> dict:
 
         # Use ZAR path when ZAR revenue is provided (SA-specific model)
         if annual_revenue_zar > 0:
-            return self._calculate_zar(categories, rsi_result, annual_revenue_zar, industry, regulatory_flags)
+            return self._calculate_zar(categories, rsi_result, annual_revenue_zar, industry,
+                                       regulatory_flags, sub_industry)
 
         daily_revenue = annual_revenue / 365 if annual_revenue > 0 else 5_000
 
@@ -1264,9 +1301,12 @@ class FinancialImpactCalculator:
         total_max = mc_stats["p95"]
 
         # Insurance recommendations from MC distribution
-        deductible = round(mc_stats["p5"] * 0.5, -3)
         expected_annual = round(mc_stats["p50"], -3)
         coverage_limit = round(mc_stats["p95"] * 1.2, -3)
+
+        # RSI-driven deductible as % of recommended coverage limit
+        deductible_pct = self._rsi_deductible_pct(rsi)
+        deductible = self._rsi_deductible(rsi, coverage_limit)
 
         # Add MC stats to scenario dicts
         data_breach["monte_carlo"] = mc_breach_stats
@@ -1299,6 +1339,7 @@ class FinancialImpactCalculator:
             },
             "insurance_recommendations": {
                 "suggested_deductible": max(1000, deductible),
+                "deductible_pct": round(deductible_pct * 100, 1),
                 "expected_annual_loss": max(1000, expected_annual),
                 "recommended_coverage": max(10000, coverage_limit),
             },
@@ -1344,6 +1385,119 @@ class FinancialImpactCalculator:
     # Each ratio defines what fraction of the parent probability driver
     # (RSI or p_breach) applies to that incident type.
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # BI Factor per sub-industry (from FAIR Model Industry Lookup Tables)
+    # Controls proportional allocation of direct operational downtime cost.
+    # Range: 0.05 (construction) to 1.75 (depository institutions/banks).
+    # Key: matches the sub-industry name from the lookup table.
+    # Fallback: industry-level average if sub-industry not specified.
+    # ------------------------------------------------------------------
+    # Full sub-industry BI factors from FAIR Model Industry Lookup Tables.
+    # 86 sub-industries with exact BI factors — NO AVERAGES.
+    # Key = sub-industry name. Industry-level keys provided as fallbacks
+    # only when sub-industry is not specified.
+    INDUSTRY_BI_FACTOR = {
+        # ── Sub-industry exact values (86 entries) ──
+        "Agricultural Production Crops": 0.1,
+        "Agriculture production livestock and animal specialties": 0.05,
+        "Agricultural Services": 0.05,
+        "Forestry": 0.05,
+        "Agriculture, Forestry, And Fishing- Fishing hunting and trapping": 0.05,
+        "Metal Mining": 0.15,
+        "Coal Mining": 0.15,
+        "Oil And Gas Extraction": 0.15,
+        "Mining And Quarrying Of Nonmetallic Minerals, Except Fuels": 0.15,
+        "Building Construction General Contractors And Operative Builders": 0.05,
+        "Heavy Construction Other Than Building Construction Contractors": 0.05,
+        "Construction Special Trade Contractors": 0.05,
+        "Food And Kindred Products": 0.5,
+        "Tobacco Products": 0.5,
+        "Textile Mill Products": 0.5,
+        "Apparel And Other Finished Products Made From Fabrics And Similar Materials": 0.5,
+        "Lumber And Wood Products, Except Furniture": 0.5,
+        "Furniture And Fixtures": 0.5,
+        "Paper And Allied Products": 0.5,
+        "Printing, Publishing, And Allied Industries": 0.5,
+        "Chemicals And Allied Products": 0.5,
+        "Petroleum Refining And Related Industries": 0.5,
+        "Rubber And Miscellaneous Plastics Products": 0.5,
+        "Leather And Leather Products": 0.5,
+        "Stone, Clay, Glass, And Concrete Products": 0.5,
+        "Primary Metal Industries": 0.5,
+        "Fabricated Metal Products, Except Machinery And Transportation Equipment": 0.5,
+        "Industrial And Commercial Machinery And Computer Equipment": 0.5,
+        "Electronic And Other Electrical Equipment And Components, Except Computer Equipment": 0.5,
+        "Transportation Equipment": 0.5,
+        "Measuring, Analyzing, And Controlling Instruments; Photographic, Medical And Optical Goods; Watches And Clocks": 0.5,
+        "Miscellaneous Manufacturing Industries": 0.5,
+        "Railroad Transportation": 1.0,
+        "Local And Suburban Transit And Interurban Highway Passenger Transportation": 0.75,
+        "Motor Freight Transportation And Warehousing": 1.0,
+        "Postal Service": 1.0,
+        "Water Transportation": 1.0,
+        "Transportation By Air": 1.0,
+        "Pipelines, Except Natural Gas": 1.0,
+        "Transportation Services": 1.0,
+        "Communications": 1.0,
+        "Electric, Gas, And Sanitary Services": 1.0,
+        "Water and Waste Management": 1.0,
+        "Wholesale Trade-durable Goods": 1.0,
+        "Wholesale Trade-non-durable Goods": 1.0,
+        "eCommerce": 1.5,
+        "Building Materials, Hardware, Garden Supply, And Mobile Home Dealers": 1.25,
+        "General Merchandise Stores": 1.25,
+        "Food Stores": 1.25,
+        "Automotive Dealers And Gasoline Service Stations": 1.25,
+        "Apparel And Accessory Stores": 1.25,
+        "Home Furniture, Furnishings, And Equipment Stores": 1.25,
+        "Eating And Drinking Places": 1.25,
+        "Miscellaneous Retail": 1.25,
+        "Depository Institutions": 1.75,
+        "Non-depository Credit Institutions": 1.0,
+        "Security And Commodity Brokers, Dealers, Exchanges, And Services": 1.0,
+        "Insurance Carriers": 0.75,
+        "Insurance Agents, Brokers, And Service": 0.5,
+        "Real Estate": 0.25,
+        "Holding And Other Investment Offices": 0.75,
+        "Hotels, Rooming Houses, Camps, And Other Lodging Places": 1.0,
+        "Personal Services": 1.0,
+        "Business Services": 1.0,
+        "Automotive Repair, Services, And Parking": 0.75,
+        "Miscellaneous Repair Services": 1.0,
+        "Motion Pictures": 1.0,
+        "Amusement And Recreation Services": 0.75,
+        "Health Services": 1.0,
+        "Legal Services": 1.0,
+        "Educational Services": 1.0,
+        "Social Services": 1.0,
+        "Museums, Art Galleries, And Botanical And Zoological Gardens": 1.0,
+        "Membership Organizations": 0.5,
+        "Engineering, Accounting, Research, Management, And Related Services": 1.0,
+        "Private Households": 0.75,
+        "Miscellaneous Services": 1.0,
+        "Software and Technology": 1.0,
+        "Executive, Legislative, And General Government, Except Finance": 1.0,
+        "Justice, Public Order, And Safety": 1.0,
+        "Public Finance, Taxation, And Monetary Policy": 1.0,
+        "Administration Of Human Resource Programs": 1.0,
+        "Administration Of Environmental Quality And Housing Programs": 1.0,
+        "Administration Of Economic Programs": 1.0,
+        "National Security And International Affairs": 1.0,
+        "Nonclassifiable Establishments": 1.0,
+        # ── Industry-level fallbacks (used when sub-industry not specified) ──
+        "Agriculture": 0.06, "Mining": 0.15, "Construction": 0.05,
+        "Manufacturing": 0.50, "Industrial / Manufacturing": 0.50,
+        "Transportation": 0.98, "Energy": 1.00,
+        "Wholesale Trade": 1.00, "Retail": 1.28, "Hospitality": 1.00,
+        "Financial Services": 0.86, "Finance": 0.86,
+        "Services": 0.93, "Legal": 1.00, "Healthcare": 1.00,
+        "Technology": 1.00, "Tech": 1.00, "Education": 1.00,
+        "Research": 1.00, "Entertainment": 0.88, "Media": 1.00,
+        "Consumer": 1.00, "Pharmaceuticals": 0.50,
+        "Public Sector": 1.00, "Government": 1.00,
+        "Other": 1.00,
+    }
+
     # Split ratios calibrated from Sophos SA 2025:
     # - 60% of attacks resulted in encryption
     # - 39% of encrypted attacks also had data stolen
@@ -1362,7 +1516,8 @@ class FinancialImpactCalculator:
 
     def _calculate_zar(self, categories: dict, rsi_result: dict,
                        annual_revenue_zar: int, industry: str,
-                       regulatory_flags: dict = None) -> dict:
+                       regulatory_flags: dict = None,
+                       sub_industry: str = None) -> dict:
         """SA-specific ZAR calculation using incident-type decomposition.
 
         Architecture: Rather than three independent scenarios, the model
@@ -1530,10 +1685,11 @@ class FinancialImpactCalculator:
         # ── BI Factor (from industry lookup table) ──
         # Controls proportional allocation of direct operational downtime.
         # Ranges from 0.05 (construction) to 1.75 (banks).
-        # TODO: Wire up sub-industry BI factor from lookup table when
-        # sub-industry selection is added to scanner UI. For now, use
-        # industry-level default of 1.0.
-        bi_factor = 1.0  # Default; will be overridden by sub-industry lookup
+        # Prefer exact sub-industry BI factor; fall back to industry-level.
+        if sub_industry and sub_industry in self.INDUSTRY_BI_FACTOR:
+            bi_factor = self.INDUSTRY_BI_FACTOR[sub_industry]
+        else:
+            bi_factor = self.INDUSTRY_BI_FACTOR.get(industry_key, 1.0)
 
         # ── Cost Component C3: Business interruption (SA average 25 days) ──
         # C3 = downtime × daily_revenue × impact_factor × BI_factor
@@ -1944,7 +2100,8 @@ class FinancialImpactCalculator:
                 "max": maximum,
             },
             "insurance_recommendations": {
-                "suggested_deductible": minimum_cover,
+                "suggested_deductible": max(1000, self._rsi_deductible(rsi_score, recommended_cover)),
+                "deductible_pct": round(self._rsi_deductible_pct(rsi_score) * 100, 1),
                 "expected_annual_loss": most_likely,
                 "recommended_coverage": recommended_cover,
             },

@@ -428,21 +428,21 @@
   <div class="section-label">&#128202; Insurance Analytics</div>
   <div class="categories">
 
-    <!-- RSI (Ransomware Susceptibility Index) -->
+    <!-- RSI (Ransomware Susceptibility Index) — risk label leads, score secondary -->
     {% set rsi = results.insurance.rsi %}
     {% set rsi_tl = 'tl-crimson' if rsi.rsi_score >= 0.75 else ('tl-red' if rsi.rsi_score >= 0.50 else ('tl-amber' if rsi.rsi_score >= 0.25 else 'tl-green')) %}
     <div class="cat-card">
       <div class="cat-header" onclick="toggle(this)">
         <div class="cat-left"><div class="traffic-light {{ rsi_tl }}"></div><div class="cat-title">Ransomware Susceptibility Index (RSI)</div></div>
         <div style="display:flex;align-items:center;gap:10px;">
-          <span class="cat-grade">{{ '%.2f'|format(rsi.rsi_score) }} — {{ rsi.risk_label }}</span>
+          <span class="cat-grade">{{ rsi.risk_label }} <span style="font-size:0.75em;color:var(--muted);font-weight:400;">({{ '%.2f'|format(rsi.rsi_score) }})</span></span>
           <span class="chevron">&#9660;</span>
         </div>
       </div>
       <div class="cat-body open">
         <table class="kv-table">
-          <tr><td>RSI Score</td><td><strong>{{ '%.3f'|format(rsi.rsi_score) }}</strong> / 1.000</td></tr>
-          <tr><td>Risk Label</td><td><span class="badge {% if rsi.risk_label == 'Critical' %}badge-red{% elif rsi.risk_label == 'High' %}badge-red{% elif rsi.risk_label == 'Medium' %}badge-amber{% else %}badge-green{% endif %}">{{ rsi.risk_label }}</span></td></tr>
+          <tr><td>Risk Level</td><td><span class="badge {% if rsi.risk_label == 'Critical' %}badge-red{% elif rsi.risk_label == 'High' %}badge-red{% elif rsi.risk_label == 'Medium' %}badge-amber{% else %}badge-green{% endif %}" style="font-size:1rem;">{{ rsi.risk_label }}</span></td></tr>
+          <tr><td>RSI Score</td><td>{{ '%.3f'|format(rsi.rsi_score) }} / 1.000</td></tr>
           <tr><td>Base Score</td><td>{{ '%.3f'|format(rsi.base_score) }}</td></tr>
           <tr><td>Industry</td><td>{{ rsi.industry | capitalize }} (×{{ rsi.industry_multiplier }})</td></tr>
           <tr><td>Size Multiplier</td><td>×{{ rsi.size_multiplier }}</td></tr>
@@ -495,9 +495,9 @@
     {% set fin_tl = 'tl-crimson' if fin.total.most_likely > 5000000 else ('tl-red' if fin.total.most_likely > 1000000 else ('tl-amber' if fin.total.most_likely > 200000 else 'tl-green')) %}
     <div class="cat-card">
       <div class="cat-header" onclick="toggle(this)">
-        <div class="cat-left"><div class="traffic-light {{ fin_tl }}"></div><div class="cat-title">Financial Impact Analysis (FAIR)</div></div>
+        <div class="cat-left"><div class="traffic-light {{ fin_tl }}"></div><div class="cat-title">Financial Impact Analysis</div></div>
         <div style="display:flex;align-items:center;gap:10px;">
-          <span class="cat-grade">{{ cur }} {{ '{:,.0f}'.format(fin.total.most_likely) }} est. annual loss</span>
+          <span class="cat-grade" style="font-size:1.1rem;font-weight:700;">{{ cur }} {{ '{:,.0f}'.format(fin.total.most_likely) }} <span style="font-size:0.75em;font-weight:400;">est. annual loss</span></span>
           <span class="chevron">&#9660;</span>
         </div>
       </div>

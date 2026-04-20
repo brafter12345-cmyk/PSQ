@@ -501,7 +501,7 @@ def run_scan(scan_id: str, domain: str, industry: str = "other",
              annual_revenue: float = 0, annual_revenue_zar: int = 0, country: str = "",
              include_fraudulent_domains: bool = False, client_ips: list = None,
              skip_dehashed: bool = False, skip_intelx: bool = False,
-             regulatory_flags: dict = None):
+             regulatory_flags: dict = None, sub_industry: str = None):
     progress_q = queue.Queue()
     _scan_progress[scan_id] = progress_q
 
@@ -520,6 +520,7 @@ def run_scan(scan_id: str, domain: str, industry: str = "other",
                 intelx_api_key=None if skip_intelx else INTELX_API_KEY,
             )
             scanner._regulatory_flags = regulatory_flags
+            scanner._sub_industry = sub_industry
             results = scanner.scan(
                 domain, on_progress=on_progress,
                 industry=industry, annual_revenue=annual_revenue,
@@ -658,6 +659,7 @@ def start_scan():
     except (ValueError, TypeError):
         annual_revenue_zar = 0
     country = str(data.get("country", "")).strip()
+    sub_industry = str(data.get("sub_industry", "")).strip() or None
     include_fraudulent_domains = bool(data.get("include_fraudulent_domains", False))
     skip_dehashed = bool(data.get("skip_dehashed", False))
     skip_intelx = bool(data.get("skip_intelx", False))
@@ -719,7 +721,7 @@ def start_scan():
         target=run_scan,
         args=(scan_id, domain, industry, annual_revenue, annual_revenue_zar, country,
               include_fraudulent_domains, client_ips, skip_dehashed, skip_intelx,
-              regulatory_flags),
+              regulatory_flags, sub_industry),
         daemon=True,
     )
     t.start()

@@ -2212,7 +2212,7 @@ def cat_financial_impact(d, S):
             ("", "\u2022 Insurance coverage recommendations (minimum and recommended)"),
             ("", "\u2022 Per-finding cost reduction estimates"),
         ]
-        return build_cat_card("Financial Impact (FAIR Model)", C_BLUE, "Revenue required", rows, [], S, fallback="Annual revenue is required to calculate financial impact estimates.")
+        return build_cat_card("Financial Impact Analysis", C_BLUE, "Revenue required", rows, [], S, fallback="Annual revenue is required to calculate financial impact estimates.")
 
     is_zar = fin.get("currency") == "ZAR"
     cur    = "R" if is_zar else "$"
@@ -2324,7 +2324,7 @@ def cat_financial_impact(d, S):
         ])
 
     fb = f"Estimated most likely annual loss of {cur} {most_l:,.0f} based on FAIR quantitative risk model with Monte Carlo simulation."
-    return build_cat_card("Financial Impact (FAIR Model)", col,
+    return build_cat_card("Financial Impact Analysis", col,
                           f"{cur} {most_l:,.0f}", rows, fin.get("issues", []), S, fallback=fb)
 
 
@@ -2869,19 +2869,41 @@ def _build_attackers_view(results: dict, S) -> list:
         rows.append(r); bgs.append(bg)
 
     # Phase 4: Data Access & Impact
+    # Severity incorporates financial impact — a high financial impact cannot be LOW
     db_exposed = any(s.get("port") in (3306, 5432, 27017, 6379, 9200, 1433) for s in hrp)
     ix = cats.get("intelx", {})
     darkweb = ix.get("total_results", 0)
-    data_risk = "CRITICAL" if db_exposed else ("HIGH" if darkweb > 10 else ("MEDIUM" if darkweb > 0 else "LOW"))
+    fin = ins.get("financial_impact", {}).get("total", {})
+    fin_most_likely = fin.get("most_likely", 0)
+    fin_revenue = ins.get("financial_impact", {}).get("annual_revenue_zar", 0)
+    fin_loss_pct = fin_most_likely / fin_revenue if fin_revenue > 0 else 0
+
+    # Determine base risk from technical signals
+    if db_exposed:
+        data_risk = "CRITICAL"
+    elif darkweb > 10:
+        data_risk = "HIGH"
+    elif darkweb > 0:
+        data_risk = "MEDIUM"
+    else:
+        data_risk = "LOW"
+
+    # Elevate based on financial impact severity
+    if fin_loss_pct >= 0.30:
+        data_risk = max(data_risk, "CRITICAL", key=lambda x: ["LOW", "MEDIUM", "HIGH", "CRITICAL"].index(x))
+    elif fin_loss_pct >= 0.15:
+        data_risk = max(data_risk, "HIGH", key=lambda x: ["LOW", "MEDIUM", "HIGH", "CRITICAL"].index(x))
+    elif fin_loss_pct >= 0.08:
+        data_risk = max(data_risk, "MEDIUM", key=lambda x: ["LOW", "MEDIUM", "HIGH", "CRITICAL"].index(x))
+
     data_findings = []
     if db_exposed: data_findings.append("Databases directly internet-facing — attacker can extract all business data without further escalation")
     if darkweb > 0: data_findings.append(f"{darkweb} references in dark web databases — stolen data is already circulating in criminal networks")
     rsi = ins.get("rsi", {}).get("rsi_score", 0)
     if rsi > 0.5: data_findings.append(f"Ransomware susceptibility {rsi:.0%} — high probability of ransomware deployment after access is gained")
-    fin = ins.get("financial_impact", {}).get("total", {})
-    if fin.get("most_likely"):
+    if fin_most_likely:
         cur = "R" if ins.get("financial_impact", {}).get("currency") == "ZAR" else "$"
-        data_findings.append(f"Estimated financial impact: {cur} {fin['most_likely']:,.0f} (Monte Carlo P50 median)")
+        data_findings.append(f"Estimated financial impact: {cur} {fin_most_likely:,.0f} (Monte Carlo P50 median)")
     if not data_findings: data_findings.append("Limited external data access vectors identified")
 
     rows.append([Paragraph(f"<b><font color='{_PHASE_FG[data_risk]}'>Phase 4: DATA ACCESS & IMPACT [{data_risk}]</font></b>", S["kv_key"]),

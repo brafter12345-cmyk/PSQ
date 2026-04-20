@@ -121,6 +121,14 @@
           <div class="field-hint">Used for industry-specific risk multipliers and financial impact modelling.</div>
         </div>
 
+        <div class="field" id="sub-industry-field" style="display:none;">
+          <label class="field-label" for="sub-industry">Sub-Industry</label>
+          <select id="sub-industry" name="sub_industry">
+            <option value="" selected>Select sub-industry...</option>
+          </select>
+          <div class="field-hint">Determines the Business Interruption (BI) factor for your specific sector.</div>
+        </div>
+
         <div class="field">
           <label class="field-label" for="revenue">Annual Revenue (ZAR)</label>
           <input type="number" id="revenue" name="annual_revenue_zar" placeholder="e.g. 50000000" min="0" step="1" />
@@ -223,6 +231,28 @@
 <div class="footer">PHISHIELD UMA (Pty) Ltd &nbsp;|&nbsp; Authorised Financial Services Provider &nbsp;|&nbsp; FSP 46418</div>
 
 <script>
+// Sub-industry hierarchy for BI factor selection
+const SUB_INDUSTRIES = {"Agriculture":[{"label":"Agricultural Production Crops","bi":0.1},{"label":"Agriculture production livestock and animal specialties","bi":0.05},{"label":"Agricultural Services","bi":0.05},{"label":"Forestry","bi":0.05},{"label":"Fishing hunting and trapping","bi":0.05}],"Mining":[{"label":"Metal Mining","bi":0.15},{"label":"Coal Mining","bi":0.15},{"label":"Oil And Gas Extraction","bi":0.15},{"label":"Mining And Quarrying Of Nonmetallic Minerals","bi":0.15}],"Construction":[{"label":"Building Construction General Contractors","bi":0.05},{"label":"Heavy Construction Contractors","bi":0.05},{"label":"Construction Special Trade Contractors","bi":0.05}],"Manufacturing":[{"label":"Food And Kindred Products","bi":0.5},{"label":"Tobacco Products","bi":0.5},{"label":"Textile Mill Products","bi":0.5},{"label":"Apparel And Finished Products","bi":0.5},{"label":"Lumber And Wood Products","bi":0.5},{"label":"Furniture And Fixtures","bi":0.5},{"label":"Paper And Allied Products","bi":0.5},{"label":"Printing, Publishing, And Allied Industries","bi":0.5},{"label":"Chemicals And Allied Products","bi":0.5},{"label":"Petroleum Refining","bi":0.5},{"label":"Rubber And Plastics Products","bi":0.5},{"label":"Leather Products","bi":0.5},{"label":"Stone, Clay, Glass, And Concrete","bi":0.5},{"label":"Primary Metal Industries","bi":0.5},{"label":"Fabricated Metal Products","bi":0.5},{"label":"Industrial And Commercial Machinery","bi":0.5},{"label":"Electronic And Electrical Equipment","bi":0.5},{"label":"Transportation Equipment","bi":0.5},{"label":"Measuring And Controlling Instruments","bi":0.5},{"label":"Miscellaneous Manufacturing","bi":0.5}],"Industrial / Manufacturing":[{"label":"Food And Kindred Products","bi":0.5},{"label":"Chemicals And Allied Products","bi":0.5},{"label":"Industrial Machinery","bi":0.5},{"label":"Miscellaneous Manufacturing","bi":0.5}],"Transportation":[{"label":"Railroad Transportation","bi":1},{"label":"Local And Suburban Transit","bi":0.75},{"label":"Motor Freight And Warehousing","bi":1},{"label":"Postal Service","bi":1},{"label":"Water Transportation","bi":1},{"label":"Transportation By Air","bi":1},{"label":"Pipelines","bi":1},{"label":"Transportation Services","bi":1},{"label":"Communications","bi":1},{"label":"Electric, Gas, And Sanitary Services","bi":1},{"label":"Water and Waste Management","bi":1}],"Wholesale Trade":[{"label":"Wholesale Trade - Durable Goods","bi":1},{"label":"Wholesale Trade - Non-durable Goods","bi":1}],"Retail":[{"label":"eCommerce","bi":1.5},{"label":"Building Materials And Hardware","bi":1.25},{"label":"General Merchandise Stores","bi":1.25},{"label":"Food Stores","bi":1.25},{"label":"Automotive Dealers And Service Stations","bi":1.25},{"label":"Apparel And Accessory Stores","bi":1.25},{"label":"Home Furniture And Equipment Stores","bi":1.25},{"label":"Eating And Drinking Places","bi":1.25},{"label":"Miscellaneous Retail","bi":1.25}],"Financial Services":[{"label":"Depository Institutions","bi":1.75},{"label":"Non-depository Credit Institutions","bi":1},{"label":"Security And Commodity Brokers","bi":1},{"label":"Insurance Carriers","bi":0.75},{"label":"Insurance Agents, Brokers, And Service","bi":0.5},{"label":"Real Estate","bi":0.25},{"label":"Holding And Other Investment Offices","bi":0.75}],"Finance":[{"label":"Depository Institutions","bi":1.75},{"label":"Insurance Carriers","bi":0.75},{"label":"Real Estate","bi":0.25}],"Services":[{"label":"Hotels And Lodging","bi":1},{"label":"Personal Services","bi":1},{"label":"Business Services","bi":1},{"label":"Automotive Repair And Parking","bi":0.75},{"label":"Miscellaneous Repair Services","bi":1},{"label":"Motion Pictures","bi":1},{"label":"Amusement And Recreation","bi":0.75},{"label":"Health Services","bi":1},{"label":"Legal Services","bi":1},{"label":"Educational Services","bi":1},{"label":"Social Services","bi":1},{"label":"Museums And Galleries","bi":1},{"label":"Membership Organizations","bi":0.5},{"label":"Engineering And Research Services","bi":1},{"label":"Private Households","bi":0.75},{"label":"Miscellaneous Services","bi":1},{"label":"Software and Technology","bi":1}],"Healthcare":[{"label":"Health Services","bi":1}],"Hospitality":[{"label":"Hotels And Lodging","bi":1},{"label":"Eating And Drinking Places","bi":1.25}],"Technology":[{"label":"Software and Technology","bi":1}],"Tech":[{"label":"Software and Technology","bi":1}],"Education":[{"label":"Educational Services","bi":1}],"Entertainment":[{"label":"Motion Pictures","bi":1},{"label":"Amusement And Recreation","bi":0.75}],"Media":[{"label":"Printing And Publishing","bi":0.5},{"label":"Motion Pictures","bi":1}],"Energy":[{"label":"Electric, Gas, And Sanitary Services","bi":1},{"label":"Oil And Gas Extraction","bi":0.15},{"label":"Pipelines","bi":1}],"Communications":[{"label":"Communications","bi":1}],"Pharmaceuticals":[{"label":"Chemicals And Allied Products","bi":0.5}],"Research":[{"label":"Engineering And Research Services","bi":1}],"Consumer":[{"label":"Personal Services","bi":1},{"label":"Miscellaneous Services","bi":1}],"Public Sector":[{"label":"Executive And General Government","bi":1},{"label":"Justice, Public Order, And Safety","bi":1},{"label":"Public Finance And Monetary Policy","bi":1},{"label":"Administration Of Human Resources","bi":1},{"label":"Environmental Quality Programs","bi":1},{"label":"Economic Programs","bi":1},{"label":"National Security And International Affairs","bi":1}]};
+
+// Populate sub-industry dropdown when industry changes
+document.getElementById('industry').addEventListener('change', function() {
+  const sel = document.getElementById('sub-industry');
+  const field = document.getElementById('sub-industry-field');
+  const subs = SUB_INDUSTRIES[this.value];
+  sel.innerHTML = '<option value="" selected>Select sub-industry...</option>';
+  if (subs && subs.length > 0) {
+    subs.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.label;
+      opt.textContent = s.label + (s.bi !== 1 ? ' (BI: ' + s.bi + ')' : '');
+      sel.appendChild(opt);
+    });
+    field.style.display = '';
+  } else {
+    field.style.display = 'none';
+  }
+});
+
 const form = document.getElementById('scan-form');
 const progress = document.getElementById('scan-progress');
 const errorEl = document.getElementById('error');
@@ -288,6 +318,8 @@ form.addEventListener('submit', async (e) => {
   if (!document.getElementById('intelx-check').checked) body.skip_intelx = true;
 
   // Regulatory exposure flags
+  const subInd = document.getElementById('sub-industry').value;
+  if (subInd) body.sub_industry = subInd;
   if (document.getElementById('gdpr-check').checked) body.gdpr_applicable = true;
   if (document.getElementById('pci-check').checked) body.pci_applicable = true;
 

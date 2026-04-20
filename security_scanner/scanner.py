@@ -570,10 +570,12 @@ class SecurityScanner:
             fin_calc = FinancialImpactCalculator()
             _zar = annual_revenue_zar if annual_revenue_zar > 0 else 10_000_000
             _reg_flags = getattr(self, '_regulatory_flags', None)
+            _sub_industry = getattr(self, '_sub_industry', None)
             fin_result = fin_calc.calculate(
                 cat_results, rsi_result, annual_revenue, industry,
                 annual_revenue_zar=_zar,
                 regulatory_flags=_reg_flags,
+                sub_industry=_sub_industry,
             )
             results["insurance"]["financial_impact"] = fin_result
 
