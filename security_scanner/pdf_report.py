@@ -2271,7 +2271,6 @@ def cat_financial_impact(d, S):
 
         rows.extend([
             ("Data Breach Loss",      f"{cur} {sc.get('data_breach', {}).get('estimated_loss', 0):,.0f}  (P={sc.get('data_breach', {}).get('probability', 0)})"),
-            ("  Records at risk",     f"{sc.get('data_breach', {}).get('estimated_records', 0):,} @ {cur}{sc.get('data_breach', {}).get('cost_per_record', 0):,.0f}/rec"),
             ("  POPIA regulatory",    f"{cur} {sc.get('data_breach', {}).get('regulatory_fine', 0):,.0f}"),
             ("Detection & Escalation", f"{cur} {sc4.get('detection_escalation', {}).get('estimated_loss', 0):,.0f}") if sc4 else ("", ""),
             ("Ransom Demand",         f"{cur} {sc4.get('ransom_demand', {}).get('estimated_loss', 0):,.0f}  (RSI={sc.get('ransomware', {}).get('rsi_score', 0)})") if sc4 else ("Ransomware Loss", f"{cur} {sc.get('ransomware', {}).get('estimated_loss', 0):,.0f}  (RSI={sc.get('ransomware', {}).get('rsi_score', 0)})"),
@@ -2323,7 +2322,7 @@ def cat_financial_impact(d, S):
             ("Recommended Coverage",  f"{cur} {ins.get('recommended_coverage', 0):,.0f}"),
         ])
 
-    fb = f"Estimated most likely annual loss of {cur} {most_l:,.0f} based on FAIR quantitative risk model with Monte Carlo simulation."
+    fb = f"Estimated most likely annual loss of {cur} {most_l:,.0f} based on hybrid quantitative risk model with Monte Carlo simulation."
     return build_cat_card("Financial Impact Analysis", col,
                           f"{cur} {most_l:,.0f}", rows, fin.get("issues", []), S, fallback=fb)
 
@@ -2367,7 +2366,7 @@ def cat_risk_mitigations(d, S):
                       f"{cur} {savings:,.0f}"))
 
     rows.append(("", ""))
-    rows.append(("Note", "Savings are modelled projections based on FAIR methodology. Cost estimates are indicative SA market ranges for prioritisation, not project quotes."))
+    rows.append(("Note", "Savings are modelled projections based on hybrid financial impact methodology. Cost estimates are indicative SA market ranges for prioritisation, not project quotes."))
 
     fb = f"Implementing all recommendations could reduce annual expected loss by {cur} {total_savings:,.0f} ({reduction_pct}%)."
     return build_cat_card("Risk Mitigation Recommendations", C_GREEN,

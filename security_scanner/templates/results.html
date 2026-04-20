@@ -583,10 +583,6 @@
             <td>R {{ '{:,.0f}'.format(db.estimated_loss | default(0)) }} <span style="color:var(--muted);">(P={{ '%.1f'|format((db.probability | default(0)) * 100) }}%)</span></td>
           </tr>
           <tr>
-            <td style="color:var(--muted);padding-left:20px;">Records at risk</td>
-            <td>{{ '{:,}'.format(db.estimated_records | default(0)) }} @ R{{ '{:,.0f}'.format(db.cost_per_record | default(0)) }}/rec</td>
-          </tr>
-          <tr>
             <td style="color:var(--muted);padding-left:20px;">POPIA regulatory</td>
             <td>R {{ '{:,.0f}'.format(db.regulatory_fine | default(0)) }}</td>
           </tr>
