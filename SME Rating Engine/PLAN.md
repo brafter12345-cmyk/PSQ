@@ -32,7 +32,8 @@ Single-page HTML portal (no frameworks), 5-step wizard:
 - **Industry Modifiers:** S&T (1.10-1.67) and Finance (1.00-1.40) applied to base only, not FP
 - **Bracket Shifting:** Lower premium brackets for competitive pricing on certain T/O + cover combos
 - **Turnover Calc:** Midpoint of previous year and current estimate
-- **Underwriting Loading:** 0-15% based on Q2-Q6 "No" answers
+- **Underwriting Questions (April 2026 revised):** Q1 is compound (4 baseline sub-parts); Q1.1 (AV/EDR) or Q1.2 (Firewall) No → Decline; Q1.3 (Email security) or Q1.4 (Web filter) No → Condition of Cover (caution). Loading pool is Q2.1, Q2.2, Q3, Q4, Q5 (five independent questions). Q6/Q7 are FP>R250k-dependent Conditions of Cover; Q8 is prior cyber cover with optional Insurer/Inception-Date follow-up (auto-Yes on Renewal)
+- **Underwriting Loading:** Grace of two, then 5/10/15% for 3/4/5 "No" answers on Q2.1-Q5
 - **Discount Cap:** Combined posture + discretionary max ~35%
 - **Blockers:** Healthcare/Public Admin, T/O > R200M, Q1=No, Prior Claim ticked, Renewal-with-Q9=No contradiction -> "Refer for Underwriting"
 - **Market Condition:** Read-only indicator (currently "Softening 2026"), hardcoded in sme-data.js
@@ -54,4 +55,4 @@ Quotes/Year/Month/CompanyName/CompanyName_CoverLimit.pdf
 `CPB-YYYYMMDD-NNNN`
 
 ---
-*Last updated: 2026-04-22 — Renewal logic overhaul (v1.3) + Rule I ladder-gap fill (v1.3.1)*
+*Last updated: 2026-04-22 — Renewal logic overhaul (v1.3) + Rule I ladder-gap fill (v1.3.1) + live FP Step 2 card updates (v1.3.2) + UW question set aligned to V1 2026 proposal (v1.4)*

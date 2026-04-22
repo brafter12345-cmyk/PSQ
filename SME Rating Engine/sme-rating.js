@@ -41,6 +41,12 @@ const state = {
   uwOutcome: null,
   uwLoadingPct: 0,
   uwNoCount: 0,
+  // April 2026 — new compound Q1 spec
+  uwQ1ConditionsOfCover: [],   // Text sentences derived from Q1.3 / Q1.4 No answers
+  uwAllConditions: [],         // Q1 CoC + FP-dependent CoC combined (for banners / audit)
+  uwEndpointVendor: '',        // Optional free text: Q1 endpoint security vendor + product name
+  uwPriorInsurer: '',          // Optional free text: Q8 prior-cover insurer name
+  uwPriorInceptionDate: '',    // Optional ISO date: Q8 prior-cover inception date
   fpOver250k: false,
   priorClaim: false,
   quoteType: 'new',
@@ -540,32 +546,39 @@ function clearRenewalInputs() {
   if (fp) fp.value = '';
 }
 
-// C1: lock/unlock Q9 based on whether this is a renewal
-function applyRenewalQ9Lock(lock) {
-  const q9Block = document.querySelector('[data-uw="q9"]');
-  if (!q9Block) return;
-  const yesBtn = q9Block.querySelector('[data-value="yes"]');
-  const noBtn = q9Block.querySelector('[data-value="no"]');
+// C1: lock/unlock Q8 (prior cyber cover) based on whether this is a renewal.
+// April 2026: prior-cover question is now Q8 (was Q9 before the Q5 email-filter removal).
+function applyRenewalQ8Lock(lock) {
+  const qBlock = document.querySelector('[data-uw="q8"]');
+  if (!qBlock) return;
+  // Target the TOP-LEVEL Yes/No buttons only — not any future sub-questions.
+  const topToggleGroup = qBlock.querySelector(':scope > .toggle-group');
+  if (!topToggleGroup) return;
+  const yesBtn = topToggleGroup.querySelector('[data-value="yes"]');
+  const noBtn  = topToggleGroup.querySelector('[data-value="no"]');
   if (lock) {
-    // Force Q9 = Yes
-    state.uwAnswers['q9'] = true;
+    // Force Q8 = Yes
+    state.uwAnswers['q8'] = true;
     if (yesBtn) yesBtn.classList.add('active');
-    if (noBtn) noBtn.classList.remove('active');
+    if (noBtn)  noBtn.classList.remove('active');
     if (yesBtn) yesBtn.disabled = true;
-    if (noBtn) noBtn.disabled = true;
-    q9Block.classList.add('uw-locked');
+    if (noBtn)  noBtn.disabled  = true;
+    qBlock.classList.add('uw-locked');
+    // Reveal the optional insurer / inception-date follow-up inputs
+    const followup = $('uw-q8-details');
+    if (followup) followup.style.display = 'block';
     // Add an inline hint if not already present
-    if (!q9Block.querySelector('.uw-lock-hint')) {
+    if (!qBlock.querySelector('.uw-lock-hint')) {
       const hint = document.createElement('div');
       hint.className = 'uw-lock-hint';
       hint.textContent = 'Auto-set to Yes on renewal (existing Phishield policy implies prior cover).';
-      q9Block.appendChild(hint);
+      qBlock.appendChild(hint);
     }
   } else {
     if (yesBtn) yesBtn.disabled = false;
-    if (noBtn) noBtn.disabled = false;
-    q9Block.classList.remove('uw-locked');
-    const hint = q9Block.querySelector('.uw-lock-hint');
+    if (noBtn)  noBtn.disabled  = false;
+    qBlock.classList.remove('uw-locked');
+    const hint = qBlock.querySelector('.uw-lock-hint');
     if (hint) hint.remove();
   }
 }
@@ -593,70 +606,79 @@ function setBlocker(blocked, reason) {
 function evaluateUW() {
   const a = state.uwAnswers;
 
-  // Q1 = No -> Decline
-  if (a['q1'] === false) {
+  // ── Q1 DECLINE GATE (April 2026 revised spec) ──
+  // Q1.1 (AV/EDR) and Q1.2 (firewall) are NON-NEGOTIABLE baseline controls.
+  // If either is No, decline. Q1.3 (email security) and Q1.4 (web filtering)
+  // "No" do NOT decline — they become Conditions of Cover (handled in
+  // renderUWOutcome + renderUWConditionsPanel).
+  if (a['q1-1'] === false || a['q1-2'] === false) {
     state.uwOutcome = 'decline';
     state.uwLoadingPct = 0;
     state.uwNoCount = 0;
+    state.uwQ1ConditionsOfCover = [];
     renderUWOutcome();
     return;
   }
 
-  // Q2 compound: Yes only if BOTH Q2.1 AND Q2.2 are Yes
-  const q2 = (a['q2-1'] === true && a['q2-2'] === true);
+  // Capture Q1.3 / Q1.4 No answers as Conditions of Cover (only meaningful
+  // when Q1.1 and Q1.2 are Yes, i.e. we've passed the gate above).
+  const q1Conditions = [];
+  if (a['q1-3'] === false) {
+    q1Conditions.push('An email security solution that filters for phishing, malware and malicious attachments must be implemented as a condition of cover.');
+  }
+  if (a['q1-4'] === false) {
+    q1Conditions.push('A web-filtering solution that blocks access to known malicious or suspicious websites must be implemented as a condition of cover.');
+  }
+  state.uwQ1ConditionsOfCover = q1Conditions;
 
-  // Count Q2-Q6 "No" answers
+  // ── Loading pool: Q2.1, Q2.2, Q3, Q4, Q5 (FIVE independent questions) ──
+  // Q2.1 and Q2.2 are NO LONGER compounded — each is counted independently.
   let noCount = 0;
-  if (a['q2-1'] !== undefined && a['q2-2'] !== undefined && !q2) noCount++;
-  if (a['q3'] === false) noCount++;
-  if (a['q4'] === false) noCount++;
-  if (a['q5'] === false) noCount++;
-  if (a['q6'] === false) noCount++;
+  if (a['q2-1'] === false) noCount++;
+  if (a['q2-2'] === false) noCount++;
+  if (a['q3']   === false) noCount++;
+  if (a['q4']   === false) noCount++;
+  if (a['q5']   === false) noCount++;
 
   state.uwNoCount = noCount;
 
-  // All Q1-Q6 answered No (except Q1 which we already checked)?
-  // Actually: Q1=No already handled above. 5 No means Q2-Q6 all No.
-  if (noCount >= 5) {
-    state.uwOutcome = 'decline';
-    state.uwLoadingPct = 0;
-    renderUWOutcome();
-    return;
-  }
-
-  // Loading from table
+  // Loading from table — no decline from noCount; Q1.1/Q1.2 is the only gate.
   const loadingEntry = UNDERWRITING_LOADINGS[Math.min(noCount, 5)];
   state.uwLoadingPct = loadingEntry.loading;
 
+  // Outcome label: 0 Nos = standard, 1-2 Nos = caution (grace), 3+ = loading.
+  // When Q1.3 or Q1.4 conditions are present, upgrade standard→caution so
+  // the underwriter sees that something needs attention.
   if (noCount === 0) {
-    state.uwOutcome = 'standard';
-  } else if (noCount === 1) {
+    state.uwOutcome = q1Conditions.length > 0 ? 'caution' : 'standard';
+  } else if (noCount <= 2) {
     state.uwOutcome = 'caution';
   } else {
     state.uwOutcome = 'loading';
   }
 
   // ── B1: Prior claim always escalates to senior UW (overrides standard/caution/loading) ──
-  // ── B2: Defensive check — Renewal + Q9=No is a contradiction and escalates to refer ──
-  //       (C1 normally prevents this via UI, but this guards against data-load or programmatic entry.)
-  const renewalQ9Contradiction = (state.quoteType === 'renewal' && a['q9'] === false);
-  if (state.priorClaim || renewalQ9Contradiction) {
+  // ── B2: Defensive check — Renewal + Q8=No is a contradiction and escalates to refer ──
+  //       (April 2026: Q8 was formerly Q9 — prior cyber cover question.)
+  //       C1 normally prevents this via UI, but this guards against data-load or programmatic entry.
+  const renewalQ8Contradiction = (state.quoteType === 'renewal' && a['q8'] === false);
+  if (state.priorClaim || renewalQ8Contradiction) {
     state.uwOutcome = 'refer';
     // Keep uwLoadingPct as computed so audit trail retains context, but block progression.
     let reason;
-    if (state.priorClaim && renewalQ9Contradiction) {
-      reason = 'Prior claim flagged AND renewal quote with no prior cover (Q9=No). Refer to senior underwriter.';
+    if (state.priorClaim && renewalQ8Contradiction) {
+      reason = 'Prior claim flagged AND renewal quote with no prior cover (Q8=No). Refer to senior underwriter.';
     } else if (state.priorClaim) {
       reason = 'Prior claim flagged. Refer to senior underwriter.';
     } else {
-      reason = 'Renewal selected but Q9 indicates no prior cover. Refer to senior underwriter.';
+      reason = 'Renewal selected but Q8 indicates no prior cover. Refer to senior underwriter.';
     }
     setBlocker(true, reason);
     renderUWOutcome();
     return;
   }
 
-  // Clear any prior-claim / Q9-contradiction blocker now that neither trigger applies
+  // Clear any prior-claim / Q8-contradiction blocker now that neither trigger applies
   if (state.isBlocked && (
         state.blockReason.includes('Prior claim') ||
         state.blockReason.includes('prior cover')
@@ -688,7 +710,13 @@ function renderUWOutcome() {
     el.innerHTML = '<span class="uw-outcome-badge standard">Standard Rates</span><span>All underwriting criteria met.</span>';
     el.classList.add('visible', 'standard');
   } else if (state.uwOutcome === 'caution') {
-    el.innerHTML = '<span class="uw-outcome-badge caution">Proceed with Caution</span><span>1 concern noted. No loading applied.</span>';
+    // Describe the nature of the caution: Q1.3/Q1.4 condition-of-cover or Q2-Q5 Nos (or both).
+    const q1cocCount = (state.uwQ1ConditionsOfCover || []).length;
+    const parts = [];
+    if (q1cocCount > 0) parts.push(`${q1cocCount} Q1 condition${q1cocCount !== 1 ? 's' : ''} of cover noted`);
+    if (state.uwNoCount > 0) parts.push(`${state.uwNoCount} Q2\u2013Q5 concern${state.uwNoCount !== 1 ? 's' : ''} noted`);
+    const detail = parts.length > 0 ? parts.join(', ') + '. No loading applied.' : 'No loading applied.';
+    el.innerHTML = '<span class="uw-outcome-badge caution">Proceed with Caution</span><span>' + detail + '</span>';
     el.classList.add('visible', 'caution');
   } else if (state.uwOutcome === 'loading') {
     const pct = Math.round(state.uwLoadingPct * 100);
@@ -701,15 +729,18 @@ function renderUWOutcome() {
     setBlocker(false, '');
   }
 
-  // Check FP-dependent conditions of cover (Q7/Q8 answered No)
+  // Check FP-dependent conditions of cover (April 2026: Q6/Q7 — was Q7/Q8)
   let fpConditions = [];
   if (state.fpOver250k) {
-    if (state.uwAnswers['q7-1'] === false) fpConditions.push('The Insured must have or implement documented procedures for the vetting of all new vendors, customers, and payees before processing any payments or financial transactions.');
-    if (state.uwAnswers['q7-2'] === false) fpConditions.push('The Insured must have or implement documented procedures to verify all new beneficiaries loaded onto the business\'s banking profiles before authorising any funds transfers.');
-    if (state.uwAnswers['q7-3'] === false) fpConditions.push('The Insured must have or implement documented procedures to verify and validate any requests to amend existing beneficiary payment details before processing changes.');
-    if (state.uwAnswers['q8'] === false) fpConditions.push('The Insured must utilise account verification services offered by their bank or a third-party provider to confirm the legitimacy of beneficiary accounts before processing payments.');
+    if (state.uwAnswers['q6-1'] === false) fpConditions.push('The Insured must have or implement documented procedures for the vetting of all new vendors, customers, and payees before processing any payments or financial transactions.');
+    if (state.uwAnswers['q6-2'] === false) fpConditions.push('The Insured must have or implement documented procedures to verify all new beneficiaries loaded onto the business\'s banking profiles before authorising any funds transfers.');
+    if (state.uwAnswers['q6-3'] === false) fpConditions.push('The Insured must have or implement documented procedures to verify and validate any requests to amend existing beneficiary payment details before processing changes.');
+    if (state.uwAnswers['q7']   === false) fpConditions.push('The Insured must utilise account verification services offered by their bank or a third-party provider to confirm the legitimacy of beneficiary accounts before processing payments.');
   }
   state.uwFPConditions = fpConditions;
+
+  // Combine Q1 condition-of-cover sentences with FP conditions for the Step 1 banner
+  state.uwAllConditions = [].concat(state.uwQ1ConditionsOfCover || [], fpConditions);
 
   // Show/hide condition of cover banner
   const cocBanner = $('condition-of-cover-banner');
@@ -736,7 +767,10 @@ function checkNextBtn1() {
   const hasCompany = state.companyName.trim().length > 0;
   const hasIndustry = state.industryIndex >= 0;
   const hasTurnover = state.actualTurnover > 0;
-  const q1Answered = state.uwAnswers['q1'] !== undefined;
+  // April 2026: Q1 is compound. The two gate questions (Q1.1 AV/EDR and Q1.2 firewall)
+  // must both be answered before Continue enables. Q1.3 and Q1.4 can be left unanswered —
+  // they're only relevant as conditions of cover if answered No.
+  const q1GateAnswered = state.uwAnswers['q1-1'] !== undefined && state.uwAnswers['q1-2'] !== undefined;
 
   // ── Item A: renewals must capture existing cover, premium, and FP sub-limit ──
   let renewalOk = true;
@@ -746,7 +780,7 @@ function checkNextBtn1() {
       && state.renewalFPLimit > 0;
   }
 
-  btn.disabled = !(hasCompany && hasIndustry && hasTurnover && q1Answered && renewalOk);
+  btn.disabled = !(hasCompany && hasIndustry && hasTurnover && q1GateAnswered && renewalOk);
 }
 
 /* ===== Searchable Industry Dropdown ===== */
@@ -1572,19 +1606,21 @@ function renderFPSelectorForOption(opt) {
 }
 
 /* ===== Toggle FP-dependent Questions ===== */
+// April 2026: FP-dependent questions are now Q6 (procedures 6.1/6.2/6.3) and Q7 (bank verification).
+// The DOM ids are uw-q6 and uw-q7 respectively.
 function toggleFPQuestions(show) {
+  $('uw-q6').style.display = show ? 'block' : 'none';
   $('uw-q7').style.display = show ? 'block' : 'none';
-  $('uw-q8').style.display = show ? 'block' : 'none';
 
   if (!show) {
     // Clear FP-dependent answers
-    delete state.uwAnswers['q7-1'];
-    delete state.uwAnswers['q7-2'];
-    delete state.uwAnswers['q7-3'];
-    delete state.uwAnswers['q8'];
+    delete state.uwAnswers['q6-1'];
+    delete state.uwAnswers['q6-2'];
+    delete state.uwAnswers['q6-3'];
+    delete state.uwAnswers['q7'];
 
     // Clear toggle button states
-    $$('#uw-q7 .toggle-btn, #uw-q8 .toggle-btn').forEach(b => b.classList.remove('active'));
+    $$('#uw-q6 .toggle-btn, #uw-q7 .toggle-btn').forEach(b => b.classList.remove('active'));
   }
 }
 
@@ -1976,7 +2012,7 @@ function renderUWConditionsPanel() {
     </div>`;
   }
 
-  // 2. FP Conditions of Cover (Q7/Q8 No answers)
+  // 2. FP Conditions of Cover (Q6/Q7 No answers — was Q7/Q8 pre-Apr 2026)
   // Check FP limit from selected covers / quote options
   let effectiveFPOver250k = state.fpOver250k;
   if (state.quoteOptions.length > 0) {
@@ -2024,16 +2060,26 @@ function renderUWConditionsPanel() {
       <ul>${state.uwFPConditions.map(c => '<li>' + c + '</li>').join('')}</ul>
     </div>`;
   } else if (effectiveFPOver250k) {
-    // FP > R250k but Q7/Q8 not yet answered
-    const q7Answered = state.uwAnswers['q7-1'] !== undefined;
-    const q8Answered = state.uwAnswers['q8'] !== undefined;
-    if (!q7Answered || !q8Answered) {
+    // FP > R250k but Q6/Q7 not yet answered (April 2026: was Q7/Q8)
+    const q6Answered = state.uwAnswers['q6-1'] !== undefined;
+    const q7Answered = state.uwAnswers['q7']   !== undefined;
+    if (!q6Answered || !q7Answered) {
       hasConditions = true;
       html += `<div class="uw-cond-section">
         <div class="uw-cond-label">FP Cover &gt; R250,000</div>
-        <div class="uw-cond-value" style="color: var(--warning);">Q7 and Q8 require answers — FP cover exceeds R250,000 threshold. Please complete underwriting questions on Step 1.</div>
+        <div class="uw-cond-value" style="color: var(--warning);">Q6 and Q7 require answers — FP cover exceeds R250,000 threshold. Please complete underwriting questions on Step 1.</div>
       </div>`;
     }
+  }
+
+  // Q1.3 / Q1.4 "No" condition-of-cover (new April 2026)
+  if (state.uwQ1ConditionsOfCover && state.uwQ1ConditionsOfCover.length > 0) {
+    hasConditions = true;
+    html += `<div class="uw-cond-section">
+      <div class="uw-cond-label">Conditions of Cover (Q1 baseline controls)</div>
+      <div class="uw-cond-value">The following baseline security controls must be implemented as conditions of cover:</div>
+      <ul>${state.uwQ1ConditionsOfCover.map(c => '<li>' + c + '</li>').join('')}</ul>
+    </div>`;
   }
 
   // 3. Prior claim
@@ -2247,11 +2293,15 @@ function populateSummary() {
 
   // Build comprehensive conditions list
   let allConditions = [];
+  // Q1 conditions (1.3 / 1.4 No) — April 2026
+  if (state.uwQ1ConditionsOfCover && state.uwQ1ConditionsOfCover.length > 0) {
+    allConditions = allConditions.concat(state.uwQ1ConditionsOfCover);
+  }
   // FP conditions of cover
   if (state.uwFPConditions && state.uwFPConditions.length > 0) {
     allConditions = allConditions.concat(state.uwFPConditions);
   }
-  // Check if FP > R250k but Q7/Q8 unanswered (auto-detected from cover selection)
+  // Check if FP > R250k but Q6/Q7 unanswered (auto-detected from cover selection)
   if (state.selectedCovers.length > 0) {
     const ci = state.selectedCovers[0];
     const coverKey = COVER_LIMITS[ci].key;
@@ -2263,9 +2313,9 @@ function populateSummary() {
       if (fpIdx >= 0 && fpIdx < availFP.length && availFP[fpIdx].limit > 250_000) fpExceeds = true;
     }
     if (fpExceeds && (!state.uwFPConditions || state.uwFPConditions.length === 0)) {
-      // FP exceeds but no conditions captured — Q7/Q8 all Yes or unanswered
-      if (state.uwAnswers['q7-1'] === undefined && state.uwAnswers['q8'] === undefined) {
-        allConditions.push('FP > R250k: Q7 and Q8 pending completion');
+      // FP exceeds but no conditions captured — Q6/Q7 all Yes or unanswered (was Q7/Q8 pre-Apr 2026)
+      if (state.uwAnswers['q6-1'] === undefined && state.uwAnswers['q7'] === undefined) {
+        allConditions.push('FP > R250k: Q6 and Q7 pending completion');
       }
     }
   }
@@ -2435,6 +2485,13 @@ function buildClipboardText() {
   lines.push('-'.repeat(30));
   lines.push(`Outcome: ${state.uwOutcome || '--'}`);
   lines.push(`Loading: ${state.uwLoadingPct > 0 ? Math.round(state.uwLoadingPct * 100) + '%' : 'None'}`);
+  if (state.uwEndpointVendor) lines.push(`Endpoint Security: ${state.uwEndpointVendor}`);
+  if (state.uwPriorInsurer)        lines.push(`Prior Insurer: ${state.uwPriorInsurer}`);
+  if (state.uwPriorInceptionDate)  lines.push(`Prior Inception: ${state.uwPriorInceptionDate}`);
+  if (state.uwQ1ConditionsOfCover && state.uwQ1ConditionsOfCover.length > 0) {
+    lines.push('Q1 Conditions of Cover:');
+    state.uwQ1ConditionsOfCover.forEach((c, i) => lines.push(`  ${i + 1}. ${c}`));
+  }
   if (state.priorClaim) lines.push('** Prior claim flagged **');
   lines.push('');
   lines.push('PREMIUMS');
@@ -2587,9 +2644,17 @@ function generatePDF(optionOverride) {
   const outcomeLabels = { standard: 'Standard Rates', caution: 'Proceed with Caution', loading: Math.round(state.uwLoadingPct * 100) + '% Loading', decline: 'Declined', refer: 'Refer to Senior UW' };
   addField('Outcome:', outcomeLabels[state.uwOutcome] || '--');
   addField('Loading:', state.uwLoadingPct > 0 ? Math.round(state.uwLoadingPct * 100) + '%' : 'None');
-  if (state.uwFPConditions && state.uwFPConditions.length > 0) {
+  // April 2026: Q1 endpoint vendor (optional) + Q8 prior-cover details
+  if (state.uwEndpointVendor) addField('Endpoint Security:', state.uwEndpointVendor);
+  if (state.uwAnswers && state.uwAnswers['q8'] === true && (state.uwPriorInsurer || state.uwPriorInceptionDate)) {
+    if (state.uwPriorInsurer)        addField('Prior Insurer:', state.uwPriorInsurer);
+    if (state.uwPriorInceptionDate)  addField('Prior Inception:', state.uwPriorInceptionDate);
+  }
+  // Combine Q1 (1.3/1.4) and FP-dependent (6.1/6.2/6.3/7) conditions of cover
+  const pdfAllConds = [].concat(state.uwQ1ConditionsOfCover || [], state.uwFPConditions || []);
+  if (pdfAllConds.length > 0) {
     addField('Conditions of Cover:', '');
-    state.uwFPConditions.forEach((c, idx) => {
+    pdfAllConds.forEach((c, idx) => {
       checkPage(20);
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
@@ -2860,7 +2925,12 @@ async function saveQuoteToBackend(coverLabel, pdfBase64, optionQuoteRef) {
     uwAnswers: state.uwAnswers,
     uwOutcome: state.uwOutcome,
     uwLoadingPct: state.uwLoadingPct,
-    uwConditions: state.fpConditions || [],
+    uwNoCount: state.uwNoCount,
+    uwConditions: state.uwFPConditions || [],
+    uwQ1Conditions: state.uwQ1ConditionsOfCover || [],
+    uwEndpointVendor: state.uwEndpointVendor || '',
+    uwPriorInsurer: state.uwPriorInsurer || '',
+    uwPriorInceptionDate: state.uwPriorInceptionDate || '',
     endorsements: state.endorsements || '',
     coverSelections: Object.keys(state.calculations).map(key => {
       const calc = state.calculations[key];
@@ -3006,9 +3076,38 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.classList.add('active');
 
       state.uwAnswers[key] = value;
+
+      // Q8 follow-up: show Insurer + Inception Date when Yes, hide + clear when No
+      if (key === 'q8') {
+        const followup = $('uw-q8-details');
+        if (followup) followup.style.display = value ? 'block' : 'none';
+        if (!value) {
+          state.uwPriorInsurer = '';
+          state.uwPriorInceptionDate = '';
+          const ins = $('uw-q8-insurer');       if (ins) ins.value = '';
+          const inc = $('uw-q8-inception');     if (inc) inc.value = '';
+        }
+      }
+
       evaluateUW();
       checkNextBtn1();
     });
+  });
+
+  // Q1 optional endpoint vendor / product name
+  const q1Vendor = $('uw-q1-vendor');
+  if (q1Vendor) q1Vendor.addEventListener('input', () => {
+    state.uwEndpointVendor = q1Vendor.value.trim();
+  });
+
+  // Q8 optional prior-cover insurer + inception date (visible only when Q8=Yes)
+  const q8Insurer = $('uw-q8-insurer');
+  if (q8Insurer) q8Insurer.addEventListener('input', () => {
+    state.uwPriorInsurer = q8Insurer.value.trim();
+  });
+  const q8Inception = $('uw-q8-inception');
+  if (q8Inception) q8Inception.addEventListener('input', () => {
+    state.uwPriorInceptionDate = q8Inception.value;
   });
 
   // FP checkbox
@@ -3055,8 +3154,8 @@ document.addEventListener('DOMContentLoaded', () => {
           fpToggle.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
           fpToggle.querySelector('[data-value="yes"]').classList.add('active');
         }
-        // ── C1: Auto-set Q9 = Yes and disable (existing Phishield policy implies prior cover) ──
-        applyRenewalQ9Lock(true);
+        // ── C1: Auto-set Q8 (prior cover) = Yes and disable on renewal ──
+        applyRenewalQ8Lock(true);
       } else {
         state.competitorHasFP = false;
         const fpToggle = $('competitor-fp-toggle');
@@ -3064,8 +3163,8 @@ document.addEventListener('DOMContentLoaded', () => {
           fpToggle.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
           fpToggle.querySelector('[data-value="no"]').classList.add('active');
         }
-        // ── C1: Unlock Q9 when leaving Renewal ──
-        applyRenewalQ9Lock(false);
+        // ── C1: Unlock Q8 when leaving Renewal ──
+        applyRenewalQ8Lock(false);
         // ── G: Clear renewal-specific state and UI when leaving Renewal tab ──
         clearRenewalInputs();
       }

@@ -127,16 +127,45 @@
         <div class="uw-questions" id="uw-questions">
           <h3 class="uw-header">Underwriting Assessment</h3>
 
-          <!-- Q1 -->
+          <!-- Q1: Internet Security Software (compound, 4 sub-parts) -->
+          <!-- Q1.1 + Q1.2 form the hard decline gate. Q1.3 + Q1.4 "No" become Conditions of Cover. -->
           <div class="uw-question" data-uw="q1">
-            <div class="uw-question-text">1. Does Your Business have an active, comprehensive, paid for internet security software installed on all computer systems?</div>
-            <div class="toggle-group">
-              <button type="button" class="toggle-btn" data-value="yes" aria-label="Q1 Yes">Y</button>
-              <button type="button" class="toggle-btn" data-value="no" aria-label="Q1 No">N</button>
+            <div class="uw-question-text">1. Does your business have a comprehensive, paid-for internet security software subscription installed and up to date on all computer systems and access devices? This must include at a minimum:</div>
+            <div class="uw-sub-question" data-uw="q1-1">
+              <div class="uw-question-text">1.1 Antivirus/anti-malware with real-time endpoint detection and response (EDR)</div>
+              <div class="toggle-group">
+                <button type="button" class="toggle-btn" data-value="yes" aria-label="Q1.1 Yes">Y</button>
+                <button type="button" class="toggle-btn" data-value="no" aria-label="Q1.1 No">N</button>
+              </div>
+            </div>
+            <div class="uw-sub-question" data-uw="q1-2">
+              <div class="uw-question-text">1.2 A network firewall configured to filter incoming and outgoing traffic</div>
+              <div class="toggle-group">
+                <button type="button" class="toggle-btn" data-value="yes" aria-label="Q1.2 Yes">Y</button>
+                <button type="button" class="toggle-btn" data-value="no" aria-label="Q1.2 No">N</button>
+              </div>
+            </div>
+            <div class="uw-sub-question" data-uw="q1-3">
+              <div class="uw-question-text">1.3 An email security solution that filters for phishing, malware and malicious attachments</div>
+              <div class="toggle-group">
+                <button type="button" class="toggle-btn" data-value="yes" aria-label="Q1.3 Yes">Y</button>
+                <button type="button" class="toggle-btn" data-value="no" aria-label="Q1.3 No">N</button>
+              </div>
+            </div>
+            <div class="uw-sub-question" data-uw="q1-4">
+              <div class="uw-question-text">1.4 A web-filtering solution that blocks access to known malicious or suspicious websites</div>
+              <div class="toggle-group">
+                <button type="button" class="toggle-btn" data-value="yes" aria-label="Q1.4 Yes">Y</button>
+                <button type="button" class="toggle-btn" data-value="no" aria-label="Q1.4 No">N</button>
+              </div>
+            </div>
+            <div class="uw-text-followup" id="uw-q1-vendor-wrap">
+              <label class="field-label" for="uw-q1-vendor">If Yes to the above, provide the name of endpoint security vendor and product name (optional):</label>
+              <input class="form-input" id="uw-q1-vendor" type="text" placeholder="e.g. SentinelOne Singularity, Sophos Intercept X" aria-label="Endpoint security vendor and product name"/>
             </div>
           </div>
 
-          <!-- Q2: Data Back-Up -->
+          <!-- Q2: Data Back-Up (Q2.1 and Q2.2 are INDEPENDENT scoreable questions) -->
           <div class="uw-question" data-uw="q2">
             <div class="uw-question-text">2. Data Back-Up</div>
             <div class="uw-sub-question" data-uw="q2-1">
@@ -155,7 +184,7 @@
             </div>
           </div>
 
-          <!-- Q3 -->
+          <!-- Q3: Data storage separation -->
           <div class="uw-question" data-uw="q3">
             <div class="uw-question-text">3. Is your data stored separately from your main computer e.g. via the cloud or on an offline hard disk?</div>
             <div class="toggle-group">
@@ -164,7 +193,7 @@
             </div>
           </div>
 
-          <!-- Q4 -->
+          <!-- Q4: Patching -->
           <div class="uw-question" data-uw="q4">
             <div class="uw-question-text">4. Do you regularly update and patch your computers so that they always have the latest security patches installed?</div>
             <div class="toggle-group">
@@ -173,73 +202,76 @@
             </div>
           </div>
 
-          <!-- Q5 -->
+          <!-- Q5: Employee training (was old Q6) -->
           <div class="uw-question" data-uw="q5">
-            <div class="uw-question-text">5. Are all the emails received and sent by your workplace computers and network checked for viruses/malware via an email filter?</div>
+            <div class="uw-question-text">5. Are your employees regularly advised about the secure use of their workplace computer, especially regarding the dangers of using the internet/email?</div>
             <div class="toggle-group">
               <button type="button" class="toggle-btn" data-value="yes" aria-label="Q5 Yes">Y</button>
               <button type="button" class="toggle-btn" data-value="no" aria-label="Q5 No">N</button>
             </div>
           </div>
 
-          <!-- Q6 -->
-          <div class="uw-question" data-uw="q6">
-            <div class="uw-question-text">6. Are your employees regularly advised about the secure use of their workplace computer, especially regarding the dangers of using the internet/email?</div>
-            <div class="toggle-group">
-              <button type="button" class="toggle-btn" data-value="yes" aria-label="Q6 Yes">Y</button>
-              <button type="button" class="toggle-btn" data-value="no" aria-label="Q6 No">N</button>
-            </div>
-          </div>
-
-          <!-- Funds Protect Checkbox -->
+          <!-- Funds Protect Checkbox (Q6 and Q7 are FP-dependent) -->
           <div class="uw-fp-checkbox" id="uw-fp-checkbox">
             <label>
               <input type="checkbox" id="fp-over-250k"/>
-              <span>For Funds Protect cover limits above R250 000, complete the questions 7 and 8:</span>
+              <span>For Funds Protect cover limits above R250 000, complete questions 6 and 7:</span>
             </label>
           </div>
 
-          <!-- Q7: FP Dependent (hidden by default) -->
-          <div class="uw-question uw-fp-dependent" data-uw="q7" id="uw-q7" style="display:none;">
-            <div class="uw-question-text">7. Do you have documented procedures in place for the following:</div>
-            <div class="uw-sub-question" data-uw="q7-1">
-              <div class="uw-question-text">7.1 vetting of new vendors/customers/payees?</div>
+          <!-- Q6: FP-dependent procedures (was old Q7) -->
+          <div class="uw-question uw-fp-dependent" data-uw="q6" id="uw-q6" style="display:none;">
+            <div class="uw-question-text">6. Do you have documented procedures in place for the following:</div>
+            <div class="uw-sub-question" data-uw="q6-1">
+              <div class="uw-question-text">6.1 Vetting of new vendors/customers/payees?</div>
               <div class="toggle-group">
-                <button type="button" class="toggle-btn" data-value="yes" aria-label="Q7.1 Yes">Y</button>
-                <button type="button" class="toggle-btn" data-value="no" aria-label="Q7.1 No">N</button>
+                <button type="button" class="toggle-btn" data-value="yes" aria-label="Q6.1 Yes">Y</button>
+                <button type="button" class="toggle-btn" data-value="no" aria-label="Q6.1 No">N</button>
               </div>
             </div>
-            <div class="uw-sub-question" data-uw="q7-2">
-              <div class="uw-question-text">7.2 to verify new beneficiaries loaded onto your business&#x2019;s banking profiles for funds transfers?</div>
+            <div class="uw-sub-question" data-uw="q6-2">
+              <div class="uw-question-text">6.2 To verify new beneficiaries loaded onto your business&#x2019;s banking profiles for funds transfers?</div>
               <div class="toggle-group">
-                <button type="button" class="toggle-btn" data-value="yes" aria-label="Q7.2 Yes">Y</button>
-                <button type="button" class="toggle-btn" data-value="no" aria-label="Q7.2 No">N</button>
+                <button type="button" class="toggle-btn" data-value="yes" aria-label="Q6.2 Yes">Y</button>
+                <button type="button" class="toggle-btn" data-value="no" aria-label="Q6.2 No">N</button>
               </div>
             </div>
-            <div class="uw-sub-question" data-uw="q7-3">
-              <div class="uw-question-text">7.3 to verify requests to amend existing beneficiary payment details?</div>
+            <div class="uw-sub-question" data-uw="q6-3">
+              <div class="uw-question-text">6.3 To verify requests to amend existing beneficiary payment details?</div>
               <div class="toggle-group">
-                <button type="button" class="toggle-btn" data-value="yes" aria-label="Q7.3 Yes">Y</button>
-                <button type="button" class="toggle-btn" data-value="no" aria-label="Q7.3 No">N</button>
+                <button type="button" class="toggle-btn" data-value="yes" aria-label="Q6.3 Yes">Y</button>
+                <button type="button" class="toggle-btn" data-value="no" aria-label="Q6.3 No">N</button>
               </div>
             </div>
           </div>
 
-          <!-- Q8: FP Dependent (hidden by default) -->
-          <div class="uw-question uw-fp-dependent" data-uw="q8" id="uw-q8" style="display:none;">
-            <div class="uw-question-text">8. Do you utilise account verification services offered by your bank or third-party provider?</div>
+          <!-- Q7: FP-dependent bank verification (was old Q8) -->
+          <div class="uw-question uw-fp-dependent" data-uw="q7" id="uw-q7" style="display:none;">
+            <div class="uw-question-text">7. Does your business utilise account verification services offered by your bank or third-party provider?</div>
+            <div class="toggle-group">
+              <button type="button" class="toggle-btn" data-value="yes" aria-label="Q7 Yes">Y</button>
+              <button type="button" class="toggle-btn" data-value="no" aria-label="Q7 No">N</button>
+            </div>
+          </div>
+
+          <!-- Q8: Prior cyber cover (was old Q9) — adds optional Insurer + Inception Date when Yes -->
+          <div class="uw-question" data-uw="q8">
+            <div class="uw-question-text">8. Have you been covered for cyber liability risks in the last 12 months prior to the inception date of this policy?</div>
             <div class="toggle-group">
               <button type="button" class="toggle-btn" data-value="yes" aria-label="Q8 Yes">Y</button>
               <button type="button" class="toggle-btn" data-value="no" aria-label="Q8 No">N</button>
             </div>
-          </div>
-
-          <!-- Q9 -->
-          <div class="uw-question" data-uw="q9">
-            <div class="uw-question-text">9. Have you been covered for cyber liability risks in the last 12 months prior to the inception date of this policy?</div>
-            <div class="toggle-group">
-              <button type="button" class="toggle-btn" data-value="yes" aria-label="Q9 Yes">Y</button>
-              <button type="button" class="toggle-btn" data-value="no" aria-label="Q9 No">N</button>
+            <div class="uw-text-followup" id="uw-q8-details" style="display:none;">
+              <div class="uw-followup-row">
+                <div class="form-group">
+                  <label class="field-label" for="uw-q8-insurer">Insurer (optional)</label>
+                  <input class="form-input" id="uw-q8-insurer" type="text" placeholder="e.g. Bryte / Guardrisk / CFC" aria-label="Prior insurer"/>
+                </div>
+                <div class="form-group">
+                  <label class="field-label" for="uw-q8-inception">Inception Date (optional)</label>
+                  <input class="form-input" id="uw-q8-inception" type="date" aria-label="Prior policy inception date"/>
+                </div>
+              </div>
             </div>
           </div>
 

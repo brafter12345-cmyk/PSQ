@@ -302,6 +302,7 @@ toc_items = [
     "   1.4 Decision Flowchart",
     "2. Getting Started",
     "3. Step 1: Client & Industry",
+    "   3.5 Underwriting Assessment (Q1\u2013Q8) \u2014 April 2026 revised",
     "   3.7.1 Renewal Details (three required fields)",
     "   3.7.2 Market Conditions Explained (Renewals)",
     "   3.7.3 Premium-drop Protection (Renewals)",
@@ -407,10 +408,11 @@ flowchart_lines = [
     ("\u2514\u2500 All other industries \u2192 Continue", 1, False, PHISHIELD_GREEN),
     ("    \u2193", 1, False, PHISHIELD_GREY),
     ("Underwriting Assessment", 0, True, PHISHIELD_DARK),
-    ("\u251c\u2500 Q1 = No \u2192 DECLINE (blocked)", 1, False, PHISHIELD_RED),
-    ("\u251c\u2500 Q2\u2013Q6: Count \"No\" answers \u2192 Apply loading (0\u201315%)", 1, False, PHISHIELD_ACCENT),
-    ("\u251c\u2500 Q7/Q8 (if FP > R250k): No = Condition of Cover", 1, False, PHISHIELD_ACCENT),
-    ("\u2514\u2500 Q9 = No \u2192 REFER (flag, can proceed)", 1, False, PHISHIELD_ACCENT),
+    ("\u251c\u2500 Q1.1 (AV/EDR) No OR Q1.2 (Firewall) No \u2192 DECLINE (blocked)", 1, False, PHISHIELD_RED),
+    ("\u251c\u2500 Q1.3 / Q1.4 No \u2192 Condition of Cover (proceed with caution)", 1, False, PHISHIELD_ACCENT),
+    ("\u251c\u2500 Q2.1\u2013Q5: Count \"No\" answers \u2192 Apply loading (0\u201315%, grace of 2)", 1, False, PHISHIELD_ACCENT),
+    ("\u251c\u2500 Q6/Q7 (if FP > R250k): No = Condition of Cover", 1, False, PHISHIELD_ACCENT),
+    ("\u2514\u2500 Q8 (prior cover) \u2014 auto-Yes on Renewal; No on Renewal \u2192 REFER", 1, False, PHISHIELD_ACCENT),
     ("    \u2193", 1, False, PHISHIELD_GREY),
     ("Coverage Selection", 0, True, PHISHIELD_DARK),
     ("\u251c\u2500 T/O < R50M + Cover \u2264 R5M \u2192 MICRO SME rates", 1, False, PHISHIELD_GREEN),
@@ -623,110 +625,153 @@ doc.add_paragraph(
 
 # ── 3.5 Underwriting Questions ──
 
-add_heading("3.5 Underwriting Assessment (Q1\u2013Q9)", level=2)
+add_heading("3.5 Underwriting Assessment (Q1\u2013Q8)", level=2)
 doc.add_paragraph(
     "The underwriting questions assess the client's cyber security posture. Each question has a Yes (Y) "
     "or No (N) toggle. Your answers directly affect whether the quote can proceed, and whether a loading "
     "is applied to the premium."
 )
+add_tip_box(
+    "April 2026 \u2014 the underwriting question set was expanded and renumbered to align with the V1 "
+    "2026 Business Proposal e-file. Q1 is now a compound question with four minimum-baseline sub-parts. "
+    "The old Q5 (email filter) has been absorbed into Q1.3 (email security solution), the old Q7/Q8 "
+    "(FP-dependent) became Q6/Q7, and the old Q9 (prior cover) became Q8. The loading pool is now based "
+    "on five INDEPENDENT questions (Q2.1, Q2.2, Q3, Q4, Q5) \u2014 Q2 is no longer compounded. See 3.5.2.",
+    "important"
+)
 
 add_heading("3.5.1 Question-by-Question Guide", level=3)
 
-# Q1
-add_bold_para("Q1: Active Internet Security Software")
+# Q1 — compound
+add_bold_para("Q1: Internet Security Software (compound \u2014 4 minimum-baseline sub-parts)")
 doc.add_paragraph(
-    "\"Does your business have an active, comprehensive, paid-for internet security software installed "
-    "on all computer systems?\""
+    "\"Does your business have a comprehensive, paid-for internet security software subscription "
+    "installed and up to date on all computer systems and access devices? This must include at a minimum:\""
+)
+doc.add_paragraph("Q1.1: Antivirus/anti-malware with real-time endpoint detection and response (EDR)", style='List Bullet')
+doc.add_paragraph("Q1.2: A network firewall configured to filter incoming and outgoing traffic", style='List Bullet')
+doc.add_paragraph("Q1.3: An email security solution that filters for phishing, malware and malicious attachments", style='List Bullet')
+doc.add_paragraph("Q1.4: A web-filtering solution that blocks access to known malicious or suspicious websites", style='List Bullet')
+doc.add_paragraph(
+    "If Yes to any of the above, the optional free-text field \u2018name of endpoint security vendor "
+    "and product name\u2019 is available for record-keeping (e.g. SentinelOne Singularity, Sophos Intercept X)."
+)
+
+add_bold_para("Q1 decision logic \u2014 decline gate vs Conditions of Cover")
+make_table(
+    ["Scenario", "Engine behaviour"],
+    [
+        ["Q1.1 No OR Q1.2 No", "Automatic decline. AV/EDR and firewall are non-negotiable baseline controls."],
+        ["Q1.1 Yes AND Q1.2 Yes AND (Q1.3 No OR Q1.4 No)", "Proceed with Caution. The missing baseline control(s) are added as Conditions of Cover and printed on the quote output."],
+        ["All four Yes", "Standard \u2014 no Q1 impact. (Loading may still be applied from Q2\u2013Q5 Nos.)"],
+    ]
 )
 add_tip_box(
-    "Q1 = No is an automatic decline. The client cannot be quoted without basic security software. "
-    "This is a hard blocker \u2014 the engine will not allow you to proceed.",
-    "warning"
+    "The endpoint vendor / product name free-text field is OPTIONAL. The go/no-go for Q1 is the four "
+    "Yes/No toggles only.",
+    "note"
+)
+add_tip_box(
+    "Q1 is the sole decline gate in the underwriting section. There is no decline driven by Q2\u2013Q5 "
+    "answers \u2014 those only drive loading.",
+    "important"
 )
 
-# Q2
-add_bold_para("Q2: Data Back-Up (Compound Question)")
-doc.add_paragraph(
-    "This question has two parts that must both be answered:"
-)
+# Q2.1 and Q2.2 — now independent
+add_bold_para("Q2: Data Back-Up (Q2.1 and Q2.2 are INDEPENDENT scoreable questions)")
 doc.add_paragraph("Q2.1: \"Do you back up your data on a weekly basis?\"", style='List Bullet')
 doc.add_paragraph("Q2.2: \"Do you perform recovery testing at least once per year?\"", style='List Bullet')
-doc.add_paragraph(
-    "Q2 is considered 'Yes' only when both Q2.1 AND Q2.2 are 'Yes'. If either is 'No', Q2 counts as a "
-    "'No' answer for loading purposes."
+add_tip_box(
+    "April 2026 change: Q2.1 and Q2.2 are no longer compounded. Each is counted separately in the "
+    "loading pool. A client that does weekly backups but skips annual recovery testing would contribute "
+    "1 \u2018No\u2019 to noCount (was 1 \u2018No\u2019 for the compound Q2 previously, but the "
+    "loading-pool size and thresholds have changed).",
+    "note"
 )
 
-# Q3-Q6
-add_bold_para("Q3\u2013Q6: Security Practices")
+# Q3-Q5
+add_bold_para("Q3\u2013Q5: Independent Security Practices")
 doc.add_paragraph("Q3: Is data stored separately from the main computer (cloud or offline disk)?")
 doc.add_paragraph("Q4: Are computers regularly updated and patched with latest security patches?")
-doc.add_paragraph("Q5: Are emails checked for viruses/malware via an email filter?")
-doc.add_paragraph("Q6: Are employees regularly advised about secure computer use and internet/email dangers?")
-
-add_heading("3.5.2 Underwriting Loading Rules", level=3)
 doc.add_paragraph(
-    "The engine counts the number of 'No' answers to Q2\u2013Q6 (treating Q2 as a single question) "
-    "and applies loadings as follows:"
+    "Q5: Are employees regularly advised about secure computer use and internet/email dangers? "
+    "(Was Q6 pre-April 2026.)"
+)
+
+add_heading("3.5.2 Underwriting Loading Rules (April 2026 revised)", level=3)
+doc.add_paragraph(
+    "The engine counts the number of \u2018No\u2019 answers across the FIVE independent questions "
+    "(Q2.1, Q2.2, Q3, Q4, Q5) and applies loadings as follows. Note the grace of TWO \u2018No\u2019 "
+    "answers before any loading is applied \u2014 reflecting that it is not uncommon for an otherwise "
+    "sound client to skip one or two of the softer controls (e.g. annual recovery testing + employee "
+    "training) without this constituting a material underwriting concern."
 )
 
 make_table(
-    ["No Answers (Q2\u2013Q6)", "Loading", "Outcome Label"],
+    ["No Answers (Q2.1\u2013Q5)", "Loading", "Outcome Label"],
     [
         ["0", "0%", "Standard Rates"],
-        ["1", "0%", "Proceed with Caution"],
-        ["2", "5%", "5% Loading Applied"],
-        ["3", "10%", "10% Loading Applied"],
+        ["1", "0%", "Proceed with Caution (grace 1)"],
+        ["2", "0%", "Proceed with Caution (grace 2)"],
+        ["3", "5%", "5% Loading Applied"],
         ["4", "10%", "10% Loading Applied"],
         ["5", "15%", "15% Loading Applied"],
     ]
 )
 
 add_tip_box(
-    "If all Q2\u2013Q6 are 'No' (5 No answers), the risk is declined outright.",
-    "warning"
+    "There is no decline from the Q2\u2013Q5 loading pool. Even 5 Nos (every soft control absent) "
+    "produces a 15% loading, not a decline. The decline gate is Q1.1 / Q1.2 only.",
+    "note"
 )
 
-# Q7-Q8
-add_bold_para("Q7 & Q8: Funds Protect Questions (Conditional)")
+# Q6-Q7 — FP Dependent
+add_bold_para("Q6 & Q7: Funds Protect Questions (Conditional, was Q7/Q8 pre-Apr 2026)")
 doc.add_paragraph(
-    "Q7 and Q8 only appear when the Funds Protect (FP) cover exceeds R250,000. This happens automatically "
+    "Q6 and Q7 only appear when the Funds Protect (FP) cover exceeds R250,000. This happens automatically "
     "for cover limits of R7.5M and above (since their base FP starts at R500,000+), or when you manually "
     "select an FP tier above R250,000."
 )
 doc.add_paragraph(
-    "Q7 has three sub-parts asking about documented procedures for:"
+    "Q6 has three sub-parts asking about documented procedures for:"
 )
-doc.add_paragraph("Q7.1: Vetting new vendors/customers/payees", style='List Bullet')
-doc.add_paragraph("Q7.2: Verifying new beneficiaries on banking profiles", style='List Bullet')
-doc.add_paragraph("Q7.3: Verifying requests to amend existing beneficiary payment details", style='List Bullet')
+doc.add_paragraph("Q6.1: Vetting new vendors/customers/payees", style='List Bullet')
+doc.add_paragraph("Q6.2: Verifying new beneficiaries on banking profiles", style='List Bullet')
+doc.add_paragraph("Q6.3: Verifying requests to amend existing beneficiary payment details", style='List Bullet')
 
 doc.add_paragraph(
-    "Q8: \"Do you utilise account verification services offered by your bank or third-party provider?\""
+    "Q7: \"Does your business utilise account verification services offered by your bank or third-party provider?\""
 )
 
 add_tip_box(
-    "Q7/Q8 = No does NOT trigger a loading or decline. Instead, the relevant item becomes a Condition "
+    "Q6/Q7 = No does NOT trigger a loading or decline. Instead, the relevant item becomes a Condition "
     "of Cover, which is noted on the quote output and PDF. This means the client must implement the "
     "procedure as a condition of their policy.",
     "important"
 )
 
-# Q9
-add_bold_para("Q9: Prior Cyber Liability Cover")
+# Q8 — prior cover (was Q9)
+add_bold_para("Q8: Prior Cyber Liability Cover (was Q9 pre-Apr 2026)")
 doc.add_paragraph(
     "\"Have you been covered for cyber liability risks in the last 12 months prior to the inception date "
     "of this policy?\""
 )
+doc.add_paragraph(
+    "When Q8 = Yes, an optional follow-up panel appears capturing the prior Insurer name and "
+    "Inception Date. Both fields are OPTIONAL for the purpose of generating a quote; they are "
+    "captured for record-keeping and appear on the quote audit / PDF output."
+)
 add_tip_box(
-    "When Quote Type = Renewal, Q9 is automatically set to Yes and locked \u2014 an existing Phishield "
-    "policy implies prior cover by definition. You cannot change Q9 on a renewal.",
+    "When Quote Type = Renewal, Q8 is automatically set to Yes and locked \u2014 an existing Phishield "
+    "policy implies prior cover by definition. The optional Insurer / Inception Date panel is revealed "
+    "automatically so the underwriter can capture the prior-term details if desired.",
     "important"
 )
 add_tip_box(
-    "On New Business and Competing Quote, Q9 remains editable. Q9 = No on these types is informational "
-    "and does not on its own block the quote. However, if Q9 arrives as No on a Renewal via any path "
-    "(e.g. data load), the engine treats this as a contradiction and blocks the quote as Refer to "
-    "Senior UW.",
+    "On New Business and Competing Quote, Q8 remains editable. Q8 = No on those types is informational "
+    "and does not on its own block the quote. If Q8 arrives as No on a Renewal via any non-UI path "
+    "(e.g. data load, programmatic entry), the engine treats this as a contradiction and blocks the "
+    "quote as Refer to Senior UW.",
     "note"
 )
 
@@ -935,7 +980,7 @@ doc.add_paragraph("On Renewal quotes only: Current Cover Limit, Current Annual P
 
 add_tip_box(
     "If the button remains greyed out, check that all mandatory fields are filled in and that no blockers "
-    "are active (Prior claim ticked, Refer for UW, turnover > R200M, Q1 = No, or Renewal-Q9 contradiction).",
+    "are active (Prior claim ticked, Refer for UW, turnover > R200M, Q1.1 or Q1.2 = No, or Renewal-Q8 contradiction).",
     "tip"
 )
 
@@ -1526,7 +1571,7 @@ doc.add_paragraph(
     "Previous Turnover: R65,000,000\n"
     "Current Estimated: R75,000,000\n"
     "Current Cover: R5M at R45,000/yr, FP sub-limit R250,000\n"
-    "Q3 = No, Q4 = No (5% UW loading applied)"
+    "Q3 = No, Q5 = No (2 No answers \u2014 within the grace of two, no UW loading applied)"
 )
 
 add_heading("Walkthrough:", level=3)
@@ -1536,21 +1581,22 @@ add_numbered_step(1, "Enter details and select 'Renewal'. Fill all three renewal
 add_numbered_step(2, "Click Continue \u2014 the rule fires, and the target is more than one step above existing.",
     "New premium at R5M/R250k FP is approximately R29,800 (about 34% below R45,000). The "
     "algorithm searches upward: R7.5M at matched FP (auto-bumped to R500k minimum) produces "
-    "approximately R37,500 \u2014 that's 83% retention, still below the 90% bar. R10M at matched FP "
-    "(R500k) produces approximately R43,000 \u2014 \u226590% retention, so R10M becomes the Recommended "
-    "target. Because the target (R10M) is TWO steps above the existing (R5M), the ladder-gap "
-    "logic kicks in and the card set becomes:")
+    "approximately R36,000 \u2014 that's around 80% retention, still below the 90% bar. R10M at "
+    "matched FP (R500k) produces approximately R41,500 \u2014 \u226590% retention, so R10M becomes "
+    "the Recommended target. Because the target (R10M) is TWO steps above the existing (R5M), "
+    "the ladder-gap logic kicks in and the card set becomes:")
 doc.add_paragraph("R5M as 'Reference \u2014 Not Recommended'", style='List Bullet')
-doc.add_paragraph("R7.5M as 'Alternative' with a '83% retention' badge (the intermediate rung)", style='List Bullet')
+doc.add_paragraph("R7.5M as 'Alternative' with a retention-percentage badge (around 80%) \u2014 the intermediate rung", style='List Bullet')
 doc.add_paragraph("R10M as 'Recommended' \u2014 auto-selected", style='List Bullet')
 doc.add_paragraph("R15M is NOT shown \u2014 the above-target Alternative is dropped when there are intermediate Alternatives", style='List Bullet')
 
 add_tip_box(
     "R7.5M is the natural conversation rung: the client will often prefer a one-notch upgrade over "
-    "a two-notch jump. The 83% retention badge tells the underwriter exactly how close R7.5M sits "
+    "a two-notch jump. The retention badge on R7.5M tells the underwriter exactly how close it sits "
     "to the 90% bar \u2014 a small discretionary adjustment on Step 4, or an FP tier bump (e.g. R500k "
-    "\u2192 R1M), can often close that 7-percentage-point gap. The Recommended R10M remains the "
-    "default so the protective option is always pre-selected.",
+    "\u2192 R1M), can often close the gap. Live FP updates on Step 2 mean the underwriter can click "
+    "the FP tier buttons and watch the retention badge move in real time. The Recommended R10M "
+    "remains the default so the protective option is always pre-selected.",
     "tip"
 )
 
@@ -1574,13 +1620,13 @@ doc.add_paragraph(
     "Previous Turnover: R30,000,000\n"
     "Current Estimated: R35,000,000\n"
     "Competitor: Guardrisk at R18,500 for R5M cover (no FP equivalent)\n"
-    "Q3 = No, Q6 = No (2 'No' answers)"
+    "Q3 = No, Q4 = No, Q5 = No (3 'No' answers \u2014 past the grace of 2, 5% loading applies)"
 )
 
 add_heading("Walkthrough:", level=3)
 add_numbered_step(1, "Enter details. Select 'Competing Quote' as Quote Type.",
     "Actual Turnover = (R30M + R35M) / 2 = R32.5M. Revenue Band: R25M\u2013R50M (Band 3). "
-    "Q3=No and Q6=No: 2 'No' answers = 5% loading applied. "
+    "Q3 = No, Q4 = No, Q5 = No: 3 'No' answers out of the Q2.1\u2013Q5 pool = 5% loading applied. "
     "Industry modifier: 1.00 (Retail Trade).")
 add_numbered_step(2, "Select R5M cover. Micro SME applies (turnover < R50M, cover <= R5M).",
     "Base premium: R7,908 x 1.00 (modifier) x 1.05 (loading) = R8,303 + R3,144 FP = R11,447/yr.")
@@ -1672,10 +1718,10 @@ mistakes = [
         "saved to the production database."
     ),
     (
-        "Ignoring the 'Refer' flag",
-        "Even though the engine allows you to proceed when a 'Refer' flag is active (e.g., Q9 = No), "
-        "senior underwriter sign-off is still required. Do not send the quote to the broker without "
-        "obtaining this approval."
+        "Trying to bypass the 'Refer' block",
+        "The 'Refer to Senior UW' outcome is a hard block in the current engine \u2014 the Continue "
+        "button is disabled. Triggers include: Prior claim ticked, or Renewal with Q8 (prior cover) "
+        "= No. Do not work around the block; obtain senior underwriter sign-off before proceeding."
     ),
 ]
 
@@ -1712,21 +1758,26 @@ faqs = [
     (
         "The 'Continue' button is greyed out. What am I missing?",
         "Check the following: (1) Company name is entered, (2) Industry is selected, "
-        "(3) At least one turnover figure is entered, (4) Q1 has been answered. "
-        "Also check for active blockers: turnover > R200M, Q1 = No (decline), or a referred industry."
+        "(3) At least one turnover figure is entered, (4) Q1.1 AND Q1.2 have been answered (the two "
+        "baseline gate questions), (5) if Renewal: Current Cover Limit, Current Annual Premium and "
+        "Current FP Sub-limit are all filled. Also check for active blockers: turnover > R200M, "
+        "Q1.1 or Q1.2 = No (decline), Prior claim ticked, Renewal with Q8 = No (contradiction), "
+        "or a referred industry."
     ),
     (
         "I see 'Refer for Underwriting'. Can I still generate a quote?",
-        "It depends on the reason. If the industry (Healthcare, Public Administration) triggered the referral, "
-        "the engine blocks the quote entirely \u2014 contact a senior underwriter. If Q9 = No triggered it, "
-        "you can still proceed through the wizard, but the quote is flagged as 'Refer' and needs senior "
-        "underwriter sign-off before being sent to the client."
+        "No. Refer is now a hard block: Continue is disabled and a blocker overlay is shown. Triggers "
+        "include: industry is Healthcare / Public Administration, turnover > R200M, Prior claim "
+        "ticked, or Renewal with Q8 (prior cover) = No. Contact a senior underwriter \u2014 they "
+        "must assess and override outside the engine before proceeding."
     ),
     (
         "What is the difference between 'Decline' and 'Refer'?",
-        "Decline: The risk does not meet minimum requirements (Q1 = No, or all Q2\u2013Q6 = No). "
-        "The quote cannot proceed. Refer: The risk has factors that require senior review (Q9 = No, "
-        "prior claim, turnover > R200M). A senior underwriter must assess before proceeding."
+        "Decline: The risk fails the baseline security gate (Q1.1 = No or Q1.2 = No). The quote "
+        "cannot proceed in any form. Refer: The risk has factors that require senior review (Prior "
+        "claim, Renewal-with-Q8-No contradiction, Healthcare / Public Admin industry, or turnover "
+        "> R200M). Both outcomes hard-block the Continue button \u2014 a senior underwriter must "
+        "assess offline."
     ),
     (
         "Why does my Software & Technology client's premium look higher?",
@@ -1862,11 +1913,13 @@ doc.add_paragraph("All others: 1.00x (no modifier)")
 
 doc.add_paragraph()
 
-add_bold_para("UNDERWRITING RULES")
-doc.add_paragraph("Q1 = No \u2192 Decline (hard block)")
-doc.add_paragraph("Q2\u2013Q6: 0 No = Standard | 1 No = Caution | 2 No = 5% | 3\u20134 No = 10% | 5 No = Decline")
-doc.add_paragraph("Q7/Q8 (FP > R250k): No = Condition of Cover")
-doc.add_paragraph("Q9 = No \u2192 Refer to senior underwriter")
+add_bold_para("UNDERWRITING RULES (April 2026 revised)")
+doc.add_paragraph("Q1.1 (AV/EDR) No OR Q1.2 (Firewall) No \u2192 Decline (hard block)")
+doc.add_paragraph("Q1.3 / Q1.4 No \u2192 Condition of Cover (proceed with caution)")
+doc.add_paragraph("Q2.1\u2013Q5 loading: 0\u20132 No = 0% | 3 No = 5% | 4 No = 10% | 5 No = 15% (grace of 2, no decline)")
+doc.add_paragraph("Q6/Q7 (FP > R250k): No = Condition of Cover")
+doc.add_paragraph("Q8 (prior cover): auto-Yes on Renewal; No on Renewal via data-load \u2192 Refer (hard block)")
+doc.add_paragraph("Prior claim ticked \u2192 Refer (hard block)")
 doc.add_paragraph("Healthcare / Public Admin \u2192 Always Refer")
 
 doc.add_paragraph()
@@ -2004,6 +2057,29 @@ make_table(
          "how close each skipped cover sits to the 90% bar. The above-target Alternative is dropped "
          "in the ladder-gap case (no clutter). Adjacent target behaviour (target = existing+1) is "
          "preserved unchanged. Scenario 8.2c added for the ladder-gap worked example."],
+        ["1.3.2", "April 2026",
+         "Step 2 recommendation cards now update live when the FP selector or FP option tab is "
+         "changed. The displayed premium + \u2018FP incl\u2019 text on each card reflects the "
+         "active quoteOption\u2019s fpIndex when the cover is selected, falling back to matched-FP "
+         "(renewal) or base FP (new business) when not. Selection state is preserved across "
+         "re-renders. Retention badges on Rule I intermediate Alternatives also update live \u2014 "
+         "bumping an intermediate cover\u2019s FP can visibly push its retention above the 90% bar."],
+        ["1.4", "April 2026",
+         "Underwriting question set aligned to the V1 2026 Business Proposal e-file. Q1 expanded "
+         "from a single question to a compound question with four baseline sub-parts (Q1.1 AV/EDR, "
+         "Q1.2 Firewall, Q1.3 Email security, Q1.4 Web filtering), plus an optional free-text field "
+         "for the endpoint security vendor + product name. Q1.1 OR Q1.2 = No is the new decline "
+         "gate; Q1.3 or Q1.4 = No becomes a Condition of Cover (proceed with caution). Old Q5 "
+         "(email filter) was absorbed into Q1.3 and removed. Old Q6 (employee training) renumbered "
+         "to Q5. Old Q7 (FP procedures) \u2192 Q6. Old Q8 (bank verification) \u2192 Q7. Old Q9 "
+         "(prior cover) \u2192 Q8, with optional Insurer + Inception Date follow-up fields shown "
+         "when Q8 = Yes (auto-revealed on Renewal). Q2.1 and Q2.2 are now independent scoreable "
+         "questions (no longer compounded), bringing the loading pool to 5 independent questions "
+         "(Q2.1, Q2.2, Q3, Q4, Q5). UNDERWRITING_LOADINGS table remapped to a \u2018grace of two\u2019 "
+         "model: 0/1/2 Nos = 0% loading, 3 = 5%, 4 = 10%, 5 = 15%. No decline from the loading pool. "
+         "checkNextBtn1 now requires Q1.1 AND Q1.2 answered (was just Q1). All internal references "
+         "(renewal Q-lock, renewal-Q-contradiction defensive check, condition-of-cover text, "
+         "FP-dependent visibility IDs, clipboard summary, PDF audit) updated to the new numbering."],
     ]
 )
 

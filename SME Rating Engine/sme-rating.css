@@ -681,7 +681,7 @@ body::before {
   animation: fadeSlideUp 0.3s var(--ease);
 }
 
-/* Q9 locked state on renewals (item C1) */
+/* Q8 locked state on renewals (item C1) — was Q9 pre-April 2026 */
 .uw-question.uw-locked {
   opacity: 0.75;
 }
@@ -694,6 +694,34 @@ body::before {
   font-size: 0.75rem;
   color: var(--accent-cyan, #00b4d8);
   font-style: italic;
+}
+
+/* Optional free-text follow-ups under UW questions (April 2026: Q1 vendor, Q8 insurer+date) */
+.uw-text-followup {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: rgba(0,180,216,0.04);
+  border-left: 2px solid rgba(0,180,216,0.3);
+  border-radius: 4px;
+}
+.uw-text-followup .field-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted, #8a94a8);
+}
+.uw-text-followup .form-input {
+  width: 100%;
+  font-size: 0.9rem;
+}
+.uw-followup-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 520px) {
+  .uw-followup-row { grid-template-columns: 1fr; }
 }
 
 /* Outcome badge */

@@ -354,12 +354,19 @@ const UNDERWRITING_QUESTIONS = [
 ];
 
 // ─── Underwriting Loading Rules ────────────────────────────────────────────────
-// Based on number of Q2-Q6 "No" answers (Q2.1+Q2.2 count as single Q2)
+// April 2026: scoreable pool is now Q2.1, Q2.2, Q3, Q4, Q5 — FIVE INDEPENDENT
+// questions (Q2.1 and Q2.2 are no longer compounded). Q1 (with its 4 sub-parts)
+// is a separate go/no-go decline gate and does NOT contribute to loading.
+//
+// Loading philosophy: "grace of two" — up to 2 No answers are tolerated without
+// a loading (e.g., a company that skips annual recovery testing AND employee
+// training is common and not underwriting-worthy of a surcharge). From 3 Nos
+// onward, loadings apply in 5-percentage-point steps to a 15% ceiling.
 const UNDERWRITING_LOADINGS = {
   0: { loading: 0,    label: "Standard Rates" },
   1: { loading: 0,    label: "Proceed with Caution" },
-  2: { loading: 0.05, label: "5% Loading Applied" },
-  3: { loading: 0.10, label: "10% Loading Applied" },
+  2: { loading: 0,    label: "Proceed with Caution" },
+  3: { loading: 0.05, label: "5% Loading Applied" },
   4: { loading: 0.10, label: "10% Loading Applied" },
   5: { loading: 0.15, label: "15% Loading Applied" },
 };
