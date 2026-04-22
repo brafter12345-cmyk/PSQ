@@ -34,9 +34,9 @@ Single-page HTML portal (no frameworks), 5-step wizard:
 - **Turnover Calc:** Midpoint of previous year and current estimate
 - **Underwriting Loading:** 0-15% based on Q2-Q6 "No" answers
 - **Discount Cap:** Combined posture + discretionary max ~35%
-- **Blockers:** Healthcare/Public Admin, T/O > R200M -> "Refer for Underwriting"
+- **Blockers:** Healthcare/Public Admin, T/O > R200M, Q1=No, Prior Claim ticked, Renewal-with-Q9=No contradiction -> "Refer for Underwriting"
 - **Market Condition:** Read-only indicator (currently "Softening 2026"), hardcoded in sme-data.js
-- **Renewals:** Benchmark is previous year's premium, market condition drives upgrade recommendations
+- **Renewals:** Benchmark is previous year's premium; three required inputs (cover, premium, FP sub-limit); Q9 auto-set to Yes; market condition drives upgrade/alternative/downgrade options; **Premium-drop Protection rule** triggers when new premium at same cover/FP is <80% of existing, auto-adjusting recommendations to retain >=90%, with Corporate escalation when max SME cover still falls short
 
 ## PDF Output Structure
 ```
@@ -54,4 +54,4 @@ Quotes/Year/Month/CompanyName/CompanyName_CoverLimit.pdf
 `CPB-YYYYMMDD-NNNN`
 
 ---
-*Last updated: 2026-03-23*
+*Last updated: 2026-04-22 — Renewal logic overhaul (v1.3)*

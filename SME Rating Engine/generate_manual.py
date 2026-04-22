@@ -302,12 +302,17 @@ toc_items = [
     "   1.4 Decision Flowchart",
     "2. Getting Started",
     "3. Step 1: Client & Industry",
+    "   3.7.1 Renewal Details (three required fields)",
     "   3.7.2 Market Conditions Explained (Renewals)",
+    "   3.7.3 Premium-drop Protection (Renewals)",
     "4. Step 2: Coverage Recommendations & Selection",
     "5. Step 3: Competitor Quotes & Benchmarking",
+    "   5.5 Renewal Behaviour & Insights Banner",
     "6. Step 4: Adjustments & Comparison",
     "7. Step 5: Quote Summary & Export",
     "8. Common Scenarios (Worked Examples)",
+    "   8.2 Renewal Quote (normal)",
+    "   8.2b Renewal \u2014 Premium-drop Protection triggered",
     "   8.4 Common Mistakes to Avoid",
     "9. Troubleshooting & FAQ",
     "10. Quick Reference Card",
@@ -712,9 +717,15 @@ doc.add_paragraph(
     "of this policy?\""
 )
 add_tip_box(
-    "Q9 = No triggers a referral to a senior underwriter. The quote can still be generated, but it is "
-    "flagged as 'Refer'. This is not a hard block \u2014 you can still proceed through the wizard, but the "
-    "quote output will note the referral requirement.",
+    "When Quote Type = Renewal, Q9 is automatically set to Yes and locked \u2014 an existing Phishield "
+    "policy implies prior cover by definition. You cannot change Q9 on a renewal.",
+    "important"
+)
+add_tip_box(
+    "On New Business and Competing Quote, Q9 remains editable. Q9 = No on these types is informational "
+    "and does not on its own block the quote. However, if Q9 arrives as No on a Renewal via any path "
+    "(e.g. data load), the engine treats this as a contradiction and blocks the quote as Refer to "
+    "Senior UW.",
     "note"
 )
 
@@ -726,8 +737,10 @@ doc.add_paragraph(
     "has had a cyber insurance claim in their previous policy term."
 )
 add_tip_box(
-    "Ticking 'Prior claim' triggers a referral to a senior underwriter for additional underwriting review.",
-    "note"
+    "Ticking 'Prior claim' is a hard block. The underwriting outcome is set to Refer to Senior UW, the "
+    "'Continue to Coverage' button is disabled, and a blocker overlay is shown. The quote cannot proceed "
+    "without senior underwriter review. Untick the box to clear the block if entered in error.",
+    "warning"
 )
 
 # ── 3.7 Quote Type ──
@@ -742,8 +755,8 @@ make_table(
     [
         ["New Business", "Client has no existing Phishield policy",
          "Standard flow. Industry benchmark (IToo) comparison in Step 3."],
-        ["Renewal", "Client has an existing policy being renewed",
-         "Enter current cover limit and premium. Comparison becomes 'Existing Policy' vs new quote. FP equivalent auto-set to Yes. Market condition badge shown (Softening 2026)."],
+        ["Renewal", "Client has an existing Phishield policy being renewed",
+         "Enter current cover limit, current annual premium, and current FP sub-limit. Q9 is auto-set to Yes. Comparison becomes 'Existing Policy' vs new quote. FP equivalent auto-set to Yes. Market condition badge shown. Triggers renewal-specific recommendation logic on Step 2 (Current Cover pin + market-condition options + Premium-drop protection)."],
         ["Competing Quote", "Client has a quote from another insurer",
          "Competitor details entered in Step 3. Comparison against competitor pricing."],
     ]
@@ -751,14 +764,21 @@ make_table(
 
 add_heading("3.7.1 Renewal Details", level=3)
 doc.add_paragraph(
-    "When you select 'Renewal', two additional fields appear:"
+    "When you select 'Renewal', three additional fields appear, all of which are required before the "
+    "'Continue to Coverage' button will enable:"
 )
 doc.add_paragraph("Current Cover Limit \u2014 select the client's existing cover limit from the dropdown.", style='List Bullet')
-doc.add_paragraph("Current Annual Premium \u2014 enter the premium they are currently paying.", style='List Bullet')
+doc.add_paragraph("Current Annual Premium \u2014 enter the premium they are currently paying (gross of any discounts already applied).", style='List Bullet')
+doc.add_paragraph("Current Funds Protect Sub-limit \u2014 select the FP sub-limit on the existing policy. This is required for apples-to-apples premium comparison by the Premium-drop Protection rule.", style='List Bullet')
+add_tip_box(
+    "All three fields must be populated. Until they are, 'Continue to Coverage' stays disabled. Switching "
+    "away from Renewal (e.g. to New Business) clears all three fields and unlocks Q9.",
+    "tip"
+)
 doc.add_paragraph(
-    "A market condition badge is displayed (currently: 'Softening market for 2026'). In a softening market, "
-    "the engine may also show upgrade options \u2014 higher cover limits that the client could move up to at "
-    "competitive rates."
+    "A market condition badge is displayed (currently: 'Softening market for 2026'). The market condition "
+    "drives which secondary options (upgrades / alternatives / downgrades) appear alongside the existing "
+    "cover on Step 2 \u2014 see section 3.7.2."
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -775,9 +795,10 @@ doc.add_paragraph(
 
 add_bold_para("Softening Market (Current 2026)")
 doc.add_paragraph(
-    "Premium rates are decreasing across the industry. Strategy: offer the current cover at a lower rate, "
-    "AND recommend upgrading to higher cover limits. The client gets more cover for a similar or lower "
-    "premium. This is a retention and upsell opportunity."
+    "Premium rates are decreasing across the industry. Strategy: the engine pins the existing cover as "
+    "'Current Cover' and adds up to two higher cover limits as 'Upgrade Option' cards. The client can "
+    "retain the same cover for a similar or lower premium, or trade up to higher cover at competitive "
+    "rates."
 )
 add_tip_box(
     "In a softening market, always present at least one upgrade option alongside the like-for-like renewal. "
@@ -787,14 +808,17 @@ add_tip_box(
 
 add_bold_para("Stable Market")
 doc.add_paragraph(
-    "Rates are steady with minor inflation adjustment. Strategy: renew at a slightly higher premium "
-    "(inflation-adjusted). Discretionary discounts should be minimal. Focus on the value of the "
-    "Funds Protect benefit as a differentiator."
+    "Rates are steady with minor inflation adjustment. Strategy: the engine pins the existing cover as "
+    "'Current Cover' and adds one lower and one higher cover as 'Alternative' cards so the underwriter "
+    "can show the price point either side of the current cover. Discretionary discounts should be minimal. "
+    "Focus on the value of the Funds Protect benefit as a differentiator."
 )
 
 add_bold_para("Hardening Market")
 doc.add_paragraph(
-    "Rates are increasing due to higher claims frequency or severity. Strategy: be transparent about the "
+    "Rates are increasing due to higher claims frequency or severity. Strategy: the engine pins the "
+    "existing cover as 'Current Cover' and adds one lower cover as a 'Downgrade Option' \u2014 giving the "
+    "underwriter a conversation-starter if the client is price-sensitive. Be transparent about the "
     "increase, emphasise the value of comprehensive cover, and use the audit trail to justify the premium. "
     "The comparison bars in Step 4 help demonstrate that the increase is market-wide, not Phishield-specific."
 )
@@ -802,6 +826,78 @@ add_tip_box(
     "In a hardening market, the audit trail is your best tool. Walk the broker through each calculation "
     "step so they can explain the increase to their client.",
     "tip"
+)
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 3.7.3 PREMIUM-DROP PROTECTION (NEW)
+# ══════════════════════════════════════════════════════════════════════════════
+
+add_heading("3.7.3 Premium-drop Protection (Renewals)", level=3)
+
+doc.add_paragraph(
+    "On renewals, the engine runs an additional check to guard against premium erosion \u2014 particularly "
+    "in a softening market where market-rate decreases could silently reduce the client's premium "
+    "well below the prior year's. The rule fires regardless of market condition so that any anomalous "
+    "drop is flagged."
+)
+
+add_bold_para("Trigger")
+doc.add_paragraph(
+    "When the renewal inputs are all populated, the engine calculates the new premium at the same cover "
+    "limit and same FP sub-limit as the existing policy (matching all three inputs the underwriter has "
+    "captured). If that new premium is more than 20% lower than the current annual premium, the rule "
+    "fires."
+)
+p = doc.add_paragraph()
+p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+run = p.add_run("Trigger condition: new premium at same cover/FP < 80% of existing premium")
+run.bold = True
+
+add_bold_para("Action when triggered")
+doc.add_paragraph(
+    "The Step 2 cover recommendations are re-calculated to retain at least 90% of the existing premium:"
+)
+doc.add_paragraph("The existing cover limit is shown as 'Reference \u2014 Not Recommended' (dimmed, not pre-selected).", style='List Bullet')
+doc.add_paragraph("A higher cover limit is chosen as the new 'Recommended' target \u2014 the lowest cover where the new premium retains at least 90% of the existing.", style='List Bullet')
+doc.add_paragraph("The cover above the target (if any) is shown as 'Alternative' \u2014 useful when the extra cover is only marginally more expensive.", style='List Bullet')
+doc.add_paragraph("A critical-severity banner appears on Step 2 notifying the underwriter of the potential premium loss and the adjusted recommendation.", style='List Bullet')
+doc.add_paragraph("The same information is reflected on the Step 4 UW Conditions Panel and the Step 5 PDF audit trail.", style='List Bullet')
+
+add_bold_para("Corporate-escalation edge case")
+doc.add_paragraph(
+    "If the highest available SME cover still produces a premium below 90% retention, the engine "
+    "escalates:"
+)
+doc.add_paragraph("The banner upgrades to 'Premium loss risk \u2014 Corporate referral suggested'.", style='List Bullet')
+doc.add_paragraph("The Corporate escalation note is carried onto the Step 4 UW Conditions Panel and the Step 5 PDF audit trail.", style='List Bullet')
+doc.add_paragraph("The suggested action is to convert the client to a Corporate policy for higher cover limits \u2014 which requires referral to a senior underwriter.", style='List Bullet')
+
+add_tip_box(
+    "The Premium-drop Protection rule does not itself refer the quote to UW \u2014 the underwriter can still "
+    "produce the SME quote (at the adjusted target cover, or at the existing cover as reference). The "
+    "rule's purpose is to surface the issue so the decision is made consciously. The Corporate-escalation "
+    "variant is a stronger hint that the case may have outgrown the SME product.",
+    "important"
+)
+
+add_bold_para("Revenue band shift")
+doc.add_paragraph(
+    "A related check: if the existing cover limit is not in the recommended set for the current turnover "
+    "band (i.e., revenue has grown or shrunk enough to move the client to a different band), an "
+    "informational banner is shown: 'Revenue band shift since last renewal'. This prompts the underwriter "
+    "to verify that cover remains adequate. The existing cover is still pinned as 'Current Cover' \u2014 "
+    "it is not hidden or de-selected."
+)
+
+add_bold_para("UW loading comparison caveat")
+doc.add_paragraph(
+    "When the current-year underwriting answers produce a loading (Q2\u2013Q6 answers), the new renewal "
+    "premium reflects that loading. The prior term's cyber-security posture is not on record in the "
+    "rating engine, so a direct year-on-year comparison is not strictly like-for-like. The engine "
+    "surfaces this as a note in the Step 2 banner and the Step 4 UW Conditions Panel. Each recommendation "
+    "card also shows a small 'UW +X%' badge so the loading is visible at a glance. Industry modifiers "
+    "(Software & Technology, Financial) remain baked into the calculation silently \u2014 they are "
+    "implied and do not typically change year-on-year."
 )
 
 # ── 3.8 Continue ──
@@ -814,10 +910,11 @@ doc.add_paragraph("Company Name is entered", style='List Bullet')
 doc.add_paragraph("Industry is selected", style='List Bullet')
 doc.add_paragraph("At least one turnover figure is entered", style='List Bullet')
 doc.add_paragraph("Q1 is answered (Yes or No)", style='List Bullet')
+doc.add_paragraph("On Renewal quotes only: Current Cover Limit, Current Annual Premium, AND Current FP Sub-limit are all populated", style='List Bullet')
 
 add_tip_box(
     "If the button remains greyed out, check that all mandatory fields are filled in and that no blockers "
-    "are active (refer for UW, turnover > R200M, or Q1 = No).",
+    "are active (Prior claim ticked, Refer for UW, turnover > R200M, Q1 = No, or Renewal-Q9 contradiction).",
     "tip"
 )
 
@@ -846,11 +943,16 @@ doc.add_paragraph(
 make_table(
     ["Tag", "Meaning"],
     [
-        ["Recommended", "Best fit for the client's revenue band"],
+        ["Recommended", "Best fit for the client's revenue band (New Business / Competing Quote)"],
         ["Optional", "Available but not the primary recommendation"],
         ["Request Only", "Available on request; needs justification"],
         ["N/A", "Not available for this revenue band"],
-        ["Upgrade Option", "Only shown for renewals in a softening market"],
+        ["Current Cover", "Renewal only \u2014 the client's existing cover limit, pinned on Step 2 even if outside the recommended set for the current band. Auto-selected unless Premium-drop Protection fires."],
+        ["Current Cover \u2022 Recommended", "Renewal only \u2014 the existing cover is also in the recommended set for the current band (ideal case)."],
+        ["Upgrade Option", "Renewal, softening market \u2014 higher cover shown alongside the current cover."],
+        ["Alternative", "Renewal, stable market \u2014 one cover above and one below the current cover, shown for comparison."],
+        ["Downgrade Option", "Renewal, hardening market \u2014 one cover below the current cover, offered as a price-sensitive alternative."],
+        ["Reference \u2014 Not Recommended", "Renewal, Premium-drop Protection triggered \u2014 the existing cover shown for reference only (dimmed, not auto-selected). The Recommended target appears alongside as a higher cover."],
     ]
 )
 
@@ -1029,6 +1131,14 @@ doc.add_paragraph(
     "'Existing Policy'. The comparison is then between the new Phishield quote and what the client "
     "is currently paying."
 )
+doc.add_paragraph(
+    "Renewals also show a renewal-insights banner above the comparison table summarising any of the "
+    "following that apply:"
+)
+doc.add_paragraph("Premium-drop Protection triggered (critical severity) \u2014 see section 3.7.3.", style='List Bullet')
+doc.add_paragraph("Corporate escalation (critical severity) \u2014 max SME cover still below 90% retention.", style='List Bullet')
+doc.add_paragraph("Revenue band shift (informational) \u2014 existing cover outside current recommended set.", style='List Bullet')
+doc.add_paragraph("UW loading comparison caveat (informational) \u2014 current-year Q2\u2013Q6 answers produce a loading; prior posture not on record.", style='List Bullet')
 
 doc.add_page_break()
 
@@ -1288,25 +1398,26 @@ add_numbered_step(5, "Download PDFs in Step 5 for both options.",
 
 # ── Scenario 2: Renewal ──
 
-add_heading("8.2 Scenario 2: Renewal Quote", level=2)
+add_heading("8.2 Scenario 2: Renewal Quote (normal)", level=2)
 
 add_bold_para("Client: SecureFinance Holdings (Pty) Ltd")
 doc.add_paragraph(
     "Industry: Insurance Agents, Brokers, and Service\n"
     "Previous Turnover: R60,000,000\n"
     "Current Estimated: R65,000,000\n"
-    "Current Cover: R7.5M at R32,000/yr\n"
+    "Current Cover: R7.5M at R32,000/yr, FP sub-limit R500,000\n"
     "All underwriting questions: Yes"
 )
 
 add_heading("Walkthrough:", level=3)
 add_numbered_step(1, "Enter details and select 'Renewal' as Quote Type.",
     "Actual Turnover = (R60M + R65M) / 2 = R62.5M. Revenue Band: R50M\u2013R75M (Band 4). "
-    "Enter Current Cover Limit: R7.5M, Current Premium: R32,000. "
-    "Market condition: Softening 2026.")
-add_numbered_step(2, "Engine recommends R5M and R7.5M, plus upgrade options (R10M, R15M).",
-    "FP equivalent is auto-set to Yes for renewals. Select R7.5M to match existing cover, "
-    "and R10M as an upgrade option for the client to consider.")
+    "Enter Current Cover Limit: R7.5M, Current Premium: R32,000, Current FP Sub-limit: R500,000. "
+    "Q9 is auto-set to Yes and locked. Market condition: Softening 2026.")
+add_numbered_step(2, "Engine pins R7.5M as 'Current Cover \u2022 Recommended' and adds R10M + R15M as Upgrade Options.",
+    "The new premium at R7.5M/R500k FP is around R28,450 \u2014 that is only an 11% drop from R32,000, "
+    "so Premium-drop Protection does not trigger. R7.5M auto-selects. The underwriter can also add "
+    "R10M from the Upgrade Option cards to present an upsell path.")
 
 add_heading("Step 3 Detail: Comparison Table (Renewal)", level=4)
 doc.add_paragraph(
@@ -1344,7 +1455,50 @@ doc.add_paragraph(
 )
 
 add_numbered_step(5, "Export both options for the broker.",
-    "The renewal badge and market condition are shown on the PDF.")
+    "The renewal badge, market condition, and existing FP sub-limit are shown on the PDF.")
+
+# ── Scenario 2b: Renewal with Premium-drop Protection trigger ──
+
+add_heading("8.2b Scenario 2b: Renewal \u2014 Premium-drop Protection triggered", level=2)
+
+add_bold_para("Client: Acme Transport (Pty) Ltd")
+doc.add_paragraph(
+    "Industry: Railroad Transportation\n"
+    "Previous Turnover: R15,000,000\n"
+    "Current Estimated: R18,000,000\n"
+    "Current Cover: R5M at R18,000/yr, FP sub-limit R250,000\n"
+    "All underwriting questions: Yes"
+)
+
+add_heading("Walkthrough:", level=3)
+add_numbered_step(1, "Enter details and select 'Renewal'. Fill all three renewal fields.",
+    "Current Cover Limit: R5M, Current Premium: R18,000, Current FP Sub-limit: R250,000.")
+add_numbered_step(2, "Click Continue \u2014 Step 2 fires the Premium-drop Protection rule.",
+    "New premium at R5M/R250k FP calculates to approximately R11,052. That is ~39% below "
+    "existing (R18,000) \u2014 past the 20% threshold \u2014 so the rule fires. The engine:")
+doc.add_paragraph("Shows R5M as 'Reference \u2014 Not Recommended' (dimmed, not pre-selected)", style='List Bullet')
+doc.add_paragraph("Promotes R7.5M to 'Recommended' (lowest cover where new premium \u2265 90% of R18,000)", style='List Bullet')
+doc.add_paragraph("Adds R10M as 'Alternative'", style='List Bullet')
+doc.add_paragraph("Displays a critical-severity banner summarising the premium drop and the adjusted recommendation", style='List Bullet')
+
+add_tip_box(
+    "The auto-selection moves from R5M to R7.5M so the underwriter starts from the protective default. "
+    "If the underwriter disagrees they can click R5M (Reference) to add it to the quote anyway \u2014 the "
+    "rule surfaces the decision, it does not enforce it.",
+    "note"
+)
+
+add_numbered_step(3, "The Step 4 UW Conditions Panel and Step 5 PDF audit trail both include the 'Premium Loss Risk on Renewal' note.",
+    "This creates a written record that the adjustment was considered \u2014 useful for compliance and "
+    "broker conversations.")
+
+add_bold_para("Variant: Corporate escalation")
+doc.add_paragraph(
+    "If the existing premium was so high that even the highest available SME cover (R15M) still fell "
+    "below 90% retention, the banner would upgrade to 'Premium loss risk \u2014 Corporate referral "
+    "suggested', and the recommended action would be to convert the policy to a Corporate product "
+    "(requiring senior-underwriter referral). Only R5M (as Reference) and R15M (as target) would be shown."
+)
 
 # ── Scenario 3: Competing Quote ──
 
@@ -1765,6 +1919,18 @@ make_table(
          "Removed Bryte Insurance from cover page. Added IT/Technical FAQ section. "
          "Improved fonts (Calibri 11pt body, 13pt H2, 16pt H1), spacing (1.3 line spacing), "
          "and table readability. Added numbered figure captions. Fixed section numbering."],
+        ["1.3", "April 2026",
+         "Renewal logic overhaul. Added Current FP Sub-limit as a required renewal field (all three "
+         "renewal inputs now mandatory). Q9 auto-set to Yes and locked on Renewal. Prior claim and "
+         "Renewal-with-Q9-No contradiction both now hard-block the quote as Refer to Senior UW. "
+         "Step 2 recommendations now pin the existing cover as 'Current Cover'. Market-condition "
+         "logic extended: softening \u2192 upgrade options, stable \u2192 alternatives, hardening \u2192 "
+         "downgrade option. New Premium-drop Protection rule: when new premium at same cover/FP is "
+         ">20% below existing, the engine re-recommends a higher cover to retain \u226590% of "
+         "existing premium, with a Corporate referral escalation if max SME cover still falls short. "
+         "Renewal state fully clears on quote-type switch; step-2 selections re-auto-select when "
+         "renewal inputs change. UW loading shown as a per-card badge with a comparison-caveat note. "
+         "Section 3.7.3 added; Scenario 8.2b added for the trigger path."],
     ]
 )
 

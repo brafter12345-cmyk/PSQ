@@ -47,6 +47,13 @@ const state = {
   // Renewal
   renewalCoverIndex: -1,
   renewalPremium: 0,
+  renewalFPLimit: 0,          // Current FP sub-limit in Rand (e.g. 250000)
+  // Renewal — computed flags (set in renderRecommendations)
+  renewalPremiumDropTriggered: false,  // Rule I: new premium at same cover < 80% of existing
+  renewalPremiumDropPct: 0,            // How far below existing (0.25 = 25% drop)
+  renewalCorporateEscalation: false,   // Max SME cover still < 90% of existing
+  renewalRecommendedCoverIndex: -1,    // Target cover index when rule I triggers
+  renewalBandChanged: false,           // Revenue band differs from band at existing cover
   // Competing
   competitorName: '',
   competitorCoverIndex: -1,
@@ -513,6 +520,56 @@ function updatePricing() {
   }
 }
 
+/* ===== Renewal helpers (items C1 + G) ===== */
+
+// G: reset renewal-only state and clear the visible DOM fields
+function clearRenewalInputs() {
+  state.renewalCoverIndex = -1;
+  state.renewalPremium = 0;
+  state.renewalFPLimit = 0;
+  state.renewalPremiumDropTriggered = false;
+  state.renewalPremiumDropPct = 0;
+  state.renewalCorporateEscalation = false;
+  state.renewalRecommendedCoverIndex = -1;
+  state.renewalBandChanged = false;
+  const cover = $('renewal-cover-limit');
+  if (cover) cover.value = '';
+  const prem = $('renewal-premium');
+  if (prem) prem.value = '';
+  const fp = $('renewal-fp-sublimit');
+  if (fp) fp.value = '';
+}
+
+// C1: lock/unlock Q9 based on whether this is a renewal
+function applyRenewalQ9Lock(lock) {
+  const q9Block = document.querySelector('[data-uw="q9"]');
+  if (!q9Block) return;
+  const yesBtn = q9Block.querySelector('[data-value="yes"]');
+  const noBtn = q9Block.querySelector('[data-value="no"]');
+  if (lock) {
+    // Force Q9 = Yes
+    state.uwAnswers['q9'] = true;
+    if (yesBtn) yesBtn.classList.add('active');
+    if (noBtn) noBtn.classList.remove('active');
+    if (yesBtn) yesBtn.disabled = true;
+    if (noBtn) noBtn.disabled = true;
+    q9Block.classList.add('uw-locked');
+    // Add an inline hint if not already present
+    if (!q9Block.querySelector('.uw-lock-hint')) {
+      const hint = document.createElement('div');
+      hint.className = 'uw-lock-hint';
+      hint.textContent = 'Auto-set to Yes on renewal (existing Phishield policy implies prior cover).';
+      q9Block.appendChild(hint);
+    }
+  } else {
+    if (yesBtn) yesBtn.disabled = false;
+    if (noBtn) noBtn.disabled = false;
+    q9Block.classList.remove('uw-locked');
+    const hint = q9Block.querySelector('.uw-lock-hint');
+    if (hint) hint.remove();
+  }
+}
+
 /* ===== Blocker Logic ===== */
 function setBlocker(blocked, reason) {
   state.isBlocked = blocked;
@@ -579,8 +636,33 @@ function evaluateUW() {
     state.uwOutcome = 'loading';
   }
 
-  // Q9 is informational only (prior coverage history, not claims history)
-  // No impact on underwriting outcome regardless of answer
+  // ── B1: Prior claim always escalates to senior UW (overrides standard/caution/loading) ──
+  // ── B2: Defensive check — Renewal + Q9=No is a contradiction and escalates to refer ──
+  //       (C1 normally prevents this via UI, but this guards against data-load or programmatic entry.)
+  const renewalQ9Contradiction = (state.quoteType === 'renewal' && a['q9'] === false);
+  if (state.priorClaim || renewalQ9Contradiction) {
+    state.uwOutcome = 'refer';
+    // Keep uwLoadingPct as computed so audit trail retains context, but block progression.
+    let reason;
+    if (state.priorClaim && renewalQ9Contradiction) {
+      reason = 'Prior claim flagged AND renewal quote with no prior cover (Q9=No). Refer to senior underwriter.';
+    } else if (state.priorClaim) {
+      reason = 'Prior claim flagged. Refer to senior underwriter.';
+    } else {
+      reason = 'Renewal selected but Q9 indicates no prior cover. Refer to senior underwriter.';
+    }
+    setBlocker(true, reason);
+    renderUWOutcome();
+    return;
+  }
+
+  // Clear any prior-claim / Q9-contradiction blocker now that neither trigger applies
+  if (state.isBlocked && (
+        state.blockReason.includes('Prior claim') ||
+        state.blockReason.includes('prior cover')
+      )) {
+    setBlocker(false, '');
+  }
 
   renderUWOutcome();
   checkNextBtn1();
@@ -656,7 +738,15 @@ function checkNextBtn1() {
   const hasTurnover = state.actualTurnover > 0;
   const q1Answered = state.uwAnswers['q1'] !== undefined;
 
-  btn.disabled = !(hasCompany && hasIndustry && hasTurnover && q1Answered);
+  // ── Item A: renewals must capture existing cover, premium, and FP sub-limit ──
+  let renewalOk = true;
+  if (state.quoteType === 'renewal') {
+    renewalOk = state.renewalCoverIndex >= 0
+      && state.renewalPremium > 0
+      && state.renewalFPLimit > 0;
+  }
+
+  btn.disabled = !(hasCompany && hasIndustry && hasTurnover && q1Answered && renewalOk);
 }
 
 /* ===== Searchable Industry Dropdown ===== */
@@ -891,48 +981,283 @@ function getRecommendedCovers(bandIndex) {
   return recommended;
 }
 
+/* ===== Renewal helpers used by renderRecommendations (items D/E/I/B3) ===== */
+
+// Find the fpIndex within getAvailableFPOptions(coverKey) whose limit matches `limitRand`.
+// If the limit is below this cover's base FP, fall back to the base (index 0) — the existing
+// renewal FP may have been below the new cover's minimum baseline, so we bump up for comparison.
+function fpIndexForLimit(coverKey, limitRand) {
+  const availFP = getAvailableFPOptions(coverKey);
+  if (!availFP || availFP.length === 0) return 0;
+  const idx = availFP.findIndex(fp => fp.limit === limitRand);
+  if (idx >= 0) return idx;
+  // Find the lowest available FP >= limitRand (so we don't drop FP below existing)
+  const upIdx = availFP.findIndex(fp => fp.limit >= limitRand);
+  return upIdx >= 0 ? upIdx : 0;
+}
+
+// Returns the card styling for a given role
+function getCardStyling(role, isAlsoRecommended) {
+  switch (role) {
+    case 'recommended':        return { badgeText: 'Recommended',          badgeClass: 'rec',         cardClass: 'recommended role-recommended' };
+    case 'current':            return { badgeText: isAlsoRecommended ? 'Current Cover \u2022 Recommended' : 'Current Cover', badgeClass: 'current', cardClass: 'recommended role-current' };
+    case 'reference':          return { badgeText: 'Reference \u2014 Not Recommended', badgeClass: 'reference', cardClass: 'role-reference' };
+    case 'recommended-target': return { badgeText: 'Recommended',          badgeClass: 'rec',         cardClass: 'recommended role-target' };
+    case 'upgrade':            return { badgeText: 'Upgrade Option',       badgeClass: 'upgrade',     cardClass: 'upgrade role-upgrade' };
+    case 'downgrade':          return { badgeText: 'Downgrade Option',     badgeClass: 'downgrade',   cardClass: 'role-downgrade' };
+    case 'alternative':
+    case 'alternative-lower':
+    case 'alternative-higher': return { badgeText: 'Alternative',          badgeClass: 'alternative', cardClass: 'role-alternative' };
+    default:                   return { badgeText: '',                     badgeClass: '',            cardClass: '' };
+  }
+}
+
+// Find the lowest cover index (from startIdx upward) that is available for this band
+// AND whose calculated premium at the matched FP sub-limit meets the target ratio.
+// Returns -1 if none found.
+function findTargetCoverForRetention(startIdx, targetPremium, fpLimitRand) {
+  if (state.revenueBandIndex < 0) return -1;
+  const row = COVER_AVAILABILITY[state.revenueBandIndex];
+  if (!row) return -1;
+  for (let i = startIdx; i < COVER_LIMITS.length; i++) {
+    if (!row[i]) continue;
+    const key = COVER_LIMITS[i].key;
+    const fpIdx = fpIndexForLimit(key, fpLimitRand);
+    const calc = calculatePremium(i, state, { fpIndex: fpIdx });
+    if (calc && calc.annual >= targetPremium) return i;
+  }
+  return -1;
+}
+
+// Find the highest available cover index for this band
+function findHighestAvailableCover() {
+  if (state.revenueBandIndex < 0) return -1;
+  const row = COVER_AVAILABILITY[state.revenueBandIndex];
+  if (!row) return -1;
+  for (let i = COVER_LIMITS.length - 1; i >= 0; i--) {
+    if (row[i]) return i;
+  }
+  return -1;
+}
+
+// Find the next available cover above startIdx
+function findNextAvailableCoverAbove(startIdx) {
+  if (state.revenueBandIndex < 0) return -1;
+  const row = COVER_AVAILABILITY[state.revenueBandIndex];
+  if (!row) return -1;
+  for (let i = startIdx + 1; i < COVER_LIMITS.length; i++) {
+    if (row[i]) return i;
+  }
+  return -1;
+}
+
+// Find the next available cover below startIdx
+function findNextAvailableCoverBelow(startIdx) {
+  if (state.revenueBandIndex < 0) return -1;
+  const row = COVER_AVAILABILITY[state.revenueBandIndex];
+  if (!row) return -1;
+  for (let i = startIdx - 1; i >= 0; i--) {
+    if (row[i]) return i;
+  }
+  return -1;
+}
+
+// Build and render the renewal insights banner (rule I alerts, band-change note, UW-loading note)
+function renderRenewalInsightsBanner() {
+  const el = $('renewal-insights-banner');
+  if (!el) return;
+  el.innerHTML = '';
+  el.style.display = 'none';
+  el.className = 'renewal-insights-banner';
+
+  if (state.quoteType !== 'renewal' || state.renewalCoverIndex < 0 || state.renewalPremium <= 0 || state.renewalFPLimit <= 0) {
+    return;
+  }
+
+  const parts = [];
+
+  // ── Rule I alert ──
+  if (state.renewalPremiumDropTriggered) {
+    const dropPct = Math.round(state.renewalPremiumDropPct * 100);
+    if (state.renewalCorporateEscalation) {
+      el.classList.add('severity-critical');
+      const maxCoverIdx = findHighestAvailableCover();
+      const maxLabel = maxCoverIdx >= 0 ? COVER_LIMITS[maxCoverIdx].label : '--';
+      parts.push(
+        '<h4>\u26A0 Premium loss risk \u2014 Corporate referral suggested</h4>',
+        `<p>At the existing cover limit (${COVER_LIMITS[state.renewalCoverIndex].label}) and FP sub-limit (${formatR(state.renewalFPLimit)}), the new premium is <strong>${dropPct}% lower</strong> than the existing policy (${formatR(state.renewalPremium)}).</p>`,
+        `<p>The highest available SME cover (${maxLabel}) still produces a premium below 90% of existing. <strong>Consider converting this policy to a Corporate product</strong> for higher cover limits \u2014 refer to the underwriter.</p>`
+      );
+    } else {
+      el.classList.add('severity-critical');
+      const targetLabel = state.renewalRecommendedCoverIndex >= 0 ? COVER_LIMITS[state.renewalRecommendedCoverIndex].label : '--';
+      parts.push(
+        '<h4>\u26A0 Premium loss risk on renewal</h4>',
+        `<p>At the existing cover limit (${COVER_LIMITS[state.renewalCoverIndex].label}) and FP sub-limit (${formatR(state.renewalFPLimit)}), the new premium is <strong>${dropPct}% lower</strong> than the existing policy (${formatR(state.renewalPremium)}).</p>`,
+        `<p>Notify the underwriter of the potential premium loss. Recommended cover has been adjusted to <strong>${targetLabel}</strong> to retain at least 90% of existing premium. The existing cover limit is shown as a reference only and is not pre-selected.</p>`
+      );
+    }
+  } else if (state.renewalBandChanged) {
+    // ── B3: soft note when existing cover falls outside the current revenue band's recommended set ──
+    el.classList.add('severity-info');
+    parts.push(
+      '<h4>Revenue band shift since last renewal</h4>',
+      `<p>The existing cover limit (${COVER_LIMITS[state.renewalCoverIndex].label}) is not within the current recommended set for the updated turnover band. The existing cover is still shown as <em>Current Cover</em>; please verify that the cover remains adequate.</p>`
+    );
+  }
+
+  // ── UW-loading indicator (posture-sensitive comparison caveat) ──
+  if (state.uwLoadingPct > 0) {
+    const pct = Math.round(state.uwLoadingPct * 100);
+    if (parts.length > 0) parts.push('<hr class="ins-divider"/>');
+    parts.push(
+      `<p style="margin:0;"><strong>Note on comparison:</strong> the new premium includes a <strong>${pct}% underwriting loading</strong> based on current cyber-security posture answers (Q2\u2013Q6). The prior term's posture is not on record, so the year-on-year comparison with the existing premium is not strictly like-for-like.</p>`
+    );
+    if (!state.renewalPremiumDropTriggered && !state.renewalBandChanged) {
+      el.classList.add('severity-info');
+    }
+  }
+
+  if (parts.length > 0) {
+    el.innerHTML = parts.join('');
+    el.style.display = 'block';
+  }
+}
+
 /* ===== Render Cover Recommendation Cards ===== */
 function renderRecommendations() {
   const container = $('cover-recommendations');
   container.innerHTML = '';
 
-  if (state.revenueBandIndex < 0) return;
+  if (state.revenueBandIndex < 0) { renderRenewalInsightsBanner(); return; }
 
   const recommended = getRecommendedCovers(state.revenueBandIndex);
   state.recommendedCovers = recommended;
 
-  // For renewals in softening market, also show 2 higher covers
-  let upgradeCovers = [];
-  if (state.quoteType === 'renewal' && MARKET_CONDITION === 'softening') {
-    const maxRec = Math.max(...recommended, -1);
-    for (let i = maxRec + 1; i < COVER_LIMITS.length && upgradeCovers.length < 2; i++) {
-      const avail = COVER_AVAILABILITY[state.revenueBandIndex][i];
-      if (avail) upgradeCovers.push(i);
+  // Reset computed renewal flags each render
+  state.renewalPremiumDropTriggered = false;
+  state.renewalPremiumDropPct = 0;
+  state.renewalCorporateEscalation = false;
+  state.renewalRecommendedCoverIndex = -1;
+  state.renewalBandChanged = false;
+
+  // Build the ordered list of card specs: {coverIndex, role}
+  const cardSpecs = [];
+  const isRenewalWithData = (
+    state.quoteType === 'renewal'
+    && state.renewalCoverIndex >= 0
+    && state.renewalPremium > 0
+    && state.renewalFPLimit > 0
+  );
+
+  if (isRenewalWithData) {
+    // ── Renewal path (items D / B3 / E / I) ──
+
+    // B3: flag if existing cover is not in current recommended set
+    state.renewalBandChanged = !recommended.includes(state.renewalCoverIndex);
+
+    // Compute "new premium at existing cover + existing FP sub-limit"
+    const existingKey = COVER_LIMITS[state.renewalCoverIndex].key;
+    const existingFpIdx = fpIndexForLimit(existingKey, state.renewalFPLimit);
+    const atSameCoverCalc = calculatePremium(state.renewalCoverIndex, state, { fpIndex: existingFpIdx });
+
+    // Rule I trigger: new premium < 80% of existing (> 20% drop)
+    const triggerThreshold = 0.80;
+    const retentionTarget = 0.90;
+
+    if (atSameCoverCalc && atSameCoverCalc.annual < triggerThreshold * state.renewalPremium) {
+      // ── Rule I triggered ──
+      state.renewalPremiumDropTriggered = true;
+      state.renewalPremiumDropPct = 1 - (atSameCoverCalc.annual / state.renewalPremium);
+
+      // Find lowest cover (at or above existing) where new premium >= 90% of existing
+      const targetPremium = retentionTarget * state.renewalPremium;
+      let target = findTargetCoverForRetention(state.renewalCoverIndex, targetPremium, state.renewalFPLimit);
+
+      if (target < 0) {
+        // No SME cover reaches 90% — escalate to Corporate; use max available as shown target
+        state.renewalCorporateEscalation = true;
+        target = findHighestAvailableCover();
+      }
+
+      state.renewalRecommendedCoverIndex = target;
+
+      // Card set: existing as "Reference", target as "Recommended", next higher as "Alternative"
+      cardSpecs.push({ coverIndex: state.renewalCoverIndex, role: 'reference' });
+      if (target >= 0 && target !== state.renewalCoverIndex) {
+        cardSpecs.push({ coverIndex: target, role: 'recommended-target' });
+        const alt = findNextAvailableCoverAbove(target);
+        if (alt >= 0) cardSpecs.push({ coverIndex: alt, role: 'alternative-higher' });
+      } else if (target === state.renewalCoverIndex) {
+        // Defensive: target collapsed to existing — shouldn't normally happen when trigger fires,
+        // but avoids an empty card set.
+        cardSpecs[0].role = 'current';
+      }
+
+    } else {
+      // ── Rule I NOT triggered: apply market-condition logic (item E), with existing cover pinned ──
+
+      // Always include existing cover as "Current Cover"
+      cardSpecs.push({ coverIndex: state.renewalCoverIndex, role: 'current' });
+
+      if (MARKET_CONDITION === 'softening') {
+        // Add up to 2 higher covers as upgrade options
+        let added = 0;
+        for (let i = state.renewalCoverIndex + 1; i < COVER_LIMITS.length && added < 2; i++) {
+          const avail = COVER_AVAILABILITY[state.revenueBandIndex] ? COVER_AVAILABILITY[state.revenueBandIndex][i] : null;
+          if (avail) { cardSpecs.push({ coverIndex: i, role: 'upgrade' }); added++; }
+        }
+      } else if (MARKET_CONDITION === 'stable') {
+        // 1 lower + 1 higher as alternatives
+        const lower = findNextAvailableCoverBelow(state.renewalCoverIndex);
+        if (lower >= 0) cardSpecs.unshift({ coverIndex: lower, role: 'alternative-lower' });
+        const higher = findNextAvailableCoverAbove(state.renewalCoverIndex);
+        if (higher >= 0) cardSpecs.push({ coverIndex: higher, role: 'alternative-higher' });
+      } else if (MARKET_CONDITION === 'hardening') {
+        // 1 lower as downgrade suggestion
+        const lower = findNextAvailableCoverBelow(state.renewalCoverIndex);
+        if (lower >= 0) cardSpecs.unshift({ coverIndex: lower, role: 'downgrade' });
+      }
     }
+  } else {
+    // ── Non-renewal path (original behaviour: show recommended covers only) ──
+    recommended.forEach(ci => cardSpecs.push({ coverIndex: ci, role: 'recommended' }));
   }
 
-  const allToShow = [...recommended, ...upgradeCovers];
+  // Render the insights banner (if applicable)
+  renderRenewalInsightsBanner();
 
-  allToShow.forEach(ci => {
-    const calc = calculatePremium(ci, state);
+  // Render all cards
+  cardSpecs.forEach(spec => {
+    const ci = spec.coverIndex;
+    const role = spec.role;
+
+    // For renewal cards, display premium at the matched FP sub-limit (apples-to-apples)
+    const cardFpIdx = (isRenewalWithData)
+      ? fpIndexForLimit(COVER_LIMITS[ci].key, state.renewalFPLimit)
+      : undefined;
+    const calc = calculatePremium(ci, state, cardFpIdx !== undefined ? { fpIndex: cardFpIdx } : undefined);
     if (!calc) return;
 
-    const isRec = recommended.includes(ci);
-    const isUpgrade = upgradeCovers.includes(ci);
+    const isAlsoRecommended = recommended.includes(ci);
+    const { badgeText, badgeClass, cardClass } = getCardStyling(role, isAlsoRecommended);
+    const microLabel = calc.isMicro ? '<span class="micro-label">Micro SME</span>' : '';
+    const uwLoadBadge = (state.uwLoadingPct > 0)
+      ? `<span class="uw-load-badge" title="Includes underwriting loading from Q2\u2013Q6 answers">UW +${Math.round(state.uwLoadingPct * 100)}%</span>`
+      : '';
 
     const card = document.createElement('div');
-    card.className = 'cover-rec-card' + (isRec ? ' recommended' : '') + (isUpgrade ? ' upgrade' : '');
+    card.className = 'cover-rec-card ' + cardClass;
     card.dataset.coverIndex = ci;
-
-    const badgeText = isRec ? 'Recommended' : (isUpgrade ? 'Upgrade Option' : '');
-    const microLabel = calc.isMicro ? '<span class="micro-label">Micro SME</span>' : '';
+    card.dataset.role = role;
 
     card.innerHTML = `
       <div class="check-overlay">&#10003;</div>
       <div class="rec-card-header">
         <span class="rec-card-cover">${COVER_LIMITS[ci].label}</span>
-        ${badgeText ? `<span class="rec-badge ${isRec ? 'rec' : 'upgrade'}">${badgeText}</span>` : ''}
+        ${badgeText ? `<span class="rec-badge ${badgeClass}">${badgeText}</span>` : ''}
         ${microLabel}
+        ${uwLoadBadge}
       </div>
       <div class="rec-card-body">
         <div class="rec-price-annual">${formatR(calc.annual)}<span>/yr</span></div>
@@ -944,28 +1269,21 @@ function renderRecommendations() {
 
     // Multi-toggle: click to add/remove from quoteOptions
     card.addEventListener('click', (e) => {
-      // Ignore if clicking the duplicate button
       if (e.target.closest('.duplicate-btn')) return;
 
       if (isCoverInOptions(ci)) {
-        // Remove all instances of this cover
         state.quoteOptions = state.quoteOptions.filter(o => o.coverIndex !== ci);
         syncFromQuoteOptions();
         card.classList.remove('selected', 'active');
       } else {
-        // Add this cover as a new option (max 4)
         if (state.quoteOptions.length >= 4) return;
-        addQuoteOption(ci, 0);
+        addQuoteOption(ci, cardFpIdx !== undefined ? cardFpIdx : 0);
         card.classList.add('selected', 'active');
       }
 
       state.isCustomSelection = false;
-
-      // Update micro badge
       state.isMicroSME = calc.isMicro;
       $('micro-badge').style.display = calc.isMicro ? 'flex' : 'none';
-
-      // Deselect custom cards
       $$('#cover-selector .sel-card').forEach(c => c.classList.remove('active'));
 
       renderFPSelectorMulti();
@@ -977,7 +1295,7 @@ function renderRecommendations() {
     dupBtn.addEventListener('click', (e) => {
       e.stopPropagation();
       if (state.quoteOptions.length >= 4) return;
-      addQuoteOption(ci, 0);
+      addQuoteOption(ci, cardFpIdx !== undefined ? cardFpIdx : 0);
       renderFPSelectorMulti();
       updatePricing();
     });
@@ -985,16 +1303,21 @@ function renderRecommendations() {
     container.appendChild(card);
   });
 
-  // Auto-select ALL recommended options if no options yet
-  if (recommended.length > 0 && state.quoteOptions.length === 0) {
-    const allCards = container.querySelectorAll('.cover-rec-card.recommended');
-    allCards.forEach(card => {
-      const ci = parseInt(card.dataset.coverIndex, 10);
-      addQuoteOption(ci, 0);
-      card.classList.add('selected', 'active');
+  // ── Auto-select defaults on first render ──
+  // Non-renewal: auto-select all 'recommended'. Renewal: auto-select 'current' / 'recommended-target'
+  // (NOT 'reference' — we want the underwriter to deliberately choose if they disagree with rule I).
+  if (state.quoteOptions.length === 0 && cardSpecs.length > 0) {
+    const autoRoles = ['recommended', 'current', 'recommended-target'];
+    cardSpecs.forEach(spec => {
+      if (autoRoles.includes(spec.role)) {
+        const ci = spec.coverIndex;
+        const fpIdx = (isRenewalWithData) ? fpIndexForLimit(COVER_LIMITS[ci].key, state.renewalFPLimit) : 0;
+        addQuoteOption(ci, fpIdx);
+        const cardEl = container.querySelector(`.cover-rec-card[data-cover-index="${ci}"]`);
+        if (cardEl) cardEl.classList.add('selected', 'active');
+      }
     });
 
-    // Check micro for first option
     if (state.quoteOptions.length > 0) {
       const firstCalc = calculatePremium(state.quoteOptions[0].coverIndex, state);
       if (firstCalc) {
@@ -1670,6 +1993,45 @@ function renderUWConditionsPanel() {
     </div>`;
   }
 
+  // 4. Rule I — Renewal premium-drop protection (items D / I)
+  if (state.quoteType === 'renewal' && state.renewalPremiumDropTriggered) {
+    hasConditions = true;
+    const dropPct = Math.round(state.renewalPremiumDropPct * 100);
+    if (state.renewalCorporateEscalation) {
+      const maxIdx = findHighestAvailableCover();
+      const maxLabel = maxIdx >= 0 ? COVER_LIMITS[maxIdx].label : '--';
+      html += `<div class="uw-cond-section">
+        <div class="uw-cond-label">Premium Loss Risk \u2014 Corporate Referral</div>
+        <div class="uw-cond-value" style="color: var(--warning);">Premium at existing cover is ${dropPct}% below the existing policy, and the highest SME cover (${maxLabel}) still falls below 90% retention. Consider converting to a Corporate product \u2014 refer to underwriter.</div>
+      </div>`;
+    } else {
+      const tgtLabel = state.renewalRecommendedCoverIndex >= 0 ? COVER_LIMITS[state.renewalRecommendedCoverIndex].label : '--';
+      html += `<div class="uw-cond-section">
+        <div class="uw-cond-label">Premium Loss Risk on Renewal</div>
+        <div class="uw-cond-value">Premium at existing cover is ${dropPct}% below the existing policy. Recommended cover adjusted to ${tgtLabel} to retain \u2265 90% of existing premium.</div>
+      </div>`;
+    }
+  }
+
+  // 5. B3 — Revenue band shift note (informational only)
+  if (state.quoteType === 'renewal' && state.renewalBandChanged && !state.renewalPremiumDropTriggered) {
+    hasConditions = true;
+    html += `<div class="uw-cond-section">
+      <div class="uw-cond-label">Revenue Band Shift</div>
+      <div class="uw-cond-value">Existing cover limit is outside the recommended set for the current turnover band. Verify cover adequacy.</div>
+    </div>`;
+  }
+
+  // 6. UW loading comparison caveat (posture-sensitive)
+  if (state.quoteType === 'renewal' && state.uwLoadingPct > 0) {
+    hasConditions = true;
+    const pct = Math.round(state.uwLoadingPct * 100);
+    html += `<div class="uw-cond-section">
+      <div class="uw-cond-label">Comparison Caveat \u2014 UW Loading</div>
+      <div class="uw-cond-value">Current quote includes a ${pct}% underwriting loading based on Q2\u2013Q6 answers. Prior term's posture is not on record; year-on-year comparison is not strictly like-for-like.</div>
+    </div>`;
+  }
+
   if (hasConditions) {
     content.innerHTML = html;
     panel.style.display = 'block';
@@ -2196,6 +2558,50 @@ function generatePDF(optionOverride) {
     doc.text('\u26A0 Prior claim flagged \u2014 additional underwriting required', margin + 2, y);
     y += lineH + 2;
   }
+  // Renewal: rule I / band-change / UW-loading caveats (items D / I / B3)
+  if (state.quoteType === 'renewal') {
+    if (state.renewalFPLimit > 0) {
+      addField('Existing FP Sub-limit:', formatR(state.renewalFPLimit));
+    }
+    if (state.renewalPremiumDropTriggered) {
+      addSpacer(2);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(200, 50, 50);
+      const dropPct = Math.round(state.renewalPremiumDropPct * 100);
+      let msg;
+      if (state.renewalCorporateEscalation) {
+        msg = '\u26A0 Premium loss risk: ' + dropPct + '% drop at existing cover. SME max still <90% retention \u2014 consider Corporate product, refer UW.';
+      } else {
+        const tgt = state.renewalRecommendedCoverIndex >= 0 ? COVER_LIMITS[state.renewalRecommendedCoverIndex].label : '--';
+        msg = '\u26A0 Premium loss risk: ' + dropPct + '% drop at existing cover. Recommended cover adjusted to ' + tgt + ' to retain \u226590%.';
+      }
+      const wrapped = doc.splitTextToSize(msg, contentW - 6);
+      doc.text(wrapped, margin + 2, y);
+      y += wrapped.length * (lineH - 0.5) + 3;
+    }
+    if (state.renewalBandChanged && !state.renewalPremiumDropTriggered) {
+      addSpacer(1);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(120, 90, 0);
+      const msg = 'Revenue band shift: existing cover outside current recommended set \u2014 verify adequacy.';
+      const wrapped = doc.splitTextToSize(msg, contentW - 6);
+      doc.text(wrapped, margin + 2, y);
+      y += wrapped.length * (lineH - 0.5) + 3;
+    }
+    if (state.uwLoadingPct > 0) {
+      addSpacer(1);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'italic');
+      doc.setTextColor(90, 90, 90);
+      const pct = Math.round(state.uwLoadingPct * 100);
+      const msg = 'Comparison caveat: new premium includes ' + pct + '% UW loading (Q2\u2013Q6). Prior posture not on record \u2014 year-on-year comparison not strictly like-for-like.';
+      const wrapped = doc.splitTextToSize(msg, contentW - 6);
+      doc.text(wrapped, margin + 2, y);
+      y += wrapped.length * (lineH - 0.5) + 3;
+    }
+  }
   addSpacer(2);
 
   // ── Endorsements ──
@@ -2418,6 +2824,12 @@ async function saveQuoteToBackend(coverLabel, pdfBase64, optionQuoteRef) {
     competitorData: state.competitorRows || [],
     renewalCoverLimit: state.renewalCoverIndex >= 0 ? COVER_LIMITS[state.renewalCoverIndex].label : '',
     renewalPremium: state.renewalPremium || 0,
+    renewalFPLimit: state.renewalFPLimit || 0,
+    renewalPremiumDropTriggered: !!state.renewalPremiumDropTriggered,
+    renewalPremiumDropPct: state.renewalPremiumDropPct || 0,
+    renewalCorporateEscalation: !!state.renewalCorporateEscalation,
+    renewalRecommendedCoverLimit: state.renewalRecommendedCoverIndex >= 0 ? COVER_LIMITS[state.renewalRecommendedCoverIndex].label : '',
+    renewalBandChanged: !!state.renewalBandChanged,
     coverLabel: coverLabel,
     pdfBase64: pdfBase64 || null,
   };
@@ -2554,18 +2966,31 @@ document.addEventListener('DOMContentLoaded', () => {
     evaluateUW();
   });
 
-  // Prior claim
+  // Prior claim (item B1 — now triggers actual UW referral, not just a banner)
   $('prior-claim-check').addEventListener('change', () => {
     state.priorClaim = $('prior-claim-check').checked;
     $('prior-claim-warning').style.display = state.priorClaim ? 'flex' : 'none';
+    evaluateUW();  // re-run so priorClaim can set uwOutcome='refer' + blocker
   });
 
   // Quote type toggle
   $('quote-type-toggle').querySelectorAll('.toggle-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+      const prevType = state.quoteType;
       $('quote-type-toggle').querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       state.quoteType = btn.dataset.value;
+
+      // If quote type actually changed, clear prior Step 2 selections — the recommendation
+      // logic differs materially between new/renewal/competing, so defaults should re-auto-select
+      // on the next visit to Step 2.
+      if (prevType !== state.quoteType) {
+        state.quoteOptions = [];
+        state.selectedCovers = [];
+        state.fpSelections = {};
+        state.activeOptionTab = null;
+        state.calculations = {};
+      }
 
       $('renewal-section').style.display = state.quoteType === 'renewal' ? 'block' : 'none';
       $('competing-section').style.display = state.quoteType === 'competing' ? 'block' : 'none';
@@ -2578,6 +3003,8 @@ document.addEventListener('DOMContentLoaded', () => {
           fpToggle.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
           fpToggle.querySelector('[data-value="yes"]').classList.add('active');
         }
+        // ── C1: Auto-set Q9 = Yes and disable (existing Phishield policy implies prior cover) ──
+        applyRenewalQ9Lock(true);
       } else {
         state.competitorHasFP = false;
         const fpToggle = $('competitor-fp-toggle');
@@ -2585,7 +3012,12 @@ document.addEventListener('DOMContentLoaded', () => {
           fpToggle.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
           fpToggle.querySelector('[data-value="no"]').classList.add('active');
         }
+        // ── C1: Unlock Q9 when leaving Renewal ──
+        applyRenewalQ9Lock(false);
+        // ── G: Clear renewal-specific state and UI when leaving Renewal tab ──
+        clearRenewalInputs();
       }
+      checkNextBtn1();
     });
   });
 
@@ -2593,13 +3025,22 @@ document.addEventListener('DOMContentLoaded', () => {
   $('renewal-cover-limit').addEventListener('change', () => {
     const val = parseInt($('renewal-cover-limit').value, 10);
     state.renewalCoverIndex = COVER_LIMITS.findIndex(cl => cl.value === val);
+    checkNextBtn1();
   });
 
   $('renewal-premium').addEventListener('blur', () => {
     formatCurrencyInput($('renewal-premium'));
     state.renewalPremium = parseCurrency($('renewal-premium').value);
+    checkNextBtn1();
   });
   $('renewal-premium').addEventListener('focus', () => stripCurrencyInput($('renewal-premium')));
+
+  // Renewal FP sub-limit (item F)
+  $('renewal-fp-sublimit').addEventListener('change', () => {
+    const val = parseInt($('renewal-fp-sublimit').value, 10);
+    state.renewalFPLimit = isNaN(val) ? 0 : val;
+    checkNextBtn1();
+  });
 
   // Competing inputs (competitor name now in Step 3)
   if ($('competitor-name-step3')) {
@@ -2612,6 +3053,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
   $('nextBtn1').addEventListener('click', () => {
     if ($('nextBtn1').disabled) return;
+
+    // If the renewal context has changed since the last Step-2 visit, clear prior quoteOptions
+    // so the auto-select fires again with the new recommendation set. Non-renewal quotes
+    // preserve their selections (turnover/industry changes still trigger via signature).
+    const ctxSignature = JSON.stringify([
+      state.quoteType,
+      state.revenueBandIndex,
+      state.renewalCoverIndex,
+      state.renewalPremium,
+      state.renewalFPLimit,
+    ]);
+    if (state._lastStep2CtxSignature !== ctxSignature) {
+      state.quoteOptions = [];
+      state.selectedCovers = [];
+      state.fpSelections = {};
+      state.activeOptionTab = null;
+      state.calculations = {};
+      state._lastStep2CtxSignature = ctxSignature;
+    }
 
     // Render step 2 content
     renderRecommendations();
