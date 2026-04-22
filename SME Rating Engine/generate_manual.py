@@ -312,7 +312,8 @@ toc_items = [
     "7. Step 5: Quote Summary & Export",
     "8. Common Scenarios (Worked Examples)",
     "   8.2 Renewal Quote (normal)",
-    "   8.2b Renewal \u2014 Premium-drop Protection triggered",
+    "   8.2b Renewal \u2014 Rule I triggered (adjacent target)",
+    "   8.2c Renewal \u2014 Rule I triggered (ladder gap)",
     "   8.4 Common Mistakes to Avoid",
     "9. Troubleshooting & FAQ",
     "10. Quick Reference Card",
@@ -855,13 +856,33 @@ run.bold = True
 
 add_bold_para("Action when triggered")
 doc.add_paragraph(
-    "The Step 2 cover recommendations are re-calculated to retain at least 90% of the existing premium:"
+    "The Step 2 cover recommendations are re-calculated to retain at least 90% of the existing premium. "
+    "The card ladder adapts to how far the target sits above the existing cover:"
 )
-doc.add_paragraph("The existing cover limit is shown as 'Reference \u2014 Not Recommended' (dimmed, not pre-selected).", style='List Bullet')
-doc.add_paragraph("A higher cover limit is chosen as the new 'Recommended' target \u2014 the lowest cover where the new premium retains at least 90% of the existing.", style='List Bullet')
-doc.add_paragraph("The cover above the target (if any) is shown as 'Alternative' \u2014 useful when the extra cover is only marginally more expensive.", style='List Bullet')
+doc.add_paragraph("The existing cover limit is always shown as 'Reference \u2014 Not Recommended' (dimmed, not pre-selected).", style='List Bullet')
+doc.add_paragraph("The 'Recommended' target is the lowest cover where the new premium retains at least 90% of the existing.", style='List Bullet')
+doc.add_paragraph("When the target is ADJACENT to the existing cover (one step up): 'Reference' + 'Recommended' + one cover above the target as 'Alternative' (natural one-step-further upsell).", style='List Bullet')
+doc.add_paragraph("When the target is MORE THAN ONE STEP above the existing cover (i.e. the algorithm skipped covers to reach 90%): every available cover between the existing and target appears as an 'Alternative' card. The card above the target is DROPPED. This prevents ladder gaps that would hide the natural one-step upgrade path.", style='List Bullet')
+doc.add_paragraph("Each intermediate 'Alternative' card shows a 'XX% retention' badge \u2014 the new premium expressed as a percentage of the existing premium, at matched FP. The underwriter sees at a glance how close each option sits to the 90% bar, and can decide whether a small discretionary pricing adjustment or an FP tier upgrade is worthwhile to bridge the gap.", style='List Bullet')
 doc.add_paragraph("A critical-severity banner appears on Step 2 notifying the underwriter of the potential premium loss and the adjusted recommendation.", style='List Bullet')
 doc.add_paragraph("The same information is reflected on the Step 4 UW Conditions Panel and the Step 5 PDF audit trail.", style='List Bullet')
+
+add_tip_box(
+    "The retention percentage on intermediate cards is calculated at the MATCHED FP sub-limit \u2014 the "
+    "same FP basis used for the Rule I decision. Because higher cover limits have a minimum baseline FP, "
+    "an intermediate cover may already use a higher FP than the existing policy (e.g. R7.5M forces a "
+    "minimum FP of R500k even if the existing policy was at R250k FP). This is baked into the retention "
+    "calculation \u2014 no adjustment required.",
+    "note"
+)
+
+add_tip_box(
+    "Clients are more likely to accept a one-notch upgrade than a two-notch jump. Use the intermediate "
+    "Alternative cards to anchor the conversation: 'You're currently at R5M. For similar protection "
+    "against premium loss we'd normally recommend R10M, but R7.5M at 83%-retention is a realistic "
+    "middle ground if we apply a small discretionary adjustment.'",
+    "tip"
+)
 
 add_bold_para("Corporate-escalation edge case")
 doc.add_paragraph(
@@ -953,6 +974,7 @@ make_table(
         ["Alternative", "Renewal, stable market \u2014 one cover above and one below the current cover, shown for comparison."],
         ["Downgrade Option", "Renewal, hardening market \u2014 one cover below the current cover, offered as a price-sensitive alternative."],
         ["Reference \u2014 Not Recommended", "Renewal, Premium-drop Protection triggered \u2014 the existing cover shown for reference only (dimmed, not auto-selected). The Recommended target appears alongside as a higher cover."],
+        ["Alternative + XX% retention", "Renewal, Premium-drop Protection triggered with a ladder gap (target > existing+1). Each skipped cover between the existing and the Recommended target is surfaced as an Alternative, tagged with a 'XX% retention' badge showing how close that cover's premium sits to the 90% retention target at matched FP."],
     ]
 )
 
@@ -1459,7 +1481,7 @@ add_numbered_step(5, "Export both options for the broker.",
 
 # ── Scenario 2b: Renewal with Premium-drop Protection trigger ──
 
-add_heading("8.2b Scenario 2b: Renewal \u2014 Premium-drop Protection triggered", level=2)
+add_heading("8.2b Scenario 2b: Renewal \u2014 Premium-drop Protection triggered (adjacent target)", level=2)
 
 add_bold_para("Client: Acme Transport (Pty) Ltd")
 doc.add_paragraph(
@@ -1475,11 +1497,13 @@ add_numbered_step(1, "Enter details and select 'Renewal'. Fill all three renewal
     "Current Cover Limit: R5M, Current Premium: R18,000, Current FP Sub-limit: R250,000.")
 add_numbered_step(2, "Click Continue \u2014 Step 2 fires the Premium-drop Protection rule.",
     "New premium at R5M/R250k FP calculates to approximately R11,052. That is ~39% below "
-    "existing (R18,000) \u2014 past the 20% threshold \u2014 so the rule fires. The engine:")
-doc.add_paragraph("Shows R5M as 'Reference \u2014 Not Recommended' (dimmed, not pre-selected)", style='List Bullet')
-doc.add_paragraph("Promotes R7.5M to 'Recommended' (lowest cover where new premium \u2265 90% of R18,000)", style='List Bullet')
-doc.add_paragraph("Adds R10M as 'Alternative'", style='List Bullet')
-doc.add_paragraph("Displays a critical-severity banner summarising the premium drop and the adjusted recommendation", style='List Bullet')
+    "existing (R18,000) \u2014 past the 20% threshold \u2014 so the rule fires. The algorithm lands on "
+    "R7.5M as the lowest cover reaching 90% retention. R7.5M is ADJACENT to R5M so the standard "
+    "Reference + Recommended + one-above-target Alternative card set is used:")
+doc.add_paragraph("R5M as 'Reference \u2014 Not Recommended' (dimmed, not pre-selected)", style='List Bullet')
+doc.add_paragraph("R7.5M as 'Recommended' (lowest cover where new premium \u2265 90% of R18,000) \u2014 auto-selected", style='List Bullet')
+doc.add_paragraph("R10M as 'Alternative' (one step further upsell)", style='List Bullet')
+doc.add_paragraph("Critical-severity banner summarising the premium drop and the adjusted recommendation", style='List Bullet')
 
 add_tip_box(
     "The auto-selection moves from R5M to R7.5M so the underwriter starts from the protective default. "
@@ -1492,12 +1516,52 @@ add_numbered_step(3, "The Step 4 UW Conditions Panel and Step 5 PDF audit trail 
     "This creates a written record that the adjustment was considered \u2014 useful for compliance and "
     "broker conversations.")
 
-add_bold_para("Variant: Corporate escalation")
+# ── Scenario 2c: Rule I with a ladder gap ──
+
+add_heading("8.2c Scenario 2c: Renewal \u2014 Premium-drop Protection triggered (ladder gap)", level=2)
+
+add_bold_para("Client: CapitalStream Real Estate Finance (Pty) Ltd")
+doc.add_paragraph(
+    "Industry: Finance, Insurance and Real Estate \u2014 Real Estate\n"
+    "Previous Turnover: R65,000,000\n"
+    "Current Estimated: R75,000,000\n"
+    "Current Cover: R5M at R45,000/yr, FP sub-limit R250,000\n"
+    "Q3 = No, Q4 = No (5% UW loading applied)"
+)
+
+add_heading("Walkthrough:", level=3)
+add_numbered_step(1, "Enter details and select 'Renewal'. Fill all three renewal fields.",
+    "Current Cover: R5M, Current Premium: R45,000, Current FP Sub-limit: R250,000. "
+    "Turnover R70M lands in Band 4 (R50M\u2013R75M). Finance industry modifier applies.")
+add_numbered_step(2, "Click Continue \u2014 the rule fires, and the target is more than one step above existing.",
+    "New premium at R5M/R250k FP is approximately R29,800 (about 34% below R45,000). The "
+    "algorithm searches upward: R7.5M at matched FP (auto-bumped to R500k minimum) produces "
+    "approximately R37,500 \u2014 that's 83% retention, still below the 90% bar. R10M at matched FP "
+    "(R500k) produces approximately R43,000 \u2014 \u226590% retention, so R10M becomes the Recommended "
+    "target. Because the target (R10M) is TWO steps above the existing (R5M), the ladder-gap "
+    "logic kicks in and the card set becomes:")
+doc.add_paragraph("R5M as 'Reference \u2014 Not Recommended'", style='List Bullet')
+doc.add_paragraph("R7.5M as 'Alternative' with a '83% retention' badge (the intermediate rung)", style='List Bullet')
+doc.add_paragraph("R10M as 'Recommended' \u2014 auto-selected", style='List Bullet')
+doc.add_paragraph("R15M is NOT shown \u2014 the above-target Alternative is dropped when there are intermediate Alternatives", style='List Bullet')
+
+add_tip_box(
+    "R7.5M is the natural conversation rung: the client will often prefer a one-notch upgrade over "
+    "a two-notch jump. The 83% retention badge tells the underwriter exactly how close R7.5M sits "
+    "to the 90% bar \u2014 a small discretionary adjustment on Step 4, or an FP tier bump (e.g. R500k "
+    "\u2192 R1M), can often close that 7-percentage-point gap. The Recommended R10M remains the "
+    "default so the protective option is always pre-selected.",
+    "tip"
+)
+
+add_bold_para("Variant: Corporate escalation with full ladder visible")
 doc.add_paragraph(
     "If the existing premium was so high that even the highest available SME cover (R15M) still fell "
-    "below 90% retention, the banner would upgrade to 'Premium loss risk \u2014 Corporate referral "
-    "suggested', and the recommended action would be to convert the policy to a Corporate product "
-    "(requiring senior-underwriter referral). Only R5M (as Reference) and R15M (as target) would be shown."
+    "below 90% retention, the banner upgrades to 'Premium loss risk \u2014 Corporate referral "
+    "suggested'. The ladder-gap logic still applies \u2014 every intermediate cover between the existing "
+    "and R15M (the max-available target) appears as an Alternative with its retention badge. This "
+    "gives the underwriter a complete picture of how SME cover falls short and strengthens the case "
+    "for conversion to a Corporate product (requires senior-underwriter referral)."
 )
 
 # ── Scenario 3: Competing Quote ──
@@ -1931,6 +1995,15 @@ make_table(
          "Renewal state fully clears on quote-type switch; step-2 selections re-auto-select when "
          "renewal inputs change. UW loading shown as a per-card badge with a comparison-caveat note. "
          "Section 3.7.3 added; Scenario 8.2b added for the trigger path."],
+        ["1.3.1", "April 2026",
+         "Rule I ladder-gap refinement. When the Premium-drop target is more than one step above "
+         "the existing cover (e.g. R5M \u2192 R10M skipping R7.5M), the engine now fills the skipped "
+         "covers as Alternative cards rather than showing only the target plus one cover above it. "
+         "Each intermediate Alternative card displays a 'XX% retention' badge showing the new "
+         "premium as a percentage of existing at matched FP, so the underwriter can see at a glance "
+         "how close each skipped cover sits to the 90% bar. The above-target Alternative is dropped "
+         "in the ladder-gap case (no clutter). Adjacent target behaviour (target = existing+1) is "
+         "preserved unchanged. Scenario 8.2c added for the ladder-gap worked example."],
     ]
 )
 

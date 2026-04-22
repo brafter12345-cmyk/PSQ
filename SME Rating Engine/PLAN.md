@@ -36,7 +36,7 @@ Single-page HTML portal (no frameworks), 5-step wizard:
 - **Discount Cap:** Combined posture + discretionary max ~35%
 - **Blockers:** Healthcare/Public Admin, T/O > R200M, Q1=No, Prior Claim ticked, Renewal-with-Q9=No contradiction -> "Refer for Underwriting"
 - **Market Condition:** Read-only indicator (currently "Softening 2026"), hardcoded in sme-data.js
-- **Renewals:** Benchmark is previous year's premium; three required inputs (cover, premium, FP sub-limit); Q9 auto-set to Yes; market condition drives upgrade/alternative/downgrade options; **Premium-drop Protection rule** triggers when new premium at same cover/FP is <80% of existing, auto-adjusting recommendations to retain >=90%, with Corporate escalation when max SME cover still falls short
+- **Renewals:** Benchmark is previous year's premium; three required inputs (cover, premium, FP sub-limit); Q9 auto-set to Yes; market condition drives upgrade/alternative/downgrade options; **Premium-drop Protection rule** triggers when new premium at same cover/FP is <80% of existing, auto-adjusting recommendations to retain >=90%, with Corporate escalation when max SME cover still falls short. Ladder-gap fill: when the target cover is >1 step above existing, intermediate covers are surfaced as Alternative cards with a "XX% retention" badge (replacing the above-target card)
 
 ## PDF Output Structure
 ```
@@ -54,4 +54,4 @@ Quotes/Year/Month/CompanyName/CompanyName_CoverLimit.pdf
 `CPB-YYYYMMDD-NNNN`
 
 ---
-*Last updated: 2026-04-22 — Renewal logic overhaul (v1.3)*
+*Last updated: 2026-04-22 — Renewal logic overhaul (v1.3) + Rule I ladder-gap fill (v1.3.1)*

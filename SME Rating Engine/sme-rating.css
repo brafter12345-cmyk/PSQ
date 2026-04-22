@@ -952,6 +952,19 @@ body::before {
   color: #ff7878;
   letter-spacing: 0.03em;
 }
+/* Retention-percent badge on Rule I intermediate Alternative cards */
+.retention-badge {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: rgba(255,183,3,0.14);
+  border: 1px solid rgba(255,183,3,0.3);
+  color: var(--warning);
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
 /* Reference card — dimmed look, not a primary choice */
 .cover-rec-card.role-reference {
   opacity: 0.7;

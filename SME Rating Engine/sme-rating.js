@@ -1007,7 +1007,9 @@ function getCardStyling(role, isAlsoRecommended) {
     case 'downgrade':          return { badgeText: 'Downgrade Option',     badgeClass: 'downgrade',   cardClass: 'role-downgrade' };
     case 'alternative':
     case 'alternative-lower':
-    case 'alternative-higher': return { badgeText: 'Alternative',          badgeClass: 'alternative', cardClass: 'role-alternative' };
+    case 'alternative-higher':
+    case 'alternative-intermediate':
+                               return { badgeText: 'Alternative',          badgeClass: 'alternative', cardClass: 'role-alternative' };
     default:                   return { badgeText: '',                     badgeClass: '',            cardClass: '' };
   }
 }
@@ -1182,12 +1184,32 @@ function renderRecommendations() {
 
       state.renewalRecommendedCoverIndex = target;
 
-      // Card set: existing as "Reference", target as "Recommended", next higher as "Alternative"
+      // Card set logic:
+      //  • existing cover always shown as "Reference" (dimmed, not pre-selected)
+      //  • if target is adjacent (existing+1): Reference + Recommended + one-above-target Alternative
+      //  • if target is > one step above existing: fill intermediates as Alternatives, drop above-target
+      //    (no ladder gap, natural upsell rungs surfaced per underwriter feedback)
       cardSpecs.push({ coverIndex: state.renewalCoverIndex, role: 'reference' });
       if (target >= 0 && target !== state.renewalCoverIndex) {
-        cardSpecs.push({ coverIndex: target, role: 'recommended-target' });
-        const alt = findNextAvailableCoverAbove(target);
-        if (alt >= 0) cardSpecs.push({ coverIndex: alt, role: 'alternative-higher' });
+        // Collect available intermediate covers between existing (exclusive) and target (exclusive)
+        const intermediateCovers = [];
+        const row = COVER_AVAILABILITY[state.revenueBandIndex] || [];
+        for (let i = state.renewalCoverIndex + 1; i < target; i++) {
+          if (row[i]) intermediateCovers.push(i);
+        }
+
+        if (intermediateCovers.length > 0) {
+          // Gap-fill: show all intermediates as Alternatives, then Recommended target.
+          // Drop the "above-target" card — the intermediates fill the ladder instead.
+          intermediateCovers.forEach(ci => cardSpecs.push({ coverIndex: ci, role: 'alternative-intermediate' }));
+          cardSpecs.push({ coverIndex: target, role: 'recommended-target' });
+        } else {
+          // Adjacent target (target === existing+1 in practice). Keep the above-target Alternative
+          // as a natural one-step-further upsell option.
+          cardSpecs.push({ coverIndex: target, role: 'recommended-target' });
+          const alt = findNextAvailableCoverAbove(target);
+          if (alt >= 0) cardSpecs.push({ coverIndex: alt, role: 'alternative-higher' });
+        }
       } else if (target === state.renewalCoverIndex) {
         // Defensive: target collapsed to existing — shouldn't normally happen when trigger fires,
         // but avoids an empty card set.
@@ -1246,6 +1268,14 @@ function renderRecommendations() {
       ? `<span class="uw-load-badge" title="Includes underwriting loading from Q2\u2013Q6 answers">UW +${Math.round(state.uwLoadingPct * 100)}%</span>`
       : '';
 
+    // Retention badge: only shown on intermediate Alternative cards (Rule I gap-fill)
+    // to indicate how close each option is to the 90% retention bar at matched FP.
+    let retentionBadge = '';
+    if (role === 'alternative-intermediate' && state.renewalPremium > 0) {
+      const retentionPct = Math.round((calc.annual / state.renewalPremium) * 100);
+      retentionBadge = `<span class="retention-badge" title="New premium as a percentage of existing (Rule I target is \u226590%)">${retentionPct}% retention</span>`;
+    }
+
     const card = document.createElement('div');
     card.className = 'cover-rec-card ' + cardClass;
     card.dataset.coverIndex = ci;
@@ -1256,6 +1286,7 @@ function renderRecommendations() {
       <div class="rec-card-header">
         <span class="rec-card-cover">${COVER_LIMITS[ci].label}</span>
         ${badgeText ? `<span class="rec-badge ${badgeClass}">${badgeText}</span>` : ''}
+        ${retentionBadge}
         ${microLabel}
         ${uwLoadBadge}
       </div>
