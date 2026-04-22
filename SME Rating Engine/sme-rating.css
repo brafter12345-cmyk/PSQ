@@ -694,6 +694,15 @@ body::before {
   font-size: 0.75rem;
   color: var(--accent-cyan, #00b4d8);
   font-style: italic;
+  flex-basis: 100%;       /* break onto new row inside flex .uw-question */
+  width: 100%;
+}
+
+/* A Q with a text follow-up or lock hint should let those children wrap to a new row
+   so they don't squeeze the question text into a narrow column. */
+.uw-question:has(.uw-text-followup),
+.uw-question:has(.uw-lock-hint) {
+  flex-wrap: wrap;
 }
 
 /* Optional free-text follow-ups under UW questions (April 2026: Q1 vendor, Q8 insurer+date) */
@@ -703,6 +712,9 @@ body::before {
   background: rgba(0,180,216,0.04);
   border-left: 2px solid rgba(0,180,216,0.3);
   border-radius: 4px;
+  flex-basis: 100%;       /* full-width when inside a flex .uw-question */
+  width: 100%;
+  box-sizing: border-box;
 }
 .uw-text-followup .field-label {
   display: block;

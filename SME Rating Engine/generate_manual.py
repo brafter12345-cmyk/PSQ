@@ -2064,6 +2064,20 @@ make_table(
          "(renewal) or base FP (new business) when not. Selection state is preserved across "
          "re-renders. Retention badges on Rule I intermediate Alternatives also update live \u2014 "
          "bumping an intermediate cover\u2019s FP can visibly push its retention above the 90% bar."],
+        ["1.4.1", "April 2026",
+         "Layout + PDF rendering fixes identified during a full quoting-flow audit. Step 1: when "
+         "Q8 (prior cover) is locked on a renewal and the optional Insurer / Inception-Date follow-up "
+         "panel is shown, the question text was being squeezed into a narrow column because all four "
+         "children (text, Y/N toggles, follow-up, lock-hint) were competing for horizontal space in "
+         "a single flex row. The fix scopes flex-wrap to questions that have a follow-up or lock-hint "
+         "so they break to a full-width row below the Y/N toggles (regular questions without a "
+         "follow-up keep their single-row layout). PDF audit output: the \u26A0 warning-triangle "
+         "character and the \u2265 greater-or-equal symbol are outside jsPDF's WinAnsi encoding and "
+         "were causing text mojibake + truncation (the Premium-loss-risk line was rendering with "
+         "exaggerated letter spacing and cut off on the right edge). Both characters replaced with "
+         "WinAnsi-safe alternatives (\"!\" prefix and \"at least 90%\" phrasing). Stale \"Q2\u2013Q6\" "
+         "references in HTML banners, card tooltips, Step 4 UW Conditions Panel, and PDF comparison "
+         "caveat updated to the correct new \"Q2.1\u2013Q5\" loading-pool range."],
         ["1.4", "April 2026",
          "Underwriting question set aligned to the V1 2026 Business Proposal e-file. Q1 expanded "
          "from a single question to a compound question with four baseline sub-parts (Q1.1 AV/EDR, "

@@ -1147,7 +1147,7 @@ function renderRenewalInsightsBanner() {
     const pct = Math.round(state.uwLoadingPct * 100);
     if (parts.length > 0) parts.push('<hr class="ins-divider"/>');
     parts.push(
-      `<p style="margin:0;"><strong>Note on comparison:</strong> the new premium includes a <strong>${pct}% underwriting loading</strong> based on current cyber-security posture answers (Q2\u2013Q6). The prior term's posture is not on record, so the year-on-year comparison with the existing premium is not strictly like-for-like.</p>`
+      `<p style="margin:0;"><strong>Note on comparison:</strong> the new premium includes a <strong>${pct}% underwriting loading</strong> based on current cyber-security posture answers (Q2.1\u2013Q5). The prior term's posture is not on record, so the year-on-year comparison with the existing premium is not strictly like-for-like.</p>`
     );
     if (!state.renewalPremiumDropTriggered && !state.renewalBandChanged) {
       el.classList.add('severity-info');
@@ -1309,7 +1309,7 @@ function renderRecommendations() {
     const { badgeText, badgeClass, cardClass } = getCardStyling(role, isAlsoRecommended);
     const microLabel = calc.isMicro ? '<span class="micro-label">Micro SME</span>' : '';
     const uwLoadBadge = (state.uwLoadingPct > 0)
-      ? `<span class="uw-load-badge" title="Includes underwriting loading from Q2\u2013Q6 answers">UW +${Math.round(state.uwLoadingPct * 100)}%</span>`
+      ? `<span class="uw-load-badge" title="Includes underwriting loading from Q2.1\u2013Q5 answers">UW +${Math.round(state.uwLoadingPct * 100)}%</span>`
       : '';
 
     // Retention badge: only shown on intermediate Alternative cards (Rule I gap-fill)
@@ -2126,7 +2126,7 @@ function renderUWConditionsPanel() {
     const pct = Math.round(state.uwLoadingPct * 100);
     html += `<div class="uw-cond-section">
       <div class="uw-cond-label">Comparison Caveat \u2014 UW Loading</div>
-      <div class="uw-cond-value">Current quote includes a ${pct}% underwriting loading based on Q2\u2013Q6 answers. Prior term's posture is not on record; year-on-year comparison is not strictly like-for-like.</div>
+      <div class="uw-cond-value">Current quote includes a ${pct}% underwriting loading based on Q2.1\u2013Q5 answers. Prior term's posture is not on record; year-on-year comparison is not strictly like-for-like.</div>
     </div>`;
   }
 
@@ -2672,7 +2672,9 @@ function generatePDF(optionOverride) {
     doc.setFontSize(8);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(200, 50, 50);
-    doc.text('\u26A0 Prior claim flagged \u2014 additional underwriting required', margin + 2, y);
+    // Note: jsPDF helvetica uses WinAnsi encoding which lacks U+26A0 (warning triangle).
+    // Using "!" prefix + red bold colour conveys the same attention without mojibake.
+    doc.text('! Prior claim flagged \u2014 additional underwriting required', margin + 2, y);
     y += lineH + 2;
   }
   // Renewal: rule I / band-change / UW-loading caveats (items D / I / B3)
@@ -2687,11 +2689,12 @@ function generatePDF(optionOverride) {
       doc.setTextColor(200, 50, 50);
       const dropPct = Math.round(state.renewalPremiumDropPct * 100);
       let msg;
+      // Use WinAnsi-safe characters only (no U+26A0 warning triangle, no U+2265 ">=" sign).
       if (state.renewalCorporateEscalation) {
-        msg = '\u26A0 Premium loss risk: ' + dropPct + '% drop at existing cover. SME max still <90% retention \u2014 consider Corporate product, refer UW.';
+        msg = '! Premium loss risk: ' + dropPct + '% drop at existing cover. SME max still <90% retention \u2014 consider Corporate product, refer UW.';
       } else {
         const tgt = state.renewalRecommendedCoverIndex >= 0 ? COVER_LIMITS[state.renewalRecommendedCoverIndex].label : '--';
-        msg = '\u26A0 Premium loss risk: ' + dropPct + '% drop at existing cover. Recommended cover adjusted to ' + tgt + ' to retain \u226590%.';
+        msg = '! Premium loss risk: ' + dropPct + '% drop at existing cover. Recommended cover adjusted to ' + tgt + ' to retain at least 90% of existing premium.';
       }
       const wrapped = doc.splitTextToSize(msg, contentW - 6);
       doc.text(wrapped, margin + 2, y);
@@ -2713,7 +2716,7 @@ function generatePDF(optionOverride) {
       doc.setFont('helvetica', 'italic');
       doc.setTextColor(90, 90, 90);
       const pct = Math.round(state.uwLoadingPct * 100);
-      const msg = 'Comparison caveat: new premium includes ' + pct + '% UW loading (Q2\u2013Q6). Prior posture not on record \u2014 year-on-year comparison not strictly like-for-like.';
+      const msg = 'Comparison caveat: new premium includes ' + pct + '% UW loading (Q2.1\u2013Q5). Prior posture not on record \u2014 year-on-year comparison not strictly like-for-like.';
       const wrapped = doc.splitTextToSize(msg, contentW - 6);
       doc.text(wrapped, margin + 2, y);
       y += wrapped.length * (lineH - 0.5) + 3;
