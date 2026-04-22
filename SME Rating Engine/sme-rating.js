@@ -1254,10 +1254,20 @@ function renderRecommendations() {
     const ci = spec.coverIndex;
     const role = spec.role;
 
-    // For renewal cards, display premium at the matched FP sub-limit (apples-to-apples)
-    const cardFpIdx = (isRenewalWithData)
-      ? fpIndexForLimit(COVER_LIMITS[ci].key, state.renewalFPLimit)
-      : undefined;
+    // Determine which fpIndex to display on this card:
+    //  • If this cover has one or more selected quoteOptions, reflect the active tab's FP
+    //    (or the first matching option if none is active yet). This makes the card premium
+    //    live-update as the underwriter changes FP tiers on the selector below.
+    //  • Otherwise: matched-FP for renewal (apples-to-apples with existing policy), or
+    //    undefined (base FP) for new business / competing.
+    let cardFpIdx;
+    const optionsForCover = state.quoteOptions.filter(o => o.coverIndex === ci);
+    if (optionsForCover.length > 0) {
+      const activeMatch = optionsForCover.find(o => o.id === state.activeOptionTab);
+      cardFpIdx = (activeMatch || optionsForCover[0]).fpIndex;
+    } else if (isRenewalWithData) {
+      cardFpIdx = fpIndexForLimit(COVER_LIMITS[ci].key, state.renewalFPLimit);
+    }
     const calc = calculatePremium(ci, state, cardFpIdx !== undefined ? { fpIndex: cardFpIdx } : undefined);
     if (!calc) return;
 
@@ -1297,6 +1307,11 @@ function renderRecommendations() {
       </div>
       <button type="button" class="duplicate-btn" title="Add another option with this cover limit">+</button>
     `;
+
+    // Preserve selection state across re-renders (e.g. when FP changes below)
+    if (optionsForCover.length > 0) {
+      card.classList.add('selected', 'active');
+    }
 
     // Multi-toggle: click to add/remove from quoteOptions
     card.addEventListener('click', (e) => {
@@ -1488,6 +1503,9 @@ function renderFPSelectorMulti() {
       tab.classList.add('active');
       state.activeOptionTab = opt.id;
       renderFPSelectorForOption(opt);
+      // Refresh the recommendation cards so (for duplicate-cover options)
+      // the displayed premium reflects the newly-active tab's FP.
+      renderRecommendations();
     });
 
     tabsContainer.appendChild(tab);
@@ -1534,6 +1552,9 @@ function renderFPSelectorForOption(opt) {
         toggleFPQuestions(state.fpOver250k);
       }
 
+      // Re-render the recommendation cards so the displayed premium / FP text
+      // reflects the newly-selected FP tier in real time.
+      renderRecommendations();
       updatePricing();
     });
 
