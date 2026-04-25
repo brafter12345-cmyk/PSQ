@@ -8,6 +8,7 @@ node_modules/
 quote_pdfs/
 *.db-journal
 *.db-wal
+*.db-shm
 ~$*
 
 # Backup folder (contains full repo copy)
@@ -26,3 +27,12 @@ SME Rating Engine/Quotes/
 # Test fixtures - large JSON baselines are local-only (regenerate from any scan)
 security_scanner/test_fixtures/phishield_baseline.json
 security_scanner/test_fixtures/test_*.pdf
+
+# Spec-convergence workspace fixtures (regenerable scan outputs)
+security_scanner/_spec_workspace/substrate/sample/*.json
+
+# API keys / secrets (custom-named env files)
+security_scanner/ATT66027.env
+
+# Local Claude Code state
+.claude/worktrees/

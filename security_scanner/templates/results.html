@@ -1295,22 +1295,23 @@
   <div class="section-label">&#128270; Exposure &amp; Reputation</div>
   <div class="categories">
 
-    <!-- Credential Exposure -->
+    <!-- Brand-Level Breach Record (HIBP, layer 1 of credential pipeline) -->
     {% set br = results.categories.breaches %}
     {% set br_tl = 'tl-crimson' if br.get('breach_count', 0) > 5 else ('tl-red' if br.get('breach_count', 0) > 0 else 'tl-green') %}
     <div class="cat-card">
       <div class="cat-header" onclick="toggle(this)">
-        <div class="cat-left"><div class="traffic-light {{ br_tl }}"></div><div class="cat-title">Credential Exposure (HIBP)</div></div>
-        <div style="display:flex;align-items:center;gap:10px;"><span class="cat-grade">{{ br.get('breach_count', 0) }} breach{% if br.get('breach_count', 0) != 1 %}es{% endif %}</span><span class="chevron">&#9660;</span></div>
+        <div class="cat-left"><div class="traffic-light {{ br_tl }}"></div><div class="cat-title">Brand-Level Breach Record (HIBP)</div></div>
+        <div style="display:flex;align-items:center;gap:10px;"><span class="cat-grade">{% if br.get('breach_count', 0) %}{{ br.breach_count }} breach{% if br.breach_count != 1 %}es{% endif %}{% else %}Clean{% endif %}</span><span class="chevron">&#9660;</span></div>
       </div>
       <div class="cat-body">
+        <p style="font-size:.78rem;color:var(--muted);margin:4px 0 8px 0;">Scope: was this domain itself a breached service in HIBP&rsquo;s public catalogue? (Consumer-scale breaches only.) Email-level exposure is covered by <strong>Credential Risk Assessment</strong> below, which uses HIBP to add breach dates to Dehashed findings.</p>
         {% if br.status == 'requires_api_key' %}
-        <p style="color:var(--muted);font-size:.82rem;margin-top:8px;">&#128274; Set <code>HIBP_API_KEY</code> env var for domain breach lookup.</p>
+        <p style="color:var(--muted);font-size:.82rem;margin-top:8px;">&#128274; Set <code>HIBP_API_KEY</code> env var to upgrade to the paid domain-lookup endpoint.</p>
         {% elif br.get('breach_count', 0) == 0 %}
-        <p style="color:var(--low);font-size:.82rem;margin-top:8px;">&#10003; No known breaches for this domain.</p>
+        <p style="color:var(--low);font-size:.82rem;margin-top:8px;">&#10003; This domain is not listed as a breached service. Expected for most B2B domains &mdash; see Credential Risk Assessment for email-level exposure.</p>
         {% else %}
         <table class="kv-table">
-          <tr><td>Total breaches</td><td><strong style="color:var(--critical);">{{ br.breach_count }}</strong></td></tr>
+          <tr><td>Known breaches</td><td><strong style="color:var(--critical);">{{ br.breach_count }}</strong></td></tr>
           <tr><td>Most recent</td><td>{{ br.most_recent_breach | default('Unknown') }}</td></tr>
           <tr><td>Data exposed</td><td style="font-size:.78rem;">{{ br.data_classes | join(', ') if br.data_classes else '—' }}</td></tr>
         </table>
@@ -1526,7 +1527,8 @@
         {% endif %}
         {% set enriched = results.categories.get('dehashed', {}).get('enriched_sources', []) %}
         {% if enriched %}
-        <div style="margin-top:10px;font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;">Breach Source Timeline</div>
+        <div style="margin-top:10px;font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;">Breach Source Timeline &mdash; HIBP-enriched</div>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:2px;">Breach dates and data-class metadata come from Have I Been Pwned&rsquo;s public breach catalogue, cross-referenced against Dehashed&rsquo;s reported breach sources. Dehashed does not publish timelines directly.</div>
         <table class="kv-table" style="margin-top:6px;">
           {% for src in enriched %}
           <tr>
@@ -1794,6 +1796,30 @@
           {% endif %}
         </table>
         {% if pay.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in pay.issues %}<li class="issue-item"><span class="issue-icon issue-err">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+    </div>
+
+    <!-- AI Readiness — Anthropic Glasswing partner -->
+    {% set gw = results.categories.get('glasswing', {}) %}
+    {% set gw_tl = 'tl-green' if gw.get('is_partner') else 'tl-grey' %}
+    <div class="cat-card">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light {{ gw_tl }}"></div><div class="cat-title">AI Readiness (Glasswing)</div></div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span class="cat-grade {% if gw.get('is_partner') %}color-green{% endif %}">{% if gw.get('is_partner') %}Partner{% else %}Not detected{% endif %}</span>
+          <span class="chevron">&#9660;</span>
+        </div>
+      </div>
+      <div class="cat-body">
+        <table class="kv-table">
+          <tr><td>Glasswing partner</td><td>{% if gw.get('is_partner') %}<span class="badge badge-green">Yes — favourable signal</span>{% else %}<span class="badge badge-grey">Not detected</span>{% endif %}</td></tr>
+          {% if gw.get('is_partner') %}
+          <tr><td>Partner name</td><td>{{ gw.partner_name }}</td></tr>
+          <tr><td>Match method</td><td style="font-size:.78rem;color:var(--muted);">{{ gw.match_method }}</td></tr>
+          <tr><td>RSI credit applied</td><td><span class="badge badge-green">-0.05</span></td></tr>
+          {% endif %}
+        </table>
+        <p style="font-size:.8rem;color:var(--muted);margin-top:8px;">{{ gw.get('narrative', '') }}</p>
       </div>
     </div>
 

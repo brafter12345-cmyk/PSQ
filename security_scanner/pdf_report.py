@@ -979,38 +979,47 @@ def cat_breaches(d, S):
     count = br.get("breach_count", 0)
     col   = _tl(count == 0, count <= 3)
     rows  = [
-        ("Total breaches",   count),
+        ("Scope",            "Brand-level breach lookup (free HIBP endpoint)"),
+        ("Known breaches",   count),
         ("Most recent",      br.get("most_recent_breach") or "N/A"),
         ("Data types exposed", ", ".join(br.get("data_classes", [])[:5]) or "—"),
     ]
     if br.get("breaches"):
         for b in br["breaches"][:4]:
             rows.append((b.get("name", "—"), f"{b.get('date','?')} — {b.get('pwn_count', 0):,} accounts"))
-    fb = "No breaches found in Have I Been Pwned — no known credential exposure for this domain." if count == 0 else f"{count} breach(es) found — staff credentials may have been exposed. Password resets and MFA enforcement recommended."
-    parts = build_cat_card("Credential Exposure (HIBP)", col, f"{count} breach(es)", rows, br.get("issues", []), S, fallback=fb)
+    fb = ("No brand-level breach record found in the HIBP catalogue for this domain — expected for most B2B domains. "
+          "Email-level exposure is assessed separately under Credential Risk Assessment.") if count == 0 \
+        else (f"{count} brand-level breach(es) where this domain was the breached service. "
+              "Staff credentials in these breaches may be reused against corporate systems.")
+    parts = build_cat_card("Brand-Level Breach Record (HIBP)", col,
+                          f"{count} breach(es)" if count else "Clean — see Credential Risk",
+                          rows, br.get("issues", []), S, fallback=fb)
 
-    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Paragraph("<b>What This Checks</b>", S["cat_title"]))
     parts.append(Spacer(1, 1 * mm))
-    if count == 0:
-        parts.append(Paragraph(
-            "No known data breaches were found for email addresses on this domain in the Have I Been Pwned database. "
-            "This database tracks over 700 publicly disclosed breaches. A clean result is a positive indicator, "
-            "though it does not guarantee zero exposure — some breaches are not publicly disclosed.",
-            S["body"]))
-    else:
+    parts.append(Paragraph(
+        "This card uses the free Have I Been Pwned (HIBP) <i>brand-breach</i> endpoint. It answers one narrow question: "
+        "has this domain itself ever appeared as a breached service in HIBP\u2019s public catalogue? The canonical examples "
+        "are Adobe, LinkedIn, Canva, and similar consumer-facing services where millions of accounts were stolen. A clean "
+        "result here is expected for most non-consumer-facing B2B domains and does <b>not</b> mean no credentials have leaked.",
+        S["body"]))
+    parts.append(Spacer(1, 2 * mm))
+    parts.append(Paragraph("<b>Where the Rest of the HIBP Picture Lives</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    parts.append(Paragraph(
+        "HIBP plays a second, more important role in the layered credential pipeline: it supplies <b>breach dates</b> and "
+        "data-class metadata for every breach source surfaced by Dehashed (whose API does not provide timelines). "
+        "Those enriched timelines drive the recency-based uplift in the Credential Risk Assessment card. "
+        "If you see dated breach entries in that card, HIBP is doing its job \u2014 even when this card reads 0.",
+        S["body"]))
+    if count:
         data_types = ", ".join(br.get("data_classes", [])[:4]) or "various data types"
-        parts.append(Paragraph(
-            f"This domain appears in {count} known data breach(es), exposing {data_types}. "
-            "When staff credentials appear in breaches, attackers use automated tools to test those passwords "
-            "against other services (credential stuffing). If employees reuse passwords across work and personal "
-            "accounts, a breach on one service can lead to compromise of corporate systems.",
-            S["body"]))
         parts.append(Spacer(1, 2 * mm))
         parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
         parts.append(Spacer(1, 1 * mm))
-        parts.append(Paragraph("1. Force password resets for all staff email accounts, prioritising those in the most recent breaches.", S["body"]))
-        parts.append(Paragraph("2. Enable multi-factor authentication (MFA) on all accounts to prevent credential stuffing.", S["body"]))
-        parts.append(Paragraph("3. Implement a password policy that prevents reuse of previously breached passwords.", S["body"]))
+        parts.append(Paragraph(f"1. Assume credentials from the {count} identified breach(es) ({data_types}) have been circulated. Force resets for all affected accounts.", S["body"]))
+        parts.append(Paragraph("2. Enable multi-factor authentication (MFA) on all accounts to defeat credential stuffing using the leaked passwords.", S["body"]))
+        parts.append(Paragraph("3. Implement a password policy that blocks reuse of previously breached passwords (e.g. via HIBP Pwned Passwords).", S["body"]))
     parts.append(Spacer(1, 3 * mm))
     return parts
 
@@ -1245,6 +1254,49 @@ def cat_security_policy(d, S):
         parts.append(Spacer(1, 1 * mm))
         parts.append(Paragraph("1. Create a security.txt file at /.well-known/security.txt with a contact email for security reports.", S["body"]))
         parts.append(Paragraph("2. Consider establishing a formal Vulnerability Disclosure Policy (VDP) on your website.", S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
+
+
+def cat_glasswing(d, S):
+    gw = d.get("glasswing", {})
+    is_partner = gw.get("is_partner", False)
+    col = C_GREEN if is_partner else C_GREY_3
+    rows = [
+        ("Glasswing partner",  "Yes — favourable signal" if is_partner else "Not detected"),
+        ("Partner name",       gw.get("partner_name") or "—"),
+        ("Match method",       gw.get("match_method") or "—"),
+        ("RSI credit applied", f"-{gw.get('score_bonus', 0)/100:.2f}" if is_partner else "None"),
+    ]
+    fb = gw.get("narrative") or ""
+    parts = build_cat_card("AI Readiness — Anthropic Glasswing", col,
+                          "Partner" if is_partner else "Not detected",
+                          rows, gw.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if is_partner:
+        parts.append(Paragraph(
+            f"{gw.get('partner_name','This organisation')} is listed as an Anthropic Project Glasswing partner. "
+            "Glasswing partners integrate Claude-assisted vulnerability discovery and remediation into their security "
+            "programme. This materially shortens the window between a novel vulnerability being disclosed and a patch "
+            "being deployed — an increasingly important factor as AI-driven vulnerability research accelerates exploit "
+            "development. Treated as a modest favourable signal in the Ransomware Susceptibility Index.",
+            S["body"]))
+    else:
+        parts.append(Paragraph(
+            "This domain is not on the public Anthropic Project Glasswing partner list and did not self-declare "
+            "a Glasswing partnership on its website. Glasswing partnership is an optional positive signal — "
+            "its absence is neutral, not a deficiency. Organisations using equivalent AI-assisted vulnerability "
+            "tooling from other vendors receive similar real-world benefits even without formal partnership.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Optional Action</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph(
+            "If the organisation uses AI-assisted vulnerability scanning or patching (internal or partner-provided), "
+            "document the programme for underwriting purposes — it can offset exposure from newly-disclosed CVEs.",
+            S["body"]))
     parts.append(Spacer(1, 3 * mm))
     return parts
 
@@ -1631,11 +1683,11 @@ def cat_credential_risk(d, S):
         rows.append(("RISK FACTORS", ""))
         for f in factors:
             rows.append(("", f))
-    # Enriched breach timeline (keep in table as data)
+    # Enriched breach timeline — HIBP catalogue cross-referenced against Dehashed sources
     enriched = d.get("dehashed", {}).get("enriched_sources", [])
     if enriched:
         rows.append(("", ""))
-        rows.append(("BREACH SOURCE TIMELINE", ""))
+        rows.append(("BREACH SOURCE TIMELINE (HIBP-ENRICHED)", ""))
         for src in enriched:
             pw_flag = " [PASSWORDS EXPOSED]" if src.get("passwords_in_breach") else ""
             verified = " [Verified]" if src.get("verified") else ""
@@ -3280,6 +3332,7 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         story += cat_privacy_compliance(cats, S)
         story += cat_security_policy(cats, S)
         story += cat_payment(cats, S)
+        story += cat_glasswing(cats, S)
 
         # ── Compliance Framework Mapping ────────────────────────────────────
         if results.get("compliance"):

@@ -1,0 +1,456 @@
+{
+  "bi_map": {
+    "Agricultural Production Crops": 0.1,
+    "Agriculture production livestock and animal specialties": 0.05,
+    "Agricultural Services": 0.05,
+    "Forestry": 0.05,
+    "Agriculture, Forestry, And Fishing- Fishing hunting and trapping": 0.05,
+    "Metal Mining": 0.15,
+    "Coal Mining": 0.15,
+    "Oil And Gas Extraction": 0.15,
+    "Mining And Quarrying Of Nonmetallic Minerals, Except Fuels": 0.15,
+    "Building Construction General Contractors And Operative Builders": 0.05,
+    "Heavy Construction Other Than Building Construction Contractors": 0.05,
+    "Construction Special Trade Contractors": 0.05,
+    "Food And Kindred Products": 0.5,
+    "Tobacco Products": 0.5,
+    "Textile Mill Products": 0.5,
+    "Apparel And Other Finished Products Made From Fabrics And Similar Materials": 0.5,
+    "Lumber And Wood Products, Except Furniture": 0.5,
+    "Furniture And Fixtures": 0.5,
+    "Paper And Allied Products": 0.5,
+    "Printing, Publishing, And Allied Industries": 0.5,
+    "Chemicals And Allied Products": 0.5,
+    "Petroleum Refining And Related Industries": 0.5,
+    "Rubber And Miscellaneous Plastics Products": 0.5,
+    "Leather And Leather Products": 0.5,
+    "Stone, Clay, Glass, And Concrete Products": 0.5,
+    "Primary Metal Industries": 0.5,
+    "Fabricated Metal Products, Except Machinery And Transportation Equipment": 0.5,
+    "Industrial And Commercial Machinery And Computer Equipment": 0.5,
+    "Electronic And Other Electrical Equipment And Components, Except Computer Equipment": 0.5,
+    "Transportation Equipment": 0.5,
+    "Measuring, Analyzing, And Controlling Instruments; Photographic, Medical And Optical Goods; Watches And Clocks": 0.5,
+    "Miscellaneous Manufacturing Industries": 0.5,
+    "Railroad Transportation": 1,
+    "Local And Suburban Transit And Interurban Highway Passenger Transportation": 0.75,
+    "Motor Freight Transportation And Warehousing": 1,
+    "Postal Service": 1,
+    "Water Transportation": 1,
+    "Transportation By Air": 1,
+    "Pipelines, Except Natural Gas": 1,
+    "Transportation Services": 1,
+    "Communications": 1,
+    "Electric, Gas, And Sanitary Services": 1,
+    "Water and Waste Management": 1,
+    "Wholesale Trade-durable Goods": 1,
+    "Wholesale Trade-non-durable Goods": 1,
+    "eCommerce": 1.5,
+    "Building Materials, Hardware, Garden Supply, And Mobile Home Dealers": 1.25,
+    "General Merchandise Stores": 1.25,
+    "Food Stores": 1.25,
+    "Automotive Dealers And Gasoline Service Stations": 1.25,
+    "Apparel And Accessory Stores": 1.25,
+    "Home Furniture, Furnishings, And Equipment Stores": 1.25,
+    "Eating And Drinking Places": 1.25,
+    "Miscellaneous Retail": 1.25,
+    "Depository Institutions": 1.75,
+    "Non-depository Credit Institutions": 1,
+    "Security And Commodity Brokers, Dealers, Exchanges, And Services": 1,
+    "Insurance Carriers": 0.75,
+    "Insurance Agents, Brokers, And Service": 0.5,
+    "Real Estate": 0.25,
+    "Holding And Other Investment Offices": 0.75,
+    "Hotels, Rooming Houses, Camps, And Other Lodging Places": 1,
+    "Personal Services": 1,
+    "Business Services": 1,
+    "Automotive Repair, Services, And Parking": 0.75,
+    "Miscellaneous Repair Services": 1,
+    "Motion Pictures": 1,
+    "Amusement And Recreation Services": 0.75,
+    "Health Services": 1,
+    "Legal Services": 1,
+    "Educational Services": 1,
+    "Social Services": 1,
+    "Museums, Art Galleries, And Botanical And Zoological Gardens": 1,
+    "Membership Organizations": 0.5,
+    "Engineering, Accounting, Research, Management, And Related Services": 1,
+    "Private Households": 0.75,
+    "Miscellaneous Services": 1,
+    "Software and Technology": 1,
+    "Executive, Legislative, And General Government, Except Finance": 1,
+    "Justice, Public Order, And Safety": 1,
+    "Public Finance, Taxation, And Monetary Policy": 1,
+    "Administration Of Human Resource Programs": 1,
+    "Administration Of Environmental Quality And Housing Programs": 1,
+    "Administration Of Economic Programs": 1,
+    "National Security And International Affairs": 1,
+    "Nonclassifiable Establishments": 1
+  },
+  "hierarchy": {
+    "Agriculture": [
+      {
+        "label": "Agricultural Production Crops",
+        "bi": 0.1
+      },
+      {
+        "label": "Agriculture production livestock and animal specialties",
+        "bi": 0.05
+      },
+      {
+        "label": "Agricultural Services",
+        "bi": 0.05
+      },
+      {
+        "label": "Forestry",
+        "bi": 0.05
+      },
+      {
+        "label": "Agriculture, Forestry, And Fishing- Fishing hunting and trapping",
+        "bi": 0.05
+      }
+    ],
+    "Mining": [
+      {
+        "label": "Metal Mining",
+        "bi": 0.15
+      },
+      {
+        "label": "Coal Mining",
+        "bi": 0.15
+      },
+      {
+        "label": "Oil And Gas Extraction",
+        "bi": 0.15
+      },
+      {
+        "label": "Mining And Quarrying Of Nonmetallic Minerals, Except Fuels",
+        "bi": 0.15
+      }
+    ],
+    "Construction": [
+      {
+        "label": "Building Construction General Contractors And Operative Builders",
+        "bi": 0.05
+      },
+      {
+        "label": "Heavy Construction Other Than Building Construction Contractors",
+        "bi": 0.05
+      },
+      {
+        "label": "Construction Special Trade Contractors",
+        "bi": 0.05
+      }
+    ],
+    "Manufacturing": [
+      {
+        "label": "Food And Kindred Products",
+        "bi": 0.5
+      },
+      {
+        "label": "Tobacco Products",
+        "bi": 0.5
+      },
+      {
+        "label": "Textile Mill Products",
+        "bi": 0.5
+      },
+      {
+        "label": "Apparel And Other Finished Products Made From Fabrics And Similar Materials",
+        "bi": 0.5
+      },
+      {
+        "label": "Lumber And Wood Products, Except Furniture",
+        "bi": 0.5
+      },
+      {
+        "label": "Furniture And Fixtures",
+        "bi": 0.5
+      },
+      {
+        "label": "Paper And Allied Products",
+        "bi": 0.5
+      },
+      {
+        "label": "Printing, Publishing, And Allied Industries",
+        "bi": 0.5
+      },
+      {
+        "label": "Chemicals And Allied Products",
+        "bi": 0.5
+      },
+      {
+        "label": "Petroleum Refining And Related Industries",
+        "bi": 0.5
+      },
+      {
+        "label": "Rubber And Miscellaneous Plastics Products",
+        "bi": 0.5
+      },
+      {
+        "label": "Leather And Leather Products",
+        "bi": 0.5
+      },
+      {
+        "label": "Stone, Clay, Glass, And Concrete Products",
+        "bi": 0.5
+      },
+      {
+        "label": "Primary Metal Industries",
+        "bi": 0.5
+      },
+      {
+        "label": "Fabricated Metal Products, Except Machinery And Transportation Equipment",
+        "bi": 0.5
+      },
+      {
+        "label": "Industrial And Commercial Machinery And Computer Equipment",
+        "bi": 0.5
+      },
+      {
+        "label": "Electronic And Other Electrical Equipment And Components, Except Computer Equipment",
+        "bi": 0.5
+      },
+      {
+        "label": "Transportation Equipment",
+        "bi": 0.5
+      },
+      {
+        "label": "Measuring, Analyzing, And Controlling Instruments; Photographic, Medical And Optical Goods; Watches And Clocks",
+        "bi": 0.5
+      },
+      {
+        "label": "Miscellaneous Manufacturing Industries",
+        "bi": 0.5
+      }
+    ],
+    "Transportation": [
+      {
+        "label": "Railroad Transportation",
+        "bi": 1
+      },
+      {
+        "label": "Local And Suburban Transit And Interurban Highway Passenger Transportation",
+        "bi": 0.75
+      },
+      {
+        "label": "Motor Freight Transportation And Warehousing",
+        "bi": 1
+      },
+      {
+        "label": "Postal Service",
+        "bi": 1
+      },
+      {
+        "label": "Water Transportation",
+        "bi": 1
+      },
+      {
+        "label": "Transportation By Air",
+        "bi": 1
+      },
+      {
+        "label": "Pipelines, Except Natural Gas",
+        "bi": 1
+      },
+      {
+        "label": "Transportation Services",
+        "bi": 1
+      },
+      {
+        "label": "Communications",
+        "bi": 1
+      },
+      {
+        "label": "Electric, Gas, And Sanitary Services",
+        "bi": 1
+      },
+      {
+        "label": "Water and Waste Management",
+        "bi": 1
+      }
+    ],
+    "Wholesale Trade": [
+      {
+        "label": "Wholesale Trade-durable Goods",
+        "bi": 1
+      },
+      {
+        "label": "Wholesale Trade-non-durable Goods",
+        "bi": 1
+      }
+    ],
+    "Retail": [
+      {
+        "label": "eCommerce",
+        "bi": 1.5
+      },
+      {
+        "label": "Building Materials, Hardware, Garden Supply, And Mobile Home Dealers",
+        "bi": 1.25
+      },
+      {
+        "label": "General Merchandise Stores",
+        "bi": 1.25
+      },
+      {
+        "label": "Food Stores",
+        "bi": 1.25
+      },
+      {
+        "label": "Automotive Dealers And Gasoline Service Stations",
+        "bi": 1.25
+      },
+      {
+        "label": "Apparel And Accessory Stores",
+        "bi": 1.25
+      },
+      {
+        "label": "Home Furniture, Furnishings, And Equipment Stores",
+        "bi": 1.25
+      },
+      {
+        "label": "Eating And Drinking Places",
+        "bi": 1.25
+      },
+      {
+        "label": "Miscellaneous Retail",
+        "bi": 1.25
+      }
+    ],
+    "Financial Services": [
+      {
+        "label": "Depository Institutions",
+        "bi": 1.75
+      },
+      {
+        "label": "Non-depository Credit Institutions",
+        "bi": 1
+      },
+      {
+        "label": "Security And Commodity Brokers, Dealers, Exchanges, And Services",
+        "bi": 1
+      },
+      {
+        "label": "Insurance Carriers",
+        "bi": 0.75
+      },
+      {
+        "label": "Insurance Agents, Brokers, And Service",
+        "bi": 0.5
+      },
+      {
+        "label": "Real Estate",
+        "bi": 0.25
+      },
+      {
+        "label": "Holding And Other Investment Offices",
+        "bi": 0.75
+      }
+    ],
+    "Services": [
+      {
+        "label": "Hotels, Rooming Houses, Camps, And Other Lodging Places",
+        "bi": 1
+      },
+      {
+        "label": "Personal Services",
+        "bi": 1
+      },
+      {
+        "label": "Business Services",
+        "bi": 1
+      },
+      {
+        "label": "Automotive Repair, Services, And Parking",
+        "bi": 0.75
+      },
+      {
+        "label": "Miscellaneous Repair Services",
+        "bi": 1
+      },
+      {
+        "label": "Motion Pictures",
+        "bi": 1
+      },
+      {
+        "label": "Amusement And Recreation Services",
+        "bi": 0.75
+      },
+      {
+        "label": "Health Services",
+        "bi": 1
+      },
+      {
+        "label": "Legal Services",
+        "bi": 1
+      },
+      {
+        "label": "Educational Services",
+        "bi": 1
+      },
+      {
+        "label": "Social Services",
+        "bi": 1
+      },
+      {
+        "label": "Museums, Art Galleries, And Botanical And Zoological Gardens",
+        "bi": 1
+      },
+      {
+        "label": "Membership Organizations",
+        "bi": 0.5
+      },
+      {
+        "label": "Engineering, Accounting, Research, Management, And Related Services",
+        "bi": 1
+      },
+      {
+        "label": "Private Households",
+        "bi": 0.75
+      },
+      {
+        "label": "Miscellaneous Services",
+        "bi": 1
+      },
+      {
+        "label": "Software and Technology",
+        "bi": 1
+      }
+    ],
+    "Public Sector": [
+      {
+        "label": "Executive, Legislative, And General Government, Except Finance",
+        "bi": 1
+      },
+      {
+        "label": "Justice, Public Order, And Safety",
+        "bi": 1
+      },
+      {
+        "label": "Public Finance, Taxation, And Monetary Policy",
+        "bi": 1
+      },
+      {
+        "label": "Administration Of Human Resource Programs",
+        "bi": 1
+      },
+      {
+        "label": "Administration Of Environmental Quality And Housing Programs",
+        "bi": 1
+      },
+      {
+        "label": "Administration Of Economic Programs",
+        "bi": 1
+      },
+      {
+        "label": "National Security And International Affairs",
+        "bi": 1
+      },
+      {
+        "label": "Nonclassifiable Establishments",
+        "bi": 1
+      }
+    ]
+  }
+}

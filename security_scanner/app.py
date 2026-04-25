@@ -105,6 +105,7 @@ CHECKER_MANIFEST = [
         {"id": "security_policy", "label": "Security Policy & VDP"},
         {"id": "payment_security", "label": "Payment Security"},
         {"id": "privacy_compliance", "label": "Privacy Compliance"},
+        {"id": "glasswing", "label": "AI Readiness (Glasswing)"},
     ]},
     {"section": "Insurance Analytics", "checkers": [
         {"id": "insurance_analytics", "label": "RSI / Financial Impact / DBI"},

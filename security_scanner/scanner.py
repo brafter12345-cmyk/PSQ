@@ -35,20 +35,16 @@ class SecurityScanner:
         self.intelx_api_key        = intelx_api_key
 
     def discover_ips(self, domain: str) -> list:
-        """Resolve all A record IPs for a domain."""
-        ips = []
-        if DNS_AVAILABLE:
-            try:
-                answers = dns.resolver.resolve(domain, "A", lifetime=DEFAULT_TIMEOUT)
-                ips = list({str(rdata) for rdata in answers})
-            except Exception:
-                pass
+        """Resolve all A record IPs for a domain — uses the shared DNS cache so
+        the same lookup is never repeated inside this scan."""
+        ips = list(dns_cache.resolve(domain, "A"))
         if not ips:
             try:
                 ips = [socket.gethostbyname(domain)]
+                dns_cache.seed_records(domain, "A", ips)
             except Exception:
                 pass
-        return ips
+        return list(dict.fromkeys(ips))  # dedup, preserve order
 
     def _notify(self, on_progress, checker_name, status, result=None):
         if on_progress:
@@ -112,6 +108,8 @@ class SecurityScanner:
              include_fraudulent_domains: bool = False,
              client_ips: list = None) -> dict:
         domain = domain.lower().strip().removeprefix("https://").removeprefix("http://").split("/")[0]
+        # Fresh DNS cache for this scan — prevents cross-scan leakage and stale records.
+        dns_cache.clear()
         results = {
             "domain_scanned": domain,
             "scan_timestamp": datetime.now(timezone.utc).isoformat(),
@@ -175,18 +173,21 @@ class SecurityScanner:
             "privacy_compliance":  (PrivacyComplianceChecker().check,  [domain]),
             "web_ranking":         (WebRankingChecker().check,         [domain]),
             "info_disclosure":     (InformationDisclosureChecker().check, [domain]),
+            "glasswing":           (GlasswingPartnerChecker().check,   [domain]),
         }
 
         # Heavy checkers run sequentially AFTER the concurrent batch to cap
         # peak memory (sslyze spawns subprocesses, CT logs parse large JSON,
-        # subdomains resolve many IPs).
+        # subdomains resolve many IPs). Each is wrapped with a wall-clock
+        # timeout guard — sslyze has no internal timeout and can hang on
+        # unresponsive servers.
         heavy_checkers = [
-            ("ssl",         SSLChecker().check,              [domain]),
-            ("subdomains",  SubdomainChecker().check,        [domain]),
+            ("ssl",         SSLChecker().check,              [domain], 75),
+            ("subdomains",  SubdomainChecker().check,        [domain], 90),
         ]
         if include_fraudulent_domains:
             heavy_checkers.append(
-                ("fraudulent_domains", FraudulentDomainChecker().check, [domain])
+                ("fraudulent_domains", FraudulentDomainChecker().check, [domain], 60)
             )
 
         # --- Phase 3: IP-level checkers (per-IP) ---
@@ -224,12 +225,12 @@ class SecurityScanner:
                         self._notify(on_progress, name, "done", cat_results[name])
 
         # --- Run heavyweight checkers sequentially (memory-safe) ---
-        for name, fn, args in heavy_checkers:
+        # Each wrapped in run_with_timeout so a single slow checker cannot
+        # stall the whole scan — scans previously drifted 10-18 min when
+        # sslyze or crt.sh hung on unresponsive targets.
+        for name, fn, args, timeout in heavy_checkers:
             self._notify(on_progress, name, "running")
-            try:
-                cat_results[name] = fn(*args)
-            except Exception as e:
-                cat_results[name] = {"status": "error", "error": str(e), "issues": []}
+            cat_results[name] = run_with_timeout(fn, args=tuple(args), timeout=timeout)
             self._notify(on_progress, name, "done", cat_results[name])
 
         # --- Expand IP pool with subdomain-resolved IPs ---

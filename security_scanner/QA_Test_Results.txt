@@ -1,0 +1,152 @@
+====================================================================================================
+PHISHIELD HYBRID FINANCIAL IMPACT MODEL — QA TEST REPORT
+Date: 2026-04-16 01:05
+Scan data: phishield.com (cached)
+====================================================================================================
+
+================================================================================
+TEST 1: Industry comparison at R200M (baseline size mult = 1.00)
+================================================================================
+                 Industry |    RSI |   TEF | p_breach |        Total | Breach% |  D&E% | Ransom% |   BI% |     RecCov
+-------------------------------------------------------------------------------------------------------------------
+       Financial Services |  0.724 |  1.45 |    21.8% | R31,362,323 |   74.8% |  5.1% |    8.0% | 12.1% | R35,000,000
+               Healthcare |  0.787 |  1.40 |    21.0% | R34,036,776 |   75.0% |  5.0% |    7.9% | 12.0% | R35,000,000
+            Manufacturing |  0.818 |  1.15 |    17.2% | R23,088,027 |   62.3% |  7.4% |   12.1% | 18.3% | R25,000,000
+                   Retail |  0.756 |  1.25 |    18.8% | R16,923,322 |   51.9% |  9.5% |   15.3% | 23.2% | R20,000,000
+            Public Sector |  0.787 |  1.35 |    20.2% | R34,852,824 |   75.7% |  4.9% |    7.8% | 11.7% | R35,000,000
+               Technology |  0.661 |  1.10 |    16.5% | R19,058,556 |   62.5% |  7.4% |   11.9% | 18.2% | R20,000,000
+                 Services |  0.661 |  1.05 |    15.8% | R21,880,627 |   67.5% |  6.4% |   10.3% | 15.8% | R25,000,000
+              Agriculture |  0.504 |  0.80 |    12.0% | R 9,546,126 |   42.6% | 11.2% |   18.1% | 28.1% | R10,000,000
+                    Other |  0.630 |  1.00 |    15.0% | R16,790,980 |   59.5% |  8.0% |   12.8% | 19.7% | R20,000,000
+
+================================================================================
+TEST 2: Size comparison — Financial Services across revenue bands
+================================================================================
+ Revenue |     SM |    RSI | EffMult |        Total |   %Rev | Score |     MinCov |     RecCov
+-----------------------------------------------------------------------------------------------
+R     5M |  1.120 |  0.811 |     n/a | R 2,325,408 |  46.5% |    10 | R2,500,000 | R2,500,000
+R    10M |  1.100 |  0.796 |     n/a | R 3,748,250 |  37.5% |    10 | R2,500,000 | R5,000,000
+R    25M |  1.080 |  0.782 |     n/a | R 7,420,272 |  29.7% |    30 | R5,000,000 | R7,500,000
+R    50M |  1.060 |  0.767 |     n/a | R11,909,603 |  23.8% |    30 | R10,000,000 | R15,000,000
+R    75M |  1.048 |  0.759 |     n/a | R15,360,553 |  20.5% |    30 | R15,000,000 | R20,000,000
+R   100M |  1.032 |  0.747 |     n/a | R19,128,140 |  19.1% |    30 | R15,000,000 | R20,000,000
+R   200M |  1.000 |  0.724 |     n/a | R31,362,323 |  15.7% |    30 | R25,000,000 | R35,000,000
+R   500M |  0.900 |  0.652 |     n/a | R43,195,234 |   8.6% |    50 | R30,000,000 | R45,000,000
+R  1000M |  0.850 |  0.615 |     n/a | R53,453,396 |   5.3% |    70 | R40,000,000 | R55,000,000
+
+================================================================================
+TEST 3: Regulatory exposure — R200M Financial Services
+================================================================================
+
+--- POPIA only ---
+  C2: POPIA R4,000,000 + GDPR R0 + PCI R0 = R4,000,000
+  Total: R31,362,323
+    Data Breach Exposure           R23,470,253 ( 74.8%)
+    Detection & Escalation         R 1,604,125 (  5.1%)
+    Ransom Demand                  R 2,498,014 (  8.0%)
+    Business Interruption          R 3,789,931 ( 12.1%)
+
+--- +GDPR ---
+  C2: POPIA R4,000,000 + GDPR R8,000,000 + PCI R0 = R12,000,000
+  Total: R31,623,323
+    Data Breach Exposure           R23,731,253 ( 75.0%)
+    Detection & Escalation         R 1,604,125 (  5.1%)
+    Ransom Demand                  R 2,498,014 (  7.9%)
+    Business Interruption          R 3,789,931 ( 12.0%)
+
+--- +PCI ---
+  C2: POPIA R4,000,000 + GDPR R0 + PCI R850,000 = R4,850,000
+  Total: R31,390,054
+    Data Breach Exposure           R23,497,985 ( 74.9%)
+    Detection & Escalation         R 1,604,125 (  5.1%)
+    Ransom Demand                  R 2,498,014 (  8.0%)
+    Business Interruption          R 3,789,931 ( 12.1%)
+
+--- +GDPR+PCI ---
+  C2: POPIA R4,000,000 + GDPR R8,000,000 + PCI R850,000 = R12,850,000
+  Total: R31,651,054
+    Data Breach Exposure           R23,758,985 ( 75.1%)
+    Detection & Escalation         R 1,604,125 (  5.1%)
+    Ransom Demand                  R 2,498,014 (  7.9%)
+    Business Interruption          R 3,789,931 ( 12.0%)
+
+================================================================================
+TEST 4: Detailed breakdown — phishield.com R10M Financial Services
+================================================================================
+
+RSI: 0.796 (Critical)
+  Base: 0.65 | Ind mult: 1.15 | Size mult: 1.1
+    + 0.15  P1  HIGH credential risk — recent breaches with password exposure or 
+    + 0.10  P1  1 exposed database port(s)
+    + 0.12  P2  3 high-EPSS CVE(s) (>50% exploit probability)
+    + 0.08  P2  8 unpatched critical/high CVE(s)
+    + 0.05  P3  DMARC policy is 'none' — not enforced
+    + 0.05  P3  No WAF detected
+    + 0.05  P3  Weak SSL (grade F)
+
+p_breach: 0.2175 (vuln=0.5, TEF=1.45)
+Financial Impact Score: 10
+
+4-Category Breakdown:
+  Data Breach Exposure           R 2,817,584 ( 75.2%)
+  Detection & Escalation         R   242,218 (  6.5%)
+  Ransom Demand                  R   481,691 ( 12.9%)
+  Business Interruption          R   206,757 (  5.5%)
+  TOTAL                          R 3,748,250 (37.5% of revenue)
+
+Monte Carlo: P5=R2,483,699 | P50=R4,230,451 | P75=R5,308,623 | P95=R6,996,377
+Insurance: Min R2,500,000 | Rec R5,000,000 | Premium: Very High
+
+Incident Types:
+  Double Extortion Ransomware              p=0.1990 | annual=R 1,774,286 | per-event=R 8,916,010
+  Ransomware (No Exfiltration)             p=0.3184 | annual=R   507,262 | per-event=R 1,593,160
+  Destructive Attack (Wiper)               p=0.0398 | annual=R    27,560 | per-event=R   692,462
+  Silent Data Breach                       p=0.1087 | annual=R   822,177 | per-event=R 7,563,726
+  Data Extortion (No Encryption)           p=0.0435 | annual=R   351,229 | per-event=R 8,074,230
+  Opportunistic Breach                     p=0.0653 | annual=R   255,462 | per-event=R 3,912,129
+  DDoS / Infrastructure Failure            p=0.1500 | annual=R    10,274 | per-event=R    68,493
+
+Mitigations: 11 findings
+  Current: R 3,748,250
+  Savings: R 2,952,958
+  After:   R   795,292
+    [Critical] R 526,772  Restrict access to exposed sensitive files
+    [Critical] R 232,071  Patch critical CVEs on public-facing servers
+    [High    ] R 526,772  Force password resets for all leaked credentials
+    [High    ] R 395,079  Audit and rotate credentials exposed in data leaks
+    [High    ] R 395,079  Restrict database access to private networks/VPN
+    [High    ] R 263,386  Enforce HTTPS across all endpoints
+    [Medium  ] R 131,693  Implement security headers (HSTS, CSP, X-Frame-Options)
+    [Medium  ] R 131,693  Resolve DNS blocklist entries
+    [Medium  ] R 131,693  Monitor and take down fraudulent lookalike domains
+    [Medium  ] R 131,693  Enable DKIM signing on your mail server
+    [Medium  ] R  87,027  Implement VPN or Zero Trust Network Access for remote w
+
+================================================================================
+TEST 5: Sanity checks — clean vs worst posture (R200M Financial Services)
+================================================================================
+
+Clean company:  RSI 0.057 (Low) | Total R6,525,570 | 3.3% of rev | Score 90 | Rec R7,500,000
+Worst company:  RSI 0.916 (Critical) | Total R46,290,413 | 23.1% of rev | Score 30 | Rec R50,000,000
+
+Clean/Worst ratio: 7.1x
+
+================================================================================
+TEST 6: Standard FAIR (USD) vs Hybrid (ZAR) — R10M Financial Services
+================================================================================
+
+Standard FAIR (USD):  $211,664 (R3,814,185 at R18.02)
+Hybrid model (ZAR):   R3,748,250
+Delta: -1.7%
+
+================================================================================
+TEST 7: Max p_breach at worst posture (score 0)
+================================================================================
+         Financial Services: TEF=1.45 -> p_max=43.5%
+                 Healthcare: TEF=1.40 -> p_max=42.0%
+              Manufacturing: TEF=1.15 -> p_max=34.5%
+                Agriculture: TEF=0.80 -> p_max=24.0%
+
+================================================================================
+END OF QA TEST REPORT
+================================================================================

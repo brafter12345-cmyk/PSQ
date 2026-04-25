@@ -147,7 +147,7 @@ doc.add_paragraph()
 
 for line in [
     "Administrator: Phishield UMA (Pty) Ltd",
-    "Version 1.0 | April 2026",
+    "Version 1.2 | April 2026",
     "",
     "Confidential \u2014 Internal Use Only",
 ]:
@@ -265,21 +265,23 @@ add_body(
     "The scanning process follows a structured multi-phase approach:"
 )
 add_bullet("Phase 1: IP Discovery \u2014 resolve the domain\u2019s DNS records to find all IP addresses, including any client-supplied IPs.")
-add_bullet("Phase 2: Domain-level checks \u2014 21 checkers run concurrently against the domain (SSL, email, headers, WAF, breaches, etc.).")
+add_bullet("Phase 2: Domain-level checks \u2014 22 checkers run concurrently against the domain (SSL, email, headers, WAF, breaches, AI readiness, etc.).")
 add_bullet("Phase 3: IP-level checks \u2014 4 checkers run per discovered IP (DNS/ports, high-risk protocols, blacklists, Shodan CVEs).")
 add_bullet("Phase 4: Aggregation and enrichment \u2014 merge per-IP results, OSV.dev CVE enrichment, credential risk classification, EPSS and CISA KEV lookups.")
-add_bullet("Phase 5: Scoring \u2014 calculate weighted risk score (0\u20131000) across all 25 scoring categories.")
+add_bullet("Phase 5: Scoring \u2014 calculate weighted risk score (0\u20131000) across all 26 scoring categories.")
 add_bullet("Phase 6: Insurance analytics \u2014 RSI, DBI, hybrid financial impact (Monte Carlo simulation), and remediation roadmap.")
 
-add_callout("TIP", "A typical scan takes 10\u201318 minutes depending on the target\u2019s infrastructure complexity and API response times. "
-            "Progress is shown in real time via server-sent events.")
+add_callout("TIP", "A typical scan now completes in roughly 5\u201310 minutes. Wall-clock timeout guards on the heaviest checkers "
+            "(SSL deep analysis, subdomain discovery) prevent stalls on unresponsive targets; a shared DNS cache removes duplicate "
+            "lookups across checkers; and information-disclosure probes run in parallel. Progress is shown in real time via server-sent events.")
 
 add_h2("1.4 Scanner Architecture")
 add_body(
-    "The scanner comprises 25+ individual checkers organised into 8 categories, backed by 10 external API "
+    "The scanner comprises 26 individual checkers organised into 8 categories, backed by 10 external API "
     "integrations. The architecture is designed for deployment on resource-constrained environments (e.g. Render "
     "free tier with 512 MB RAM) by splitting checkers into lightweight concurrent batches and heavyweight "
-    "sequential tasks."
+    "sequential tasks. Heavy checkers run under wall-clock timeout guards and share a process-wide DNS cache so "
+    "no DNS record is resolved more than once per scan."
 )
 add_body("Checker categories and counts:")
 add_table(
@@ -291,7 +293,7 @@ add_table(
         ["Email Security", "Email Authentication (SPF/DKIM/DMARC), Email Hardening (MTA-STS/TLS-RPT/DANE/BIMI)", "2"],
         ["Network & Infrastructure", "DNS & Open Ports, High-Risk Protocols, Shodan CVEs, DNSBL, Cloud/CDN, VPN/Remote Access", "6"],
         ["Exposure & Reputation", "HIBP Breaches, Dehashed, Exposed Admin, VirusTotal, Subdomains, Hudson Rock, IntelX, Credential Risk, Fraudulent Domains", "9"],
-        ["Technology & Governance", "Tech Stack/EOL, Domain Intel, SecurityTrails, Security Policy, Payment Security, Privacy Compliance", "6"],
+        ["Technology & Governance", "Tech Stack/EOL, Domain Intel, SecurityTrails, Security Policy, Payment Security, Privacy Compliance, AI Readiness (Glasswing)", "7"],
         ["Insurance Analytics", "RSI, DBI, Financial Impact (Hybrid), Remediation Roadmap", "4"],
     ]
 )
@@ -365,8 +367,9 @@ add_table(
 add_callout("TIP", "Always provide industry and revenue for the most accurate insurance analytics. Without these, "
             "the financial impact calculator uses conservative defaults that may not reflect the client\u2019s actual risk profile.")
 
-add_callout("WARNING", "Scans take 10\u201318 minutes. Do not close the browser tab during scanning \u2014 the SSE connection "
-            "will be lost. If disconnected, you can retrieve results later via the /results/<scan_id> URL or the scan history API.")
+add_callout("WARNING", "Scans typically take 5\u201310 minutes; worst case is capped by per-checker timeout guards rather than running unbounded. "
+            "Do not close the browser tab during scanning \u2014 the SSE connection will be lost. If disconnected, you can retrieve results later via the "
+            "/results/<scan_id> URL or the scan history API.")
 
 add_page_break()
 
@@ -561,6 +564,11 @@ add_bullet("Backup files (.bak, .sql, .zip) \u2014 may contain database dumps or
 add_bullet("Configuration files (wp-config.php, web.config, etc.) \u2014 application configuration with credentials.")
 add_bullet("Debug/status pages (phpinfo.php, server-status, etc.) \u2014 expose server internals.")
 add_body("Each exposed path is classified as critical, high, or medium risk. Weight: 5%.")
+add_body(
+    "The 18 sensitive paths are probed in parallel (six concurrent workers, 30-second wall-clock cap). A separate check "
+    "inspects the site root for directory listing. Any probe batch that exceeds the cap contributes an informational issue "
+    "rather than stalling the scan."
+)
 
 add_callout("WARNING", "A publicly accessible .env file is one of the most dangerous findings. It typically "
             "contains database passwords, API keys, and encryption secrets that give an attacker immediate access "
@@ -687,13 +695,24 @@ add_body("Weight: 7% of overall score.")
 # 4.6 Exposure & Reputation
 add_h2("4.6 Exposure & Reputation")
 
-add_h3("HIBP Breaches")
+add_h3("Brand-Level Breach Record (HIBP, layer 1 of the credential pipeline)")
 add_body(
-    "Queries the Have I Been Pwned (HIBP) API for the domain to check whether it has appeared in known "
-    "data breaches. Returns breach count, breach dates, and data classes exposed (emails, passwords, "
-    "financial data, etc.)."
+    "Have I Been Pwned plays two distinct roles in the scanner. The first is this card: a free, "
+    "no-API-key lookup against HIBP\u2019s public breach catalogue to answer one narrow question \u2014 has "
+    "this domain itself ever appeared as a breached service? Adobe, LinkedIn, Canva, and similar "
+    "consumer-facing services are the canonical examples. For most B2B domains this card is expected "
+    "to read 0, which does not mean HIBP is inactive or that no credentials have leaked."
 )
-add_body("Scoring: 0 breaches = no risk; each breach adds 15 points of risk (capped at 100). Weight: 7%.")
+add_body(
+    "HIBP\u2019s second role \u2014 supplying breach dates and data-class metadata to the richer credential "
+    "pipeline \u2014 is described under the Credential Risk Assessment subsection below. Because Dehashed "
+    "returns breach source names but not dates, HIBP\u2019s catalogue is cross-referenced against those "
+    "sources to produce the dated breach timeline that drives the recency-based uplift in the final "
+    "credential risk classification."
+)
+add_body("Scoring: 0 brand-level breaches = no risk; each breach adds 15 points of risk (capped at 100). Weight: 7%.")
+add_callout("NOTE", "If this card reads 0 but the Credential Risk Assessment card shows dated breach entries, HIBP "
+            "is doing its layer-2 job correctly \u2014 providing the timeline enrichment that Dehashed cannot.")
 
 add_h3("DNSBL / Blacklists")
 add_body("(See Section 4.5 above.)")
@@ -759,13 +778,19 @@ add_body(
 )
 add_body("Requires IntelX API key. Weight: feeds into credential risk assessment.")
 
-add_h3("Credential Risk Assessment")
+add_h3("Credential Risk Assessment (composite conclusion)")
 add_body(
-    "A meta-checker that aggregates credential exposure data from Dehashed, Hudson Rock, and IntelX "
-    "into a unified risk classification. It evaluates:"
+    "This is the conclusion of the layered credential pipeline. It combines four data sources to "
+    "produce a single CRITICAL / HIGH / MEDIUM / LOW risk classification:"
 )
-add_bullet("Total credential exposure volume.")
-add_bullet("Credential freshness (recent vs. historical leaks).")
+add_bullet("Layer 1 \u2014 HIBP brand breaches: does this domain appear as a breached service (see card above)?")
+add_bullet("Layer 2 \u2014 Dehashed: which email addresses at this domain appear in credential leak databases, and what password type (plaintext, hash, or email-only) was exposed?")
+add_bullet("Layer 3 \u2014 HIBP catalogue enrichment: for every breach source Dehashed reports, the HIBP catalogue is consulted for the breach date, data classes exposed, and verification status. This is the only layer that provides a timeline, because Dehashed does not publish breach dates directly. The enriched timeline is shown inside this card as \u201cBreach Source Timeline \u2014 HIBP-enriched.\u201D")
+add_bullet("Layer 4 \u2014 Hudson Rock: are any current employee or customer devices actively infected with infostealer malware?")
+add_bullet("Layer 5 \u2014 Intelligence X: are there dark web mentions, paste sites, or underground forum activity referencing the domain?")
+add_body("Factors evaluated for the final classification:")
+add_bullet("Total credential exposure volume (Dehashed).")
+add_bullet("Credential freshness \u2014 recent (2023+) vs. historical leaks, derived from the HIBP-enriched timeline.")
 add_bullet("Credential type severity (plaintext vs. hashed vs. email-only).")
 add_bullet("Active infostealer infections (from Hudson Rock).")
 add_bullet("Dark web presence (from IntelX).")
@@ -842,6 +867,29 @@ add_bullet("Checks whether payment pages use HTTPS.")
 add_bullet("Identifies use of PCI-compliant payment processors (Stripe, PayFast, Peach Payments, etc.).")
 add_body("A self-hosted payment form is a high-risk finding (score penalty: 80/100 risk). Weight: 2%.")
 
+add_h3("AI Readiness (Anthropic Project Glasswing)")
+add_body(
+    "A binary lookup that identifies whether the scanned domain is listed as an Anthropic Project Glasswing "
+    "partner. Glasswing partners integrate Claude-assisted vulnerability discovery and patching into their "
+    "security programme, which compresses the exposure window to newly-disclosed CVEs."
+)
+add_body("Matching strategy, in order:")
+add_bullet("Exact domain match against the public partner list (refreshed quarterly).")
+add_bullet("Domain suffix match, so subdomains of a partner (e.g. blog.partner.com) are credited to the parent organisation.")
+add_bullet("A lightweight HTML probe of the homepage that looks for a self-declared \u201CProject Glasswing\u201D reference combined with an Anthropic mention.")
+add_body(
+    "A positive match is treated as a favourable underwriting signal. The Ransomware Susceptibility Index "
+    "applies a modest \u22120.05 credit, with a floor at zero so favourable signals cannot push the RSI below the "
+    "inherent-exposure baseline. The absence of a partnership is neutral, not a deficiency \u2014 organisations "
+    "using equivalent AI-assisted tooling from other vendors receive similar real-world benefits even without "
+    "formal partnership."
+)
+add_body("Weight: informational (not part of the overall 0\u20131000 score). Acts only on the RSI.")
+
+add_callout("TIP", "If a policyholder or prospect is using AI-assisted vulnerability scanning or patching internally "
+            "(not necessarily via Glasswing), document it separately during underwriting \u2014 the scanner cannot observe "
+            "internal tooling, so favourable non-Glasswing signals need to be captured through the proposal form.")
+
 # 4.8 Compliance Framework Mapping
 add_h2("4.8 Compliance Framework Mapping")
 add_body(
@@ -903,6 +951,7 @@ add_bullet("Base: 0.05 (inherent internet exposure risk for any organisation).")
 add_bullet("Priority 1 factors (strongest signals): RDP exposed (+0.25), exposed database ports (+0.10 each, cap 0.20), CISA KEV CVEs (+0.08 each, cap 0.20).")
 add_bullet("Priority 2 factors (high impact): high-EPSS CVEs (+0.04 each, cap 0.12), other critical/high CVEs (+0.02 each, cap 0.08), blacklisted IPs (+0.04), critical file exposure (+0.02 each, cap 0.06).")
 add_bullet("Priority 3 factors (contributing signals): leaked credentials (scaled by volume: 0.02\u20130.06), breach history (+0.03 if >3 breaches), no DMARC (+0.03), no WAF (+0.03), weak SSL (+0.03).")
+add_bullet("Favourable signals (RSI credit): Anthropic Project Glasswing partner (\u22120.05) \u2014 recognises AI-assisted vulnerability discovery and patching. A floor at zero is applied so favourable signals cannot push the score below the inherent-exposure baseline.")
 add_body("After summing all factors, diminishing returns are applied above 0.50 raw score to prevent score inflation "
          "from stacking many moderate findings. The formula is: if raw <= 0.50, return raw; else 0.50 + 0.50 * (1 - e^(-2*(raw-0.50))).")
 add_body("Industry and size multipliers are then applied:")
@@ -1201,7 +1250,8 @@ add_h1("9. Known Limitations & Planned Improvements")
 add_h2("Current Limitations")
 add_bullet("External-only scanning \u2014 cannot assess internal controls, endpoint protection, backup policies, MFA, or employee awareness training.")
 add_bullet("OSV.dev API reliability \u2014 the OSV.dev API can be intermittently slow or unavailable, which may result in incomplete CVE enrichment from version analysis.")
-add_bullet("Scan speed \u2014 current scan time is 10\u201318 minutes depending on target complexity and API response times. An optimisation roadmap targets reducing this to 5\u20138 minutes through parallel execution improvements and caching.")
+add_bullet("Scan speed \u2014 current scan time is 5\u201310 minutes depending on target complexity and API response times. Heavy checkers are bounded by wall-clock timeout guards (SSL deep analysis: 75 seconds; subdomain discovery: 90 seconds) so a single unresponsive target cannot stall the scan; the remaining optimisation roadmap targets sub-3-minute rescans for continuous monitoring.")
+add_bullet("Partial results on timeout \u2014 if a heavy checker hits its timeout budget, it returns a 'timeout' status with an informational issue rather than blocking the scan. Completeness percentage in the final report reflects which checkers returned full data.")
 add_bullet("Rate limiting on target sites \u2014 aggressive web application firewalls or rate limiters on the target domain may block some probes, resulting in incomplete data for information disclosure, admin panel, and website security checks.")
 add_bullet("CDN/WAF masking \u2014 domains behind CDNs may show CDN IP addresses rather than origin server IPs, potentially missing vulnerabilities on the actual hosting infrastructure.")
 add_bullet("Fraudulent domain scanning \u2014 the lookalike domain checker generates a finite set of permutations and cannot detect all possible typosquatting variants. Sophisticated homoglyph attacks using Unicode characters may be missed.")
@@ -1214,7 +1264,7 @@ add_bullet("Continuous monitoring \u2014 scheduled re-scans with delta compariso
 add_bullet("Port depth improvements \u2014 active port scanning alongside Shodan data for more complete port coverage.")
 add_bullet("Technology fingerprinting \u2014 deeper CMS version detection and framework identification using multiple detection methods.")
 add_bullet("Broker API integration \u2014 REST API for programmatic scan initiation and result retrieval by broker systems.")
-add_bullet("Per-checker accuracy improvements \u2014 individual accuracy enhancements for all 22+ security checkers based on false positive/negative analysis.")
+add_bullet("Per-checker accuracy improvements \u2014 individual accuracy enhancements for all 26 security checkers based on false positive/negative analysis.")
 add_bullet("Dark web monitoring alternatives \u2014 evaluation of alternative dark web APIs beyond IntelX for cost-effective credential monitoring.")
 add_bullet("Dynamic CVE re-prioritisation \u2014 integration with threat feed data (e.g. Sophos) for real-time CVE priority adjustments based on active exploitation campaigns.")
 
@@ -1240,6 +1290,7 @@ glossary = [
     ("DNSBL", "DNS-based Blacklist. Lists of IP addresses or domains known to be associated with spam, malware, or abuse. Email servers query DNSBLs to filter incoming mail."),
     ("DNSSEC", "Domain Name System Security Extensions. Adds cryptographic signatures to DNS records to prevent DNS spoofing and cache poisoning attacks."),
     ("EPSS", "Exploit Prediction Scoring System. A probability score (0.0\u20131.0) from FIRST.org predicting the likelihood that a CVE will be exploited in the wild within the next 30 days."),
+    ("Glasswing (Anthropic Project Glasswing)", "An Anthropic partner programme for security companies that integrate Claude into vulnerability discovery and patching workflows. The scanner performs a binary lookup against the public partner list; a positive match is treated as a favourable RSI signal (\u22120.05) because Glasswing partners typically have a shorter exposure window to novel CVEs."),
     ("Hybrid Financial Impact Model (derived from FAIR)", "A quantitative risk analysis model that expresses cyber risk in financial terms. The Phishield scanner uses a hybrid approach derived from FAIR principles, anchored to IBM SA breach cost data and calibrated with Sophos SA 2025 and actual insurance claims data."),
     ("HSTS", "HTTP Strict Transport Security. An HTTP header that forces browsers to use HTTPS for all future connections to a domain, preventing protocol downgrade attacks."),
     ("KEV", "Known Exploited Vulnerabilities. A CISA-maintained catalog of CVEs with confirmed active exploitation in the wild. Federal agencies must patch KEV entries within mandated timeframes."),
@@ -1281,6 +1332,18 @@ add_table(
          "10 API integrations, RSI/DBI/hybrid financial impact analytics, Monte Carlo simulation, compliance framework mapping "
          "(POPIA, PCI DSS, ISO 27001, NIST CSF 2.0), subdomain takeover detection, AXFR testing, CSP quality analysis, "
          "TLS-RPT checking, credential parsing, CAA records, and remediation roadmap with cost estimates."],
+        ["1.1", "21 April 2026", "Quick-wins release aligned with Gap Analysis v9. Added AI Readiness (Anthropic Project Glasswing) "
+         "checker under Technology & Governance with a \u22120.05 favourable RSI credit (floor at zero). Scan speed improvements: "
+         "wall-clock timeout guards on heavyweight checkers (SSL 75 s, subdomains 90 s), parallelised information-disclosure probes "
+         "(six concurrent workers, 30 s cap), and a process-wide DNS cache that eliminates duplicate record lookups across checkers. "
+         "PDF and HTML reports gained a dedicated AI Readiness card. Typical scan time reduced from 10\u201318 minutes to 5\u201310 minutes; "
+         "partial results on timeout now surface as an informational issue rather than stalling the scan."],
+        ["1.2", "24 April 2026", "Clarified HIBP\u2019s two-role design in the credential pipeline. The former \u201CCredential Exposure (HIBP)\u201D "
+         "card has been renamed \u201CBrand-Level Breach Record (HIBP)\u201D and now explicitly scopes itself to brand-breach lookups, "
+         "cross-referencing the Credential Risk Assessment card for email-level findings. The enriched timeline inside the Credential Risk "
+         "Assessment card is now labelled \u201CBreach Source Timeline \u2014 HIBP-enriched\u201D with an explanatory note that Dehashed does not "
+         "publish breach dates. No code-path or scoring changes; purely a presentation and documentation correction to remove the "
+         "appearance that HIBP had been disabled when its layer-1 card showed zero."],
     ]
 )
 

@@ -1,0 +1,370 @@
+{
+  "silo": "A_accuracy",
+  "version": "1.0",
+  "generated_at": "2026-04-25",
+  "description": "Mechanical evaluation rubric for Silo A (Accuracy improvement plan for the 27 Phishield scanner checkers). Evaluates the per-checker change manifest (KEEP/MODIFY/ADD/REMOVE), cost/latency/volatility declarations, market parity rationale, gap-roadmap coverage, SA calibration, and invariant compliance. Pass threshold: weighted score >= 0.80 of total possible weight.",
+  "fixture_paths": {
+    "broken_hygiene_synth": "security_scanner/_spec_workspace/substrate/sample/broken_hygiene_synth.json",
+    "phishield_fs": "security_scanner/_spec_workspace/substrate/sample/phishield_fs.json",
+    "takealot_retail": "security_scanner/_spec_workspace/substrate/sample/takealot_retail.json"
+  },
+  "scoring": {
+    "method": "weighted_pass_fail",
+    "pass_threshold": 0.80,
+    "weight_3_failure_is_fatal": true
+  },
+  "cases": [
+    {
+      "id": "A-001",
+      "category": "checker_band",
+      "description": "ssl checker proposed logic must score broken_hygiene_synth in critical band",
+      "check_type": "score_band",
+      "input": "security_scanner/_spec_workspace/substrate/sample/broken_hygiene_synth.json",
+      "checker": "ssl",
+      "expected": "score <= 20",
+      "evaluator_logic": "Spec must declare predicted_score for ssl on broken_hygiene_synth fixture. Parse spec.checker_manifest.ssl.predicted_scores.broken_hygiene_synth and assert int <= 20. Synth fixture has expired cert (381 days), RC4/3DES, TLS 1.0/1.1 — must hit critical band.",
+      "weight": 2
+    },
+    {
+      "id": "A-002",
+      "category": "checker_band",
+      "description": "email_security proposed logic must score broken_hygiene_synth in critical band",
+      "check_type": "score_band",
+      "input": "security_scanner/_spec_workspace/substrate/sample/broken_hygiene_synth.json",
+      "checker": "email_security",
+      "expected": "score <= 15",
+      "evaluator_logic": "Parse spec.checker_manifest.email_security.predicted_scores.broken_hygiene_synth and assert int <= 15. Synth has no SPF/DKIM/DMARC.",
+      "weight": 2
+    },
+    {
+      "id": "A-003",
+      "category": "checker_band",
+      "description": "http_headers proposed logic must score broken_hygiene_synth in critical band",
+      "check_type": "score_band",
+      "input": "security_scanner/_spec_workspace/substrate/sample/broken_hygiene_synth.json",
+      "checker": "http_headers",
+      "expected": "score <= 20",
+      "evaluator_logic": "Parse spec.checker_manifest.http_headers.predicted_scores.broken_hygiene_synth and assert int <= 20. Synth has no CSP, no HSTS, no X-Frame, leaky Server header.",
+      "weight": 2
+    },
+    {
+      "id": "A-004",
+      "category": "checker_band",
+      "description": "exposed_admin proposed logic must score broken_hygiene_synth in critical band",
+      "check_type": "score_band",
+      "input": "security_scanner/_spec_workspace/substrate/sample/broken_hygiene_synth.json",
+      "checker": "exposed_admin",
+      "expected": "score <= 20",
+      "evaluator_logic": "Parse spec.checker_manifest.exposed_admin.predicted_scores.broken_hygiene_synth and assert int <= 20. Synth has 3 critical admin paths exposed (wp-admin, admin.php, phpmyadmin).",
+      "weight": 2
+    },
+    {
+      "id": "A-005",
+      "category": "checker_band",
+      "description": "breaches proposed logic must score broken_hygiene_synth in critical band",
+      "check_type": "score_band",
+      "input": "security_scanner/_spec_workspace/substrate/sample/broken_hygiene_synth.json",
+      "checker": "breaches",
+      "expected": "score <= 25",
+      "evaluator_logic": "Parse spec.checker_manifest.breaches.predicted_scores.broken_hygiene_synth and assert int <= 25. Synth has 5 breaches, 630k+ records.",
+      "weight": 2
+    },
+    {
+      "id": "A-006",
+      "category": "checker_band",
+      "description": "dehashed proposed logic must score broken_hygiene_synth in critical band",
+      "check_type": "score_band",
+      "input": "security_scanner/_spec_workspace/substrate/sample/broken_hygiene_synth.json",
+      "checker": "dehashed",
+      "expected": "score <= 15",
+      "evaluator_logic": "Parse spec.checker_manifest.dehashed.predicted_scores.broken_hygiene_synth and assert int <= 15. Synth has 265 credential records, 52+ plaintext passwords.",
+      "weight": 2
+    },
+    {
+      "id": "A-007",
+      "category": "checker_band",
+      "description": "hudson_rock proposed logic must score broken_hygiene_synth in critical band",
+      "check_type": "score_band",
+      "input": "security_scanner/_spec_workspace/substrate/sample/broken_hygiene_synth.json",
+      "checker": "hudson_rock",
+      "expected": "score <= 30",
+      "evaluator_logic": "Parse spec.checker_manifest.hudson_rock.predicted_scores.broken_hygiene_synth and assert int <= 30. Synth has 8+ infostealer hits, 3+ VPN credentials.",
+      "weight": 2
+    },
+    {
+      "id": "A-008",
+      "category": "checker_band",
+      "description": "shodan_vulns proposed logic must score broken_hygiene_synth in critical band",
+      "check_type": "score_band",
+      "input": "security_scanner/_spec_workspace/substrate/sample/broken_hygiene_synth.json",
+      "checker": "shodan_vulns",
+      "expected": "score <= 20",
+      "evaluator_logic": "Parse spec.checker_manifest.shodan_vulns.predicted_scores.broken_hygiene_synth and assert int <= 20. Synth per_ip 196.12.34.50 has 4 KEV+weaponized CVEs incl CVE-2024-6387, CVE-2017-0143.",
+      "weight": 2
+    },
+    {
+      "id": "A-009",
+      "category": "fp_rate",
+      "description": "ssl proposed logic must NOT produce critical score on phishield_fs (clean fixture)",
+      "check_type": "score_band",
+      "input": "security_scanner/_spec_workspace/substrate/sample/phishield_fs.json",
+      "checker": "ssl",
+      "expected": "score >= 60",
+      "evaluator_logic": "Parse spec.checker_manifest.ssl.predicted_scores.phishield_fs and assert int >= 60. Clean SA fixture must not produce false-critical (FP rate guard).",
+      "weight": 2
+    },
+    {
+      "id": "A-010",
+      "category": "fp_rate",
+      "description": "email_security proposed logic must NOT produce critical score on phishield_fs (clean fixture)",
+      "check_type": "score_band",
+      "input": "security_scanner/_spec_workspace/substrate/sample/phishield_fs.json",
+      "checker": "email_security",
+      "expected": "score >= 50",
+      "evaluator_logic": "Parse spec.checker_manifest.email_security.predicted_scores.phishield_fs and assert int >= 50.",
+      "weight": 2
+    },
+    {
+      "id": "A-011",
+      "category": "fp_rate",
+      "description": "http_headers proposed logic must NOT produce critical score on takealot_retail (clean fixture)",
+      "check_type": "score_band",
+      "input": "security_scanner/_spec_workspace/substrate/sample/takealot_retail.json",
+      "checker": "http_headers",
+      "expected": "score >= 50",
+      "evaluator_logic": "Parse spec.checker_manifest.http_headers.predicted_scores.takealot_retail and assert int >= 50.",
+      "weight": 2
+    },
+    {
+      "id": "A-012",
+      "category": "fp_rate",
+      "description": "exposed_admin proposed logic must NOT produce critical score on takealot_retail (clean fixture)",
+      "check_type": "score_band",
+      "input": "security_scanner/_spec_workspace/substrate/sample/takealot_retail.json",
+      "checker": "exposed_admin",
+      "expected": "score >= 70",
+      "evaluator_logic": "Parse spec.checker_manifest.exposed_admin.predicted_scores.takealot_retail and assert int >= 70. Mature retailer should have no exposed admin panels.",
+      "weight": 2
+    },
+    {
+      "id": "A-013",
+      "category": "fp_rate",
+      "description": "Aggregate FP-rate guard: NO checker may predict score < 30 on BOTH clean fixtures",
+      "check_type": "score_band",
+      "input": "phishield_fs and takealot_retail",
+      "expected": "for every checker C: NOT (predicted_scores.phishield_fs < 30 AND predicted_scores.takealot_retail < 30)",
+      "evaluator_logic": "Iterate spec.checker_manifest entries; for each checker, fail if both clean-fixture predictions are < 30. Catches systemic over-trigger.",
+      "weight": 2
+    },
+    {
+      "id": "A-014",
+      "category": "cost_envelope",
+      "description": "Spec declares $-cost band per checker for all 27",
+      "check_type": "cost_band",
+      "input": "spec.checker_manifest",
+      "expected": "every checker has cost_band in {free, <$0.01/scan, $0.01-0.10/scan, >$0.10/scan}",
+      "evaluator_logic": "Iterate all 27 checker entries. Fail if any entry omits cost_band or value not in allowed set. Reject specs with no cost declaration at all.",
+      "weight": 3
+    },
+    {
+      "id": "A-015",
+      "category": "cost_envelope",
+      "description": "Annual cost projection at 1000 scans/month declared for paid-tier checkers",
+      "check_type": "cost_band",
+      "input": "spec.checker_manifest",
+      "expected": "every checker with cost_band in {$0.01-0.10/scan, >$0.10/scan} has annual_cost_zar_at_1000_scans_per_month numeric field",
+      "evaluator_logic": "For each checker where cost_band != 'free' and != '<$0.01/scan', assert annual_cost_zar_at_1000_scans_per_month is a number > 0.",
+      "weight": 2
+    },
+    {
+      "id": "A-017",
+      "category": "cost_envelope",
+      "description": "INV-25 free-tier-default not silently violated",
+      "check_type": "invariant_holds",
+      "input": "spec.checker_manifest",
+      "expected": "if any KEEP checker is reclassified to paid-only, spec must include invariants_violated entry naming INV-25 with rationale",
+      "evaluator_logic": "For each checker with flag=KEEP and cost_band in {$0.01-0.10/scan, >$0.10/scan} and not previously paid (substrate § 8.2), require spec.invariants_violated to contain {'invariant':'INV-25','checker':<name>,'rationale':<non-empty string>}.",
+      "weight": 2
+    },
+    {
+      "id": "A-018",
+      "category": "cost_envelope",
+      "description": "REMOVE flags justified with cost-effectiveness or accuracy rationale",
+      "check_type": "schema_validity",
+      "input": "spec.checker_manifest",
+      "expected": "every checker with flag=REMOVE has removal_rationale non-empty",
+      "evaluator_logic": "Iterate checker_manifest; for each entry with flag=REMOVE, assert removal_rationale is a non-empty string of length >= 30 chars.",
+      "weight": 1
+    },
+    {
+      "id": "A-019",
+      "category": "cost_envelope",
+      "description": "MEM-001 (IntelX trial expired 2026-04-08) addressed for intelx checker",
+      "check_type": "schema_validity",
+      "input": "spec.checker_manifest.intelx",
+      "expected": "intelx entry references MEM-001 and proposes one of {REMOVE, MODIFY-with-alternative, KEEP-with-paid-cost}",
+      "evaluator_logic": "Load spec.checker_manifest.intelx; assert mem_refs contains 'MEM-001' and flag in {REMOVE,MODIFY,KEEP}; if KEEP/MODIFY, assert cost_band is paid-tier and rationale references trial expiry.",
+      "weight": 2
+    },
+    {
+      "id": "A-020",
+      "category": "latency_band",
+      "description": "Each of 27 checkers declares numeric p95 latency",
+      "check_type": "latency_band",
+      "input": "spec.checker_manifest",
+      "expected": "every checker has p95_latency_seconds as a number > 0 and <= 180",
+      "evaluator_logic": "Iterate all 27 entries; assert p95_latency_seconds is numeric, > 0, and <= 180 (per-IP pool wall cap, INV-05).",
+      "weight": 3
+    },
+    {
+      "id": "A-021",
+      "category": "latency_band",
+      "description": "Aggregate latency fits within MAX_CONCURRENT_SCANS x scan_window envelope",
+      "check_type": "latency_band",
+      "input": "spec.checker_manifest, spec.aggregate_latency_budget",
+      "expected": "spec.aggregate_latency_budget.predicted_p95_total_seconds <= 180 (per app.py:51 MAX_CONCURRENT_SCANS=5 with current ~80s e2e baseline allowing 2.25x headroom)",
+      "evaluator_logic": "Read spec.aggregate_latency_budget.predicted_p95_total_seconds; assert numeric and <= 180. Reject if missing.",
+      "weight": 2
+    },
+    {
+      "id": "A-022",
+      "category": "latency_band",
+      "description": "Heavy checker timeout caps respected (INV-05)",
+      "check_type": "invariant_holds",
+      "input": "spec.checker_manifest.{ssl, subdomains, fraudulent_domains}",
+      "expected": "ssl.p95_latency_seconds <= 75 OR invariants_violated lists INV-05; subdomains <= 90 OR INV-05; fraudulent_domains <= 60 OR INV-05",
+      "evaluator_logic": "For each of {ssl<=75, subdomains<=90, fraudulent_domains<=60}, if exceeded, require spec.invariants_violated entry with invariant=INV-05 and rationale.",
+      "weight": 2
+    },
+    {
+      "id": "A-024",
+      "category": "market_parity",
+      "description": "Every MODIFY/ADD checker references at least one market peer",
+      "check_type": "market_signal_aligns",
+      "input": "spec.checker_manifest",
+      "expected": "for every checker with flag in {MODIFY, ADD}: market_parity_refs intersects {Coalition, CFC, Bitsight, SecurityScorecard, Hunch}",
+      "evaluator_logic": "Iterate checker_manifest; for each entry with flag in {MODIFY,ADD}, assert market_parity_refs is a non-empty list and at least one element is in {Coalition,CFC,Bitsight,SecurityScorecard,Hunch}.",
+      "weight": 2
+    },
+    {
+      "id": "A-025",
+      "category": "market_parity",
+      "description": "ADD checkers must have non-empty parity rationale",
+      "check_type": "market_signal_aligns",
+      "input": "spec.checker_manifest",
+      "expected": "for every checker with flag=ADD: market_parity_rationale is a string of length >= 50 chars",
+      "evaluator_logic": "Iterate; for each ADD entry, assert market_parity_rationale len >= 50. Reject ADDs with no rationale.",
+      "weight": 2
+    },
+    {
+      "id": "A-026",
+      "category": "market_parity",
+      "description": "At least 3 distinct market peers cited across the manifest",
+      "check_type": "market_signal_aligns",
+      "input": "spec.checker_manifest",
+      "expected": "union of all market_parity_refs across all checkers has >= 3 distinct values from allowed set",
+      "evaluator_logic": "Collect distinct values across all checker entries' market_parity_refs; assert intersect with {Coalition,CFC,Bitsight,SecurityScorecard,Hunch} has cardinality >= 3.",
+      "weight": 1
+    },
+    {
+      "id": "A-027",
+      "category": "signal_volatility",
+      "description": "Every KEEP/MODIFY checker declares signal volatility class",
+      "check_type": "schema_validity",
+      "input": "spec.checker_manifest",
+      "expected": "for every checker with flag in {KEEP, MODIFY}: signal_volatility in {stable, weekly, on-change}",
+      "evaluator_logic": "Iterate; for each KEEP/MODIFY entry, assert signal_volatility is present and value in {stable, weekly, on-change}. Reject any without this field.",
+      "weight": 3
+    },
+    {
+      "id": "A-028",
+      "category": "signal_volatility",
+      "description": "API dependency declared for every checker",
+      "check_type": "schema_validity",
+      "input": "spec.checker_manifest",
+      "expected": "every checker has api_dependency field (string or null)",
+      "evaluator_logic": "Iterate all 27 entries; assert api_dependency key exists. Value may be null (free internal) or a non-empty string identifying API.",
+      "weight": 1
+    },
+    {
+      "id": "A-029",
+      "category": "gap_addressed",
+      "description": "SCN-GAP-002 through SCN-GAP-005 each addressed (included or explicitly deferred)",
+      "check_type": "gap_referenced",
+      "input": "spec.gap_coverage",
+      "expected": "spec.gap_coverage contains entries for SCN-GAP-002, SCN-GAP-003, SCN-GAP-004, SCN-GAP-005, each with disposition in {included, deferred} and proposed_approach (if included) or deferral_rationale (if deferred)",
+      "evaluator_logic": "For each id in [SCN-GAP-002, SCN-GAP-003, SCN-GAP-004, SCN-GAP-005], assert id present in spec.gap_coverage and entry has disposition + (proposed_approach OR deferral_rationale, len >= 30 chars).",
+      "weight": 2
+    },
+    {
+      "id": "A-030",
+      "category": "gap_addressed",
+      "description": "gen_gap_v9 roadmap items 4b-4f addressed",
+      "check_type": "gap_referenced",
+      "input": "spec.gap_coverage",
+      "expected": "spec.gap_coverage contains entries for roadmap items 4b, 4c, 4d, 4e, 4f, each with disposition and rationale",
+      "evaluator_logic": "For each id in [roadmap-4b, roadmap-4c, roadmap-4d, roadmap-4e, roadmap-4f], assert presence and disposition in {included, deferred} with rationale len >= 20 chars.",
+      "weight": 2
+    },
+    {
+      "id": "A-031",
+      "category": "gap_addressed",
+      "description": "gen_gap_v9 roadmap items 5a, 5f, 5i-T1, 5i-T2 addressed",
+      "check_type": "gap_referenced",
+      "input": "spec.gap_coverage",
+      "expected": "spec.gap_coverage contains entries for roadmap-5a, roadmap-5f, roadmap-5i-T1, roadmap-5i-T2",
+      "evaluator_logic": "For each id, assert presence and disposition + rationale.",
+      "weight": 2
+    },
+    {
+      "id": "A-033",
+      "category": "invariant",
+      "description": "SENS-003 RSI base 0.05->0.08 calibration addressed",
+      "check_type": "invariant_holds",
+      "input": "spec.sa_calibration",
+      "expected": "spec.sa_calibration.SENS-003 disposition in {included, deferred} with rationale; if included, proposed_rsi_base numeric and >= 0.05",
+      "evaluator_logic": "Assert spec.sa_calibration['SENS-003'] exists; if disposition=included assert proposed_rsi_base is numeric in [0.05, 0.15]. If disposition=deferred assert rationale len >= 30 chars.",
+      "weight": 2
+    },
+    {
+      "id": "A-034",
+      "category": "invariant",
+      "description": "SENS-004 SA market calibrations addressed (ransom tiers, downtime, industry mults)",
+      "check_type": "invariant_holds",
+      "input": "spec.sa_calibration",
+      "expected": "spec.sa_calibration.SENS-004 contains sub-fields for ransom_tier_adjustment, downtime_days_adjustment, industry_multiplier_adjustments — each with disposition",
+      "evaluator_logic": "Assert spec.sa_calibration['SENS-004'] has at least 3 sub-keys covering ransom, downtime, industry_mults. Each sub-key has disposition in {included, deferred} with rationale.",
+      "weight": 2
+    },
+    {
+      "id": "A-035",
+      "category": "invariant",
+      "description": "INV-08 weight redistribution declared if checker set changes",
+      "check_type": "invariant_holds",
+      "input": "spec.checker_manifest, spec.weights",
+      "expected": "if any checker has flag in {ADD, REMOVE}: spec.weights.new_weights sums to 1.0 +/- 0.01 AND invariants_violated lists INV-08 with rationale",
+      "evaluator_logic": "Count ADD+REMOVE flags. If > 0, assert spec.weights.new_weights present, sum within [0.99, 1.01], AND invariants_violated contains entry with invariant=INV-08.",
+      "weight": 2
+    },
+    {
+      "id": "A-036",
+      "category": "invariant",
+      "description": "INV-09 RSI base/range respected if RSI methodology changed",
+      "check_type": "invariant_holds",
+      "input": "spec.sa_calibration",
+      "expected": "if proposed_rsi_base != 0.05: spec.invariants_violated lists INV-09 with rationale",
+      "evaluator_logic": "If spec.sa_calibration['SENS-003'].proposed_rsi_base differs from 0.05, require invariants_violated entry naming INV-09. Output must remain in [0,1].",
+      "weight": 1
+    },
+    {
+      "id": "A-037",
+      "category": "invariant",
+      "description": "Manifest covers exactly the 27 checker classes from baseline § 2",
+      "check_type": "schema_validity",
+      "input": "spec.checker_manifest",
+      "expected": "checker_manifest keys form a superset of the 27 baseline checkers; any missing checker = fail; any new entry must have flag=ADD",
+      "evaluator_logic": "Required set = {ssl, email_security, email_hardening, http_headers, waf, cloud_cdn, domain_intel, exposed_admin, breaches, website_security, payment_security, tech_stack, dehashed, virustotal, securitytrails, hudson_rock, intelx, privacy_compliance, web_ranking, info_disclosure, glasswing, subdomains, fraudulent_domains, dns_infrastructure, high_risk_protocols, dnsbl, shodan_vulns}. Assert all 27 present in checker_manifest. Assert every key NOT in this set has flag=ADD.",
+      "weight": 3
+    }
+  ]
+}

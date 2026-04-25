@@ -234,11 +234,7 @@ class SSLChecker:
         """Check CAA DNS records — controls which CAs can issue certs."""
         if not DNS_AVAILABLE:
             return []
-        try:
-            answers = dns.resolver.resolve(domain, "CAA", lifetime=DEFAULT_TIMEOUT)
-            return [str(r) for r in answers]
-        except Exception:
-            return []
+        return list(dns_cache.resolve(domain, "CAA"))
 
     def _parse_caa(self, caa_records: list) -> dict:
         """Parse CAA records into structured policy data.
@@ -874,12 +870,10 @@ class CloudCDNChecker:
         if not DNS_AVAILABLE:
             result["status"] = "error"; return result
         try:
-            # Resolve IPs
-            try:
-                ips = [str(r) for r in dns.resolver.resolve(domain, "A", lifetime=DEFAULT_TIMEOUT)]
+            # Resolve IPs (shared cache — already populated by scanner.discover_ips)
+            ips = list(dns_cache.resolve(domain, "A"))
+            if ips:
                 result["ip_addresses"] = ips
-            except Exception:
-                pass
 
             # Chase CNAME chain
             cname_chain = []

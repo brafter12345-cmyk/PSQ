@@ -895,7 +895,7 @@ class ShodanVulnChecker:
             "issues": [],
         }
         try:
-            ip = ip or socket.gethostbyname(domain)
+            ip = ip or dns_cache.get_ip(domain)
             result["ip"] = ip
 
             # Always query InternetDB first for CPE list (feeds OSV.dev pipeline)
@@ -2400,6 +2400,105 @@ class WebRankingChecker:
 # 27. Information Disclosure
 # ---------------------------------------------------------------------------
 
+class GlasswingPartnerChecker:
+    """
+    Anthropic Project Glasswing partner lookup. Partners publicly listed on
+    Anthropic's Glasswing programme page apply Claude-assisted vulnerability
+    discovery and patching — which meaningfully compresses their exposure
+    window to novel vulnerabilities.
+
+    Detection is a binary match against a static public list (name or domain).
+    Positive match is treated as a favourable risk signal (RSI reduction).
+
+    Matching strategy (in order):
+      1. Exact domain match against partner domain list.
+      2. Substring match on target domain (e.g. `hackerone.com` matches "hackerone").
+      3. Website title/meta lookup for partner brand keywords — cheap HTTP probe.
+    """
+
+    # Public partner list — Anthropic Project Glasswing (April 2026 snapshot).
+    # Update this list periodically from the Anthropic partner programme page.
+    PARTNERS = {
+        "hackerone.com":      "HackerOne",
+        "carahsoft.com":      "Carahsoft",
+        "torq.io":            "Torq",
+        "xbow.com":           "XBOW",
+        "deeptempo.ai":       "DeepTempo",
+        "trustwise.ai":       "Trustwise",
+        "dreadnode.io":       "Dreadnode",
+        "rootevidence.com":   "Root Evidence",
+        "realmsecurity.ai":   "Realm Security",
+        "superluminal.ai":    "Superluminal",
+        "twinesecurity.com":  "Twine Security",
+        "virtueai.com":       "Virtue AI",
+    }
+
+    # Keywords used for secondary brand match against HTML <title>/<meta>.
+    # Only matched when combined with the word "glasswing" or "anthropic".
+    BRAND_KEYWORDS = {name.lower(): canonical for _, canonical in PARTNERS.items()
+                      for name in [canonical]}
+
+    def check(self, domain: str) -> dict:
+        result = {
+            "status": "completed",
+            "is_partner": False,
+            "partner_name": None,
+            "match_method": None,
+            "score_bonus": 0,
+            "narrative": "",
+            "issues": [],
+        }
+        d = (domain or "").lower().strip()
+        if not d:
+            result["status"] = "error"
+            return result
+
+        # 1. Exact domain match
+        if d in self.PARTNERS:
+            result.update(is_partner=True, partner_name=self.PARTNERS[d],
+                          match_method="exact_domain", score_bonus=10)
+
+        # 2. Substring match — handles subdomains (e.g. blog.hackerone.com)
+        if not result["is_partner"]:
+            for partner_domain, name in self.PARTNERS.items():
+                # match if target is same apex or a subdomain of the partner
+                if d == partner_domain or d.endswith("." + partner_domain):
+                    result.update(is_partner=True, partner_name=name,
+                                  match_method="domain_suffix", score_bonus=10)
+                    break
+
+        # 3. Optional HTML probe for self-declared Glasswing partnership.
+        # Only runs when no domain match was made — cheap single GET.
+        if not result["is_partner"] and REQUESTS_AVAILABLE:
+            try:
+                r = requests.get(f"https://{domain}", timeout=5,
+                                 headers={"User-Agent": USER_AGENT},
+                                 allow_redirects=True)
+                html = (r.text or "")[:20000].lower()
+                if ("project glasswing" in html or
+                        ("glasswing" in html and "anthropic" in html)):
+                    result.update(is_partner=True,
+                                  partner_name="Self-declared Glasswing partner",
+                                  match_method="html_declaration", score_bonus=5)
+            except Exception:
+                pass
+
+        if result["is_partner"]:
+            result["narrative"] = (
+                f"{result['partner_name']} is listed as an Anthropic Project Glasswing partner. "
+                "Glasswing partners integrate Claude-assisted vulnerability discovery and patching "
+                "into their security programme, which shortens exposure to novel vulnerabilities and "
+                "improves patch cadence. This is a favourable underwriting signal."
+            )
+        else:
+            result["narrative"] = (
+                "No Anthropic Project Glasswing partnership detected for this domain. "
+                "Glasswing partnership is an optional favourable signal — absence is neutral, "
+                "not a deficiency."
+            )
+        return result
+
+
 class InformationDisclosureChecker:
     """
     Probes for common sensitive files and debug endpoints
@@ -2449,33 +2548,47 @@ class InformationDisclosureChecker:
             base = f"https://{domain}"
             exposed = []
 
-            # Check critical paths
-            for path, desc in self.CRITICAL_PATHS:
-                found, status, size = self._probe(f"{base}{path}")
-                if found:
-                    exposed.append({
-                        "path": path, "description": desc,
-                        "risk_level": "critical", "size": size,
-                    })
-                    result["score"] = max(0, result["score"] - 20)
+            # Build full probe set (critical + medium) and run in parallel.
+            # Serial 18 × 6s = up to 108s; parallelised at 6 workers ≈ 18-24s worst case.
+            probes = (
+                [(p, d, "critical", 20) for p, d in self.CRITICAL_PATHS] +
+                [(p, d, "medium", 10) for p, d in self.MEDIUM_PATHS]
+            )
+
+            with ThreadPoolExecutor(max_workers=6) as ex:
+                futures = {
+                    ex.submit(self._probe, f"{base}{path}"): (path, desc, risk, penalty)
+                    for path, desc, risk, penalty in probes
+                }
+                try:
+                    for fut in as_completed(futures, timeout=30):
+                        path, desc, risk, penalty = futures[fut]
+                        try:
+                            found, status, size = fut.result(timeout=2)
+                        except Exception:
+                            continue
+                        if not found:
+                            continue
+                        exposed.append({
+                            "path": path, "description": desc,
+                            "risk_level": risk, "size": size,
+                        })
+                        result["score"] = max(0, result["score"] - penalty)
+                        if risk == "critical":
+                            result["issues"].append(
+                                f"CRITICAL: Sensitive file exposed: {path} — {desc}"
+                            )
+                        else:
+                            result["issues"].append(
+                                f"Information disclosure: {path} accessible — {desc}"
+                            )
+                except FuturesTimeoutError:
+                    # Treat unfinished probes as negative — scan must not stall.
                     result["issues"].append(
-                        f"CRITICAL: Sensitive file exposed: {path} — {desc}"
+                        "Info disclosure probe batch hit 30s wall-clock — remaining paths skipped"
                     )
 
-            # Check medium paths
-            for path, desc in self.MEDIUM_PATHS:
-                found, status, size = self._probe(f"{base}{path}")
-                if found:
-                    exposed.append({
-                        "path": path, "description": desc,
-                        "risk_level": "medium", "size": size,
-                    })
-                    result["score"] = max(0, result["score"] - 10)
-                    result["issues"].append(
-                        f"Information disclosure: {path} accessible — {desc}"
-                    )
-
-            # Check directory listing on root
+            # Directory listing probe (separate — checks root HTML, not path)
             try:
                 r = requests.get(f"{base}/", timeout=6,
                                  headers={"User-Agent": USER_AGENT})
@@ -2491,7 +2604,11 @@ class InformationDisclosureChecker:
             except Exception:
                 pass
 
-            result["exposed_paths"] = exposed
+            # Keep deterministic order for display (criticals first)
+            result["exposed_paths"] = sorted(
+                exposed,
+                key=lambda e: (0 if e["risk_level"] == "critical" else 1, e["path"])
+            )
 
         except Exception as e:
             result["status"] = "error"

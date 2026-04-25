@@ -1009,6 +1009,22 @@ class RansomwareIndex:
             base += 0.05
             factors.append({"factor": f"Weak SSL (grade {ssl_grade})", "impact": 0.05, "priority": 3})
 
+        # --- Favourable signals (RSI reduction) ---
+        # Anthropic Project Glasswing partners integrate Claude-assisted
+        # vulnerability discovery — compresses exposure window to novel CVEs.
+        gw = categories.get("glasswing", {}) or {}
+        if gw.get("is_partner"):
+            glasswing_delta = -0.05  # Modest credit — observable signal only
+            base += glasswing_delta
+            factors.append({
+                "factor": f"Anthropic Glasswing partner ({gw.get('partner_name','')}) — AI-assisted vuln programme",
+                "impact": round(glasswing_delta, 2),
+                "priority": 3,
+            })
+        # Floor at 0 — favourable signals cannot drive RSI below the
+        # inherent-exposure baseline.
+        base = max(0.0, base)
+
         # --- Apply diminishing returns + multipliers ---
         # Diminishing returns prevents stacking of many moderate findings
         # from pushing the score unrealistically close to 1.0

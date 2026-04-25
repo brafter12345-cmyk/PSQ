@@ -472,18 +472,14 @@ class DNSInfrastructureChecker:
         return zt
 
     def _get_dns_records(self, domain: str) -> dict:
-        records = {}
-        for rtype in ["A", "AAAA", "MX", "NS", "TXT"]:
-            try:
-                answers = dns.resolver.resolve(domain, rtype, lifetime=DEFAULT_TIMEOUT)
-                records[rtype] = [str(r) for r in answers]
-            except Exception:
-                records[rtype] = []
-        return records
+        # Uses shared DNS cache — the same 5 record lookups would otherwise
+        # repeat per IP (5 × N IPs = 25+ redundant DNS queries per scan).
+        return {rtype: list(dns_cache.resolve(domain, rtype))
+                for rtype in ["A", "AAAA", "MX", "NS", "TXT"]}
 
     def _get_reverse_dns(self, domain: str, ip: str = None) -> Optional[str]:
         try:
-            ip = ip or socket.gethostbyname(domain)
+            ip = ip or dns_cache.get_ip(domain)
             rev = dns.reversename.from_address(ip)
             answer = dns.resolver.resolve(rev, "PTR", lifetime=DEFAULT_TIMEOUT)
             return str(answer[0])
@@ -505,7 +501,7 @@ class DNSInfrastructureChecker:
 
     def _scan_ports(self, domain: str, ip: str = None) -> list:
         try:
-            ip = ip or socket.gethostbyname(domain)
+            ip = ip or dns_cache.get_ip(domain)
         except Exception:
             return []
 
@@ -722,7 +718,7 @@ class HighRiskProtocolChecker:
         if ip:
             result["ip"] = ip
         try:
-            ip = ip or socket.gethostbyname(domain)
+            ip = ip or dns_cache.get_ip(domain)
         except Exception:
             return result
 
@@ -845,7 +841,7 @@ class DNSBLChecker:
             result["status"] = "error"; return result
 
         try:
-            ip = ip or socket.gethostbyname(domain)
+            ip = ip or dns_cache.get_ip(domain)
             reversed_ip = ".".join(reversed(ip.split(".")))
 
             # IP-based checks

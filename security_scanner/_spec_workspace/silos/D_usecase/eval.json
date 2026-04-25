@@ -1,0 +1,335 @@
+{
+  "silo": "D_usecase",
+  "version": "1.0",
+  "generated_at": "2026-04-25",
+  "description": "Mechanical evaluation rubric for Silo D (Use-case / output spec). Validates per-persona output contracts: (a) broker, (b) continuous monitoring + action prompts, (c) insurer-agnostic risk consulting, (d) open-ended (2-3 additional uses with viability assessment).",
+  "inputs_referenced": {
+    "baseline": "security_scanner/_spec_workspace/substrate/baseline.md",
+    "invariants": "security_scanner/_spec_workspace/substrate/INVARIANTS.md",
+    "fixtures": [
+      "security_scanner/_spec_workspace/substrate/sample/phishield_fs.json",
+      "security_scanner/_spec_workspace/substrate/sample/takealot_retail.json",
+      "security_scanner/_spec_workspace/substrate/sample/sun_uni.json",
+      "security_scanner/_spec_workspace/substrate/sample/broken_hygiene_synth.json"
+    ],
+    "code": [
+      "security_scanner/app.py:1205-1269 (quote pre-fill + create_quote)",
+      "security_scanner/templates/crm/quote_form.html",
+      "security_scanner/pdf_report.py:223,233,2987,3245,3251,3273 (branding strings)"
+    ]
+  },
+  "scoring": {
+    "total_cases": 28,
+    "pass_threshold_pct": 80,
+    "weight_default": 1
+  },
+  "cases": [
+    {
+      "id": "D-001",
+      "category": "schema_validation",
+      "description": "Broker persona schema is declared as valid JSON Schema (Draft 2020-12 or equivalent).",
+      "check_type": "schema_validates",
+      "input": "spec.personas.broker.output_schema",
+      "expected": "Schema parses with a JSON Schema validator without errors; declares $schema, type=object, required, properties.",
+      "evaluator_logic": "import jsonschema; jsonschema.Draft202012Validator.check_schema(spec.personas.broker.output_schema) — must not raise.",
+      "weight": 1
+    },
+    {
+      "id": "D-002",
+      "category": "schema_validation",
+      "description": "Continuous-monitoring persona schema is declared as valid JSON Schema and requires a 'delta' field.",
+      "check_type": "schema_validates",
+      "input": "spec.personas.monitoring.output_schema",
+      "expected": "Schema parses without errors AND 'delta' (or equivalently named diff payload) appears in schema.required.",
+      "evaluator_logic": "Draft202012Validator.check_schema(...) passes AND 'delta' in spec.personas.monitoring.output_schema['required'].",
+      "weight": 1
+    },
+    {
+      "id": "D-003",
+      "category": "schema_validation",
+      "description": "Insurer-agnostic consulting persona schema is declared as valid JSON Schema and forbids broker-only fields.",
+      "check_type": "schema_validates",
+      "input": "spec.personas.consulting.output_schema",
+      "expected": "Schema parses without errors AND properties dict does NOT include any of {commission, commission_rate, commission_amount, premium, annual_premium, monthly_premium, mdr_selection, mdr_discount, broker_attribution, fsp_46418}.",
+      "evaluator_logic": "Validate schema; assert disjoint(set(properties.keys()), BROKER_ONLY_FIELDS).",
+      "weight": 1
+    },
+    {
+      "id": "D-004",
+      "category": "schema_validation",
+      "description": "At least one open-ended persona schema (e.g. M&A diligence / vendor risk / regulator submission) is declared and validates.",
+      "check_type": "schema_validates",
+      "input": "spec.personas.open_ended[*].output_schema",
+      "expected": "len(spec.personas.open_ended) >= 1; each open-ended schema parses with Draft202012Validator.check_schema without error.",
+      "evaluator_logic": "For each entry in spec.personas.open_ended: jsonschema.Draft202012Validator.check_schema(entry.output_schema).",
+      "weight": 1
+    },
+    {
+      "id": "D-005",
+      "category": "schema_validation",
+      "description": "phishield_fs.json fixture validates against the broker persona schema after broker-transform.",
+      "check_type": "schema_validates",
+      "input": "fixture: phishield_fs.json -> broker_transform -> broker_schema",
+      "expected": "spec.personas.broker.transform(phishield_fs.json) is accepted by jsonschema.validate(instance, spec.personas.broker.output_schema).",
+      "evaluator_logic": "Apply declared transform; run jsonschema.validate(instance, schema); must not raise ValidationError.",
+      "weight": 1
+    },
+    {
+      "id": "D-006",
+      "category": "schema_validation",
+      "description": "phishield_fs.json fixture validates against monitoring schema only when delta payload is constructed (first scan vs rescan).",
+      "check_type": "schema_validates",
+      "input": "fixture: phishield_fs.json (synth prior) -> monitoring_transform -> monitoring_schema",
+      "expected": "monitoring_transform with synthesised prior produces an instance that includes 'delta' and validates against monitoring schema; without prior, transform must declare 'baseline' instance type that still validates.",
+      "evaluator_logic": "Two passes: (a) instance_with_prior validates AND has non-null 'delta'; (b) instance_baseline validates AND 'delta'==null or 'baseline_only'==true.",
+      "weight": 1
+    },
+    {
+      "id": "D-007",
+      "category": "round_trip",
+      "description": "Broker schema produces every field that templates/crm/quote_form.html surfaces in scan_data.",
+      "check_type": "round_trips_to_crm",
+      "input": "broker_transform(phishield_fs.json)",
+      "expected": "Output object contains keys covering all of: risk_score, risk_level, rsi_score, annual_loss, recommended_cover, premium_tier, scan_id (per quote_form.html lines 17,21,25,29,38-40,47,52).",
+      "evaluator_logic": "REQUIRED = {'risk_score','risk_level','rsi_score','annual_loss','recommended_cover','premium_tier','scan_id'}; assert REQUIRED.issubset(broker_output.keys()).",
+      "weight": 1
+    },
+    {
+      "id": "D-008",
+      "category": "round_trip",
+      "description": "Broker schema fields populate POST /crm/clients/<id>/quotes form payload (app.py:1240 create_quote).",
+      "check_type": "round_trips_to_crm",
+      "input": "broker_transform(phishield_fs.json)",
+      "expected": "Mapping declared from broker_output -> {cover_limit, annual_premium, monthly_premium, risk_score, risk_level, scan_id} (the form fields create_quote consumes at app.py:1252-1263).",
+      "evaluator_logic": "Spec must declare an explicit mapping table; assert each of {cover_limit, annual_premium, monthly_premium, risk_score, risk_level, scan_id} has a non-null source key in broker schema.",
+      "weight": 1
+    },
+    {
+      "id": "D-009",
+      "category": "round_trip",
+      "description": "Broker pre-fill sources match app.py:1230-1235 prefill logic (insurance_analytics.recommended_cover_limit, annual_premium, monthly_premium).",
+      "check_type": "round_trips_to_crm",
+      "input": "spec.personas.broker.field_sources",
+      "expected": "broker schema's recommended_cover field is sourced from insurance.financial_impact.insurance_recommendation.recommended_cover_zar (or insurance_analytics.recommended_cover_limit alias); annual_premium and monthly_premium sourced from insurance_analytics.* per app.py:1233-1235.",
+      "evaluator_logic": "Lookup spec.personas.broker.field_sources['recommended_cover']; assert it references 'insurance.financial_impact.insurance_recommendation.recommended_cover_zar' OR 'insurance_analytics.recommended_cover_limit'. Same for annual_premium / monthly_premium.",
+      "weight": 1
+    },
+    {
+      "id": "D-010",
+      "category": "negative_field",
+      "description": "Consulting persona output must NOT contain 'commission' field.",
+      "check_type": "json_path_absent",
+      "input": "consulting_transform(phishield_fs.json)",
+      "expected": "No JSONPath match for $..commission, $..commission_rate, $..commission_amount.",
+      "evaluator_logic": "jsonpath_ng.parse('$..commission').find(instance) == [] AND same for commission_rate, commission_amount.",
+      "weight": 1
+    },
+    {
+      "id": "D-011",
+      "category": "negative_field",
+      "description": "Consulting persona output must NOT contain 'premium' fields.",
+      "check_type": "json_path_absent",
+      "input": "consulting_transform(phishield_fs.json)",
+      "expected": "No JSONPath match for $..annual_premium, $..monthly_premium, $..premium_tier.",
+      "evaluator_logic": "All three jsonpath_ng matches return empty list on the consulting instance.",
+      "weight": 1
+    },
+    {
+      "id": "D-012",
+      "category": "negative_field",
+      "description": "Consulting persona output must NOT contain MDR/broker fields.",
+      "check_type": "json_path_absent",
+      "input": "consulting_transform(phishield_fs.json)",
+      "expected": "No JSONPath match for $..mdr_selection, $..mdr_discount, $..broker_attribution, $..fsp_46418.",
+      "evaluator_logic": "All four jsonpath_ng queries return [] on consulting instance.",
+      "weight": 1
+    },
+    {
+      "id": "D-013",
+      "category": "negative_field",
+      "description": "Monitoring persona output must NOT contain narrative-prose fields (data-only contract).",
+      "check_type": "json_path_absent",
+      "input": "monitoring_transform(phishield_fs.json)",
+      "expected": "No JSONPath match for $..why_this_matters, $..broker_cta, $..executive_narrative, $..sales_narrative, $..speak_to_broker.",
+      "evaluator_logic": "All listed jsonpath_ng queries return [] on monitoring instance.",
+      "weight": 1
+    },
+    {
+      "id": "D-014",
+      "category": "negative_field",
+      "description": "Consulting persona output must NOT carry hard-coded Phishield/Bryte branding strings (INV-21).",
+      "check_type": "json_path_absent",
+      "input": "consulting_transform(phishield_fs.json) serialised to string",
+      "expected": "Serialised consulting instance does not contain substrings: 'Phishield', 'PHISHIELD', 'Bryte', 'FSP 46418', 'Speak to your Phishield broker'.",
+      "evaluator_logic": "for s in BRAND_STRINGS: assert s not in json.dumps(consulting_instance).",
+      "weight": 1
+    },
+    {
+      "id": "D-015",
+      "category": "field_sourcing",
+      "description": "Every field in broker persona schema declares a source from {top-level scan key, categories.* path, computed expression, 'requires_new' with cross-ref}.",
+      "check_type": "json_path_present",
+      "input": "spec.personas.broker.field_sources",
+      "expected": "For each property in broker schema, field_sources[property] exists and matches regex ^(top:[a-z_.]+|categories\\.[a-z_.*]+|computed:.+|requires_new:silo_[AB]:[A-Z0-9-]+)$.",
+      "evaluator_logic": "For each k in broker_schema.properties: assert k in spec.personas.broker.field_sources AND re.match(SOURCE_RE, spec.personas.broker.field_sources[k]).",
+      "weight": 1
+    },
+    {
+      "id": "D-016",
+      "category": "field_sourcing",
+      "description": "Every field in monitoring persona schema declares a source.",
+      "check_type": "json_path_present",
+      "input": "spec.personas.monitoring.field_sources",
+      "expected": "Same regex as D-015 applied to monitoring schema; delta-specific fields acceptable as 'computed:diff(prior, current)'.",
+      "evaluator_logic": "Iterate monitoring properties; assert each has an entry matching SOURCE_RE.",
+      "weight": 1
+    },
+    {
+      "id": "D-017",
+      "category": "field_sourcing",
+      "description": "Every field in consulting persona schema declares a source.",
+      "check_type": "json_path_present",
+      "input": "spec.personas.consulting.field_sources",
+      "expected": "Same regex as D-015 applied to consulting schema.",
+      "evaluator_logic": "Iterate consulting properties; assert each has an entry matching SOURCE_RE.",
+      "weight": 1
+    },
+    {
+      "id": "D-018",
+      "category": "field_sourcing",
+      "description": "Each open-ended persona schema declares per-field sources.",
+      "check_type": "json_path_present",
+      "input": "spec.personas.open_ended[*].field_sources",
+      "expected": "Every open-ended persona has field_sources covering 100% of its schema.properties.",
+      "evaluator_logic": "For each open_ended entry: assert set(entry.field_sources.keys()) == set(entry.output_schema.properties.keys()) AND all values match SOURCE_RE.",
+      "weight": 1
+    },
+    {
+      "id": "D-019",
+      "category": "field_sourcing",
+      "description": "No persona schema contains a field with un-sourced or null source (reject 'TBD', empty string, null).",
+      "check_type": "json_path_absent",
+      "input": "spec.personas.*.field_sources values",
+      "expected": "No source value equals null, '', 'TBD', 'unknown', or 'tbd'.",
+      "evaluator_logic": "For each persona, for each source value v: assert v is not None AND v.strip().lower() not in {'', 'tbd', 'unknown'}.",
+      "weight": 1
+    },
+    {
+      "id": "D-020",
+      "category": "sla_timer",
+      "description": "Monitoring persona declares Critical-severity action-prompt SLA = 1 hour.",
+      "check_type": "sla_declared",
+      "input": "spec.personas.monitoring.sla.critical",
+      "expected": "spec.personas.monitoring.sla.critical == '1h' (or equivalent: 3600s, 60min, ISO PT1H).",
+      "evaluator_logic": "Normalise to seconds; assert value == 3600.",
+      "weight": 1
+    },
+    {
+      "id": "D-021",
+      "category": "sla_timer",
+      "description": "Monitoring persona declares High-severity action-prompt SLA = 24 hours, Medium = 7 days, Low = no prompt.",
+      "check_type": "sla_declared",
+      "input": "spec.personas.monitoring.sla",
+      "expected": "high normalises to 86400s; medium normalises to 604800s; low is null OR 'no_prompt' OR explicit false.",
+      "evaluator_logic": "to_seconds(sla.high)==86400 AND to_seconds(sla.medium)==604800 AND sla.low in {None,'no_prompt',False}.",
+      "weight": 1
+    },
+    {
+      "id": "D-022",
+      "category": "sla_timer",
+      "description": "Critical-finding webhook contract declares delivery semantics (idempotency key, retry policy, HMAC signature).",
+      "check_type": "sla_declared",
+      "input": "spec.personas.monitoring.webhook_contract",
+      "expected": "Object exists with required keys: {endpoint, method=='POST', signing.algo, signing.header, idempotency_key_field, retry.max_attempts, retry.backoff}.",
+      "evaluator_logic": "Assert all keys present; method=='POST'; retry.max_attempts >= 3.",
+      "weight": 1
+    },
+    {
+      "id": "D-023",
+      "category": "persona_isolation",
+      "description": "Same scan input produces three structurally distinct persona outputs.",
+      "check_type": "json_path_absent",
+      "input": "broker_transform(fx) vs monitoring_transform(fx) vs consulting_transform(fx) where fx=phishield_fs.json",
+      "expected": "Pairwise top-level key sets differ: keys(broker) != keys(monitoring), keys(broker) != keys(consulting), keys(monitoring) != keys(consulting).",
+      "evaluator_logic": "k_b=set(broker_out.keys()); k_m=set(mon_out.keys()); k_c=set(cons_out.keys()); assert k_b!=k_m AND k_b!=k_c AND k_m!=k_c.",
+      "weight": 1
+    },
+    {
+      "id": "D-024",
+      "category": "persona_isolation",
+      "description": "No leakage of broker-only fields into monitoring or consulting outputs.",
+      "check_type": "json_path_absent",
+      "input": "monitoring_transform(fx), consulting_transform(fx)",
+      "expected": "BROKER_ONLY = {commission, commission_rate, commission_amount, annual_premium, monthly_premium, mdr_selection, mdr_discount, premium_tier, broker_attribution} — none appear at any depth in monitoring or consulting outputs.",
+      "evaluator_logic": "for f in BROKER_ONLY: assert jsonpath_ng.parse(f'$..{f}').find(monitoring_out)==[] AND same for consulting_out.",
+      "weight": 1
+    },
+    {
+      "id": "D-025",
+      "category": "persona_isolation",
+      "description": "Consulting output and monitoring output are not byte-identical to broker output (defends against trivial alias).",
+      "check_type": "json_path_absent",
+      "input": "broker_transform(fx), monitoring_transform(fx), consulting_transform(fx)",
+      "expected": "json.dumps(broker_out, sort_keys=True) != json.dumps(monitoring_out, sort_keys=True) AND != json.dumps(consulting_out, sort_keys=True).",
+      "evaluator_logic": "Hash each canonical JSON; assert all three hashes distinct.",
+      "weight": 1
+    },
+    {
+      "id": "D-026",
+      "category": "invariant",
+      "description": "Spec explicitly violates INV-21 for consulting persona and proposes a white-label mechanism.",
+      "check_type": "invariant_holds",
+      "input": "spec.invariant_violations",
+      "expected": "spec.invariant_violations contains an entry with id=='INV-21', persona=='consulting', and a non-empty 'mechanism' field describing how branding becomes config-driven (e.g. tenant_brand table, env BRAND_NAME, white_label.yaml).",
+      "evaluator_logic": "v = next(x for x in spec.invariant_violations if x.id=='INV-21'); assert v.persona=='consulting' AND len(v.mechanism)>20 AND 'phishield' not in v.mechanism.lower().",
+      "weight": 1
+    },
+    {
+      "id": "D-027",
+      "category": "invariant",
+      "description": "Spec explicitly violates INV-22 (PDF only full|summary) and proposes persona-specific report types.",
+      "check_type": "invariant_holds",
+      "input": "spec.invariant_violations",
+      "expected": "spec.invariant_violations contains id=='INV-22' with new_report_types list including at least one of {broker, underwriter, consultant, client, monitoring_alert} beyond {full, summary}.",
+      "evaluator_logic": "v = next(x for x in spec.invariant_violations if x.id=='INV-22'); new=set(v.new_report_types); assert len(new - {'full','summary'}) >= 1.",
+      "weight": 1
+    },
+    {
+      "id": "D-028",
+      "category": "invariant",
+      "description": "Spec addresses INV-19 (auto-lead creation) — consulting persona scans must NOT create broker leads.",
+      "check_type": "invariant_holds",
+      "input": "spec.invariant_violations",
+      "expected": "spec.invariant_violations contains id=='INV-19' with persona=='consulting' AND a 'guard' clause naming the scan parameter or persona flag (e.g. scan_request.persona=='consulting' bypasses auto-lead block at app.py:697-719).",
+      "evaluator_logic": "v = next(x for x in spec.invariant_violations if x.id=='INV-19'); assert v.persona=='consulting' AND ('persona' in v.guard.lower() OR 'consulting' in v.guard.lower()) AND 'app.py:697' in v.guard OR 'auto_lead' in v.guard.lower().",
+      "weight": 1
+    },
+    {
+      "id": "D-029",
+      "category": "open_ended",
+      "description": "Spec proposes 2-3 open-ended uses; each declares a viability score (0-10 or Low/Med/High) and a gap-analysis-vs-current-code paragraph.",
+      "check_type": "json_path_present",
+      "input": "spec.personas.open_ended[*]",
+      "expected": "len(spec.personas.open_ended) in [2,3]; each entry has fields {use_case_name, viability_score, gap_analysis, persona_schema}; viability_score normalises to numeric 0-10 OR enum {Low,Medium,High}; gap_analysis length >= 200 chars and references at least one file:line citation from baseline.md.",
+      "evaluator_logic": "assert 2 <= len(open_ended) <= 3; for e in open_ended: assert {'use_case_name','viability_score','gap_analysis','persona_schema'}.issubset(e.keys()); assert len(e.gap_analysis)>=200; assert re.search(r'\\b[a-z_]+\\.py:\\d+\\b', e.gap_analysis).",
+      "weight": 1
+    },
+    {
+      "id": "D-030",
+      "category": "open_ended",
+      "description": "Reject any open-ended use case that omits viability + gap assessment.",
+      "check_type": "json_path_absent",
+      "input": "spec.personas.open_ended[*]",
+      "expected": "No open_ended entry exists where viability_score is null/missing OR gap_analysis is empty/missing.",
+      "evaluator_logic": "for e in open_ended: assert e.get('viability_score') not in (None,'','TBD') AND e.get('gap_analysis','').strip() != ''.",
+      "weight": 1
+    }
+  ],
+  "evaluator_helpers": {
+    "BROKER_ONLY_FIELDS": ["commission", "commission_rate", "commission_amount", "premium", "annual_premium", "monthly_premium", "premium_tier", "mdr_selection", "mdr_discount", "broker_attribution", "fsp_46418"],
+    "BRAND_STRINGS": ["Phishield", "PHISHIELD", "Bryte", "FSP 46418", "Speak to your Phishield broker"],
+    "SOURCE_RE": "^(top:[a-z_.]+|categories\\.[a-z_.*]+|computed:.+|requires_new:silo_[AB]:[A-Z0-9-]+)$",
+    "SLA_NORMALISER": "Convert any of {'1h','60min','3600s','PT1H'} -> 3600 seconds before comparison",
+    "FIXTURE_PRIMARY": "security_scanner/_spec_workspace/substrate/sample/phishield_fs.json"
+  }
+}

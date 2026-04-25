@@ -1,0 +1,364 @@
+{
+  "silo": "C_behavioral",
+  "version": "1.0",
+  "generated_at": "2026-04-25",
+  "description": "Mechanical rubric for Silo C (Behavioral spec — what the Phishield scanner does TODAY). Each case is verifiable by grep / JSON path lookup / count / schema validation against substrate, source code, or fixture simulator output. No human judgement required.",
+  "scoring": {
+    "total_cases": 35,
+    "default_weight": 1,
+    "invariant_weight": 2,
+    "pass_threshold_pct": 80
+  },
+  "cases": [
+    {
+      "id": "C-001",
+      "category": "checker_inventory",
+      "description": "Spec enumerates a checker count and reconciles NUM-001 (22 vs 26 vs 27)",
+      "check_type": "spec_predicts_field_value",
+      "input": "spec.checker_inventory.total_count and spec.checker_inventory.reconciliation",
+      "expected": "total_count == 27 distinct checker classes; reconciliation explicitly addresses NUM-001 stating: '22' = stale memory, '26' = manual scoring categories, '27' = code reality",
+      "evaluator_logic": "Load spec; assert spec.checker_inventory.total_count == 27 AND spec.checker_inventory.reconciliation contains tokens {'22','26','27','NUM-001'} AND a one-line rationale per number.",
+      "weight": 1
+    },
+    {
+      "id": "C-002",
+      "category": "checker_inventory",
+      "description": "Spec lists every checker class with file:line locator that exists in source",
+      "check_type": "spec_diffs_against_code",
+      "input": "spec.checker_inventory.checkers[*].{name,file,line_start}",
+      "expected": "For each entry, grep `class <ClassName>` in the cited file at within +/- 5 lines of line_start returns exactly one match",
+      "evaluator_logic": "For each checker entry, run Grep pattern `^class <ClassName>` in spec.file; require >= 1 hit AND |hit_line - spec.line_start| <= 5.",
+      "weight": 1
+    },
+    {
+      "id": "C-003",
+      "category": "checker_inventory",
+      "description": "Spec includes the 4 classes whose file:line locators are load-bearing",
+      "check_type": "spec_predicts_field_presence",
+      "input": "spec.checker_inventory.checkers names",
+      "expected": "Set must include {'EmailSecurityChecker','SSLChecker','ShodanVulnChecker','GlasswingPartnerChecker'} all with non-null file:line",
+      "evaluator_logic": "Assert each of the 4 names appears in spec.checker_inventory.checkers AND each has file ending '.py' AND line_start is int > 0.",
+      "weight": 1
+    },
+    {
+      "id": "C-004",
+      "category": "checker_inventory",
+      "description": "Spec assigns each checker to its execution phase",
+      "check_type": "spec_predicts_field_value",
+      "input": "spec.checker_inventory.checkers[*].phase",
+      "expected": "phase in {'phase2_lightweight','phase2_heavy','phase2_conditional','phase3_per_ip','enrichment'}; SSLChecker and SubdomainChecker are phase2_heavy; ShodanVulnChecker, DNSInfrastructureChecker, HighRiskProtocolChecker, DNSBLChecker are phase3_per_ip; FraudulentDomainChecker is phase2_conditional",
+      "evaluator_logic": "Assert phase enum membership for every entry; assert specific assignments listed above match.",
+      "weight": 1
+    },
+    {
+      "id": "C-005",
+      "category": "checker_inventory",
+      "description": "Spec marks checkers that require external API keys with their env var name",
+      "check_type": "spec_predicts_field_value",
+      "input": "spec.checker_inventory.checkers[*].api_key_env",
+      "expected": "BreachChecker->HIBP_API_KEY, DehashedChecker->DEHASHED_API_KEY, VirusTotalChecker->VIRUSTOTAL_API_KEY, SecurityTrailsChecker->SECURITYTRAILS_API_KEY, ShodanVulnChecker->SHODAN_API_KEY, IntelXChecker->INTELX_API_KEY",
+      "evaluator_logic": "For each pair above assert spec entry has matching api_key_env; for non-API checkers assert api_key_env is null/absent.",
+      "weight": 1
+    },
+    {
+      "id": "C-006",
+      "category": "scoring",
+      "description": "Spec reproduces the WEIGHTS dict exactly",
+      "check_type": "spec_predicts_field_value",
+      "input": "spec.scoring.per_checker_weights",
+      "expected": "Dict equal to {ssl:0.09, exposed_admin:0.09, high_risk_protocols:0.08, breaches:0.07, shodan_vulns:0.07, ransomware_risk:0.06, dnsbl:0.06, email_security:0.06, http_headers:0.05, virustotal:0.05, info_disclosure:0.05, tech_stack:0.05, website_security:0.04, vpn_remote:0.04, fraudulent_domains:0.04, dehashed:0.03, external_ips:0.03, data_breach_index:0.03, email_hardening:0.02, subdomains:0.02, payment_security:0.02, privacy_compliance:0.02, web_ranking:0.02, financial_impact:0.02, securitytrails:0.01}",
+      "evaluator_logic": "Diff spec dict vs canonical dict; require zero key/value differences (float tolerance 1e-6).",
+      "weight": 1
+    },
+    {
+      "id": "C-007",
+      "category": "scoring",
+      "description": "Spec asserts WEIGHTS sum to ~1.0 (INV-08)",
+      "check_type": "spec_invariant_holds",
+      "input": "spec.scoring.weights_sum",
+      "expected": "abs(sum - 1.0) <= 0.01",
+      "evaluator_logic": "Compute sum of spec.scoring.per_checker_weights values; assert abs(sum - 1.0) <= 0.01.",
+      "weight": 1
+    },
+    {
+      "id": "C-008",
+      "category": "scoring",
+      "description": "Spec states risk-score scale 0-1000 with the 4 inverted bands (INV-03)",
+      "check_type": "spec_predicts_field_value",
+      "input": "spec.scoring.scale and spec.scoring.bands",
+      "expected": "scale = '0-1000 lower-is-worse'; bands = {Critical:[0,250], High:[250,500], Medium:[500,750], Low:[750,1000]}",
+      "evaluator_logic": "Assert spec.scoring.scale matches; assert each of the 4 band entries matches bounds exactly.",
+      "weight": 1
+    },
+    {
+      "id": "C-009",
+      "category": "scoring",
+      "description": "Spec describes inverted-direction convention: per-checker 0-100 higher=better; overall 0-1000 lower=better",
+      "check_type": "spec_predicts_field_value",
+      "input": "spec.scoring.direction_convention",
+      "expected": "Text must contain both 'per-checker 0-100 higher = better' and 'overall 0-1000 lower = better' (or semantic equivalent with both numeric scales)",
+      "evaluator_logic": "Regex match both phrases (case-insensitive); both must hit.",
+      "weight": 1
+    },
+    {
+      "id": "C-010",
+      "category": "scoring",
+      "description": "Spec describes failure exclusion + weight redistribution (INV-02)",
+      "check_type": "spec_diffs_against_code",
+      "input": "spec.scoring.failure_handling",
+      "expected": "States: failed statuses = {error, timeout}; skipped = {no_api_key, auth_failed, disabled, skipped}; both excluded; remaining weights renormalised. References scoring_analytics.py:549-576.",
+      "evaluator_logic": "Grep `_FAILED_STATUSES = {\"error\", \"timeout\"}` in scoring_analytics.py — must hit. Spec must enumerate same two sets and cite line range overlapping 549-576.",
+      "weight": 1
+    },
+    {
+      "id": "C-011",
+      "category": "compliance",
+      "description": "Spec lists exactly 4 compliance frameworks (INV-11)",
+      "check_type": "spec_count_matches",
+      "input": "spec.compliance.frameworks",
+      "expected": "len == 4 and set == {'POPIA','PCI DSS v4.0','ISO 27001','NIST CSF 2.0'}",
+      "evaluator_logic": "Assert len(spec.compliance.frameworks) == 4 AND name-set equality (case-insensitive trim).",
+      "weight": 1
+    },
+    {
+      "id": "C-012",
+      "category": "compliance",
+      "description": "Spec asserts each compliance control maps to 1-3 checkers with weight 0.8-1.2",
+      "check_type": "spec_invariant_holds",
+      "input": "spec.compliance.frameworks[*].controls[*]",
+      "expected": "For every control, 1 <= len(checker_mappings) <= 3 AND every mapping.weight in [0.8, 1.2]",
+      "evaluator_logic": "Iterate all controls; fail if any violates count or weight range.",
+      "weight": 1
+    },
+    {
+      "id": "C-013",
+      "category": "compliance",
+      "description": "Spec gives the verdict thresholds: Pass all>=80, Fail any<=20, else Partial",
+      "check_type": "spec_predicts_field_value",
+      "input": "spec.compliance.verdict_rule",
+      "expected": "Pass: all mapped checker scores >= 80; Fail: any mapped checker score <= 20; Partial: otherwise",
+      "evaluator_logic": "Three regex/key checks — Pass>=80, Fail<=20, Partial fallback present.",
+      "weight": 1
+    },
+    {
+      "id": "C-014",
+      "category": "compliance",
+      "description": "Spec cites scoring_analytics.py line range for compliance map",
+      "check_type": "spec_diffs_against_code",
+      "input": "spec.compliance.source_reference",
+      "expected": "Cites scoring_analytics.py and line range overlapping [228, 450]",
+      "evaluator_logic": "Parse 'scoring_analytics.py:<a>-<b>'; assert overlap with [228,450].",
+      "weight": 1
+    },
+    {
+      "id": "C-015",
+      "category": "fair_model",
+      "description": "Spec enumerates TEF per industry exactly (INV-10)",
+      "check_type": "spec_predicts_field_value",
+      "input": "spec.fair.tef_by_industry",
+      "expected": "{Financial Services:1.45, Healthcare:1.40, Manufacturing:1.15, Retail:1.25, Agriculture:0.80, Other:1.0}",
+      "evaluator_logic": "Dict equality with float tolerance 1e-6.",
+      "weight": 1
+    },
+    {
+      "id": "C-016",
+      "category": "fair_model",
+      "description": "Spec gives p_breach formula",
+      "check_type": "spec_predicts_field_value",
+      "input": "spec.fair.p_breach_formula",
+      "expected": "p_breach = min(1.0, vulnerability * TEF * 0.3) where vulnerability = (100 - overall_score/10) / 100",
+      "evaluator_logic": "Regex match canonical formula tokens {'min(1.0','vulnerability','TEF','0.3','100 - overall_score/10'}.",
+      "weight": 1
+    },
+    {
+      "id": "C-017",
+      "category": "fair_model",
+      "description": "Spec encodes regulatory exposure formulas (INV-12)",
+      "check_type": "spec_predicts_field_value",
+      "input": "spec.fair.regulatory_exposure",
+      "expected": "POPIA: min(R10M, rev * 0.02); GDPR (if eu_data): rev * 0.04; PCI (if cards): R1M * (1 - adj_compliance) capped 30% external visibility; Other jurisdictions: R2M each",
+      "evaluator_logic": "All four formulas must be present with tokens {min(R10M,rev),0.02,0.04,R1M,1 - adj_compliance,30%,R2M}.",
+      "weight": 1
+    },
+    {
+      "id": "C-018",
+      "category": "fair_model",
+      "description": "Spec describes 3-category aggregation post 2026-04-13 restructure (INV-13)",
+      "check_type": "spec_predicts_field_value",
+      "input": "spec.fair.aggregation",
+      "expected": "States 7 incident types + 5 cost components -> 3 reporting categories {Breach, Ransomware, BI}; reference profile split Breach 49% / Ransomware 27% / BI 24%",
+      "evaluator_logic": "Assert presence of '7 incident types', '5 cost components', '3 categories', and split percentages within +/-1 of 49/27/24.",
+      "weight": 1
+    },
+    {
+      "id": "C-019",
+      "category": "fair_model",
+      "description": "Spec describes RSI base 0.05 with [0,1] bound and Glasswing -0.05 floor 0 (INV-09, INV-06)",
+      "check_type": "spec_predicts_field_value",
+      "input": "spec.fair.rsi",
+      "expected": "{base: 0.05, range: [0,1], glasswing_credit: -0.05, glasswing_floor: 0}",
+      "evaluator_logic": "Numeric equality on all 4 fields.",
+      "weight": 1
+    },
+    {
+      "id": "C-020",
+      "category": "persistence",
+      "description": "Spec enumerates exactly 15 scans.db tables with names",
+      "check_type": "spec_count_matches",
+      "input": "spec.persistence.tables",
+      "expected": "len == 15; name set == {scans, clients, contacts, quotes, policies, invoices, invoice_line_items, payments, activities, client_notes, records_of_advice, claims, communications, tasks, complaints}",
+      "evaluator_logic": "Assert len == 15 AND set equality on names.",
+      "weight": 1
+    },
+    {
+      "id": "C-021",
+      "category": "persistence",
+      "description": "Spec records ALTER-TABLE-style migration columns (INV-15)",
+      "check_type": "spec_diffs_against_code",
+      "input": "spec.persistence.migrations",
+      "expected": "Must list at least: scans.client_id (added via app.py:149); clients.archived (added via app.py:303); policies.commission_rate, policies.commission_amount (app.py:312-314); complaints.resolution (app.py:908)",
+      "evaluator_logic": "Grep 'ALTER TABLE' in app.py; cross-reference each spec entry with a real ALTER TABLE statement in cited line.",
+      "weight": 1
+    },
+    {
+      "id": "C-022",
+      "category": "persistence",
+      "description": "Spec acknowledges no migration framework (INV-15) and single-DB (INV-14)",
+      "check_type": "spec_invariant_holds",
+      "input": "spec.persistence.invariants",
+      "expected": "Explicitly references INV-14 and INV-15 with status 'as-is' (not violated)",
+      "evaluator_logic": "Assert both INV-14 and INV-15 keys present with status == 'as-is'.",
+      "weight": 2
+    },
+    {
+      "id": "C-023",
+      "category": "crm",
+      "description": "Spec enumerates pipeline stages exactly (INV-18)",
+      "check_type": "spec_predicts_field_value",
+      "input": "spec.crm.pipeline_stages",
+      "expected": "['lead','scanned','quoted','bound','renewal'] in this exact order",
+      "evaluator_logic": "List equality (ordered).",
+      "weight": 1
+    },
+    {
+      "id": "C-024",
+      "category": "crm",
+      "description": "Spec enumerates 38 CRM routes",
+      "check_type": "spec_count_matches",
+      "input": "spec.crm.routes",
+      "expected": "len == 38; each entry has {path, method, handler, file_line}",
+      "evaluator_logic": "Assert len == 38; assert each entry has all 4 keys non-null.",
+      "weight": 1
+    },
+    {
+      "id": "C-025",
+      "category": "crm",
+      "description": "Spec describes auto-lead-creation hook on POST /api/scan (INV-19)",
+      "check_type": "spec_diffs_against_code",
+      "input": "spec.crm.auto_lead_hook",
+      "expected": "States: on POST /api/scan, if no client exists for domain, create with pipeline_stage='lead' and link scan; cites app.py:697-719",
+      "evaluator_logic": "Assert tokens {'/api/scan','no client','pipeline_stage','lead','app.py:697'}; grep app.py for `pipeline_stage='lead'` near line 697 must hit.",
+      "weight": 1
+    },
+    {
+      "id": "C-026",
+      "category": "crm",
+      "description": "Spec acknowledges no auth/RBAC (INV-16) and reseller column dead (INV-17)",
+      "check_type": "spec_invariant_holds",
+      "input": "spec.crm.invariants",
+      "expected": "INV-16 and INV-17 both present with status 'as-is'",
+      "evaluator_logic": "Assert both keys present with status == 'as-is'.",
+      "weight": 2
+    },
+    {
+      "id": "C-027",
+      "category": "output_api",
+      "description": "Spec defines /api/scan request/response shape",
+      "check_type": "spec_predicts_schema",
+      "input": "spec.output_api.endpoints['POST /api/scan']",
+      "expected": "request: {domain, industry, annual_revenue, annual_revenue_zar, country, include_fraudulent_domains, client_ips}; response: {scan_id}",
+      "evaluator_logic": "Assert request.required keys superset of {domain,industry,annual_revenue}; assert response.required == ['scan_id'].",
+      "weight": 1
+    },
+    {
+      "id": "C-028",
+      "category": "output_api",
+      "description": "Spec describes SSE progress stream and PDF/history endpoints (INV-22)",
+      "check_type": "spec_predicts_schema",
+      "input": "spec.output_api.endpoints",
+      "expected": "Has GET /api/scan/<id>/progress with SSE event shape {checker, status, score, ips}; GET /api/scan/<id>/pdf?type=full|summary (only these two enums); GET /api/history/<domain> returning last 10 scans",
+      "evaluator_logic": "Assert all 3 endpoints; assert pdf type enum exactly ['full','summary']; assert SSE event has {checker,status} required.",
+      "weight": 1
+    },
+    {
+      "id": "C-029",
+      "category": "output_api",
+      "description": "Spec defines /api/scan/<id> top-level response keys",
+      "check_type": "spec_predicts_schema",
+      "input": "spec.output_api.scan_response_schema.required_keys",
+      "expected": "Set superset of {domain_scanned, scan_timestamp, overall_risk_score, risk_level, discovered_ips, scan_context, categories, recommendations, compliance, insurance}",
+      "evaluator_logic": "Assert each of the 10 keys present in spec.output_api.scan_response_schema.required_keys.",
+      "weight": 1
+    },
+    {
+      "id": "C-030",
+      "category": "output_api",
+      "description": "Spec describes insurance subtree with rsi, financial_impact, dbi, remediation",
+      "check_type": "spec_predicts_schema",
+      "input": "spec.output_api.scan_response_schema.insurance",
+      "expected": "Keys: rsi (with rsi_score, risk_label, contributing_factors), financial_impact (score, total {most_likely,p5,p50,p95}, scenarios_4cat, insurance_recommendation), dbi (dbi_score, label), remediation (findings)",
+      "evaluator_logic": "Schema-walk: verify each nested key path present.",
+      "weight": 1
+    },
+    {
+      "id": "C-031",
+      "category": "spec_vs_actual",
+      "description": "Spec predicts phishield_fs.json overall_risk_score band and structure",
+      "check_type": "spec_predicts_field_value",
+      "input": "fixture: substrate/sample/phishield_fs.json; spec.predictions.phishield_fs",
+      "expected": "{overall_risk_score: 250-500 (High band per INV-03 OR Medium band 500-750 — pick one with rationale), risk_level matches band, n_discovered_ips: 15-19, has 'insurance.rsi.rsi_score', has 'compliance.POPIA'}. Actual: 294 / Medium / 17 IPs",
+      "evaluator_logic": "Load fixture; assert spec.predictions.phishield_fs.overall_risk_score band contains 294; assert spec.risk_level == 'Medium'; assert |spec.n_discovered_ips - 17| <= 3; assert spec asserts presence of insurance.rsi.rsi_score and compliance.POPIA paths in fixture.",
+      "weight": 1
+    },
+    {
+      "id": "C-032",
+      "category": "spec_vs_actual",
+      "description": "Spec predicts takealot_retail.json overall_risk_score band",
+      "check_type": "spec_predicts_field_value",
+      "input": "fixture: substrate/sample/takealot_retail.json; spec.predictions.takealot_retail",
+      "expected": "overall_risk_score in 'Critical' band (0-250) OR low end of Medium; risk_level == 'Medium'; presence of insurance.rsi.rsi_score and compliance.POPIA. Actual: 235 / Medium",
+      "evaluator_logic": "Load fixture; assert 235 falls inside spec's predicted band; assert spec.risk_level == 'Medium'; assert presence flags both true.",
+      "weight": 1
+    },
+    {
+      "id": "C-033",
+      "category": "spec_vs_actual",
+      "description": "Spec predicts broken_hygiene_synth.json scores in Critical band",
+      "check_type": "spec_predicts_field_value",
+      "input": "fixture: substrate/sample/broken_hygiene_synth.json; spec.predictions.broken_hygiene_synth",
+      "expected": "overall_risk_score in [0,250] (Critical band); risk_level == 'Critical'; rsi_score >= 0.75. Actual: 125 / Critical / 0.92",
+      "evaluator_logic": "Load fixture; assert 125 in spec band; spec.risk_level == 'Critical'; assert spec.rsi_score lower bound <= 0.92 <= upper bound.",
+      "weight": 1
+    },
+    {
+      "id": "C-034",
+      "category": "invariant",
+      "description": "Spec explicitly addresses every invariant INV-01 through INV-31",
+      "check_type": "spec_invariant_holds",
+      "input": "spec.invariants",
+      "expected": "Dict with keys INV-01..INV-31 (31 entries). Each has {status: 'as-is' | 'deliberately_violated', rationale: <str if violated>}",
+      "evaluator_logic": "Assert all 31 keys present; for each entry assert status in {'as-is','deliberately_violated'}; if violated, rationale length >= 20 chars.",
+      "weight": 2
+    },
+    {
+      "id": "C-035",
+      "category": "invariant",
+      "description": "Spec addresses 'no scheduler / pull-only' (INV-23, INV-24, ARCH-001)",
+      "check_type": "spec_invariant_holds",
+      "input": "spec.invariants['INV-23'], spec.invariants['INV-24']",
+      "expected": "Both 'as-is'. Spec must additionally cite ARCH-001 (no scheduler) and ARCH-003 (no incremental/delta) as observed today.",
+      "evaluator_logic": "Assert both invariants 'as-is'; assert spec.observations contains references to 'ARCH-001' and 'ARCH-003'.",
+      "weight": 2
+    }
+  ]
+}

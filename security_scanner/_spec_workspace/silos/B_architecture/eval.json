@@ -1,0 +1,326 @@
+{
+  "silo": "B_architecture",
+  "version": "1.0",
+  "generated_at": "2026-04-25",
+  "evaluator_mode": "constraint_violation_check",
+  "scoring_model": "binary_per_case",
+  "notes": [
+    "Silo B's Evaluator is a constraint-violation checker, not a quality scorer.",
+    "Each case is binary: VIOLATED (0) or NOT_VIOLATED (1).",
+    "For SLO cases, the rubric verifies that a numeric value is DECLARED. Whether the declared value is the correct one is delegated to a separate human architecture review pass.",
+    "For tenant-isolation cases, the rubric verifies that an explicit interface, contract, or test is DECLARED. Whether the implementation is sound is delegated to human review.",
+    "Invariant cases verify the spec explicitly addresses or violates the named invariant with rationale; silent violation = case fails."
+  ],
+  "cases": [
+    {
+      "id": "B-001",
+      "category": "slo",
+      "description": "Cost-per-scan SLO declared with numeric ceiling and currency",
+      "check_type": "missing_field",
+      "input": "spec.slos.cost_per_scan",
+      "violation_signal": "Section absent, value non-numeric, or currency unspecified",
+      "evaluator_logic": "Search spec for a declaration matching pattern '(cost[_ -]per[_ -]scan|per-scan cost).*(<=|≤|max|ceiling).*\\d+(\\.\\d+)?\\s*(USD|ZAR|R|\\$)'. Must also bind to scan-mode (first-scan vs rescan) since costs differ. PASS if numeric ceiling + currency + scan-mode binding all present.",
+      "weight": 1
+    },
+    {
+      "id": "B-002",
+      "category": "slo",
+      "description": "p95 wallclock latency SLO declared, consuming Silo A's per-checker manifest",
+      "check_type": "missing_field",
+      "input": "spec.slos.p95_wallclock_seconds",
+      "violation_signal": "No numeric p95 figure, or no reference to Silo A's checker_manifest_contract.md as the budget source",
+      "evaluator_logic": "Spec must contain (a) a numeric p95 latency in seconds for first-scan and for rescan paths, and (b) explicit citation of `checker_manifest_contract.md` as the per-checker latency budget input. PASS only if both present.",
+      "weight": 1
+    },
+    {
+      "id": "B-003",
+      "category": "slo",
+      "description": "Delta-event firing SLO declared (time from state change to webhook fire)",
+      "check_type": "missing_field",
+      "input": "spec.slos.delta_to_fire_seconds",
+      "violation_signal": "No numeric ceiling on detection-to-emit latency for delta events",
+      "evaluator_logic": "Spec must declare a numeric SLO of the form '<= N seconds' between detected state change (compared to last persisted scan result) and webhook emission. SLO MUST be tier-aware (Critical severity may have stricter ceiling than Medium). PASS only if numeric value + severity tiering both present.",
+      "weight": 1
+    },
+    {
+      "id": "B-004",
+      "category": "webhook",
+      "description": "Webhook delivery semantics declared: at-least-once + idempotency key + retry policy",
+      "check_type": "missing_field",
+      "input": "spec.webhook.delivery_semantics",
+      "violation_signal": "Any of {at-least-once statement, idempotency_key field, retry attempts count, backoff strategy} missing",
+      "evaluator_logic": "Spec must declare: (1) 'at-least-once' delivery, (2) idempotency key field name in payload (e.g. event_id or delivery_id), (3) numeric max retry attempts N, (4) backoff strategy (e.g. exponential with jitter). All four required to PASS.",
+      "weight": 1
+    },
+    {
+      "id": "B-005",
+      "category": "slo",
+      "description": "Scheduler reliability SLO declared OR explicit drift handling specified",
+      "check_type": "missing_field",
+      "input": "spec.slos.scheduler_reliability",
+      "violation_signal": "Neither '>= 99% on-schedule rate' nor a drift-handling policy declared",
+      "evaluator_logic": "Spec must declare EITHER (a) a numeric on-schedule rate target (e.g. >= 99%) for cron/scheduler firings, OR (b) an explicit drift-handling policy (catch-up runs, max-drift tolerance, missed-fire behavior). At least one of (a) or (b) required to PASS. Silent on both = FAIL.",
+      "weight": 1
+    },
+    {
+      "id": "B-006",
+      "category": "tenant_isolation",
+      "description": "Negative test: tenant A cannot read tenant B's scans",
+      "check_type": "tenant_leak",
+      "input": "spec.tenant_isolation.tests.cross_tenant_scan_read",
+      "violation_signal": "No declared negative test or interface contract preventing GET /api/scan/<scan_id_owned_by_B> when caller authenticates as tenant A",
+      "evaluator_logic": "Spec must declare an explicit negative test case (in test plan or interface contract section) where tenant A's auth context attempting to read a scan_id owned by tenant B returns 403/404 (not 200). The test name, expected status code, and tenancy enforcement layer (middleware / row-level filter / query predicate) must all be named.",
+      "weight": 1
+    },
+    {
+      "id": "B-007",
+      "category": "tenant_isolation",
+      "description": "Negative test: tenant A cannot read tenant B's CRM entities (clients, quotes, policies, invoices, claims)",
+      "check_type": "tenant_leak",
+      "input": "spec.tenant_isolation.tests.cross_tenant_crm_read",
+      "violation_signal": "CRM tables (clients, quotes, policies, invoices, claims, contacts, ROA, complaints, communications, tasks, activities) not enumerated as tenant-scoped, or no negative test for cross-tenant CRM read",
+      "evaluator_logic": "Spec must enumerate all 15 CRM tables from baseline.md § 6 and declare which tenancy column governs each (e.g. tenant_id direct, or via FK to clients.tenant_id). Must include at least one negative test asserting cross-tenant CRM reads are denied. PASS only if (a) enumeration covers all 15 tables and (b) negative test declared.",
+      "weight": 1
+    },
+    {
+      "id": "B-008",
+      "category": "tenant_isolation",
+      "description": "Tenant-scoped scan history endpoint contract",
+      "check_type": "interface_mismatch",
+      "input": "spec.api.history_endpoint",
+      "violation_signal": "GET /api/history endpoint not declared as tenant-scoped, or tenancy resolution mechanism (header/JWT claim/path) absent",
+      "evaluator_logic": "Spec must define the post-multi-tenancy contract for GET /api/history/<domain>. Contract must state (a) tenant identity is resolved from auth context (NOT a query param trustable by client), and (b) results filtered to caller's tenant. Bonus: cross-tenant request for a domain owned by another tenant returns empty result (not 403, to avoid leaking domain ownership).",
+      "weight": 1
+    },
+    {
+      "id": "B-009",
+      "category": "tenant_isolation",
+      "description": "Per-tenant branding propagates to PDF and HTML outputs",
+      "check_type": "interface_mismatch",
+      "input": "spec.branding.tenant_resolution",
+      "violation_signal": "Spec does not name a per-tenant branding config, OR PDF/HTML rendering paths still reference hardcoded Phishield/Bryte strings",
+      "evaluator_logic": "Spec must (a) define a per-tenant branding record (logo asset, primary color, footer text, broker CTA, FSP number / regulatory disclaimer field), (b) explicitly state that pdf_report.py header/footer/CTA strings (lines 223, 233, 2987, 3245, 3251, 3273) and templates/*.html branded strings are sourced from this record at render time, and (c) declare a test that two tenants on the same scan see different brand outputs. All three required to PASS. This case INTENTIONALLY violates INV-21.",
+      "weight": 1
+    },
+    {
+      "id": "B-010",
+      "category": "tenant_isolation",
+      "description": "Tenant deletion / archival cascade policy declared",
+      "check_type": "missing_field",
+      "input": "spec.tenant_lifecycle.delete_cascade",
+      "violation_signal": "No policy stated for what happens to a tenant's scans, CRM rows, and PII on tenant removal",
+      "evaluator_logic": "Spec must state the policy for tenant removal: hard-delete cascade vs soft-archive vs export-then-delete. Must also state retention period (POPIA-compatible) and the trigger (admin action / automated). PASS only if (a) cascade behavior named, (b) retention period numeric, (c) trigger named.",
+      "weight": 1
+    },
+    {
+      "id": "B-011",
+      "category": "webhook",
+      "description": "Webhook payload schema declares required fields",
+      "check_type": "missing_field",
+      "input": "spec.webhook.payload_schema",
+      "violation_signal": "Any of {scan_id, tenant_id, event_type, severity, delta, timestamp, event_id} missing from payload schema",
+      "evaluator_logic": "Spec must define a JSON schema (or equivalently typed contract) for webhook payloads including AT MINIMUM: scan_id, tenant_id, event_type (enum: e.g. scan_completed, delta_detected, critical_finding), severity (enum: Critical|High|Medium|Low aligned with INV-03 bands), delta (object describing what changed since previous scan; required for delta_detected events), timestamp (ISO8601 UTC), event_id (idempotency key per B-004). All seven required to PASS.",
+      "weight": 1
+    },
+    {
+      "id": "B-012",
+      "category": "webhook",
+      "description": "Critical-severity webhook fire-time SLO declared and stricter than non-critical",
+      "check_type": "slo_violated",
+      "input": "spec.webhook.critical_fire_sla_seconds",
+      "violation_signal": "No tier-specific SLA, or critical SLA equal/looser than non-critical",
+      "evaluator_logic": "Spec declares a numeric fire-SLA per severity tier and Critical < High < Medium ordering on the SLA values (lower = faster). PASS only if all four tiers declare a value AND the Critical value is strictly the smallest.",
+      "weight": 1
+    },
+    {
+      "id": "B-013",
+      "category": "webhook",
+      "description": "Webhook signature / HMAC verification mechanism declared",
+      "check_type": "missing_field",
+      "input": "spec.webhook.signature_scheme",
+      "violation_signal": "No HMAC/signature scheme named for webhook authenticity verification by receiver",
+      "evaluator_logic": "Spec must name (a) signing algorithm (e.g. HMAC-SHA256), (b) header name carrying signature (e.g. X-Phishield-Signature), (c) per-tenant signing-secret rotation policy, (d) replay protection (timestamp tolerance window or nonce). All four required to PASS.",
+      "weight": 1
+    },
+    {
+      "id": "B-014",
+      "category": "incremental",
+      "description": "Per-checker signal-volatility classification consumed from Silo A",
+      "check_type": "interface_mismatch",
+      "input": "spec.incremental.volatility_classes",
+      "violation_signal": "Spec does not reference Silo A's checker_manifest_contract.md volatility classification, OR defines own classification independently",
+      "evaluator_logic": "Spec must (a) explicitly cite Silo A's checker_manifest_contract.md as source of per-checker signal_volatility values, (b) enumerate the volatility classes used (e.g. stable / weekly / on-change / always), (c) bind each class to a TTL value. PASS if all three present and consistent with Silo A contract.",
+      "weight": 1
+    },
+    {
+      "id": "B-015",
+      "category": "incremental",
+      "description": "Cache-reuse rule for stable signals on rescan",
+      "check_type": "interface_mismatch",
+      "input": "spec.incremental.cache_reuse_rule",
+      "violation_signal": "No rule stating that a checker classified 'stable' (or equivalent) skips external API call on rescan within TTL and reuses prior result",
+      "evaluator_logic": "Spec must state the cache-reuse rule mechanically: 'on rescan, for each checker C with volatility=stable AND cached result age < TTL_C, skip C invocation and reuse cached output'. Must also describe how the reused result merges into the rescan response (full reconstruction vs delta payload). PASS only if rule + merge behavior both stated.",
+      "weight": 1
+    },
+    {
+      "id": "B-016",
+      "category": "incremental",
+      "description": "Cache invalidation triggers declared (DNS change, IP change, cert change, manual force-refresh)",
+      "check_type": "missing_field",
+      "input": "spec.incremental.invalidation_triggers",
+      "violation_signal": "Any of {DNS A-record change, discovered IP set change, SSL cert change, force-refresh API param} missing from invalidation trigger list",
+      "evaluator_logic": "Spec must enumerate invalidation triggers that bypass TTL: (1) A-record change for the domain, (2) discovered IP set delta, (3) SSL cert serial/fingerprint change, (4) explicit force-refresh request param. Each trigger must name which cached entries it invalidates. All four required to PASS. This case violates INV-04 by design — must say so explicitly.",
+      "weight": 1
+    },
+    {
+      "id": "B-017",
+      "category": "continuous",
+      "description": "Schedule cadence per signal-volatility class is declared",
+      "check_type": "missing_field",
+      "input": "spec.continuous.schedule_per_volatility",
+      "violation_signal": "No mapping from volatility class to scan cadence",
+      "evaluator_logic": "Spec must declare a mapping like {stable: monthly, weekly: 7d, on-change: triggered, always: every-scan}. The mapping covers every volatility class declared in B-014. Cadence values must be numeric (or 'event-triggered' for on-change). PASS only if mapping complete.",
+      "weight": 1
+    },
+    {
+      "id": "B-018",
+      "category": "continuous",
+      "description": "First-scan vs rescan checker-set differentiation declared",
+      "check_type": "missing_field",
+      "input": "spec.continuous.first_vs_rescan",
+      "violation_signal": "Spec does not name which checkers run only on first scan, or which run on every rescan, or treats them identically",
+      "evaluator_logic": "Spec must declare per-checker (or per-checker-group) whether it runs (a) only on first scan, (b) on every rescan, or (c) only when an invalidation trigger fires. Must explicitly address `include_fraudulent_domains` (currently opt-in per INV-07) and SSL/subdomain (heavy) checkers. PASS only if a complete per-checker (or grouped) classification is present.",
+      "weight": 1
+    },
+    {
+      "id": "B-019",
+      "category": "continuous",
+      "description": "Action-prompt SLA per severity tier declared",
+      "check_type": "slo_violated",
+      "input": "spec.continuous.action_prompt_sla",
+      "violation_signal": "No SLA values for action prompts per severity tier, OR ordering not Critical < High < Medium",
+      "evaluator_logic": "Spec declares numeric SLA for action-prompt firing per severity: Critical, High, Medium (Low optional). Strict ordering enforced (Critical < High < Medium in time-to-fire). Indicative budgets per task brief: Critical = 1h, High = 24h, Medium = 7d — spec may differ but must declare values and respect ordering. PASS only if values + ordering present.",
+      "weight": 1
+    },
+    {
+      "id": "B-020",
+      "category": "migration",
+      "description": "Migration framework adoption declared (replacing inline ALTER TABLE)",
+      "check_type": "missing_field",
+      "input": "spec.migration.framework",
+      "violation_signal": "Spec does not name a migration tool (Alembic, Flyway, custom versioned scripts) or commit to retaining inline ALTER TABLE",
+      "evaluator_logic": "Spec must (a) name the migration framework being adopted (e.g. Alembic) OR explicitly justify retention of the inline ALTER TABLE pattern from app.py:145-154, (b) describe the migration ordering / version-tracking mechanism, (c) describe rollback policy. PASS only if all three present. Explicitly addresses INV-15.",
+      "weight": 1
+    },
+    {
+      "id": "B-021",
+      "category": "migration",
+      "description": "Single-tenant SQLite -> multi-tenant migration path declared",
+      "check_type": "missing_field",
+      "input": "spec.migration.tenancy_model",
+      "violation_signal": "Spec does not state which tenancy model is adopted: shared-DB-with-tenant_id, schema-per-tenant, or DB-per-tenant",
+      "evaluator_logic": "Spec must (a) name one of {shared-DB-with-tenant_id, schema-per-tenant, DB-per-tenant} as the target model with rationale, (b) describe migration steps from current single-DB SQLite, (c) state whether SQLite is retained or replaced (e.g. with Postgres) for multi-tenant production. PASS only if all three present.",
+      "weight": 1
+    },
+    {
+      "id": "B-022",
+      "category": "migration",
+      "description": "Disposition of `clients.reseller` column declared",
+      "check_type": "missing_field",
+      "input": "spec.migration.reseller_column_disposition",
+      "violation_signal": "Spec does not state whether the existing `reseller` column (app.py:166) is repurposed as tenant identifier OR deprecated",
+      "evaluator_logic": "Spec must explicitly state the disposition of the `reseller` column. Two valid choices: (a) repurpose as canonical tenant identifier with backfill plan for existing rows, OR (b) deprecate and introduce new tenant_id column with rationale for not reusing reseller. PASS only if disposition + rationale stated. Explicitly addresses INV-17.",
+      "weight": 1
+    },
+    {
+      "id": "B-023",
+      "category": "migration",
+      "description": "Disposition of existing pre-multi-tenant CRM data declared",
+      "check_type": "missing_field",
+      "input": "spec.migration.legacy_crm_data",
+      "violation_signal": "Spec does not state whether existing CRM rows are migrated to a default tenant or scoped to new-tenants-only",
+      "evaluator_logic": "Spec must state one of: (a) backfill all existing clients/quotes/policies/etc into a designated 'phishield-default' tenant, (b) keep legacy data outside tenancy scope and only enforce tenancy on new tenants, (c) export-and-purge legacy data. Choice must include rationale. PASS only if choice + rationale stated.",
+      "weight": 1
+    },
+    {
+      "id": "B-024",
+      "category": "backward_compat",
+      "description": "Existing /api/scan response shape backward-compat policy declared",
+      "check_type": "interface_mismatch",
+      "input": "spec.backward_compat.api_scan_response",
+      "violation_signal": "Spec changes baseline.md § 15 response shape without declaring versioning or compatibility shim",
+      "evaluator_logic": "Spec must either (a) preserve the canonical /api/scan response shape from baseline.md § 15 unchanged for unauthenticated/legacy callers, OR (b) declare an API version negotiation mechanism (path /v2/, Accept header) with a compatibility shim for legacy clients. PASS if either path is explicitly declared with the response-shape decision.",
+      "weight": 1
+    },
+    {
+      "id": "B-025",
+      "category": "invariant",
+      "description": "INV-15 (no migration framework today) explicitly addressed",
+      "check_type": "invariant_holds",
+      "input": "spec.invariants.INV-15",
+      "violation_signal": "Spec violates INV-15 silently (introduces migration framework without naming the violation)",
+      "evaluator_logic": "Spec must contain a clause of the form 'Violates INV-15 because <rationale>' OR equivalent explicit acknowledgment that today's inline-ALTER pattern is being replaced. Cross-checks B-020. PASS only if the violation is explicitly named.",
+      "weight": 1
+    },
+    {
+      "id": "B-026",
+      "category": "invariant",
+      "description": "INV-16 (no auth/RBAC today) explicitly addressed",
+      "check_type": "invariant_holds",
+      "input": "spec.invariants.INV-16",
+      "violation_signal": "Spec introduces multi-tenancy without explicitly addressing INV-16 violation",
+      "evaluator_logic": "Spec must contain a clause stating 'Violates INV-16: introduces auth layer because multi-tenancy is impossible without identity enforcement' or equivalent. Spec must also name the auth mechanism chosen (session cookie, JWT, API key, OAuth) and the authz model (role-based, attribute-based, tenant-scoped). PASS only if violation acknowledged AND mechanism + model named.",
+      "weight": 1
+    },
+    {
+      "id": "B-027",
+      "category": "invariant",
+      "description": "INV-21 (single-tenant Phishield branding) explicitly violated with rationale",
+      "check_type": "invariant_holds",
+      "input": "spec.invariants.INV-21",
+      "violation_signal": "Spec implies white-label without stating INV-21 is being violated",
+      "evaluator_logic": "Spec must contain explicit 'Violates INV-21: hardcoded Phishield/Bryte strings replaced by per-tenant branding config' clause, with a list of the file:line locations being de-hardcoded (pdf_report.py:223, 233, 2987, 3245, 3251, 3273; templates/results.html; templates/index.html). PASS only if violation named + file:line list complete.",
+      "weight": 1
+    },
+    {
+      "id": "B-028",
+      "category": "invariant",
+      "description": "INV-23 (no webhook surface) explicitly violated with rationale",
+      "check_type": "invariant_holds",
+      "input": "spec.invariants.INV-23",
+      "violation_signal": "Spec adds webhook capability without naming INV-23 violation",
+      "evaluator_logic": "Spec must contain explicit 'Violates INV-23: introduces outbound HTTP webhook surface for action prompts' clause with rationale tied to the use case (continuous monitoring, action prompts on critical findings). Cross-checks B-004, B-011, B-012, B-013. PASS only if violation named.",
+      "weight": 1
+    },
+    {
+      "id": "B-029",
+      "category": "invariant",
+      "description": "INV-24 (no incremental/delta API) explicitly violated with rationale",
+      "check_type": "invariant_holds",
+      "input": "spec.invariants.INV-24",
+      "violation_signal": "Spec adds delta API without naming INV-24 violation",
+      "evaluator_logic": "Spec must contain explicit 'Violates INV-24: introduces incremental/delta API and changed-since semantics' clause with rationale. Cross-checks B-014 through B-016. PASS only if violation named.",
+      "weight": 1
+    },
+    {
+      "id": "B-030",
+      "category": "invariant",
+      "description": "INV-19 (auto-lead creation on scan) handled to prevent duplicate leads on rescan",
+      "check_type": "invariant_holds",
+      "input": "spec.invariants.INV-19",
+      "violation_signal": "Spec retains auto-lead creation per scan without exempting scheduled/incremental rescans, causing duplicate leads",
+      "evaluator_logic": "Spec must explicitly modify INV-19 behavior so that scheduled rescans, delta-driven rescans, and incremental cache-hits do NOT create new client/lead rows. Must state: 'rescans triggered by scheduler or invalidation do not invoke auto-lead creation in app.py:697-719'. PASS only if exemption stated.",
+      "weight": 1
+    },
+    {
+      "id": "B-031",
+      "category": "migration",
+      "description": "Persistent worker / orphan-process resolution declared (SCN-GAP-002)",
+      "check_type": "missing_field",
+      "input": "spec.continuous.worker_lifecycle",
+      "violation_signal": "Spec moves to persistent worker without addressing sslyze subprocess cleanup",
+      "evaluator_logic": "Per KNOWN_ISSUES SCN-GAP-002, today's `process recycles between scans` assumption breaks under a continuous worker. Spec must either (a) explicitly add a subprocess kill / process-group cleanup step in the timeout-cancellation path, or (b) commit to ephemeral worker per scan (retaining the recycle assumption), or (c) declare the assumption is preserved by some other isolation primitive (container per scan, namespace, etc.). PASS only if one of (a)/(b)/(c) is explicitly chosen.",
+      "weight": 1
+    }
+  ]
+}
