@@ -1023,6 +1023,64 @@ def build(doc):
         "(capacity factor 0.15) would face approximately R24M total."
     )
 
+    add_h2(doc, "How flag inputs reach the cat stack (auto-detection -> broker confirmation -> calculation)")
+
+    add_body(doc,
+        "The catastrophe regulatory stack is driven entirely by the "
+        "regulatory_flags dict that the scanner receives at scan start. "
+        "Each entry in that dict (listed_company, b2c, "
+        "accountable_institution, sub_industry_detail, gdpr, pci) is "
+        "populated through a three-step pipeline:"
+    )
+    add_bullet(doc,
+        "Step 1 - Pre-flight auto-detection. When the broker enters a "
+        "domain and sub-industry in the scan form, the /api/preflight "
+        "endpoint runs a lightweight detection pass (typically 3-8 "
+        "seconds): JSE-listed status from a curated list and homepage "
+        "footer ticker scrape; B2C from sub-industry rules and payment-"
+        "form signals on the homepage; accountable institution from FS / "
+        "Legal Services / Real Estate sub-industry mapping; healthcare "
+        "sub-detail (medical_scheme / pharmacy / pharma / hospital_clinic) "
+        "from domain and page-title keywords; GDPR and PCI from page "
+        "content hints. Results return as a dict of {flag_name: "
+        "{auto_detected: bool, evidence: str}}."
+    )
+    add_bullet(doc,
+        "Step 2 - Broker confirmation. The form pre-fills the toggle "
+        "switches based on the pre-flight result and displays an 'auto-"
+        "detected' badge next to each. The broker reviews, can tick or "
+        "untick any flag based on context the scanner cannot observe "
+        "(e.g. niche FIC accountable-institution categories like crypto "
+        "providers, motor vehicle dealers, casinos), and submits. The "
+        "broker's confirmed values are authoritative - they overwrite "
+        "the auto-detected values for the purpose of the calculation."
+    )
+    add_bullet(doc,
+        "Step 3 - Cat stack calculation. The scanner reads the "
+        "broker-confirmed flags from regulatory_flags and passes them "
+        "to _sector_cat_stack(sub_industry, sub_industry_detail, "
+        "regulatory_flags) in scoring_analytics.py. The function "
+        "resolves the applicable framework set per the rules above, "
+        "applies the capacity factor based on revenue, sums into "
+        "c2_cat_stack_total, and exposes the per-framework breakdown "
+        "in the regulatory_exposure.catastrophe_stack JSON block. "
+        "The pre-flight auto-detected dict is preserved alongside "
+        "the broker-confirmed flags as regulatory_flags._auto_detected "
+        "so the Regulatory Flag Audit panel can render both side-by-"
+        "side for FAIS audit defensibility."
+    )
+
+    add_body(doc,
+        "Why this architecture: the scanner can auto-detect roughly "
+        "30-90% of flags depending on the type (see Regulatory Flag "
+        "Audit section below for per-flag detection accuracy). For the "
+        "cases it cannot detect, the broker's domain knowledge "
+        "(unlisted subsidiaries, EU customer relationships, niche FIC "
+        "categories) is the safety net. The audit panel keeps both "
+        "values visible so the FAIS-compliance review can verify the "
+        "broker's input was reasonable given what the scanner observed."
+    )
+
     add_h2(doc, "Civil Liability Disclosure")
 
     add_body(doc,
