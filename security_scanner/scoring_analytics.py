@@ -1869,7 +1869,58 @@ class FinancialImpactCalculator:
 
         # Cost-per-record retained as reference metric (not used in calculation)
         cost_per_record = industry_data["cost_per_record"]
-        estimated_records = max(100, annual_revenue_zar // 50_000)  # reference only
+        # Industry-aware records-per-rand divisor. Lower divisor => more
+        # record-heavy industry (each rand of revenue corresponds to more
+        # personal / sensitive records held). Drives the estimated_records
+        # heuristic surfaced in the breach cost component and in the
+        # Data Breach Model Assumption Notice disclosure below.
+        # Defaults derived from SA-market observations:
+        #   - Banks / FS retail: ~1 customer record per R5-10k revenue
+        #   - Healthcare: ~1 patient record per R8-10k revenue
+        #   - Telecoms / Communications: ~1 subscriber per R5k revenue
+        #   - Retail (B2C): ~1 loyalty / customer record per R30k
+        #   - Insurance: ~1 policyholder per R15-20k
+        #   - Education: ~1 student record per R25k
+        #   - Manufacturing (mostly B2B): ~1 record per R500k
+        #   - Construction / Agriculture: ~1 per R500-1000k (very few PII)
+        # Outlier detection threshold (the small-fintech / health-tech
+        # aggregator case) fires when the broker indicates actual record
+        # count exceeds 2x this estimate - flagged via disclosure block.
+        record_density_divisor = {
+            "finance":           7_500,
+            "financial services": 7_500,
+            "depository institutions": 5_000,
+            "healthcare":        9_000,
+            "communications":    5_000,
+            "telecommunications": 5_000,
+            "insurance":         18_000,
+            "education":         25_000,
+            "hospitality":       20_000,
+            "retail":            30_000,
+            "consumer":          30_000,
+            "services":          50_000,
+            "technology":        50_000,
+            "tech":              50_000,
+            "energy":            100_000,
+            "transportation":    100_000,
+            "pharmaceuticals":   50_000,
+            "media":             40_000,
+            "entertainment":     40_000,
+            "research":          100_000,
+            "industrial / manufacturing": 500_000,
+            "manufacturing":     500_000,
+            "construction":      500_000,
+            "agriculture":       1_000_000,
+            "public sector":     50_000,
+            "other":             50_000,
+        }
+        ind_key = (industry or "other").strip().lower()
+        records_divisor = record_density_divisor.get(ind_key, 50_000)
+        estimated_records = max(100, annual_revenue_zar // records_divisor)
+        # Outlier threshold: when broker indicates actual record count
+        # exceeds this, the data-breach cost component is materially
+        # understated. Surfaced as a disclosure block in PDF + HTML.
+        records_outlier_threshold = estimated_records * 2
 
         # ── Cost Component C2: Regulatory fines (independent per jurisdiction) ──
         # Each jurisdiction has its own fine calculation, computed independently
@@ -2328,6 +2379,32 @@ class FinancialImpactCalculator:
                     "regulatory_fine": round(c2_regulatory_fine),
                     "monte_carlo": mc_breach_stats,
                     "note": "Aggregated C1+C2 costs across all incident types involving data exfiltration",
+                    # Records-assumption disclosure metadata. Drives the
+                    # 'Data Breach Model Assumption Notice' block in PDF
+                    # and HTML when actual record holdings might exceed
+                    # the heuristic - flags model accuracy as conditional
+                    # on record-count realism (FAIS appropriate-disclosure
+                    # compliance).
+                    "records_assumption_disclosure": {
+                        "estimated_records":          int(estimated_records),
+                        "records_divisor_zar":        int(records_divisor),
+                        "outlier_threshold_records":  int(records_outlier_threshold),
+                        "industry_key":               ind_key,
+                        "cost_per_record_zar":        int(cost_per_record),
+                        "rationale": (
+                            f"Heuristic: '{industry}' industry averages approximately "
+                            f"1 sensitive record per R{records_divisor:,} of revenue. "
+                            f"Estimated record holdings at R{annual_revenue_zar:,} "
+                            f"revenue: {int(estimated_records):,}. If the organisation "
+                            f"actually holds materially more than {int(records_outlier_threshold):,} "
+                            f"sensitive records, the data-breach cost component is "
+                            f"materially understated. Common outliers: fintechs, "
+                            f"health-tech aggregators, marketing platforms, and "
+                            f"breach-list resellers - typically small revenue "
+                            f"footprint with record holdings 100-1000x the industry "
+                            f"average."
+                        ),
+                    },
                 },
                 "ransomware": {
                     "rsi_score": rsi_score,

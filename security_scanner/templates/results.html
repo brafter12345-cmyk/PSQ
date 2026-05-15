@@ -679,6 +679,24 @@
         </table>
         {% endif %}
 
+        {# Data Breach Model Assumption Notice - records-per-revenue heuristic + outlier threshold #}
+        {% set sc_db = fin.scenarios.data_breach if fin.scenarios is defined and fin.scenarios.data_breach is defined else {} %}
+        {% set rad = sc_db.records_assumption_disclosure if sc_db.records_assumption_disclosure is defined else {} %}
+        {% if rad %}
+        <div style="background:var(--surface2);border-left:3px solid #60a5fa;border-radius:6px;padding:12px 14px;margin-top:6px;margin-bottom:8px;font-size:.78rem;line-height:1.5;">
+          <div style="font-weight:700;color:var(--text);margin-bottom:6px;">Data Breach Model Assumption Notice</div>
+          <div style="color:var(--muted);">
+            The data breach component of the financial impact model assumes the organisation holds approximately <strong>{{ '{:,}'.format(rad.estimated_records) }} sensitive records</strong>, based on the '{{ fin.industry | default('Other') }}' industry heuristic of roughly 1 record per R{{ '{:,}'.format(rad.records_divisor_zar) }} of revenue, at a regulator-aligned cost of R{{ '{:,}'.format(rad.cost_per_record_zar) }} per record. This figure drives the breach component (records x cost-per-record).
+          </div>
+          <div style="color:var(--muted);margin-top:8px;">
+            <strong style="color:var(--text);">If the organisation holds materially more than {{ '{:,}'.format(rad.outlier_threshold_records) }} records</strong> that would be considered sensitive under POPIA, GDPR, HIPAA, PCI DSS, or other applicable regulation (any personally identifiable, health, financial, or other regulated data), the data breach cost component in this report is <strong style="color:var(--text);">materially understated</strong>. Common outliers include small fintechs, health-tech aggregators, marketing platforms, and breach-list resellers — entities with small revenue footprints but record holdings 10-1000x the industry average.
+          </div>
+          <div style="color:var(--muted);margin-top:8px;font-style:italic;">
+            The broker should consult the insured to verify approximate record holdings. If actual count exceeds the threshold above, contact Phishield for a recalibrated breach estimate. The model's other components (ransomware, business interruption, regulatory fines) are revenue-driven and are not directly affected by record-count outliers.
+          </div>
+        </div>
+        {% endif %}
+
         {# Civil Liability Disclosure — required next to financial impact figures #}
         <div style="background:var(--surface2);border-left:3px solid var(--amber, #d97706);border-radius:6px;padding:12px 14px;margin-top:6px;font-size:.78rem;line-height:1.5;">
           <div style="font-weight:700;color:var(--text);margin-bottom:6px;">Civil Liability Disclosure</div>

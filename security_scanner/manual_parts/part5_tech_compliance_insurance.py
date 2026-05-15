@@ -1081,6 +1081,77 @@ def build(doc):
         "broker's input was reasonable given what the scanner observed."
     )
 
+    add_h2(doc, "Data Breach Model Assumption Notice (records-per-revenue heuristic)")
+
+    add_body(doc,
+        "The data breach component of the financial impact model is "
+        "computed as records x cost-per-record. The records figure is "
+        "estimated from the organisation's revenue using an industry-"
+        "aware divisor (records = revenue / divisor)."
+    )
+    add_body(doc,
+        "Industry divisor table (rand of revenue per sensitive record "
+        "held, on average):"
+    )
+    add_bullet(doc,
+        "Record-heavy industries: Finance / Banks R5,000-R7,500 per "
+        "record; Telecommunications R5,000; Healthcare R9,000; "
+        "Insurance R18,000; Education R25,000; Retail R30,000."
+    )
+    add_bullet(doc,
+        "Mid-range: Hospitality R20,000; Services / Software R50,000; "
+        "Public Sector R50,000; Pharmaceuticals R50,000; Energy "
+        "R100,000; Transportation R100,000."
+    )
+    add_bullet(doc,
+        "Low-record industries: Manufacturing R500,000; Construction "
+        "R500,000; Agriculture R1,000,000 per record (mostly B2B with "
+        "few PII holdings)."
+    )
+
+    add_body(doc,
+        "Outlier detection: a Data Breach Model Assumption Notice "
+        "disclosure block is rendered in both the PDF and HTML reports "
+        "alongside the financial impact card. It explicitly surfaces "
+        "the model's record-count assumption AND an outlier threshold "
+        "(2x the estimate) above which the breach cost is flagged as "
+        "'materially understated'. The disclosure directs the broker "
+        "to verify approximate record holdings with the insured and "
+        "request a recalibrated estimate if the count exceeds the "
+        "threshold."
+    )
+    add_body(doc,
+        "Common outlier cases the disclosure is designed to surface:"
+    )
+    add_bullet(doc,
+        "Small fintechs (e.g. R10M revenue, 500,000+ user records). "
+        "Heuristic estimates ~1,300 records; reality is 100-1000x that."
+    )
+    add_bullet(doc,
+        "Health-tech aggregators (e.g. lab-result platforms, "
+        "telemedicine, patient-portal SaaS). Heuristic underestimates "
+        "by 10-50x typically."
+    )
+    add_bullet(doc,
+        "Marketing / loyalty platforms with massive customer databases "
+        "relative to revenue (e.g. B2B SaaS holding their customers' "
+        "end-customer lists)."
+    )
+    add_bullet(doc,
+        "Data brokers and breach-list resellers - large record "
+        "holdings irrespective of revenue."
+    )
+
+    add_body(doc,
+        "FAIS appropriate-disclosure compliance: the model's record-"
+        "count assumption must be visible to the broker and client so "
+        "they can flag when the calculation does not match the "
+        "organisation's actual data holdings. Other components of the "
+        "financial impact estimate (ransomware, business interruption, "
+        "regulatory fines) are revenue-driven and are not directly "
+        "affected by record-count outliers."
+    )
+
     add_h2(doc, "Civil Liability Disclosure")
 
     add_body(doc,

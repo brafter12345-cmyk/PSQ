@@ -2460,6 +2460,72 @@ def loss_exposure_scenarios_block(d, S):
     ]
 
 
+def records_assumption_disclosure(d, S):
+    """Data Breach Model Assumption Notice - explicitly surfaces the
+    records-per-revenue heuristic used in the breach cost component and
+    the threshold above which the disclosure flags model accuracy as
+    materially affected.
+
+    FAIS appropriate-disclosure compliance: the breach cost line in the
+    Loss Exposure Scenarios is driven by (estimated_records x
+    cost_per_record). When the organisation holds materially more
+    sensitive records than the industry heuristic predicts (small
+    fintechs / health-tech aggregators / marketing platforms / breach-
+    list resellers are common outliers), the breach component is
+    significantly understated and the broker should request
+    recalibration."""
+    fin = d.get("financial_impact", {})
+    sc = fin.get("scenarios", {}).get("data_breach", {})
+    rad = sc.get("records_assumption_disclosure") or {}
+    if not rad:
+        return []
+    est = int(rad.get("estimated_records", 0))
+    thresh = int(rad.get("outlier_threshold_records", 0))
+    divisor = int(rad.get("records_divisor_zar", 0))
+    cpr = int(rad.get("cost_per_record_zar", 0))
+    industry = fin.get("industry") or "Other"
+
+    title = "<b>Data Breach Model Assumption Notice</b>"
+    body = (
+        "The data breach component of the financial impact model assumes the "
+        f"organisation holds approximately <b>{est:,} sensitive records</b>, "
+        f"based on the '{industry}' industry heuristic of roughly 1 record "
+        f"per R{divisor:,} of revenue, at a regulator-aligned cost of "
+        f"R{cpr:,} per record. This figure drives the breach component "
+        "(records x cost-per-record)."
+    )
+    threshold_body = (
+        f"<b>If the organisation holds materially more than {thresh:,} "
+        f"records</b> that would be considered sensitive under POPIA, GDPR, "
+        "HIPAA, PCI DSS, or other applicable regulation (any personally "
+        "identifiable, health, financial, or other regulated data), the "
+        "data breach cost component in this report is "
+        "<b>materially understated</b>. Common outliers include small "
+        "fintechs, health-tech aggregators, marketing platforms, and "
+        "breach-list resellers - entities with small revenue footprints but "
+        "record holdings 10-1000x the industry average."
+    )
+    action_body = (
+        "<i>The broker should consult the insured to verify approximate "
+        "record holdings. If actual count exceeds the threshold above, "
+        "contact Phishield for a recalibrated breach estimate. The "
+        "model's other components (ransomware, business interruption, "
+        "regulatory fines) are revenue-driven and are not directly "
+        "affected by record-count outliers.</i>"
+    )
+    return [
+        Spacer(1, 3 * mm),
+        Paragraph(title, S["cat_title"]),
+        Spacer(1, 2 * mm),
+        Paragraph(body, S["body"]),
+        Spacer(1, 2 * mm),
+        Paragraph(threshold_body, S["body"]),
+        Spacer(1, 2 * mm),
+        Paragraph(action_body, S["body"]),
+        Spacer(1, 4 * mm),
+    ]
+
+
 def civil_liability_disclosure(S):
     """Civil liability disclosure block — appears immediately after the
     Financial Impact card on both the summary and the full report.
@@ -3458,6 +3524,9 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
             # summary so brokers and clients have the catastrophe view
             # before reading further. Schema-driven from loss_exposure.scenarios.
             story += loss_exposure_scenarios_block(ins_data, S)
+            # Data Breach Model Assumption Notice - records-per-revenue
+            # heuristic + outlier threshold for the breach component.
+            story += records_assumption_disclosure(ins_data, S)
             # Civil liability disclosure - applies to both expected and
             # catastrophe loss views. FAIS-required next to financial impact.
             story += civil_liability_disclosure(S)
@@ -3658,6 +3727,10 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
             # Loss Exposure Scenarios - dedicated headline table replacing
             # the previous Insurance Cover Recommendation card.
             story += loss_exposure_scenarios_block(results.get("insurance", {}), S)
+            # Data Breach Model Assumption Notice - exposes the records-
+            # per-revenue heuristic driving the breach component, plus the
+            # outlier threshold above which broker recalibration is needed.
+            story += records_assumption_disclosure(results.get("insurance", {}), S)
             # Civil liability disclosure - required next to the cat-loss
             # numbers per FAIS reasonable-advice / appropriate-disclosure rules.
             story += civil_liability_disclosure(S)
