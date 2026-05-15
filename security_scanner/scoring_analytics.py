@@ -1917,10 +1917,53 @@ class FinancialImpactCalculator:
         ind_key = (industry or "other").strip().lower()
         records_divisor = record_density_divisor.get(ind_key, 50_000)
         estimated_records = max(100, annual_revenue_zar // records_divisor)
-        # Outlier threshold: when broker indicates actual record count
-        # exceeds this, the data-breach cost component is materially
-        # understated. Surfaced as a disclosure block in PDF + HTML.
-        records_outlier_threshold = estimated_records * 2
+        # Catastrophe model validity ceiling. The financial-impact model
+        # anchors on IBM SA Cost of a Data Breach 2025, which regresses
+        # against industry-typical breach sizes (~25,000-100,000 records
+        # per incident). Above the per-industry ceiling below, several
+        # cost components scale super-linearly outside the IBM
+        # calibration window:
+        #   - POPIA Section 22 breach notification (per-subject notice)
+        #   - POPIA Section 99 civil exposure (uncapped per-subject)
+        #   - Regulator escalation toward statutory maxima
+        #   - Forensic / IR scope grows non-linearly past ~250K records
+        # The model produces a FLOOR estimate above this threshold; the
+        # report disclosure directs the broker to request a bespoke
+        # actuarial review when actual record holdings exceed the
+        # ceiling.
+        records_validity_ceiling_by_industry = {
+            # High-anchor industries: IBM regression has more headroom
+            "finance":           500_000,
+            "financial services": 500_000,
+            "depository institutions": 500_000,
+            "healthcare":        400_000,
+            "public sector":     300_000,
+            "technology":        300_000,
+            "tech":              300_000,
+            "pharmaceuticals":   300_000,
+            # Mid-anchor industries
+            "insurance":         250_000,
+            "retail":            250_000,
+            "consumer":          250_000,
+            "services":          250_000,
+            "education":         250_000,
+            "communications":    250_000,
+            "telecommunications": 250_000,
+            "hospitality":       200_000,
+            "media":             200_000,
+            "entertainment":     200_000,
+            "research":          200_000,
+            # Low-anchor industries
+            "energy":            150_000,
+            "transportation":    150_000,
+            "industrial / manufacturing": 100_000,
+            "manufacturing":     100_000,
+            "construction":      100_000,
+            "agriculture":        50_000,
+            "other":             250_000,
+        }
+        records_validity_ceiling = records_validity_ceiling_by_industry.get(
+            ind_key, 250_000)
 
         # ── Cost Component C2: Regulatory fines (independent per jurisdiction) ──
         # Each jurisdiction has its own fine calculation, computed independently
@@ -2379,30 +2422,45 @@ class FinancialImpactCalculator:
                     "regulatory_fine": round(c2_regulatory_fine),
                     "monte_carlo": mc_breach_stats,
                     "note": "Aggregated C1+C2 costs across all incident types involving data exfiltration",
-                    # Records-assumption disclosure metadata. Drives the
-                    # 'Data Breach Model Assumption Notice' block in PDF
-                    # and HTML when actual record holdings might exceed
-                    # the heuristic - flags model accuracy as conditional
-                    # on record-count realism (FAIS appropriate-disclosure
-                    # compliance).
+                    # Catastrophe model validity disclosure. The breach
+                    # cost component (C1) is computed as the residual
+                    # after subtracting C2 (regulatory fines) + C3
+                    # (revenue loss) + C4 (ransom) + C5 (IR costs)
+                    # from the IBM SA breach anchor. The records
+                    # heuristic is NOT used in the cost calculation
+                    # itself; it is surfaced here to indicate the
+                    # assumed scale and to flag the validity ceiling
+                    # above which the IBM anchor stops representing
+                    # realistic worst-case loss. FAIS appropriate-
+                    # disclosure compliance.
                     "records_assumption_disclosure": {
-                        "estimated_records":          int(estimated_records),
-                        "records_divisor_zar":        int(records_divisor),
-                        "outlier_threshold_records":  int(records_outlier_threshold),
-                        "industry_key":               ind_key,
-                        "cost_per_record_zar":        int(cost_per_record),
+                        "estimated_records":            int(estimated_records),
+                        "records_divisor_zar":          int(records_divisor),
+                        "model_validity_ceiling":       int(records_validity_ceiling),
+                        "industry_key":                 ind_key,
+                        "model_anchor":                 "IBM SA Cost of a Data Breach 2025",
+                        "model_anchor_zar":             int(industry_data["breach_cost_zar"]),
                         "rationale": (
-                            f"Heuristic: '{industry}' industry averages approximately "
-                            f"1 sensitive record per R{records_divisor:,} of revenue. "
-                            f"Estimated record holdings at R{annual_revenue_zar:,} "
-                            f"revenue: {int(estimated_records):,}. If the organisation "
-                            f"actually holds materially more than {int(records_outlier_threshold):,} "
-                            f"sensitive records, the data-breach cost component is "
-                            f"materially understated. Common outliers: fintechs, "
-                            f"health-tech aggregators, marketing platforms, and "
-                            f"breach-list resellers - typically small revenue "
-                            f"footprint with record holdings 100-1000x the industry "
-                            f"average."
+                            f"The financial-impact model anchors the data-breach "
+                            f"component on the IBM SA Cost of a Data Breach study, "
+                            f"calibrated against industry-typical breach sizes "
+                            f"(~25,000-100,000 records per incident). For context, "
+                            f"the '{industry}' industry heuristic of ~1 record per "
+                            f"R{records_divisor:,} of revenue implies this organisation "
+                            f"likely holds approximately {int(estimated_records):,} "
+                            f"sensitive records. The catastrophe modelling is "
+                            f"reliable up to approximately "
+                            f"{int(records_validity_ceiling):,} records for the "
+                            f"'{industry}' industry calibration. If the organisation "
+                            f"actually holds more than "
+                            f"{int(records_validity_ceiling):,} sensitive records "
+                            f"under POPIA / GDPR / HIPAA / PCI DSS or other "
+                            f"applicable regulation, the cat exposure in this "
+                            f"report should be treated as a FLOOR estimate only. "
+                            f"Common outliers: fintechs, health-tech aggregators, "
+                            f"marketing platforms, data brokers, breach-list "
+                            f"resellers - small-revenue entities with record "
+                            f"holdings 10-1000x the industry average."
                         ),
                     },
                 },

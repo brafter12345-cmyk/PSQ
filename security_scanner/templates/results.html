@@ -679,20 +679,20 @@
         </table>
         {% endif %}
 
-        {# Data Breach Model Assumption Notice - records-per-revenue heuristic + outlier threshold #}
+        {# Cat Modelling Validity Notice (records-based) - records assumption + per-industry validity ceiling #}
         {% set sc_db = fin.scenarios.data_breach if fin.scenarios is defined and fin.scenarios.data_breach is defined else {} %}
         {% set rad = sc_db.records_assumption_disclosure if sc_db.records_assumption_disclosure is defined else {} %}
         {% if rad %}
         <div style="background:var(--surface2);border-left:3px solid #60a5fa;border-radius:6px;padding:12px 14px;margin-top:6px;margin-bottom:8px;font-size:.78rem;line-height:1.5;">
-          <div style="font-weight:700;color:var(--text);margin-bottom:6px;">Data Breach Model Assumption Notice</div>
+          <div style="font-weight:700;color:var(--text);margin-bottom:6px;">Cat Modelling Validity Notice (records-based)</div>
           <div style="color:var(--muted);">
-            The data breach component of the financial impact model assumes the organisation holds approximately <strong>{{ '{:,}'.format(rad.estimated_records) }} sensitive records</strong>, based on the '{{ fin.industry | default('Other') }}' industry heuristic of roughly 1 record per R{{ '{:,}'.format(rad.records_divisor_zar) }} of revenue, at a regulator-aligned cost of R{{ '{:,}'.format(rad.cost_per_record_zar) }} per record. This figure drives the breach component (records x cost-per-record).
+            The data-breach component of the catastrophe modelling anchors on the IBM SA Cost of a Data Breach 2025 study (industry-average total cost: <strong>R{{ '{:,}'.format(rad.model_anchor_zar) }}</strong> for the '{{ fin.industry | default('Other') }}' industry). IBM's regression is calibrated against typical SA breach sizes (~25,000-100,000 records per incident). For context, the model implicitly assumes this organisation holds approximately <strong>{{ '{:,}'.format(rad.estimated_records) }} sensitive records</strong>, based on the industry heuristic of ~1 record per R{{ '{:,}'.format(rad.records_divisor_zar) }} of revenue. The breach cost component itself is computed as the residual after subtracting regulatory fines, revenue loss, ransom payment, and incident-response costs from the IBM anchor — the records figure is shown for transparency, not used directly in the calculation.
           </div>
           <div style="color:var(--muted);margin-top:8px;">
-            <strong style="color:var(--text);">If the organisation holds materially more than {{ '{:,}'.format(rad.outlier_threshold_records) }} records</strong> that would be considered sensitive under POPIA, GDPR, HIPAA, PCI DSS, or other applicable regulation (any personally identifiable, health, financial, or other regulated data), the data breach cost component in this report is <strong style="color:var(--text);">materially understated</strong>. Common outliers include small fintechs, health-tech aggregators, marketing platforms, and breach-list resellers — entities with small revenue footprints but record holdings 10-1000x the industry average.
+            <strong style="color:var(--text);">The cat modelling is reliable up to approximately {{ '{:,}'.format(rad.model_validity_ceiling) }} records</strong> for this industry. Above this threshold, the IBM-anchored cat exposure understates realistic worst-case loss because several cost components scale super-linearly outside the IBM calibration window: POPIA Section 22 breach-notification costs (per-subject notice), POPIA Section 99 civil exposure (uncapped per affected subject), regulator escalation toward statutory maxima, and forensic / incident-response scope. If the organisation actually holds more than the threshold above in sensitive records under POPIA, GDPR, HIPAA, PCI DSS, or other applicable regulation, the cat figures in this report should be treated as a <strong style="color:var(--text);">FLOOR estimate only</strong>.
           </div>
           <div style="color:var(--muted);margin-top:8px;font-style:italic;">
-            The broker should consult the insured to verify approximate record holdings. If actual count exceeds the threshold above, contact Phishield for a recalibrated breach estimate. The model's other components (ransomware, business interruption, regulatory fines) are revenue-driven and are not directly affected by record-count outliers.
+            Common outliers: small fintechs, health-tech aggregators, marketing platforms, data brokers, and breach-list resellers — entities with small revenue footprints but record holdings 10-1000x the industry average. The broker should consult the insured to verify approximate sensitive-record holdings. If the count exceeds {{ '{:,}'.format(rad.model_validity_ceiling) }}, contact Phishield for a bespoke actuarial review of cat exposure — this report's catastrophe numbers are not reliable at that scale.
           </div>
         </div>
         {% endif %}

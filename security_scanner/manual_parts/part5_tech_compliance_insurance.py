@@ -1081,17 +1081,25 @@ def build(doc):
         "broker's input was reasonable given what the scanner observed."
     )
 
-    add_h2(doc, "Data Breach Model Assumption Notice (records-per-revenue heuristic)")
+    add_h2(doc, "Cat Modelling Validity Notice (records-based)")
 
     add_body(doc,
-        "The data breach component of the financial impact model is "
-        "computed as records x cost-per-record. The records figure is "
-        "estimated from the organisation's revenue using an industry-"
-        "aware divisor (records = revenue / divisor)."
+        "The data-breach component of the catastrophe modelling (C1) "
+        "is computed as the residual after subtracting C2 (regulatory "
+        "fines) + C3 (revenue loss) + C4 (ransom) + C5 (incident-"
+        "response costs) from the IBM SA Cost of a Data Breach 2025 "
+        "industry-typical total breach anchor. The records-per-revenue "
+        "heuristic is NOT used in the breach cost calculation itself; "
+        "the IBM anchor IS the calibration. The records heuristic is "
+        "surfaced as transparency about the scale the IBM regression "
+        "assumes, and to anchor the per-industry validity ceiling "
+        "above which the cat modelling stops being reliable."
     )
+
     add_body(doc,
-        "Industry divisor table (rand of revenue per sensitive record "
-        "held, on average):"
+        "Industry records-per-revenue divisor (transparency context "
+        "for the broker; rand of revenue per sensitive record held, "
+        "on average):"
     )
     add_bullet(doc,
         "Record-heavy industries: Finance / Banks R5,000-R7,500 per "
@@ -1110,27 +1118,73 @@ def build(doc):
     )
 
     add_body(doc,
-        "Outlier detection: a Data Breach Model Assumption Notice "
-        "disclosure block is rendered in both the PDF and HTML reports "
-        "alongside the financial impact card. It explicitly surfaces "
-        "the model's record-count assumption AND an outlier threshold "
-        "(2x the estimate) above which the breach cost is flagged as "
-        "'materially understated'. The disclosure directs the broker "
-        "to verify approximate record holdings with the insured and "
-        "request a recalibrated estimate if the count exceeds the "
-        "threshold."
+        "Per-industry cat-modelling validity ceiling - the record-count "
+        "threshold above which the IBM-anchored cat exposure no longer "
+        "represents realistic worst-case loss. Above this ceiling the "
+        "cat figures in the report should be treated as a FLOOR "
+        "estimate only and the broker should request a bespoke "
+        "actuarial review:"
     )
+    add_bullet(doc,
+        "High-anchor industries (more IBM headroom): Finance / Banks "
+        "500,000 records; Healthcare 400,000; Public Sector 300,000; "
+        "Technology / Tech 300,000; Pharmaceuticals 300,000."
+    )
+    add_bullet(doc,
+        "Mid-anchor industries: Insurance 250,000; Retail 250,000; "
+        "Services 250,000; Education 250,000; Communications / "
+        "Telecoms 250,000; Hospitality 200,000; Media / Entertainment "
+        "200,000."
+    )
+    add_bullet(doc,
+        "Low-anchor industries: Energy 150,000; Transportation "
+        "150,000; Manufacturing 100,000; Construction 100,000; "
+        "Agriculture 50,000."
+    )
+
+    add_body(doc,
+        "Why the ceiling matters: above the per-industry threshold, "
+        "several cost components scale super-linearly outside the "
+        "IBM calibration window and the cat exposure understates "
+        "realistic worst-case loss:"
+    )
+    add_bullet(doc,
+        "POPIA Section 22 breach-notification costs - each affected "
+        "data subject must be notified, so cost scales linearly with "
+        "record count (R1-2 per subject for SMS, more for postal "
+        "notification, multiplied across millions of subjects for "
+        "outlier cases)."
+    )
+    add_bullet(doc,
+        "POPIA Section 99 civil exposure - uncapped per affected "
+        "subject; class action exposure scales with record count, "
+        "not revenue."
+    )
+    add_bullet(doc,
+        "Regulator escalation - the Information Regulator's Section "
+        "109(3) 'extent and number of subjects' factor pushes fines "
+        "toward statutory maxima for very large breach sizes."
+    )
+    add_bullet(doc,
+        "Forensic / IR scope - grows non-linearly above ~250K "
+        "records because the investigation must trace each affected "
+        "subject's data flows."
+    )
+
     add_body(doc,
         "Common outlier cases the disclosure is designed to surface:"
     )
     add_bullet(doc,
         "Small fintechs (e.g. R10M revenue, 500,000+ user records). "
-        "Heuristic estimates ~1,300 records; reality is 100-1000x that."
+        "Heuristic estimates ~1,300 records; reality is 100-1000x "
+        "that. Far above the 500,000-record validity ceiling for "
+        "Finance."
     )
     add_bullet(doc,
         "Health-tech aggregators (e.g. lab-result platforms, "
         "telemedicine, patient-portal SaaS). Heuristic underestimates "
-        "by 10-50x typically."
+        "by 10-50x typically; can exceed the 400,000-record "
+        "Healthcare ceiling on a small revenue footprint."
     )
     add_bullet(doc,
         "Marketing / loyalty platforms with massive customer databases "
@@ -1144,12 +1198,15 @@ def build(doc):
 
     add_body(doc,
         "FAIS appropriate-disclosure compliance: the model's record-"
-        "count assumption must be visible to the broker and client so "
-        "they can flag when the calculation does not match the "
-        "organisation's actual data holdings. Other components of the "
-        "financial impact estimate (ransomware, business interruption, "
-        "regulatory fines) are revenue-driven and are not directly "
-        "affected by record-count outliers."
+        "count assumption and validity ceiling must be visible to the "
+        "broker and client so they can flag when the calculation does "
+        "not match the organisation's actual data holdings. The other "
+        "components of the financial impact estimate (ransomware, "
+        "business interruption, regulatory fines) are revenue-driven "
+        "and are not directly affected by record-count outliers, but "
+        "regulatory exposure DOES escalate at very high breach sizes "
+        "(s109(3) extent factor), which the cat regulatory stack does "
+        "not separately model."
     )
 
     add_h2(doc, "Civil Liability Disclosure")

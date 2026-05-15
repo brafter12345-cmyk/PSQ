@@ -2461,57 +2461,69 @@ def loss_exposure_scenarios_block(d, S):
 
 
 def records_assumption_disclosure(d, S):
-    """Data Breach Model Assumption Notice - explicitly surfaces the
-    records-per-revenue heuristic used in the breach cost component and
-    the threshold above which the disclosure flags model accuracy as
-    materially affected.
+    """Cat Modelling Validity Notice (records-based) - surfaces the
+    industry-typical record assumption built into the IBM SA breach
+    anchor, and the per-industry validity ceiling above which the cat
+    modelling no longer captures realistic worst-case loss.
 
-    FAIS appropriate-disclosure compliance: the breach cost line in the
-    Loss Exposure Scenarios is driven by (estimated_records x
-    cost_per_record). When the organisation holds materially more
-    sensitive records than the industry heuristic predicts (small
-    fintechs / health-tech aggregators / marketing platforms / breach-
-    list resellers are common outliers), the breach component is
-    significantly understated and the broker should request
-    recalibration."""
+    The data-breach cost component (C1) is the residual after
+    subtracting C2 (regulatory fines) + C3 (revenue loss) + C4 (ransom)
+    + C5 (IR costs) from the IBM SA total breach anchor. The records
+    heuristic is NOT used in the calculation itself; it is presented
+    here as transparency about the assumed scale and to direct the
+    broker to request bespoke actuarial review when the organisation's
+    actual record holdings exceed the IBM regression's calibration
+    window. FAIS appropriate-disclosure compliance."""
     fin = d.get("financial_impact", {})
     sc = fin.get("scenarios", {}).get("data_breach", {})
     rad = sc.get("records_assumption_disclosure") or {}
     if not rad:
         return []
     est = int(rad.get("estimated_records", 0))
-    thresh = int(rad.get("outlier_threshold_records", 0))
+    ceiling = int(rad.get("model_validity_ceiling", 0))
     divisor = int(rad.get("records_divisor_zar", 0))
-    cpr = int(rad.get("cost_per_record_zar", 0))
+    anchor_zar = int(rad.get("model_anchor_zar", 0))
     industry = fin.get("industry") or "Other"
 
-    title = "<b>Data Breach Model Assumption Notice</b>"
+    title = "<b>Cat Modelling Validity Notice (records-based)</b>"
     body = (
-        "The data breach component of the financial impact model assumes the "
-        f"organisation holds approximately <b>{est:,} sensitive records</b>, "
-        f"based on the '{industry}' industry heuristic of roughly 1 record "
-        f"per R{divisor:,} of revenue, at a regulator-aligned cost of "
-        f"R{cpr:,} per record. This figure drives the breach component "
-        "(records x cost-per-record)."
+        "The data-breach component of the catastrophe modelling anchors "
+        "on the IBM SA Cost of a Data Breach 2025 study "
+        f"(industry-average total cost: <b>R{anchor_zar:,}</b> for the "
+        f"'{industry}' industry). IBM's regression is calibrated against "
+        "typical SA breach sizes (~25,000-100,000 records per incident). "
+        f"For context, the model implicitly assumes this organisation "
+        f"holds approximately <b>{est:,} sensitive records</b>, based on "
+        f"the industry heuristic of ~1 record per R{divisor:,} of "
+        "revenue. The breach cost component itself is computed as the "
+        "residual after subtracting regulatory fines, revenue loss, ransom "
+        "payment, and incident-response costs from the IBM anchor - the "
+        "records figure is shown for transparency, not used directly in "
+        "the calculation."
     )
-    threshold_body = (
-        f"<b>If the organisation holds materially more than {thresh:,} "
-        f"records</b> that would be considered sensitive under POPIA, GDPR, "
-        "HIPAA, PCI DSS, or other applicable regulation (any personally "
-        "identifiable, health, financial, or other regulated data), the "
-        "data breach cost component in this report is "
-        "<b>materially understated</b>. Common outliers include small "
-        "fintechs, health-tech aggregators, marketing platforms, and "
-        "breach-list resellers - entities with small revenue footprints but "
-        "record holdings 10-1000x the industry average."
+    ceiling_body = (
+        f"<b>The cat modelling is reliable up to approximately "
+        f"{ceiling:,} records</b> for this industry. Above this threshold, "
+        "the IBM-anchored cat exposure understates realistic worst-case "
+        "loss because several cost components scale super-linearly outside "
+        "the IBM calibration window: POPIA Section 22 breach-notification "
+        "costs (per-subject notice), POPIA Section 99 civil exposure "
+        "(uncapped per affected subject), regulator escalation toward "
+        "statutory maxima, and forensic / incident-response scope. If the "
+        "organisation actually holds more than the threshold above in "
+        "sensitive records under POPIA, GDPR, HIPAA, PCI DSS, or other "
+        "applicable regulation, the cat figures in this report should "
+        "be treated as a <b>FLOOR estimate only</b>."
     )
     action_body = (
-        "<i>The broker should consult the insured to verify approximate "
-        "record holdings. If actual count exceeds the threshold above, "
-        "contact Phishield for a recalibrated breach estimate. The "
-        "model's other components (ransomware, business interruption, "
-        "regulatory fines) are revenue-driven and are not directly "
-        "affected by record-count outliers.</i>"
+        "<i>Common outliers: small fintechs, health-tech aggregators, "
+        "marketing platforms, data brokers, and breach-list resellers - "
+        "entities with small revenue footprints but record holdings 10-"
+        "1000x the industry average. The broker should consult the "
+        "insured to verify approximate sensitive-record holdings. If the "
+        f"count exceeds {ceiling:,}, contact Phishield for a bespoke "
+        "actuarial review of cat exposure - this report's catastrophe "
+        "numbers are not reliable at that scale.</i>"
     )
     return [
         Spacer(1, 3 * mm),
@@ -2519,7 +2531,7 @@ def records_assumption_disclosure(d, S):
         Spacer(1, 2 * mm),
         Paragraph(body, S["body"]),
         Spacer(1, 2 * mm),
-        Paragraph(threshold_body, S["body"]),
+        Paragraph(ceiling_body, S["body"]),
         Spacer(1, 2 * mm),
         Paragraph(action_body, S["body"]),
         Spacer(1, 4 * mm),
