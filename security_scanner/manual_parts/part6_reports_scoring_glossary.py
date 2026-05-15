@@ -1270,6 +1270,68 @@ def build(doc):
             "MHSA; legal services maps to LPC + FIC; public sector "
             "maps to PFMA.",
         ),
+        (
+            "Rate Limiter (Token Bucket)",
+            "Per-apex traffic-pacing component in the scanner's HTTP "
+            "client. Maintains a token bucket per target apex domain. "
+            "Each outbound request consumes 1 token; tokens refill at "
+            "2 per second up to a burst capacity of 5. When the bucket "
+            "is empty, the requesting thread sleeps until tokens are "
+            "available. Different apexes have separate buckets so "
+            "external API calls are not bottlenecked by target probing.",
+        ),
+        (
+            "WAF / Bot-Manager Tracker",
+            "Sliding-window response monitor in the scanner's HTTP "
+            "client that flags a target apex as 'protected' when the "
+            "rate of 4xx/5xx/timeout responses or the presence of "
+            "challenge-page signatures (Cloudflare, Akamai, Imperva, "
+            "DataDome, PerimeterX, hCaptcha) crosses threshold. Drives "
+            "the Partial Coverage Notice in the PDF and HTML reports.",
+        ),
+        (
+            "Partial Coverage Notice",
+            "A disclosure block rendered in the PDF and HTML report "
+            "when the WAF tracker flags the target apex as protected "
+            "during the scan. States explicitly that absence of a "
+            "finding in affected sections does NOT confirm absence "
+            "of the underlying risk - the scanner could not verify "
+            "it because the target's defensive infrastructure "
+            "intervened. FAIS reasonable-advice compliance: without "
+            "this notice the report would produce false-negative "
+            "findings that mislead the broker and client.",
+        ),
+        (
+            "Probe Cache",
+            "Interface defined in http_client.py for caching probe "
+            "results across scans. Default implementation is "
+            "_NullProbeCache (every lookup misses). Real backing "
+            "store (SQLite probe_cache table) is deferred to the "
+            "continuous-monitoring track per gap analysis SCN-026. "
+            "Refresh rules per response status: 2xx 24h with HEAD "
+            "re-verify; 404 7d with 10% spot-check; 5xx 1h; WAF "
+            "(403/406/451) 6h; rate-limited (429/503) 30m; "
+            "timeout 1h.",
+        ),
+        (
+            "HEAD-first Discovery",
+            "Path-existence check pattern that issues a HEAD request "
+            "to determine whether a URL responds 200, only issuing a "
+            "GET when content analysis is required. Significantly "
+            "reduces bandwidth and avoids the directory-enumeration "
+            "WAF signature that bursts of GETs typically trip.",
+        ),
+        (
+            "Scanner Self-identification Page",
+            "Public page served at /scanner-info on the scanner host. "
+            "Documents the scanner operator (Phishield UMA), what the "
+            "scanner does and does not do, the typical request profile "
+            "(2 req/sec, HEAD-first), the source network, a sample WAF "
+            "whitelist rule for security teams, and a security contact "
+            "email. The URL is embedded in every scanner request's "
+            "User-Agent header so security teams investigating scanner "
+            "traffic can verify legitimacy out-of-band.",
+        ),
     ]
 
     for term, definition in _glossary:

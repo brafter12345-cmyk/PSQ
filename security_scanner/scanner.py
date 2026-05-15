@@ -9,6 +9,7 @@ from checkers_core import *
 from checkers_network import *
 from checkers_threats import *
 from scoring_analytics import *
+from http_client import HTTP, _apex_of
 
 
 # ---------------------------------------------------------------------------
@@ -110,6 +111,11 @@ class SecurityScanner:
         domain = domain.lower().strip().removeprefix("https://").removeprefix("http://").split("/")[0]
         # Fresh DNS cache for this scan — prevents cross-scan leakage and stale records.
         dns_cache.clear()
+        # Reset WAF tracker for this target apex (per-scan baseline; cache
+        # is intentionally preserved across scans for future continuous-
+        # monitoring use - per SCN-026 cache design).
+        scan_apex = _apex_of(f"https://{domain}")
+        HTTP.reset_for_scan(scan_apex)
         results = {
             "domain_scanned": domain,
             "scan_timestamp": datetime.now(timezone.utc).isoformat(),
@@ -606,6 +612,46 @@ class SecurityScanner:
             results["_scan_completeness"]["slowest_checker"] = max(
                 checker_durations.items(), key=lambda kv: kv[1])
             results["_scan_completeness"]["total_checker_seconds"] = round(sum(durations), 1)
+
+        # WAF / bot-manager intervention status for the target apex.
+        # Drives "Partial Coverage Notice" rendering in PDF + HTML when
+        # the WAFTracker observed enough blocked / throttled / timeout
+        # responses to call the target's defensive posture protected.
+        # Checkers that hit HTTP-via-the-client all contribute; the
+        # status field surfaces in the report renderers.
+        waf_apex_status = HTTP.waf_status(scan_apex)
+        results["_scan_completeness"]["waf_status"] = waf_apex_status
+        # Compute per-checker WAF flags: a checker is flagged WAF-affected
+        # if it reported "no data" outcomes while the apex shows blocked.
+        # Used by the PDF / HTML to render per-card disclaimers.
+        if waf_apex_status.get("blocked"):
+            affected = []
+            # The checkers most sensitive to WAF interference are the
+            # path-probers and tech fingerprinters. Anything that returns
+            # status "completed" with empty/zero findings AND ran during
+            # a WAF-blocked scan should carry the disclaimer.
+            for cname in ("privacy_compliance", "info_disclosure",
+                          "exposed_admin", "payment_security",
+                          "security_policy", "vpn_remote", "tech_stack",
+                          "website_security", "http_headers", "waf"):
+                cresult = cat_results.get(cname)
+                if not cresult:
+                    continue
+                # If the checker reports any findings, it got SOME data
+                # through; only flag when it appears to have struck out.
+                issues = cresult.get("issues") or []
+                if not issues:
+                    affected.append(cname)
+            results["_scan_completeness"]["waf_affected_checkers"] = affected
+            # Coverage estimate: assessable - affected / assessable
+            total = results["_scan_completeness"].get("total_checkers", 27)
+            cov = max(0, total - len(affected))
+            results["_scan_completeness"]["coverage_pct"] = (
+                round(cov / total * 100) if total else 100
+            )
+        else:
+            results["_scan_completeness"]["waf_affected_checkers"] = []
+            results["_scan_completeness"]["coverage_pct"] = 100
         results["compliance"] = scorer.compliance_summary(cat_results)
 
         # --- Phase 6: Insurance Analytics ---

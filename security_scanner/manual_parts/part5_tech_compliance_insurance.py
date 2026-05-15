@@ -1072,6 +1072,107 @@ def build(doc):
         "pharmacy / pharma / hospital_clinic)."
     )
 
+    add_h2(doc, "HTTP client architecture (rate limit, WAF detection, scanner identity)")
+
+    add_body(doc,
+        "All outbound HTTP traffic from the scanner routes through a "
+        "single chokepoint in http_client.py. This is the same pattern "
+        "used by Bitsight, SecurityScorecard, Coalition, CFC, Black Kite, "
+        "and RiskRecon - the established players in external risk rating - "
+        "and is the industry-standard way to behave passively at scale."
+    )
+
+    add_bullet(doc,
+        "Per-apex token-bucket rate limit at 2 requests/second with burst "
+        "capacity 5. A single scan can never burst more than 5 concurrent "
+        "requests at any one target apex, irrespective of how many "
+        "checkers run in parallel. Different apexes (the scan target, "
+        "Shodan, VirusTotal, etc.) each get their own bucket, so external "
+        "API calls are not bottlenecked by target probing."
+    )
+    add_bullet(doc,
+        "Identifying User-Agent on every request: "
+        "Phishield-Scanner/1.0 (+https://phishield.com/scanner-info). The "
+        "embedded URL points at a public scanner-identity page that "
+        "security teams investigating scanner traffic can use to verify "
+        "legitimacy out-of-band. This mirrors how Bitsight publishes its "
+        "scanner ranges and how SecurityScorecard documents its research "
+        "agents."
+    )
+    add_bullet(doc,
+        "HEAD-first discovery: path-existence checks use HEAD requests "
+        "rather than GET, reducing bandwidth and significantly lowering "
+        "the WAF 'directory enumeration' signature that bursts of GETs "
+        "typically trip. GET is only issued when the response body is "
+        "needed for content analysis."
+    )
+    add_bullet(doc,
+        "WAF / bot-manager detection: a sliding-window response monitor "
+        "per apex tracks the last 20 responses. The apex is flagged as "
+        "WAF-protected when any of (a) >= 40% of responses are 403/406/451, "
+        "(b) >= 25% are 429/503, (c) >= 50% are timeouts, or (d) a known "
+        "challenge-page signature (Cloudflare, Akamai, Imperva, DataDome, "
+        "PerimeterX, hCaptcha) is detected in a response body."
+    )
+    add_bullet(doc,
+        "Probe-cache interface slot: the HttpClient accepts a ProbeCache "
+        "implementation in its constructor. Default is a no-op cache "
+        "(every lookup misses). The interface contract is documented in "
+        "http_client.py and gap analysis SCN-026. When the continuous-"
+        "monitoring scheduler is built, a SQLite-backed cache slots in at "
+        "module import time with no checker code changes required. Cache "
+        "refresh rules are status-dependent: 2xx 24h, 404 7d (with 10% "
+        "spot-check), 5xx 1h, WAF 6h, rate-limited 30m, timeout 1h."
+    )
+
+    add_h2(doc, "WAF Intervention Partial Coverage Notice")
+
+    add_body(doc,
+        "When the WAF tracker flags the target apex as protected, the "
+        "scan continues but renders a Partial Coverage Notice in both "
+        "the PDF report and the HTML dashboard. The notice appears "
+        "immediately after the executive summary and again above the "
+        "Insurance Analytics section."
+    )
+
+    add_body(doc,
+        "FAIS reasonable-advice compliance: the report must not produce "
+        "false-negative findings when the scan was actively blocked. "
+        "Absence of a finding in a WAF-affected section does NOT confirm "
+        "absence of the underlying risk - it indicates the scanner could "
+        "not verify it. The notice explicitly tells the broker and client "
+        "this, with the detected pattern (challenge page / 403 / 429 / "
+        "timeouts), the approximate coverage percentage, and the affected "
+        "checker count. Without this notice the report would mislead."
+    )
+
+    add_body(doc,
+        "The notice is NOT a scanner limitation. WAF / bot-manager "
+        "intervention is a deliberate protective behaviour by the target. "
+        "Industry-leading scanners (Bitsight, SecurityScorecard, Coalition, "
+        "CFC) all report ~10-15% partial-data scans across their portfolios "
+        "and surface this explicitly rather than suppressing it. A rescan "
+        "from a different source IP, or coordination with the target's "
+        "security team via /scanner-info, may be required for complete "
+        "coverage."
+    )
+
+    add_h2(doc, "Public scanner-identity page")
+
+    add_body(doc,
+        "The Phishield Scanner exposes a public, indexable, stable URL "
+        "at /scanner-info on the scanner host. The page documents: the "
+        "scanner's operator (Phishield UMA, FSP 46418); what the scanner "
+        "does and does not do; the typical request profile (2 req/sec, "
+        "HEAD-first, no exploit attempts, no POST against targets); the "
+        "source network (Render egress); a sample WAF whitelist rule for "
+        "security teams who want to allow the scanner explicitly; and a "
+        "security contact email. The URL is embedded in every scanner "
+        "request's User-Agent header so security teams encountering "
+        "scanner traffic can verify legitimacy without contacting "
+        "Phishield first."
+    )
+
     add_h2(doc, "Per-checker Scan Duration Profile")
 
     add_body(doc,

@@ -2206,24 +2206,29 @@ class PrivacyComplianceChecker:
 
     def _find_policy_url(self, domain: str) -> tuple:
         """Find privacy policy page. Crawls homepage first (1 request),
-        then falls back to parallel probing of common paths if no link found.
+        then falls back to candidate-path probing through the shared
+        HttpClient (rate-limited + WAF-tracked).
 
-        Previous serial fallback (15s timeout x 30 candidate URLs) had a
-        ~450s worst case that dominated total scan wall time on domains
-        without a discoverable privacy link. Parallelised 2026-05-15 with
-        the same pattern as SCN-011 for InformationDisclosureChecker:
-        max_workers=8, 8s per-probe timeout, ~30s total wall ceiling.
-        First valid match short-circuits remaining futures."""
+        Refactored 2026-05-15 (SCN-025) to route through the global
+        HTTP singleton instead of direct requests calls. The rate
+        limiter caps per-apex burst rate at 2 req/sec, which means the
+        candidate-path probe phase paces itself naturally and stops
+        tripping target WAFs. WAF interventions (challenge pages,
+        consistent 403/429 patterns, timeouts) are tracked at the
+        client level and surfaced in the scan output."""
         import re as _re
+        from http_client import HTTP
 
         # --- Strategy 1: Crawl homepage for privacy links (fastest) ---
         # Try with and without www prefix
         homepage_url = f"https://{domain}"
-        try:
-            r = requests.get(homepage_url, headers={"User-Agent": USER_AGENT},
-                             timeout=12, allow_redirects=True)
-            if r.status_code == 200:
+        r = HTTP.get(homepage_url, timeout=12, allow_redirects=True)
+        if r is not None and r.status_code == 200:
+            try:
                 text = r.text.lower()
+            except Exception:
+                text = ""
+            if text:
                 # Match links by URL containing privacy keywords
                 matches = _re.findall(
                     r'href=["\']([^"\']*(?:privac|popia|data.protect|gdpr)[^"\']*)["\']', text)
@@ -2239,7 +2244,7 @@ class PrivacyComplianceChecker:
                     if not url_path.endswith(skip_exts):
                         all_matches.append(m)
                 # Resolve candidate hrefs to absolute URLs, then probe them
-                # in parallel (max 5).
+                # via the shared HTTP client (rate-limited).
                 candidate_hrefs = []
                 for href in all_matches[:5]:
                     if href.startswith("/"):
@@ -2248,15 +2253,15 @@ class PrivacyComplianceChecker:
                         href = f"https://{domain}/{href}"
                     candidate_hrefs.append(href)
                 if candidate_hrefs:
-                    hit = self._probe_urls_concurrent(candidate_hrefs, timeout=10, max_workers=5)
+                    hit = self._probe_urls_concurrent(candidate_hrefs, timeout=10, max_workers=3)
                     if hit:
                         return hit
-        except Exception:
-            pass
 
-        # --- Strategy 2: Probe common paths concurrently across both
-        # the apex and www variants. Previously serial (450s worst case);
-        # now ~30s ceiling via parallel ThreadPoolExecutor.
+        # --- Strategy 2: Probe common paths via HTTP client. The shared
+        # rate limiter paces this naturally (2 req/sec per apex by default)
+        # so we no longer need an aggressive ThreadPoolExecutor here.
+        # max_workers reduced 8 -> 3 to leave headroom for parallel
+        # checkers; the rate limiter does the real pacing work.
         domains_to_try = [domain]
         if not domain.startswith("www."):
             domains_to_try.append(f"www.{domain}")
@@ -2265,34 +2270,42 @@ class PrivacyComplianceChecker:
             for d in domains_to_try
             for path in self.POLICY_PATHS
         ]
-        hit = self._probe_urls_concurrent(candidate_urls, timeout=8, max_workers=8)
+        hit = self._probe_urls_concurrent(candidate_urls, timeout=8, max_workers=3)
         if hit:
             return hit
 
         return None, None
 
     @staticmethod
-    def _probe_urls_concurrent(urls, timeout=8, max_workers=8):
-        """Probe a list of candidate URLs concurrently. Returns the first
-        (url, text_lower) tuple that responds 200 with body > 500 bytes,
-        or None if no candidate matches.
+    def _probe_urls_concurrent(urls, timeout=8, max_workers=3):
+        """Probe a list of candidate URLs via the shared HTTP client.
 
-        Uses ThreadPoolExecutor + as_completed for first-match early-exit
-        semantics — matches the SCN-011 pattern in InformationDisclosureChecker.
-        Per-probe timeout is the requests.get timeout; the as_completed
-        wall ceiling acts as a global cap to avoid runaway accumulation."""
+        Uses HEAD-first via HTTP.discover() to reduce bandwidth and avoid
+        body-content WAF rules. Returns the first (url, text_lower) tuple
+        for a URL that responds 200 (validated with a follow-up GET for the
+        body), or None if no candidate matches. Rate limiting is handled
+        centrally by the HttpClient - this method controls only the
+        first-match short-circuit semantics."""
         if not urls:
             return None
+        from http_client import HTTP
 
         def _probe(url):
+            # HEAD-first to check existence cheaply
+            r = HTTP.discover(url, timeout=timeout, allow_redirects=True)
+            if r is None or r.status_code != 200:
+                return None
+            # Confirmed-exists; pull the body so we can grade it
+            r2 = HTTP.get(url, timeout=timeout, allow_redirects=True)
+            if r2 is None or r2.status_code != 200:
+                return None
             try:
-                r = requests.get(url, headers={"User-Agent": USER_AGENT},
-                                 timeout=timeout, allow_redirects=True)
-                if r.status_code == 200 and len(r.text) > 500:
-                    return (url, r.text.lower())
+                body = r2.text.lower()
             except Exception:
-                pass
-            return None
+                return None
+            if len(body) < 500:
+                return None
+            return (url, body)
 
         # Global wall ceiling: timeout * (urls / workers) + slack, capped
         # at 35s. Prevents pathological per-probe stalls from dragging
@@ -2581,16 +2594,23 @@ class InformationDisclosureChecker:
     ]
 
     def _probe(self, url: str) -> tuple:
-        try:
-            r = requests.get(url, timeout=6, allow_redirects=False,
-                             headers={"User-Agent": USER_AGENT})
-            if r.status_code == 200 and len(r.text) > 10:
-                # Verify it's not a custom 404 page
-                if "not found" not in r.text.lower()[:200] and "404" not in r.text[:50]:
-                    return True, r.status_code, len(r.text)
+        # Route through the shared HttpClient - rate limited per apex,
+        # tracked for WAF detection. HEAD first to confirm existence;
+        # GET only when HEAD reports 200 (saves bandwidth + reduces WAF
+        # signature for "directory enumeration" rules).
+        from http_client import HTTP
+        head = HTTP.head(url, timeout=8, allow_redirects=False)
+        if head is None or head.status_code != 200:
+            sc = head.status_code if head is not None else 0
+            return False, sc, 0
+        r = HTTP.get(url, timeout=8, allow_redirects=False)
+        if r is None or r.status_code != 200 or len(r.text) < 10:
+            sc = r.status_code if r is not None else 0
+            return False, sc, 0
+        # Verify it's not a custom 404 page
+        if "not found" in r.text.lower()[:200] or "404" in r.text[:50]:
             return False, r.status_code, 0
-        except Exception:
-            return False, 0, 0
+        return True, r.status_code, len(r.text)
 
     def check(self, domain: str) -> dict:
         result = {
@@ -2601,20 +2621,24 @@ class InformationDisclosureChecker:
             base = f"https://{domain}"
             exposed = []
 
-            # Build full probe set (critical + medium) and run in parallel.
-            # Serial 18 × 6s = up to 108s; parallelised at 6 workers ≈ 18-24s worst case.
+            # Build full probe set (critical + medium). Rate limiter
+            # paces the actual request flow; the ThreadPoolExecutor's
+            # max_workers is reduced 6 -> 3 so we don't queue too many
+            # waiting probes against the shared per-apex bucket.
             probes = (
                 [(p, d, "critical", 20) for p, d in self.CRITICAL_PATHS] +
                 [(p, d, "medium", 10) for p, d in self.MEDIUM_PATHS]
             )
 
-            with ThreadPoolExecutor(max_workers=6) as ex:
+            with ThreadPoolExecutor(max_workers=3) as ex:
                 futures = {
                     ex.submit(self._probe, f"{base}{path}"): (path, desc, risk, penalty)
                     for path, desc, risk, penalty in probes
                 }
                 try:
-                    for fut in as_completed(futures, timeout=30):
+                    # Wall ceiling widened 30s -> 60s to give the rate
+                    # limiter room to pace 18 HEAD+GET probes at 2/sec.
+                    for fut in as_completed(futures, timeout=60):
                         path, desc, risk, penalty = futures[fut]
                         try:
                             found, status, size = fut.result(timeout=2)
@@ -2638,24 +2662,23 @@ class InformationDisclosureChecker:
                 except FuturesTimeoutError:
                     # Treat unfinished probes as negative — scan must not stall.
                     result["issues"].append(
-                        "Info disclosure probe batch hit 30s wall-clock — remaining paths skipped"
+                        "Info disclosure probe batch hit 60s wall-clock — remaining paths skipped"
                     )
 
             # Directory listing probe (separate — checks root HTML, not path)
-            try:
-                r = requests.get(f"{base}/", timeout=6,
-                                 headers={"User-Agent": USER_AGENT})
-                if "Index of /" in r.text or "<title>Index of" in r.text:
-                    exposed.append({
-                        "path": "/", "description": "Directory listing enabled",
-                        "risk_level": "medium", "size": 0,
-                    })
-                    result["score"] = max(0, result["score"] - 15)
-                    result["issues"].append(
-                        "Directory listing is enabled on the web root"
-                    )
-            except Exception:
-                pass
+            from http_client import HTTP
+            r = HTTP.get(f"{base}/", timeout=8)
+            if r is not None and (
+                "Index of /" in r.text or "<title>Index of" in r.text
+            ):
+                exposed.append({
+                    "path": "/", "description": "Directory listing enabled",
+                    "risk_level": "medium", "size": 0,
+                })
+                result["score"] = max(0, result["score"] - 15)
+                result["issues"].append(
+                    "Directory listing is enabled on the web root"
+                )
 
             # Keep deterministic order for display (criticals first)
             result["exposed_paths"] = sorted(

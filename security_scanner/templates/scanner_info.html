@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Phishield Scanner — Public Scanner Info</title>
+  <meta name="robots" content="index, follow">
+  <meta name="description" content="Phishield UMA cyber risk scanner identity, request profile, and verification details for security teams investigating scanner traffic.">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 820px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #0f172a; }
+    h1 { color: #0f2744; border-bottom: 2px solid #1d4ed8; padding-bottom: 8px; margin-top: 0; }
+    h2 { color: #0f2744; margin-top: 32px; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; }
+    code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: .9em; }
+    pre { background: #f1f5f9; padding: 12px 14px; border-radius: 6px; overflow-x: auto; font-size: .85em; }
+    .meta { color: #64748b; font-size: .9em; }
+    .card { background: #f8fafc; border-left: 4px solid #1d4ed8; padding: 12px 16px; margin: 16px 0; border-radius: 4px; }
+    table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: .92em; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e2e8f0; }
+    th { background: #f1f5f9; }
+  </style>
+</head>
+<body>
+
+<h1>Phishield Scanner — Public Identity</h1>
+
+<p class="meta">For security teams investigating traffic from this scanner. This page is intentionally public, indexable, and stable — bookmark or share it with WAF / SIEM teams who encounter requests with the User-Agent <code>Phishield-Scanner/1.0</code>.</p>
+
+<h2>What this scanner does</h2>
+
+<p>The Phishield Scanner performs <strong>passive, read-only external assessment</strong> of publicly accessible infrastructure for the purpose of cyber insurance underwriting and risk reporting. It is operated by <strong>Phishield UMA (Pty) Ltd</strong>, an Authorised Financial Services Provider (FSP&nbsp;46418), as part of a managed cyber cover product.</p>
+
+<ul>
+  <li>Only publicly accessible endpoints are probed (no authenticated traffic, no credentials submitted)</li>
+  <li>No exploit attempts; no payload submission; no fuzzing</li>
+  <li>HTTP traffic is HEAD-first for path-existence checks; GET only when content is required for analysis</li>
+  <li>No POST requests against the scanned target (POST is reserved for our own API ingress on this service)</li>
+  <li>Every request announces itself via the User-Agent below</li>
+</ul>
+
+<h2>Request profile</h2>
+
+<table>
+  <tr><th>Setting</th><th>Value</th></tr>
+  <tr><td>User-Agent</td><td><code>Phishield-Scanner/1.0 (+https://phishield.com/scanner-info)</code></td></tr>
+  <tr><td>Steady-state request rate</td><td>Approximately 2 requests / second per target apex</td></tr>
+  <tr><td>Burst capacity</td><td>5 concurrent in-flight requests (token-bucket model)</td></tr>
+  <tr><td>Typical full-scan duration</td><td>8 - 12 minutes per target domain</td></tr>
+  <tr><td>Typical total requests per scan</td><td>100 - 200 (HEAD-first; GET only on path hits)</td></tr>
+  <tr><td>Source network</td><td>Render.com hosted infrastructure (dynamic egress IP on free tier; static range on paid plans)</td></tr>
+</table>
+
+<h2>What the scanner accesses</h2>
+
+<ul>
+  <li>DNS records: A, AAAA, MX, TXT, NS, CAA, SPF, DMARC, DKIM (read-only)</li>
+  <li>TLS / SSL certificate chain via sslyze (no handshake mutation)</li>
+  <li>HTTP response headers and homepage HTML (read-only)</li>
+  <li>Probes for standard well-known paths: <code>/.well-known/security.txt</code>, <code>/robots.txt</code>, <code>/sitemap.xml</code>, <code>/privacy</code>, etc.</li>
+  <li>Probes for sensitive-file exposure patterns: <code>/.env</code>, <code>/.git/config</code>, <code>/wp-config.php.bak</code>, etc. — used to grade security hygiene, not to exfiltrate</li>
+  <li>Subdomain enumeration via certificate transparency logs (no traffic to the target)</li>
+  <li>External data sources (Shodan, HIBP, VirusTotal, etc.) — these calls do NOT touch the target</li>
+</ul>
+
+<h2>WAF / Bot-Manager handling</h2>
+
+<div class="card">
+  <p>If the scanner detects WAF / bot-manager intervention (challenge pages, 403 / 429 / 503 response patterns, consistent timeouts), the affected sections of the report are explicitly flagged as <strong>partial coverage</strong>. The scanner does NOT attempt to evade WAF rules.</p>
+</div>
+
+<h2>How to verify a request is from this scanner</h2>
+
+<ol>
+  <li>Check the request's User-Agent header — legitimate scanner traffic always includes <code>Phishield-Scanner/1.0 (+https://phishield.com/scanner-info)</code>.</li>
+  <li>Visit the URL embedded in the User-Agent (this page). If you reached it, the scanner identity is verified.</li>
+  <li>Check that the source IP is within Render.com's public egress range. (Render documents these at <a href="https://render.com/docs/static-outbound-ip-addresses">render.com/docs/static-outbound-ip-addresses</a>.)</li>
+  <li>For doubt or escalation, contact the email below — we will confirm whether a specific scan timestamp corresponds to a paid Phishield assessment of your organisation.</li>
+</ol>
+
+<h2>Allowing the scanner past your WAF</h2>
+
+<p>This is optional. The scanner is designed to operate gracefully under WAF intervention — affected sections are flagged in the report, not faked. However, if your security team chooses to verify and allow the scanner explicitly, the safest rule is:</p>
+
+<pre>Allow requests where:
+  User-Agent matches "^Phishield-Scanner/" AND
+  Source IP is within Render.com's documented egress range
+Rate limit:
+  Cap at 5 requests / second / scanner identity</pre>
+
+<p>Do NOT whitelist by User-Agent alone — User-Agents are forgeable. Always pair with source IP.</p>
+
+<h2>Stopping the scanner</h2>
+
+<p>If your organisation does not consent to being scanned, contact the email below with the affected domain. The scanner respects opt-out requests from the registered owner of the target domain within 24 hours.</p>
+
+<h2>Contact</h2>
+
+<table>
+  <tr><td>Operator</td><td>Phishield UMA (Pty) Ltd</td></tr>
+  <tr><td>Authority</td><td>Authorised Financial Services Provider, FSP 46418</td></tr>
+  <tr><td>Security contact</td><td><code>security@phishield.com</code></td></tr>
+  <tr><td>General contact</td><td><code>info@phishield.com</code></td></tr>
+  <tr><td>Web</td><td><a href="https://phishield.com/">phishield.com</a></td></tr>
+</table>
+
+<p class="meta" style="margin-top:40px;border-top:1px solid #cbd5e1;padding-top:12px;">Page last updated 2026-05-15. The request profile and contact details on this page are authoritative.</p>
+
+</body>
+</html>

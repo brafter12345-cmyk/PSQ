@@ -592,6 +592,17 @@ def index():
     return render_template("index.html")
 
 
+@app.route("/scanner-info", methods=["GET"])
+def scanner_info():
+    """Public scanner-identity page for security teams investigating
+    scanner traffic. Mirrors the URL embedded in the scanner's
+    User-Agent header so anyone investigating suspicious requests can
+    verify out-of-band. Indexable / cacheable / stable - see
+    templates/scanner_info.html. Same pattern used by Bitsight,
+    SecurityScorecard, etc."""
+    return render_template("scanner_info.html")
+
+
 @app.route("/api/preflight", methods=["POST"])
 def preflight():
     """Run flag auto-detection BEFORE the full scan starts so the broker

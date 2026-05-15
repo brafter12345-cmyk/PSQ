@@ -2497,6 +2497,80 @@ def civil_liability_disclosure(S):
     ]
 
 
+def waf_coverage_notice(results, S):
+    """Top-level Partial Coverage Notice rendered when the WAFTracker
+    flagged the target apex as protected during the scan. Appears
+    immediately after the executive summary and again above the
+    Insurance Analytics section.
+
+    The notice is FAIS-compliance critical: it explicitly tells the
+    broker / client that the report's "no findings" entries in
+    affected sections do NOT confirm absence of risk - the scanner
+    could not verify them because the target's defensive infrastructure
+    intervened. Without this notice the report would mislead."""
+    sc = results.get("_scan_completeness", {})
+    waf = sc.get("waf_status", {})
+    if not waf or not waf.get("blocked"):
+        return []
+    affected = sc.get("waf_affected_checkers") or []
+    coverage = sc.get("coverage_pct", 100)
+    kind = waf.get("kind", "waf_blocked")
+    kind_label = {
+        "waf_challenge": "Challenge page (Cloudflare / Akamai / Imperva / similar)",
+        "waf_blocked": "Active blocking (403 / 406 / 451 responses)",
+        "waf_rate_limited": "Rate-limit responses (429 / 503)",
+        "waf_timeout": "Connection timeouts on probe traffic",
+    }.get(kind, "WAF intervention")
+
+    body = (
+        "<b>Partial Coverage Notice.</b> The target domain's protective "
+        f"infrastructure intervened during this scan. Detected pattern: "
+        f"<b>{kind_label}</b> ({waf.get('evidence', '')}). "
+        f"Of the assessable checkers, approximately <b>{coverage}%</b> "
+        f"returned data; {len(affected)} checker(s) were affected. "
+        "Findings in affected sections below carry a per-card disclaimer. "
+        "Absence of a finding in those sections does NOT confirm absence "
+        "of the underlying risk - it indicates the scanner could not "
+        "verify it. Coverage of this scan is therefore <b>partial</b>; "
+        "this is a property of the target's defensive posture, not a "
+        "scanner limitation. A rescan from a different source IP, or "
+        "coordination with the target's security team, may be required "
+        "for complete coverage."
+    )
+    return [
+        Spacer(1, 3 * mm),
+        Paragraph("<b>WAF / Bot-Manager Intervention Detected</b>", S["cat_title"]),
+        Spacer(1, 2 * mm),
+        Paragraph(body, S["body"]),
+        Spacer(1, 4 * mm),
+    ]
+
+
+def waf_card_disclaimer(checker_name, results, S):
+    """Per-card disclaimer block rendered ABOVE a checker card when that
+    specific checker is in _scan_completeness.waf_affected_checkers.
+
+    Returns empty list when the checker is not WAF-affected, so callers
+    can unconditionally extend their flowables with the return value."""
+    sc = results.get("_scan_completeness", {})
+    affected = sc.get("waf_affected_checkers") or []
+    if checker_name not in affected:
+        return []
+    waf = sc.get("waf_status", {}) or {}
+    body = (
+        "<i><b>WAF intervention.</b> The target's protective infrastructure "
+        f"intervened during the {checker_name} checker run ({waf.get('evidence', '')}). "
+        "Findings in this card may be incomplete; an absence of a finding "
+        "here does not confirm absence of the underlying risk. See the "
+        "top-level Partial Coverage Notice for details.</i>"
+    )
+    return [
+        Spacer(1, 1.5 * mm),
+        Paragraph(body, S["body_muted"]),
+        Spacer(1, 1 * mm),
+    ]
+
+
 def flag_audit_panel(d, S):
     """Regulatory flag audit panel - shows broker_input vs auto_detected
     side-by-side for every flag, with evidence. FAIS audit trail.
@@ -3378,6 +3452,10 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
             story += civil_liability_disclosure(S)
             # Regulatory flag audit panel - FAIS audit trail.
             story += flag_audit_panel(ins_data, S)
+            # WAF / Bot-Manager Intervention Notice - rendered here on
+            # summary so partial-coverage caveat sits next to the loss
+            # numbers. Empty list when no intervention detected.
+            story += waf_coverage_notice(results, S)
 
         # ── Why This Matters — The Reality of a Cyber Breach ──────────────
         why_banner = _section_header_banner("WHY THIS MATTERS", S)
@@ -3554,6 +3632,12 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
 
     else:
         # ── Full report — all sections included ─────────────────────────────
+
+        # ── WAF / Bot-Manager Intervention Notice (top-level) ──────────────
+        # Surfaces here so any broker / client reading the full report
+        # encounters the partial-coverage notice BEFORE reading individual
+        # findings. Returns empty list when no WAF intervention detected.
+        story += waf_coverage_notice(results, S)
 
         # ── Insurance Analytics ─────────────────────────────────────────────
         if results.get("insurance"):

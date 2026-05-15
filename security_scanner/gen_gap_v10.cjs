@@ -130,6 +130,18 @@ const changeLogRows = [
     "PrivacyComplianceChecker.\\_find\\_policy\\_url parallelised. Strategy 2 (the common-paths fallback) previously probed 30 candidate URLs (2 domain variants x 15 paths) sequentially at 15s timeout each, giving a 450s worst case. Rewritten to use a ThreadPoolExecutor(max\\_workers=8) with first-match short-circuit and an 8s per-probe timeout. Strategy 1 (homepage anchor scrape) similarly parallelised for up to 5 candidate hrefs at 10s each. New \\_probe\\_urls\\_concurrent helper centralises the pattern.",
     "Phase D timing instrumentation (SCN-020) on the 2026-05-15 phishield.com test scan exposed privacy\\_compliance as the actual slow checker holding a worker thread for 472 seconds (~7.9 minutes). This was the real bottleneck behind the user-reported 'glasswing running for 4-6 min' UI artifact (SCN-021). Smoke test 2026-05-15 post-fix: same checker on same domain returns in 44 seconds (10.7x speedup). Same parallelisation pattern as v9 SCN-011 for InformationDisclosureChecker.",
     "Done 2026-05-15"
+  ],
+  [
+    "2026-05-15", "SCN-025",
+    "Centralised HTTP client with per-apex rate limiting, WAF detection, identifying User-Agent, and probe-cache interface slot. New http\\_client.py module exposes a singleton HTTP instance used by burst-mode path-probers (privacy\\_compliance, info\\_disclosure, exposed\\_admin). Rate limiter: token bucket at 2 req/sec per apex with burst 5. WAF tracker: sliding-window response monitor flagging waf\\_blocked (>=40% 403/406/451), waf\\_rate\\_limited (>=25% 429/503), waf\\_timeout (>=50% timeouts), waf\\_challenge (Cloudflare / Akamai / Imperva / DataDome / hCaptcha / PerimeterX signatures). User-Agent: Phishield-Scanner/1.0 (+https://phishield.com/scanner-info) - matches industry-standard self-identification (Bitsight, SecurityScorecard, Coalition, CFC, Black Kite, RiskRecon pattern). New /scanner-info public route serves security-team verification page describing scanner identity, request profile, and contact details.",
+    "User-reported 2026-05-15: aggressive parallelisation (introduced in SCN-024) materially increased WAF trigger rates on phishield.com. Browser access to the user's own site timed out for 24-48h after a scan due to defensive challenge-mode escalation. Root cause: SCN-024 burst pattern (30 concurrent path probes within ~30s from a single source IP) trips burst-rate WAF rules even when sustained-rate rules would be lenient. Industry-passive-scanner pattern (1-3 req/sec, identifying UA, transparent IP ranges) avoids this. Per-card and top-level Partial Coverage Notices added to PDF + HTML when WAF intervention detected - replacing previously misleading 'no findings' results with explicit 'scanner could not verify' disclosure. FAIS reasonable-advice compliance: the report must not produce false-negative findings when the scan was actively blocked.",
+    "Done 2026-05-15"
+  ],
+  [
+    "2026-05-15", "SCN-026",
+    "Probe-cache interface slot defined in http\\_client.HttpClient. Implementation deferred to the continuous-monitoring track; default \\_NullProbeCache makes every lookup miss. Interface contract documented (lookup / store / invalidate) plus refresh rules per response status (2xx: 24h TTL with HEAD re-verify; 404: 7d TTL with 10% spot-check; 5xx: 1h TTL; 403/451/406: 6h TTL; 429/503: 30m TTL; timeout: 1h TTL). Invalidation triggers: TTL expiry, /api/scan?force\\_refresh=true broker override, target primary-IP-or-ASN change. Storage planned: scans.db probe\\_cache(domain, url, status\\_code, response\\_headers, response\\_body\\_hash, last\\_probed\\_at, expires\\_at) indexed by (domain, url).",
+    "Continuous-monitoring scheduler (Speed track #3 / #4 'tiered scan modes / cache-aware rescans') requires this cache to be economically viable. Hourly or daily rescans of the same domain without a probe cache would burn through external API budgets and trip WAFs everywhere. Interface ships now in HttpClient so checkers route through the cache lookup automatically; only the backing store implementation is deferred. When the scheduler lands, swap \\_NullProbeCache for a SQLite-backed implementation at module import time - no checker code changes required.",
+    "Deferred to continuous-monitoring track"
   ]
 ];
 
@@ -156,7 +168,10 @@ const rmRows = [
   ["Speed #3", "Tiered scan modes", "Open", "Requires continuous monitoring scheduler."],
   ["Speed #4", "Cache-aware rescans", "Open", "Requires continuous monitoring scheduler."],
   ["Speed #8", "sslyze lazy mode", "Open", "Requires continuous monitoring scheduler."],
-  ["Diag-1", "Per-checker wall-time instrumentation + glasswing UI fix", "Done (SCN-020, SCN-021, 2026-05-15)", "Per-checker wall-clock timing recorded in _scan_completeness.per_checker_seconds. Scan Duration Profile section in full PDF. Glasswing UI artifact fix: 'running' status emitted at execution start, not at submission."]
+  ["Diag-1", "Per-checker wall-time instrumentation + glasswing UI fix", "Done (SCN-020, SCN-021, 2026-05-15)", "Per-checker wall-clock timing recorded in _scan_completeness.per_checker_seconds. Scan Duration Profile section in full PDF. Glasswing UI artifact fix: 'running' status emitted at execution start, not at submission."],
+  ["WAF-1", "Centralised HTTP client + rate limiter + WAF detection + scanner-info page", "Done (SCN-025, 2026-05-15)", "Single chokepoint for outbound HTTP. 2 req/sec per apex; identifying User-Agent linking to /scanner-info; per-card and top-level Partial Coverage Notices when WAF intervention detected."],
+  ["WAF-2", "Probe-cache interface slot (continuous-monitoring extension point)", "Done interface; impl deferred (SCN-026)", "ProbeCache protocol + _NullProbeCache default ship now in http_client.py. Backing store (SQLite probe_cache table) lands with the continuous-monitoring scheduler."],
+  ["Cont-1", "Continuous monitoring scheduler", "Open", "Hourly / daily rescan capability. Requires SCN-026 cache implementation + per-tenant scheduler + delta-finding detection + alert-on-change pipeline. Estimated 3-4 week build."]
 ];
 
 // --- Sector framework cat-stack mapping ---

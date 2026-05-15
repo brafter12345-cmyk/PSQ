@@ -1001,32 +1001,43 @@ class ExposedAdminChecker:
 
         exposed = []
 
+        from http_client import HTTP
+
         def probe(path, risk):
-            try:
-                r = requests.get(
-                    f"https://{domain}{path}", timeout=4,
-                    allow_redirects=False, headers={"User-Agent": USER_AGENT}
-                )
-                # 200 = exposed, 401/403 = exists but auth required (still noteworthy for critical)
-                if r.status_code == 200 or (risk == "critical" and r.status_code in [401, 403]):
-                    return {"path": path, "status": r.status_code, "risk": risk}
-            except Exception:
-                pass
+            # HEAD-first via HTTP.discover - reduces bandwidth and WAF
+            # signature (the previous burst of 38 GETs at 15 workers was
+            # textbook directory-enumeration pattern).
+            r = HTTP.discover(f"https://{domain}{path}", timeout=6,
+                              allow_redirects=False)
+            if r is None:
+                return None
+            # 200 = exposed, 401/403 = exists but auth required (still
+            # noteworthy for critical findings)
+            if r.status_code == 200 or (risk == "critical" and r.status_code in [401, 403]):
+                return {"path": path, "status": r.status_code, "risk": risk}
             return None
 
         all_paths = [(p, "critical") for p in self.PATHS["critical"]] + \
                     [(p, "high") for p in self.PATHS["high"]] + \
                     [(p, "medium") for p in self.PATHS["medium"]]
 
-        with ThreadPoolExecutor(max_workers=15) as ex:
+        # max_workers reduced 15 -> 3 (SCN-025). Rate limiter does the
+        # real pacing now (2 req/sec per apex); a higher worker count
+        # would just queue futures waiting for tokens, with no benefit.
+        # Wall ceiling widened 25s -> 90s to leave room for the rate
+        # limiter to pace ~38 probes at 2/sec (~19s minimum).
+        with ThreadPoolExecutor(max_workers=3) as ex:
             futures = {ex.submit(probe, path, risk): (path, risk) for path, risk in all_paths}
-            for f in as_completed(futures, timeout=25):
-                try:
-                    r = f.result()
-                    if r:
-                        exposed.append(r)
-                except Exception:
-                    pass
+            try:
+                for f in as_completed(futures, timeout=90):
+                    try:
+                        r = f.result()
+                        if r:
+                            exposed.append(r)
+                    except Exception:
+                        pass
+            except FuturesTimeoutError:
+                pass
 
         result["exposed"] = sorted(exposed, key=lambda x: ["critical", "high", "medium"].index(x["risk"]))
         result["critical_count"] = sum(1 for e in exposed if e["risk"] == "critical")
