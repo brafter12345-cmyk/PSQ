@@ -387,6 +387,36 @@ def init_db():
         )""")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_complaints_client ON complaints(client_id)")
 
+        # Benchmark scans pool (SCN-028) - feeds peer-rating percentile
+        # calculations in peer_benchmarking.py. Three source classes:
+        #   'benchmark_pool'    - bi-weekly public-domain scans curated
+        #                         by us (no consent needed)
+        #   'lower_tier_upsell' - scans of Phishield's existing lower-
+        #                         tier clients (~4,000 entities); no
+        #                         broker intermediating, Phishield owns
+        #                         the client relationship
+        #   'client_optin'      - broker-paid scans contributed with
+        #                         explicit consent (default opt-out)
+        conn.execute("""CREATE TABLE IF NOT EXISTS benchmark_scans (
+            id TEXT PRIMARY KEY,
+            domain TEXT NOT NULL,
+            industry TEXT,
+            sub_industry TEXT,
+            annual_revenue_zar INTEGER,
+            revenue_band TEXT,
+            risk_score INTEGER,
+            critical_findings INTEGER,
+            rsi_score REAL,
+            ssl_grade TEXT,
+            scan_timestamp TEXT NOT NULL,
+            source TEXT NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            scan_results_json TEXT
+        )""")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_bench_industry ON benchmark_scans(industry, sub_industry, revenue_band)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_bench_active ON benchmark_scans(is_active)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_bench_source ON benchmark_scans(source)")
+
         conn.commit()
 
 
@@ -530,6 +560,35 @@ def run_scan(scan_id: str, domain: str, industry: str = "other",
                 include_fraudulent_domains=include_fraudulent_domains,
                 client_ips=client_ips,
             )
+
+            # Post-scan: scan_context (peer rating needs sub_industry +
+            # annual_revenue_zar) + critical findings count + peer rating
+            # vs the benchmark pool (SCN-028).
+            try:
+                from peer_benchmarking import (
+                    count_critical_findings, compute_peer_rating, revenue_band,
+                )
+                # Ensure scan_context carries the fields peer_benchmarking
+                # expects (scanner.scan() does not include sub_industry or
+                # annual_revenue_zar by default)
+                results.setdefault("scan_context", {})
+                results["scan_context"]["sub_industry"] = sub_industry
+                results["scan_context"]["annual_revenue_zar"] = annual_revenue_zar
+                # Critical findings count - hero metric replacing compliance %
+                crit = count_critical_findings(results)
+                results.setdefault("insurance", {})["critical_findings"] = crit
+                # Peer rating - opens a fresh DB connection so the
+                # rating compute can read the benchmark pool
+                with get_db() as bench_conn:
+                    peer = compute_peer_rating(results, bench_conn)
+                results["insurance"]["peer_benchmarking"] = peer
+            except Exception as _peer_err:
+                # Peer rating is non-fatal - scan must complete even if
+                # the benchmark pool is unreachable or thin
+                results.setdefault("insurance", {})["peer_benchmarking"] = {
+                    "status": "error", "error": str(_peer_err)[:200],
+                }
+
             update_scan(scan_id, results)
 
             # Archive PDF: scans/<domain>/<year>/<month>/<day>_<scan_id>.pdf

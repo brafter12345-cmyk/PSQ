@@ -1333,6 +1333,53 @@ def build(doc):
             "traffic can verify legitimacy out-of-band.",
         ),
         (
+            "Peer Rating (1.0-10.0)",
+            "A comparative score derived from the percentile rank of "
+            "the assessed organisation's (inverted) risk score against "
+            "the peer benchmark pool. Higher rating = better security "
+            "posture relative to peers. Purely comparative; the existing "
+            "0-1000 risk score remains the absolute measure that drives "
+            "the remediation roadmap. Formula: 1.0 + 9.0 * (percentile "
+            "/ 100). The rating is intentionally allowed to take decimal "
+            "values for granularity (e.g. 7.3 / 10).",
+        ),
+        (
+            "Peer Benchmark Pool",
+            "A database of benchmark scans (benchmark_scans table in "
+            "scans.db) used to compute peer-rating percentiles. Three "
+            "source classes: 'benchmark_pool' (public-domain reference "
+            "scans curated by Phishield, refreshed bi-weekly), "
+            "'lower_tier_upsell' (Phishield's existing lower-tier "
+            "client cohort scanned for premier-tier upsell, no broker "
+            "intermediating), 'client_optin' (broker-paid scans "
+            "contributed with explicit consent). Pool composition is "
+            "disclosed in every report so brokers can weight the "
+            "comparison.",
+        ),
+        (
+            "Peer Cell Fallback",
+            "When the most-specific (industry, sub_industry, "
+            "revenue_band) cell has fewer than 5 peer scans, the "
+            "lookup widens progressively: drop revenue band, then "
+            "drop sub_industry, then drop revenue band again, then "
+            "fall back to the global pool. The cell actually used is "
+            "disclosed in the report so brokers know how specific the "
+            "peer comparison is.",
+        ),
+        (
+            "Critical Findings (cross-checker count)",
+            "Hero-strip metric counting CRITICAL-severity issues "
+            "across all checkers: shodan_vulns (critical CVEs + KEV-"
+            "listed), exposed_admin (critical-classified paths), "
+            "high_risk_protocols (critical ports), info_disclosure "
+            "(critical-classified files), ssl (F-grade or expired "
+            "certificate), dehashed (plaintext passwords leaked), "
+            "hudson_rock (active infostealer hits), external_ips "
+            "(zero-scored per-IP risk). Replaces the previously-"
+            "considered compliance % which could not be reliably "
+            "determined from external scans alone.",
+        ),
+        (
             "Insurance Sub-type Classifier",
             "A keyword classifier in flag_inference.py that distinguishes "
             "Underwriting Management Agents (UMAs), reinsurers, "

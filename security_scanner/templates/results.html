@@ -444,6 +444,95 @@
     </div>
   </div>
 
+  {# =================== PEER BENCHMARKING ====================== #}
+  {% set pb = results.insurance.peer_benchmarking if results.insurance is defined and results.insurance.peer_benchmarking is defined else {} %}
+  {% if pb.status == 'ok' %}
+  <div class="section-label">&#128202; Peer Benchmarking</div>
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:18px;">
+    <div style="font-size:.85rem;color:var(--text);margin-bottom:8px;">
+      Percentile rank against <strong>{{ pb.n_peers }}</strong> peer benchmark scans matching <strong>{{ pb.industry | default('Other') }}{% if pb.sub_industry %} / {{ pb.sub_industry }}{% endif %}{% if pb.revenue_band_display %} / {{ pb.revenue_band_display }}{% endif %}</strong>. Higher peer rating = better security posture relative to peers.
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:12px 0;">
+      <div style="background:var(--surface2);border-radius:8px;padding:12px;text-align:center;">
+        <div style="font-size:.72rem;color:var(--muted);text-transform:uppercase;font-weight:600;">Risk Score</div>
+        <div style="font-size:1.5rem;font-weight:800;color:{% if pb.own_risk_score < 250 %}var(--critical){% elif pb.own_risk_score < 500 %}#dc2626{% elif pb.own_risk_score < 750 %}#d97706{% else %}var(--low){% endif %};margin-top:4px;">{{ pb.own_risk_score }}<span style="font-size:.7rem;color:var(--muted);"> / 1000</span></div>
+        <div style="font-size:.65rem;color:var(--muted);margin-top:2px;">Lower is worse</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:12px;text-align:center;">
+        <div style="font-size:.72rem;color:var(--muted);text-transform:uppercase;font-weight:600;">Peer Rating</div>
+        <div style="font-size:1.5rem;font-weight:800;color:{% if pb.peer_rating >= 7.5 %}var(--low){% elif pb.peer_rating >= 5 %}#d97706{% else %}var(--critical){% endif %};margin-top:4px;">{{ '%.1f' | format(pb.peer_rating) }}<span style="font-size:.7rem;color:var(--muted);"> / 10</span></div>
+        <div style="font-size:.65rem;color:var(--muted);margin-top:2px;">Higher is better</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:12px;text-align:center;">
+        <div style="font-size:.72rem;color:var(--muted);text-transform:uppercase;font-weight:600;">Critical Findings</div>
+        <div style="font-size:1.5rem;font-weight:800;color:{% if pb.own_critical_findings == 0 %}var(--low){% elif pb.own_critical_findings <= 3 %}#d97706{% else %}var(--critical){% endif %};margin-top:4px;">{{ pb.own_critical_findings }}</div>
+        <div style="font-size:.65rem;color:var(--muted);margin-top:2px;">Cross-checker total</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:12px;text-align:center;">
+        <div style="font-size:.72rem;color:var(--muted);text-transform:uppercase;font-weight:600;">Percentile</div>
+        <div style="font-size:1.5rem;font-weight:800;color:{% if pb.percentile >= 75 %}var(--low){% elif pb.percentile >= 50 %}#d97706{% else %}var(--critical){% endif %};margin-top:4px;">{{ pb.percentile }}%</div>
+        <div style="font-size:.65rem;color:var(--muted);margin-top:2px;">{{ pb.interpretation }}</div>
+      </div>
+    </div>
+    {% set agg = pb.peer_aggregates if pb.peer_aggregates is defined else {} %}
+    {% set own_rsi = (results.insurance.rsi.rsi_score if results.insurance.rsi is defined else 0) %}
+    {% set own_ssl = (results.categories.ssl.grade if results.categories is defined and results.categories.ssl is defined else '?') %}
+    <table style="width:100%;border-collapse:collapse;font-size:.8rem;margin-top:6px;">
+      <thead>
+        <tr style="background:rgba(29,78,216,0.15);">
+          <th style="text-align:left;padding:8px 10px;font-weight:600;">Metric</th>
+          <th style="text-align:center;padding:8px 10px;font-weight:600;">This Scan</th>
+          <th style="text-align:center;padding:8px 10px;font-weight:600;">Peer P25</th>
+          <th style="text-align:center;padding:8px 10px;font-weight:600;">Peer P50</th>
+          <th style="text-align:center;padding:8px 10px;font-weight:600;">Peer P75</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="border-top:1px solid rgba(255,255,255,0.06);">
+          <td style="padding:8px 10px;">Risk Score (lower = worse)</td>
+          <td style="text-align:center;padding:8px 10px;color:var(--text);font-weight:600;">{{ pb.own_risk_score }}</td>
+          <td style="text-align:center;padding:8px 10px;color:var(--muted);">{{ agg.risk_score.p25 if agg.risk_score is defined else 'n/a' }}</td>
+          <td style="text-align:center;padding:8px 10px;color:var(--muted);">{{ agg.risk_score.p50 if agg.risk_score is defined else 'n/a' }}</td>
+          <td style="text-align:center;padding:8px 10px;color:var(--muted);">{{ agg.risk_score.p75 if agg.risk_score is defined else 'n/a' }}</td>
+        </tr>
+        <tr style="border-top:1px solid rgba(255,255,255,0.06);">
+          <td style="padding:8px 10px;">Critical Findings (count)</td>
+          <td style="text-align:center;padding:8px 10px;color:var(--text);font-weight:600;">{{ pb.own_critical_findings }}</td>
+          <td style="text-align:center;padding:8px 10px;color:var(--muted);">{{ agg.critical_findings.p25 if agg.critical_findings is defined else 'n/a' }}</td>
+          <td style="text-align:center;padding:8px 10px;color:var(--muted);">{{ agg.critical_findings.p50 if agg.critical_findings is defined else 'n/a' }}</td>
+          <td style="text-align:center;padding:8px 10px;color:var(--muted);">{{ agg.critical_findings.p75 if agg.critical_findings is defined else 'n/a' }}</td>
+        </tr>
+        <tr style="border-top:1px solid rgba(255,255,255,0.06);">
+          <td style="padding:8px 10px;">RSI Score (higher = worse)</td>
+          <td style="text-align:center;padding:8px 10px;color:var(--text);font-weight:600;">{{ '%.2f' | format(own_rsi) }}</td>
+          <td style="text-align:center;padding:8px 10px;color:var(--muted);">{{ '%.2f' | format(agg.rsi_score.p25) if agg.rsi_score is defined and agg.rsi_score.p25 is not none else 'n/a' }}</td>
+          <td style="text-align:center;padding:8px 10px;color:var(--muted);">{{ '%.2f' | format(agg.rsi_score.p50) if agg.rsi_score is defined and agg.rsi_score.p50 is not none else 'n/a' }}</td>
+          <td style="text-align:center;padding:8px 10px;color:var(--muted);">{{ '%.2f' | format(agg.rsi_score.p75) if agg.rsi_score is defined and agg.rsi_score.p75 is not none else 'n/a' }}</td>
+        </tr>
+        <tr style="border-top:1px solid rgba(255,255,255,0.06);">
+          <td style="padding:8px 10px;">SSL Grade</td>
+          <td style="text-align:center;padding:8px 10px;color:var(--text);font-weight:600;">{{ own_ssl }}</td>
+          <td style="text-align:center;padding:8px 10px;color:var(--muted);">—</td>
+          <td style="text-align:center;padding:8px 10px;color:var(--muted);">{{ agg.ssl_grade_mode | default('n/a') }}</td>
+          <td style="text-align:center;padding:8px 10px;color:var(--muted);">—</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="font-size:.7rem;color:var(--muted);font-style:italic;margin-top:10px;line-height:1.5;">
+      Pool composition:
+      {% for label, count in pb.pool_composition.items() %}
+        {{ count }} {{ label.replace('_', ' ') }}{% if not loop.last %},{% endif %}
+      {% endfor %}.
+      Cell match: <strong>{{ pb.cell_specificity }}</strong>. Pool freshness: {{ pb.pool_freshness_days | default(90) }}-day window. 'benchmark pool' = public-domain reference scans; 'lower tier upsell' = Phishield's existing lower-tier client cohort scanned for premier-tier upsell; 'client optin' = broker-paid scans contributed with explicit consent. The lower-tier cohort may not be perfectly representative of true industry median; the disclosure makes the composition visible so brokers can weight the comparison accordingly.
+    </div>
+  </div>
+  {% elif pb.status == 'insufficient_data' %}
+  <div class="section-label">&#128202; Peer Benchmarking</div>
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:18px;font-size:.82rem;color:var(--muted);font-style:italic;">
+    {{ pb.evidence }}
+  </div>
+  {% endif %}
+
   <!-- =================== INSURANCE ANALYTICS =================== -->
   {% if results.insurance and results.insurance.rsi %}
   <div class="section-label">&#128202; Insurance Analytics</div>

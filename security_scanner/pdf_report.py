@@ -2575,6 +2575,176 @@ def civil_liability_disclosure(S):
     ]
 
 
+def peer_benchmark_card(results, S):
+    """Peer Benchmarking card - percentile-rank + 1.0-10.0 peer rating
+    vs same-industry / same-revenue-band peer scans in the benchmark
+    pool. Drives the broker conversation 'how does this client compare
+    to peers?'.
+
+    Hero metrics (compact strip):
+      - Risk Score (0-1000)
+      - Peer Rating (1.0-10.0)
+      - Critical Findings count
+      - Industry / revenue-band context
+
+    Full table: per-metric comparison vs peer P25/P50/P75 distribution.
+
+    Source pool composition is explicitly disclosed so brokers know
+    what the comparison draws from (public-domain reference scans vs
+    lower-tier upsell cohort vs broker-opt-in pool).
+    """
+    ins = results.get("insurance", {}) or {}
+    pb = ins.get("peer_benchmarking") or {}
+    if not pb or pb.get("status") not in ("ok", "insufficient_data"):
+        return []
+
+    # Insufficient-data path: render a small note rather than the
+    # full card. Brokers see WHY peer rating is not available.
+    if pb.get("status") == "insufficient_data":
+        ev = pb.get("evidence") or "Insufficient peer scans for a stable percentile."
+        return [
+            Spacer(1, 3 * mm),
+            Paragraph("<b>Peer Benchmarking — Insufficient Pool</b>", S["cat_title"]),
+            Spacer(1, 2 * mm),
+            Paragraph(f"<i>{ev}</i>", S["body"]),
+            Spacer(1, 3 * mm),
+        ]
+
+    rating = pb.get("peer_rating", 0)
+    pct = pb.get("percentile", 0)
+    n = pb.get("n_peers", 0)
+    interp = pb.get("interpretation", "")
+    own_score = pb.get("own_risk_score", 0)
+    own_crit = pb.get("own_critical_findings", 0)
+    rev_band_disp = pb.get("revenue_band_display", "")
+    industry = pb.get("industry") or "Other"
+    sub_ind = pb.get("sub_industry") or ""
+    spec = pb.get("cell_specificity", "")
+    pool = pb.get("pool_composition") or {}
+    agg = pb.get("peer_aggregates") or {}
+
+    # Header narrative
+    cell_text = (
+        f"{industry}"
+        f"{' / ' + sub_ind if sub_ind else ''}"
+        f"{' / ' + rev_band_disp if rev_band_disp else ''}"
+    )
+    intro = (
+        f"Percentile rank against <b>{n}</b> peer benchmark scans "
+        f"matching <b>{cell_text}</b>. Peer rating is derived from the "
+        f"percentile rank of the (inverted) risk score - higher rating = "
+        f"better security posture relative to peers. Rating: <b>{rating} "
+        f"out of 10</b> ({pct}th percentile - {interp})."
+    )
+
+    # Hero strip - 4 stat cells
+    def _stat_cell(label, value, sub):
+        return Table([
+            [Paragraph(f"<font size='9' color='#475569'><b>{label}</b></font>", S["body"])],
+            [Paragraph(f"<font size='18' color='#0f2744'><b>{value}</b></font>", S["body"])],
+            [Paragraph(f"<font size='8' color='#64748b'>{sub}</font>", S["body"])],
+        ], colWidths=[40 * mm])
+
+    hero = Table([[
+        _stat_cell("Risk Score",         f"{own_score} / 1000", "Lower is worse"),
+        _stat_cell("Peer Rating",        f"{rating} / 10",      "Higher is better"),
+        _stat_cell("Critical Findings",  f"{own_crit}",          "Cross-checker total"),
+        _stat_cell("Percentile",         f"{pct}%",              "vs same-industry peers"),
+    ]], colWidths=[40 * mm, 40 * mm, 40 * mm, 40 * mm])
+    hero.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), C_GREY_1),
+        ("BOX", (0, 0), (-1, -1), 0.5, C_GREY_2),
+        ("LINEAFTER", (0, 0), (-2, -1), 0.5, C_GREY_2),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+    ]))
+
+    # Comparison table - per-metric this-scan vs peer P25/P50/P75
+    rs = agg.get("risk_score") or {}
+    cf = agg.get("critical_findings") or {}
+    rsi_a = agg.get("rsi_score") or {}
+    ssl_mode = agg.get("ssl_grade_mode") or "n/a"
+    own_rsi = ((ins.get("rsi") or {}).get("rsi_score")) or 0
+    own_ssl = ((results.get("categories") or {}).get("ssl") or {}).get("grade") or "?"
+
+    def _fmt(v):
+        if v is None:
+            return "n/a"
+        if isinstance(v, float):
+            return f"{v:.2f}" if v < 10 else f"{int(v)}"
+        return str(v)
+
+    comparison_data = [
+        ["Metric", "This Scan", "Peer P25", "Peer P50", "Peer P75"],
+        ["Risk Score (0-1000, lower=worse)",
+            _fmt(own_score), _fmt(rs.get("p25")), _fmt(rs.get("p50")), _fmt(rs.get("p75"))],
+        ["Critical Findings (count)",
+            _fmt(own_crit), _fmt(cf.get("p25")), _fmt(cf.get("p50")), _fmt(cf.get("p75"))],
+        ["RSI Score (0-1.0, higher=worse)",
+            _fmt(round(own_rsi, 2)), _fmt(rsi_a.get("p25")), _fmt(rsi_a.get("p50")), _fmt(rsi_a.get("p75"))],
+        ["SSL Grade",
+            _fmt(own_ssl), "-", _fmt(ssl_mode), "-"],
+    ]
+    comp_tbl = Table(comparison_data, colWidths=[60 * mm, 25 * mm, 25 * mm, 25 * mm, 25 * mm])
+    comp_tbl.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("BACKGROUND", (0, 0), (-1, 0), C_BLUE),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+        ("ALIGN", (0, 0), (0, -1), "LEFT"),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.5, C_GREY_2),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, C_GREY_1]),
+        ("BOX", (0, 0), (-1, -1), 0.5, C_GREY_2),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]))
+
+    # Pool composition disclosure
+    pool_breakdown = ", ".join(
+        f"{count} {label.replace('_', ' ')}"
+        for label, count in sorted(pool.items(), key=lambda kv: -kv[1])
+    )
+    spec_text = {
+        "industry+sub+band": "same industry, sub-industry, and revenue band",
+        "industry+sub":      "same industry and sub-industry (revenue band relaxed for sample size)",
+        "industry+band":     "same industry and revenue band (sub-industry relaxed)",
+        "industry":          "same industry (sub-industry and revenue band relaxed)",
+        "global":            "global pool (industry-specific peers below sample threshold)",
+    }.get(spec, spec)
+    pool_text = (
+        f"<i>Pool composition: {pool_breakdown}. Cell match: {spec_text}. "
+        f"Pool freshness: {pb.get('pool_freshness_days', 90)}-day window. "
+        f"'benchmark pool' = public-domain reference scans; "
+        f"'lower tier upsell' = Phishield's existing lower-tier client "
+        f"cohort scanned for premier-tier upsell; "
+        f"'client optin' = broker-paid scans contributed with explicit "
+        f"consent. The lower-tier cohort may not be perfectly "
+        f"representative of true industry median; the disclosure makes "
+        f"the composition visible so brokers can weight the comparison "
+        f"accordingly.</i>"
+    )
+
+    return [
+        Spacer(1, 4 * mm),
+        Paragraph("<b>Peer Benchmarking</b>", S["cat_title"]),
+        Spacer(1, 2 * mm),
+        Paragraph(intro, S["body"]),
+        Spacer(1, 3 * mm),
+        hero,
+        Spacer(1, 4 * mm),
+        comp_tbl,
+        Spacer(1, 3 * mm),
+        Paragraph(pool_text, S["body"]),
+        Spacer(1, 4 * mm),
+    ]
+
+
 def waf_coverage_notice(results, S):
     """Top-level Partial Coverage Notice rendered when the WAFTracker
     flagged the target apex as protected during the scan. Appears
@@ -3532,6 +3702,11 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
                 Spacer(1, 4 * mm), fin_banner, Spacer(1, 3 * mm),
                 Paragraph(fin_text, S["body"]), Spacer(1, 4 * mm)
             ]))
+            # Peer Benchmarking card — also on summary so brokers see
+            # the comparative posture immediately next to the financial
+            # impact figure.
+            story += peer_benchmark_card(results, S)
+
             # Loss Exposure Scenarios dedicated table — also shown on
             # summary so brokers and clients have the catastrophe view
             # before reading further. Schema-driven from loss_exposure.scenarios.
@@ -3734,6 +3909,10 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         # ── Insurance Analytics ─────────────────────────────────────────────
         if results.get("insurance"):
             story += section_with_first_card("INSURANCE ANALYTICS", S, cat_rsi(results, S))
+            # Peer Benchmarking — surfaces peer rating + percentile rank
+            # near the top so brokers see the comparative posture before
+            # digging into individual checker findings.
+            story += peer_benchmark_card(results, S)
             story += cat_dbi(results, S)
             story += cat_financial_impact(results.get("insurance", {}), S)
             # Loss Exposure Scenarios - dedicated headline table replacing

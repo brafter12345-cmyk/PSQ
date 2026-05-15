@@ -1081,6 +1081,127 @@ def build(doc):
         "broker's input was reasonable given what the scanner observed."
     )
 
+    add_h2(doc, "Peer Benchmarking (1.0-10.0 rating + percentile rank)")
+
+    add_body(doc,
+        "Every scan compares the assessed organisation's overall risk "
+        "score against a pool of peer benchmark scans matching industry, "
+        "sub-industry, and revenue band. The result is surfaced as two "
+        "complementary metrics:"
+    )
+    add_bullet(doc,
+        "Peer rating (1.0-10.0, higher = better) - derived from the "
+        "percentile rank of the assessed scan's (inverted) risk score "
+        "against the peer pool. The rating is purely comparative; it "
+        "does NOT replace the existing 0-1000 risk score that drives "
+        "the remediation roadmap. Rating formula: 1.0 + 9.0 * "
+        "(percentile / 100)."
+    )
+    add_bullet(doc,
+        "Percentile rank (0-100%) - what fraction of peers have a "
+        "worse (higher) risk score. Interpretation labels: 'top "
+        "quartile' (>= 75th percentile), 'above peer median' (50-74th), "
+        "'below peer median' (25-49th), 'bottom quartile' (< 25th)."
+    )
+
+    add_body(doc,
+        "Hero strip metrics. The peer-benchmarking card surfaces four "
+        "stats at-a-glance, replacing the previously-considered "
+        "compliance % (which could not be reliably determined from "
+        "external scans alone - only ~10 of ~250 PCI sub-requirements "
+        "are externally observable, with a similar gap for POPIA "
+        "Section 19):"
+    )
+    add_bullet(doc, "Risk Score (0-1000, lower = worse) - this scan")
+    add_bullet(doc, "Peer Rating (1.0-10.0, higher = better) - comparative")
+    add_bullet(doc,
+        "Critical Findings (count) - cross-checker aggregate of CRITICAL-"
+        "severity issues across shodan_vulns, exposed_admin, "
+        "high_risk_protocols, info_disclosure, ssl (F-grade or expired), "
+        "dehashed (plaintext passwords), hudson_rock (active infostealer "
+        "hits), external_ips (max-risk IPs)."
+    )
+    add_bullet(doc,
+        "Percentile (0-100%) - position in peer distribution."
+    )
+
+    add_body(doc,
+        "Cell fallback. The benchmark pool is keyed by (industry, "
+        "sub_industry, revenue_band). When the most-specific cell has "
+        "fewer than 5 peer scans, the lookup walks up a fallback ladder:"
+    )
+    add_bullet(doc, "industry + sub_industry + revenue_band (most specific)")
+    add_bullet(doc, "industry + sub_industry (revenue band relaxed)")
+    add_bullet(doc, "industry + revenue_band (sub-industry relaxed)")
+    add_bullet(doc, "industry only")
+    add_bullet(doc, "global pool (last resort)")
+    add_body(doc,
+        "The cell used is disclosed in the report so brokers know how "
+        "specific the peer comparison is."
+    )
+
+    add_body(doc,
+        "Revenue bands match the capacity-factor table in the "
+        "catastrophe regulatory stack:"
+    )
+    add_bullet(doc, "Micro: < R10M")
+    add_bullet(doc, "Small: R10M - R50M")
+    add_bullet(doc, "Medium: R50M - R200M")
+    add_bullet(doc, "Large: R200M - R1B")
+    add_bullet(doc, "Major: >= R1B")
+
+    add_body(doc,
+        "Pool composition. Three source classes of benchmark scan, all "
+        "tagged in the database so the report can disclose what the "
+        "comparison draws from:"
+    )
+    add_bullet(doc,
+        "'benchmark_pool' - bi-weekly public-domain reference scans "
+        "curated by Phishield. ~60 SA reference companies covering top "
+        "JSE-listed entities + mid-market across Finance, Healthcare, "
+        "Communications, Retail, Manufacturing, Mining, Technology, "
+        "Transportation, Services, Public Sector. No consent needed "
+        "(public infrastructure)."
+    )
+    add_bullet(doc,
+        "'lower_tier_upsell' - scans of Phishield's existing lower-tier "
+        "client cohort (~4,000 entities) run as part of the premier-"
+        "tier upsell flow. Phishield owns the client relationship "
+        "directly (no broker intermediating), so consent is implicit "
+        "in the existing service agreement. Provides substantial peer-"
+        "pool depth in the SA market segments Phishield actually "
+        "underwrites, but the cohort may not be perfectly "
+        "representative of true industry median - this is disclosed "
+        "in the report so brokers can weight the comparison "
+        "accordingly."
+    )
+    add_bullet(doc,
+        "'client_optin' - scans run by brokers via the risk advisory "
+        "service for their clients, contributed to the pool with "
+        "explicit consent. Default opt-out. Drives longer-term "
+        "benchmark quality."
+    )
+
+    add_body(doc,
+        "Refresh cadence: bi-weekly (14 days). The benchmark_runner.py "
+        "CLI scans the curated reference list and persists results to "
+        "the benchmark_scans table. Pool freshness window is 90 days "
+        "(3x the refresh cadence) so a missed cycle does not break "
+        "peer ratings. Stale entries are automatically excluded from "
+        "percentile calculations."
+    )
+
+    add_body(doc,
+        "Privacy / POPIA compliance: benchmark scans run against public-"
+        "facing infrastructure only. No authenticated traffic, no "
+        "credentials submitted, no exploit attempts. The benchmark "
+        "pool is segregated from client scan records by the 'source' "
+        "tag - it is impossible to attribute a peer-pool entry to a "
+        "specific broker's client. Pool composition is disclosed in "
+        "every report so brokers and clients see what the benchmark "
+        "draws from."
+    )
+
     add_h2(doc, "Cat Modelling Validity Notice (records-based)")
 
     add_body(doc,
