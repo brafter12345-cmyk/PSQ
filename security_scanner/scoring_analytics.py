@@ -542,7 +542,7 @@ class RiskScorer:
         """Return True if this checker errored/timed out and should be excluded."""
         return checker_data.get("status") in self._FAILED_STATUSES
 
-    def calculate(self, results: dict) -> tuple:
+    def calculate(self, results: dict, waf_apex_status: dict = None) -> tuple:
         def inv(score_0_100):
             return 100 - score_0_100
 
@@ -708,10 +708,19 @@ class RiskScorer:
 
         risk_score = round(weighted * 10)
 
-        # WAF bonus — reduce score by up to 50 points
-        # Only apply if WAF checker actually ran successfully
+        # WAF bonus — genuine web-layer control credit (up to 50 points).
+        # Discounted to 25 when the WAF actively blinded the scan
+        # (blocked / challenge / timeout): otherwise the target is rewarded
+        # twice — once for the control, and again because the blinded
+        # path-prober checkers returned (falsely) clean results. The
+        # blindness is an artefact, not measured posture, so it must not be
+        # banked at full credit.
         if results.get("waf", {}).get("detected") and "waf" not in failed_checkers:
-            risk_score = max(0, risk_score - 50)
+            _waf_st = waf_apex_status or {}
+            _blinding = {"waf_blocked", "waf_challenge", "waf_timeout"}
+            _bonus = 25 if (_waf_st.get("blocked")
+                            and _waf_st.get("kind") in _blinding) else 50
+            risk_score = max(0, risk_score - _bonus)
 
         risk_score = min(1000, risk_score)
 
@@ -1434,12 +1443,14 @@ class FinancialImpactCalculator:
                   annual_revenue: float, industry: str = "other",
                   annual_revenue_zar: int = 0,
                   regulatory_flags: dict = None,
-                  sub_industry: str = None) -> dict:
+                  sub_industry: str = None,
+                  scan_completeness: dict = None) -> dict:
 
         # Use ZAR path when ZAR revenue is provided (SA-specific model)
         if annual_revenue_zar > 0:
             return self._calculate_zar(categories, rsi_result, annual_revenue_zar, industry,
-                                       regulatory_flags, sub_industry)
+                                       regulatory_flags, sub_industry,
+                                       scan_completeness=scan_completeness)
 
         daily_revenue = annual_revenue / 365 if annual_revenue > 0 else 5_000
 
@@ -1772,7 +1783,8 @@ class FinancialImpactCalculator:
     def _calculate_zar(self, categories: dict, rsi_result: dict,
                        annual_revenue_zar: int, industry: str,
                        regulatory_flags: dict = None,
-                       sub_industry: str = None) -> dict:
+                       sub_industry: str = None,
+                       scan_completeness: dict = None) -> dict:
         """SA-specific ZAR calculation using incident-type decomposition.
 
         Architecture: Rather than three independent scenarios, the model
@@ -2350,8 +2362,74 @@ class FinancialImpactCalculator:
 
         # Total and per-category stats
         mc_total = mc_breach_total + mc_detection_total + mc_ransom_demand_total + mc_bi_total
+
+        # ── Scan-coverage uncertainty loading (WAF blind-spot) ──
+        # When a WAF / bot-manager blocked the scan, the path-prober checkers
+        # (exposed_admin, info_disclosure, tech_stack, website_security,
+        # http_headers, ...) return "no finding" — which the model would
+        # otherwise read as "clean" and price as low risk. A blind spot is
+        # downside-only: the hidden findings can only make losses worse, never
+        # better. The statistically honest correction is to widen the right
+        # tail (catastrophe percentiles) in proportion to the lost coverage
+        # while leaving the mode / median anchored — uncertainty up, expected
+        # value not pulled down. The analytical most-likely (computed above
+        # from total_expected) and the cover recommendation are untouched;
+        # only the disclosed 1-in-100 / 1-in-200 / 1-in-250 views and the CI
+        # upper bound move. The Partial Coverage / Civil Liability notices
+        # already carry the qualitative caveat; this makes it numerical.
+        cov_adj = {"applied": False}
+        _sc = scan_completeness or {}
+        _waf_st = _sc.get("waf_status", {}) or {}
+        _blinding = {"waf_blocked", "waf_challenge", "waf_timeout"}
+        if _waf_st.get("blocked") and _waf_st.get("kind") in _blinding:
+            cov_pct = _sc.get("coverage_pct", 100)
+            shortfall = max(0.0, min(0.60, 1.0 - cov_pct / 100.0))
+            if shortfall > 0:
+                # K_TAIL tuned so a lightly-blinded scan (~10% shortfall)
+                # widens the 1-in-250 ~12%; a heavily-blinded one (~40%)
+                # ~48%. Conservative, not punitive.
+                K_TAIL = 1.20
+                infl = 1.0 + K_TAIL * shortfall
+                # Snapshot the pre-widening arrays so the central tendency
+                # and downside (mode / P5-P50) can be restored exactly after
+                # the percentile pass — only P75+ is loaded.
+                mc_total_pre = mc_total
+                mc_breach_pre = mc_breach_total
+                med_t = float(np.median(mc_total))
+                mc_total = np.where(mc_total > med_t,
+                                    med_t + (mc_total - med_t) * infl, mc_total)
+                med_b = float(np.median(mc_breach_total))
+                mc_breach_total = np.where(mc_breach_total > med_b,
+                                           med_b + (mc_breach_total - med_b) * infl,
+                                           mc_breach_total)
+                cov_adj = {
+                    "applied": True,
+                    "waf_kind": _waf_st.get("kind"),
+                    "coverage_pct": cov_pct,
+                    "coverage_shortfall": round(shortfall, 3),
+                    "tail_inflation_factor": round(infl, 3),
+                    "affected_checkers": _sc.get("waf_affected_checkers", []),
+                    "basis": (
+                        "WAF / bot-manager blocked path-prober checkers. "
+                        "Catastrophe percentiles (P75-P99.6) widened to reflect "
+                        "unverifiable findings; median and mode anchored. "
+                        "Absence of a finding in affected checkers does not "
+                        "confirm absence of the underlying risk."
+                    ),
+                }
+
         mc_stats = self._mc_percentiles(mc_total)
         mc_breach_stats = self._mc_percentiles(mc_breach_total)
+        if cov_adj.get("applied"):
+            # Catastrophe-only loading: restore mode + downside/central
+            # percentiles (P5/P25/P50) from the pre-widening distribution so
+            # the disclosed "most likely" and median are unmoved; only
+            # P75-P99.6 reflect the blind-spot uncertainty.
+            _an = self._mc_percentiles(mc_total_pre)
+            _anb = self._mc_percentiles(mc_breach_pre)
+            for _k in ("p5", "p25", "p50", "mode"):
+                mc_stats[_k] = _an[_k]
+                mc_breach_stats[_k] = _anb[_k]
         mc_detection_stats = self._mc_percentiles(mc_detection_total)
         mc_ransom_demand_stats = self._mc_percentiles(mc_ransom_demand_total)
         mc_bi_stats = self._mc_percentiles(mc_bi_total)
@@ -2583,6 +2661,11 @@ class FinancialImpactCalculator:
                     "upper": mc_stats["p75"],
                 },
             },
+            # Scan-coverage uncertainty loading applied to the catastrophe
+            # tail when a WAF / bot-manager blinded path-prober checkers.
+            # {"applied": False} when the scan had full coverage. FAIS audit
+            # trail — surfaces the numeric basis for the widened tail.
+            "coverage_adjustment": cov_adj,
             # Return-period loss exposure (FAIR catastrophe view).
             # P99/P99.5/P99.6 correspond to 1-in-100 / 1-in-200 / 1-in-250 year
             # exceedance probabilities. At N=10,000 the P99.6 sample count is

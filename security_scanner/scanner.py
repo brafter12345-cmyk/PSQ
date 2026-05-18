@@ -590,8 +590,15 @@ class SecurityScanner:
         self._notify(on_progress, "credential_risk", "done")
 
         # --- Phase 5: Score ---
+        # WAF / bot-manager intervention status is read once here, before
+        # scoring, so the score can discount the WAF "bonus" when the WAF
+        # actively blinded the scan (a blocked scan must not be rewarded for
+        # the blindness). The same status object is reused below for the
+        # completeness metadata — one sliding-window read, no double count.
+        waf_apex_status = HTTP.waf_status(scan_apex)
         scorer = RiskScorer()
-        risk_score, risk_level, recommendations = scorer.calculate(cat_results)
+        risk_score, risk_level, recommendations = scorer.calculate(
+            cat_results, waf_apex_status=waf_apex_status)
         results["overall_risk_score"] = risk_score
         results["risk_level"] = risk_level
         results["recommendations"] = recommendations
@@ -619,7 +626,7 @@ class SecurityScanner:
         # responses to call the target's defensive posture protected.
         # Checkers that hit HTTP-via-the-client all contribute; the
         # status field surfaces in the report renderers.
-        waf_apex_status = HTTP.waf_status(scan_apex)
+        # Reuse the pre-scoring WAF status (already read above).
         results["_scan_completeness"]["waf_status"] = waf_apex_status
         # Compute per-checker WAF flags: a checker is flagged WAF-affected
         # if it reported "no data" outcomes while the apex shows blocked.
@@ -672,6 +679,7 @@ class SecurityScanner:
                 annual_revenue_zar=_zar,
                 regulatory_flags=_reg_flags,
                 sub_industry=_sub_industry,
+                scan_completeness=results.get("_scan_completeness"),
             )
             results["insurance"]["financial_impact"] = fin_result
 
