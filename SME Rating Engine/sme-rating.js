@@ -325,11 +325,13 @@ function calculatePremium(coverIndex, overrideState, optionOverrides) {
     // Apply discounts (to both total and ex-FP)
     const postureD = (optionOverrides && optionOverrides.postureDiscount !== undefined) ? optionOverrides.postureDiscount : (s.postureDiscount || 0);
     const discretionaryD = (optionOverrides && optionOverrides.discretionaryDiscount !== undefined) ? optionOverrides.discretionaryDiscount : (s.discretionaryDiscount || 0);
-    if (postureD > 0 || discretionaryD > 0) {
+    if (postureD !== 0 || discretionaryD !== 0) {
       const discountMultiplier = (1 - postureD) * (1 - discretionaryD);
       totalPremium = totalPremium * discountMultiplier;
       annualExFP = annualExFP * discountMultiplier;
-      breakdown.push({ step: 6, desc: `Discounts (posture ${Math.round(postureD * 100)}%, discretionary ${Math.round(discretionaryD * 100)}%)`, value: totalPremium });
+      const postureLabel = postureD >= 0 ? `discount ${Math.round(postureD * 100)}%` : `loading ${Math.abs(Math.round(postureD * 100))}%`;
+      const discLabel = discretionaryD >= 0 ? `discount ${Math.round(discretionaryD * 100)}%` : `loading ${Math.abs(Math.round(discretionaryD * 100))}%`;
+      breakdown.push({ step: 6, desc: `Adjustments (posture ${postureLabel}, discretionary ${discLabel})`, value: totalPremium });
     }
 
     const monthly = Math.ceil(totalPremium / 12);
@@ -3205,6 +3207,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ─── Step 1 Next Button ─────────────────────────────────────
 
+  // Dismiss the blocker overlay so the user can amend the triggering answer
+  // in place. state.isBlocked stays true (nextBtn1 remains disabled) until the
+  // existing re-evaluation logic actually clears the block. Scrolls to whichever
+  // step is active so this still works if a future blocker is raised off step 1.
+  $('blocker-amend').addEventListener('click', () => {
+    $('blocker-overlay').style.display = 'none';
+    const activeStep = $('step-' + state.currentStep) || $('step-1');
+    activeStep.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
   $('nextBtn1').addEventListener('click', () => {
     if ($('nextBtn1').disabled) return;
 
@@ -3404,6 +3416,8 @@ document.addEventListener('DOMContentLoaded', () => {
   $('backBtn4').addEventListener('click', () => goToStep(3));
 
   // ─── Step 5 Event Listeners ─────────────────────────────────
+
+  $('backBtn5').addEventListener('click', () => goToStep(4));
 
   $('btn-print').addEventListener('click', () => window.print());
 
