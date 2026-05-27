@@ -262,6 +262,25 @@
           .auto-badge.suggestion { color:#fbbf24; background:rgba(251,191,36,0.12); border-color:rgba(251,191,36,0.3); }
         </style>
 
+        <!-- Related / supplier domains (S-1 supply-chain) -->
+        <div class="field">
+          <label class="field-label" for="related-domains">Related / Supplier Domains (optional)
+            <span class="auto-badge" id="related-domains-badge"></span>
+          </label>
+          <div id="related-candidates-list" style="display:none;margin-bottom:8px;padding:8px 10px;background:rgba(96,165,250,0.06);border:1px solid rgba(96,165,250,0.25);border-radius:8px;">
+            <div style="font-size:.78rem;color:#93c5fd;margin-bottom:6px;font-weight:500;">
+              Auto-detected sibling candidates from Certificate Transparency logs &mdash; tick to include in the scan:
+            </div>
+            <div id="related-candidates-checkboxes"></div>
+            <div style="font-size:.7rem;color:var(--muted,#9ca3af);margin-top:6px;">
+              Source: <a href="https://crt.sh/" target="_blank" rel="noopener" style="color:#60a5fa;">crt.sh</a> Certificate Transparency log SAN entries.
+              Confidence reflects shared brand-root + cert count; broker confirmation is authoritative.
+            </div>
+          </div>
+          <textarea id="related-domains" name="related_domains" rows="2" placeholder="e.g. supplier-corp.co.za, group-holdings.com" style="background:var(--card-bg,#1a2332);color:#e2e8f0;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px 12px;font-size:.9rem;resize:vertical;font-family:monospace;width:100%;box-sizing:border-box;"></textarea>
+          <div class="field-hint">Supplier, sibling, or group-related domains the insured is contractually responsible for. Each is probed in LITE mode (SSL + DNS-port + info-disclosure) and worst-of-N findings feed the supply-chain category. Comma or newline separated. Capped at 10 for scan-time budget.</div>
+        </div>
+
         <div class="field">
           <label class="field-label" for="client-ips">Additional External IPs (optional)</label>
           <div style="display:flex;gap:10px;align-items:flex-start;">
@@ -493,10 +512,17 @@ async function runPreflight() {
     } else {
       setBadge('health-detail-badge', false);
     }
+    // S-1 v1.1 — related-domain auto-discovery (cert SAN via crt.sh).
+    // Render each candidate as a checkbox the broker can confirm.
+    renderRelatedCandidates(d.related_candidates || {});
+
     const detectedCount = Object.values(flags).filter(f => f && f.auto_detected).length;
-    banner.textContent = detectedCount > 0
-      ? 'Pre-flight detected ' + detectedCount + ' flag(s) for ' + domain + '. Review and override below as needed.'
-      : 'Pre-flight ran for ' + domain + '. No flags auto-detected - tick manually as applicable.';
+    const candCount = (d.related_candidates && d.related_candidates.candidates) ?
+      d.related_candidates.candidates.length : 0;
+    const candFragment = candCount > 0 ? ' + ' + candCount + ' related-domain candidate(s)' : '';
+    banner.textContent = detectedCount > 0 || candCount > 0
+      ? 'Pre-flight detected ' + detectedCount + ' flag(s)' + candFragment + ' for ' + domain + '. Review and override below as needed.'
+      : 'Pre-flight ran for ' + domain + '. No flags or candidates auto-detected - tick manually as applicable.';
   } catch (err) {
     banner.textContent = 'Pre-flight network error: ' + err.message + '. Tick flags manually below.';
     preflightResult = null;
@@ -557,6 +583,11 @@ form.addEventListener('submit', async (e) => {
     body.auto_detected_flags = preflightResult.flags;
   }
 
+  // S-1 v1.1 — broker-confirmed related/supplier domains. Combines
+  // the checked auto-detected candidates with any free-text entries.
+  const relatedDomains = collectRelatedDomains();
+  if (relatedDomains.length > 0) body.related_domains = relatedDomains;
+
   // Parse client-supplied IPs
   const ipText = document.getElementById('client-ips').value.trim();
   if (ipText) {
@@ -589,6 +620,68 @@ form.addEventListener('submit', async (e) => {
 function showError(msg) {
   errorEl.textContent = msg;
   errorEl.style.display = 'block';
+}
+
+// Render the auto-detected related-domain candidates as checkboxes.
+function renderRelatedCandidates(rc) {
+  const box = document.getElementById('related-candidates-list');
+  const list = document.getElementById('related-candidates-checkboxes');
+  const badge = document.getElementById('related-domains-badge');
+  if (!box || !list) return;
+  list.innerHTML = '';
+  const cands = (rc && rc.candidates) || [];
+  if (!cands.length) {
+    box.style.display = 'none';
+    if (badge) { badge.classList.remove('visible','suggestion'); badge.textContent = ''; }
+    return;
+  }
+  for (const c of cands) {
+    const row = document.createElement('label');
+    row.style.cssText = 'display:flex;align-items:flex-start;gap:8px;padding:4px 0;font-size:.8rem;cursor:pointer;';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.className = 'related-cand-cb';
+    cb.dataset.domain = c.domain;
+    cb.style.marginTop = '3px';
+    // Pre-tick high-confidence candidates only — broker reviews medium/low.
+    if (c.confidence === 'high') cb.checked = true;
+    const confColor = c.confidence === 'high' ? '#10b981'
+      : (c.confidence === 'medium' ? '#fbbf24' : '#9ca3af');
+    const meta = document.createElement('div');
+    meta.style.flex = '1';
+    meta.innerHTML =
+      '<div style="font-weight:500;color:#e2e8f0;">' + c.domain +
+      ' <span style="font-size:.65rem;color:' + confColor + ';">[' + c.confidence + ']</span></div>' +
+      '<div style="font-size:.7rem;color:var(--muted,#9ca3af);">' +
+      (c.signal_detail || '').replace(/</g, '&lt;') + '</div>';
+    row.appendChild(cb);
+    row.appendChild(meta);
+    list.appendChild(row);
+  }
+  box.style.display = 'block';
+  if (badge) {
+    badge.classList.add('visible');
+    badge.textContent = cands.length + ' candidate(s) found';
+    badge.title = 'Auto-detected via Certificate Transparency log SAN entries (crt.sh).';
+  }
+}
+
+// Collect the confirmed related-domains list: checked auto-detected
+// candidates + any free-text entries the broker typed in.
+function collectRelatedDomains() {
+  const set = new Set();
+  document.querySelectorAll('.related-cand-cb:checked').forEach(cb => {
+    const d = (cb.dataset.domain || '').trim().toLowerCase();
+    if (d) set.add(d);
+  });
+  const ta = document.getElementById('related-domains');
+  if (ta && ta.value.trim()) {
+    ta.value.split(/[\s,;\n]+/).forEach(raw => {
+      const d = raw.trim().toLowerCase().replace(/^https?:\/\//, '').split('/')[0];
+      if (d && d.includes('.')) set.add(d);
+    });
+  }
+  return [...set].slice(0, 10);  // backend caps at 10 anyway
 }
 
 // CSV upload: read file client-side and populate textarea
