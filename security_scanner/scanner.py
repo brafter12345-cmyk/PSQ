@@ -10,7 +10,7 @@ from checkers_network import *
 from checkers_threats import *
 from checkers_supply_chain import (
     RelatedDomainsChecker, DependencyManifestChecker, ThirdPartyJSChecker,
-    EmailVendorSurfaceChecker, CMSPluginSBOMChecker,
+    EmailVendorSurfaceChecker, CMSPluginSBOMChecker, VendorBreachChecker,
 )
 from scoring_analytics import *
 from http_client import HTTP, _apex_of
@@ -189,6 +189,7 @@ class SecurityScanner:
             "third_party_js":      (ThirdPartyJSChecker().check,       [domain]),
             "email_vendor_surface": (EmailVendorSurfaceChecker().check, [domain]),
             "cms_plugin_sbom":     (CMSPluginSBOMChecker().check,      [domain]),
+            "vendor_breach":       (VendorBreachChecker().check,       [domain]),
         }
 
         # Heavy checkers run sequentially AFTER the concurrent batch to cap

@@ -1,15 +1,18 @@
 """
 Supply-chain checkers — assess risk inherited from related/supplier
 domains, exposed third-party dependency manifests, third-party JavaScript
-loaded into the page, the email-vendor surface (SPF include chain), and
-CMS-plugin attack surface.
+loaded into the page, the email-vendor surface (SPF include chain), the
+CMS-plugin attack surface, and known-breach correlations against the
+detected vendor surface.
 
-S-1 RelatedDomainsChecker (v1.0 — broker-declared only)
-S-2 ThirdPartyJSChecker — Magecart / polyfill.io / missing-SRI risk
-S-3 DependencyManifestChecker — leaked package.json / requirements.txt etc.
-S-4 EmailVendorSurfaceChecker — SPF include-chain SaaS sender surface
+S-1  RelatedDomainsChecker (v1.0 — broker-declared only)
+S-2  ThirdPartyJSChecker — Magecart / polyfill.io / missing-SRI risk
+S-3  DependencyManifestChecker — leaked package.json / requirements.txt etc.
+S-4  EmailVendorSurfaceChecker — SPF include-chain SaaS sender surface
+S-5  VendorBreachChecker — cross-references detected vendor surface against
+     curated vendor_breaches.json (Mailchimp, Okta, MS365, HubSpot, etc.)
 S-10 CMSPluginSBOMChecker — WordPress plugin enumeration (top SA SME
-    ransomware entry vector)
+     ransomware entry vector)
 
 Cross-references to project memory:
     project_scanner_systemic_sweep_2026-05-27.md — original integration map
@@ -18,6 +21,8 @@ Cross-references to project memory:
 
 import json
 import re
+from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlparse
 
 from scanner_utils import *
@@ -808,4 +813,133 @@ class CMSPluginSBOMChecker:
                 "wide CMS-plugin attack surface (top SA SME ransomware vector)"
             )
         result["score"] = max(0, 100 - penalty)
+        return result
+
+
+class VendorBreachChecker:
+    """
+    Correlates the email-vendor surface (detected via SPF include chain, the
+    same logic as S-4) against a curated public-record breach database
+    (`vendor_breaches.json`). For each vendor with known breaches in the
+    relevant lookback window, surfaces a finding with breach age, severity,
+    and class — strongest broker narrative for "your supplier was breached
+    7 months ago, are you reviewing it?".
+
+    Maintenance discipline mirrors `darkweb_providers.py`: editorial review
+    before adding new rows, severity_level field, exposure_class field.
+    """
+
+    LOOKBACK_DAYS = 1825  # 5 years — vendor incidents stay relevant beyond
+                           # 1-2 years because customer-key rotation is
+                           # typically incomplete even after disclosure.
+    SEVERITY_PENALTY = {"critical": 25, "high": 15, "medium": 8, "low": 3}
+
+    _CACHED_DB = None
+    _CACHED_DB_PATH = None
+
+    @classmethod
+    def _load_db(cls) -> dict:
+        if cls._CACHED_DB is not None:
+            return cls._CACHED_DB
+        path = Path(__file__).parent / "vendor_breaches.json"
+        try:
+            with open(path, encoding="utf-8") as f:
+                cls._CACHED_DB = json.load(f)
+                cls._CACHED_DB_PATH = str(path)
+        except Exception:
+            cls._CACHED_DB = {"breaches": []}
+        return cls._CACHED_DB
+
+    @staticmethod
+    def _days_since(date_str: str) -> int:
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            return (datetime.now(timezone.utc) - dt).days
+        except Exception:
+            return 99_999
+
+    def check(self, domain: str) -> dict:
+        result = {
+            "status": "completed",
+            "vendors_detected": [],
+            "matches": [],
+            "match_count": 0,
+            "critical_match_count": 0,
+            "high_match_count": 0,
+            "score": 100,
+            "issues": [],
+        }
+        db = self._load_db()
+        breaches_by_vendor = {}
+        for b in db.get("breaches", []):
+            breaches_by_vendor.setdefault(b["vendor"], []).append(b)
+
+        # Re-extract the vendor surface (cheaper than a cross-checker
+        # dependency and keeps this checker self-contained for testing).
+        surface = EmailVendorSurfaceChecker()
+        includes = surface._walk_includes(domain)
+        if not includes:
+            result["status"] = "no_data"
+            return result
+
+        seen = set()
+        for entry in includes:
+            v = surface._classify(entry["include"])
+            if v and v not in seen:
+                seen.add(v)
+                result["vendors_detected"].append(v)
+
+        if not result["vendors_detected"]:
+            return result
+
+        penalty = 0
+        for v in result["vendors_detected"]:
+            for b in breaches_by_vendor.get(v, []):
+                age = self._days_since(b.get("date", ""))
+                if age > self.LOOKBACK_DAYS:
+                    continue
+                sev = b.get("severity", "medium")
+                # Linear decay: full penalty at age=0, zero at LOOKBACK_DAYS.
+                decay = max(0.0, 1.0 - (age / self.LOOKBACK_DAYS))
+                pen = self.SEVERITY_PENALTY.get(sev, 5) * decay
+                penalty += pen
+                match = {
+                    "vendor": v,
+                    "date": b.get("date"),
+                    "age_days": age,
+                    "severity": sev,
+                    "exposure_class": b.get("exposure_class", ""),
+                    "summary": b.get("summary", ""),
+                    "penalty_applied": round(pen, 2),
+                }
+                result["matches"].append(match)
+                if sev == "critical":
+                    result["critical_match_count"] += 1
+                elif sev == "high":
+                    result["high_match_count"] += 1
+
+        result["matches"].sort(key=lambda m: (
+            {"critical": 0, "high": 1, "medium": 2, "low": 3}.get(m["severity"], 4),
+            m["age_days"],
+        ))
+        result["match_count"] = len(result["matches"])
+        result["score"] = max(0, round(100 - penalty))
+
+        if result["critical_match_count"] > 0:
+            top = result["matches"][0]
+            months = max(1, top["age_days"] // 30)
+            result["issues"].append(
+                f"CRITICAL: {top['vendor']} had a confirmed breach "
+                f"~{months} month(s) ago ({top['date']}, "
+                f"{top['exposure_class']}) — this vendor is in your email "
+                "send-authority chain"
+            )
+        elif result["high_match_count"] > 0:
+            top = result["matches"][0]
+            months = max(1, top["age_days"] // 30)
+            result["issues"].append(
+                f"{top['vendor']} had a breach ~{months} month(s) ago "
+                f"({top['date']}, {top['severity']}) — review whether "
+                "credentials / tokens have been rotated"
+            )
         return result

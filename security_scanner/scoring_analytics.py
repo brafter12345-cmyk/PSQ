@@ -491,6 +491,7 @@ class RiskScorer:
         "third_party_js":       0.03,
         "email_vendor_surface": 0.02,
         "cms_plugin_sbom":      0.03,
+        "vendor_breach":        0.04,
     }  # Sum — includes all checkers from both branches
 
     RECOMMENDATIONS = {
@@ -704,6 +705,10 @@ class RiskScorer:
         cms = results.get("cms_plugin_sbom", {})
         cms_risk = inv(cms.get("score", 100)) if cms.get("status") == "completed" else 0
 
+        # Vendor breach correlation against curated vendor_breaches.json.
+        vb = results.get("vendor_breach", {})
+        vb_risk = inv(vb.get("score", 100)) if vb.get("status") == "completed" else 0
+
         weighted = (
             ssl_risk         * effective_weights.get("ssl", 0) +
             email_risk       * effective_weights.get("email_security", 0) +
@@ -734,7 +739,8 @@ class RiskScorer:
             dm_risk          * effective_weights.get("dependency_manifests", 0) +
             tpjs_risk        * effective_weights.get("third_party_js", 0) +
             evs_risk         * effective_weights.get("email_vendor_surface", 0) +
-            cms_risk         * effective_weights.get("cms_plugin_sbom", 0)
+            cms_risk         * effective_weights.get("cms_plugin_sbom", 0) +
+            vb_risk          * effective_weights.get("vendor_breach", 0)
         )
 
         risk_score = round(weighted * 10)

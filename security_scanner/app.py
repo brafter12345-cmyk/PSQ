@@ -102,6 +102,7 @@ CHECKER_MANIFEST = [
         {"id": "third_party_js", "label": "Third-Party JavaScript"},
         {"id": "email_vendor_surface", "label": "Email-Vendor Surface (SPF)"},
         {"id": "cms_plugin_sbom", "label": "CMS Plugin Surface"},
+        {"id": "vendor_breach", "label": "Vendor Breach Correlation"},
     ]},
     {"section": "Technology & Governance", "checkers": [
         {"id": "tech_stack", "label": "Technology Stack"},

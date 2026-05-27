@@ -1,0 +1,126 @@
+{
+  "_meta": {
+    "version": "2026-05-27",
+    "description": "Curated public-record breaches at SaaS vendors that this scanner can correlate against the insured's vendor surface (S-5). Same maintenance discipline as darkweb_providers.py — confirmed-only, editorial review before adding new rows. Vendor keys match EmailVendorSurfaceChecker.VENDOR_PATTERNS exactly.",
+    "severity_levels": {
+      "critical": "Customer data exfiltrated from the vendor itself (vault, mailbox content, customer DB)",
+      "high":     "Customer credentials / session tokens / API keys exfiltrated (lateral compromise)",
+      "medium":   "Vendor-internal compromise; customer impact limited or downstream",
+      "low":      "Vendor incident with little / no customer data exposure"
+    }
+  },
+  "breaches": [
+    {
+      "vendor": "mailchimp",
+      "date": "2023-01-11",
+      "summary": "Social-engineering attack on Mailchimp staff exposed 133 customer accounts including audience data.",
+      "severity": "high",
+      "exposure_class": "customer_email_lists",
+      "ref": "Mailchimp security incident 2023-01-11"
+    },
+    {
+      "vendor": "mailchimp",
+      "date": "2022-08-12",
+      "summary": "Trezor customer data exfiltrated via Mailchimp employee phishing compromise.",
+      "severity": "high",
+      "exposure_class": "customer_email_lists",
+      "ref": "Mailchimp / Trezor 2022-08"
+    },
+    {
+      "vendor": "salesforce",
+      "date": "2022-04-07",
+      "summary": "Heroku (Salesforce subsidiary) GitHub OAuth-token compromise; customer source repos and Heroku API keys accessed via stolen integration tokens.",
+      "severity": "high",
+      "exposure_class": "customer_oauth_tokens",
+      "ref": "Heroku / Salesforce 2022-04 OAuth incident"
+    },
+    {
+      "vendor": "salesforce",
+      "date": "2023-05-04",
+      "summary": "Misconfigured Salesforce Community Sites at multiple customers (bank/govt) exposed internal data; configuration-side, not platform-side.",
+      "severity": "medium",
+      "exposure_class": "customer_misconfiguration",
+      "ref": "Salesforce Communities exposure 2023-05"
+    },
+    {
+      "vendor": "okta",
+      "date": "2023-10-19",
+      "summary": "Okta customer-support case-management system breach exposed HAR files containing session cookies/tokens for 134+ customers including 1Password, BeyondTrust, Cloudflare.",
+      "severity": "critical",
+      "exposure_class": "session_tokens",
+      "ref": "Okta support system breach 2023-10"
+    },
+    {
+      "vendor": "okta",
+      "date": "2022-01-20",
+      "summary": "LAPSUS$ accessed Okta third-party support provider workstation; 366 customers potentially exposed for 5-day window.",
+      "severity": "high",
+      "exposure_class": "customer_admin_access",
+      "ref": "Okta LAPSUS$ 2022-01"
+    },
+    {
+      "vendor": "microsoft_365",
+      "date": "2023-06-13",
+      "summary": "Storm-0558 forged Microsoft Outlook authentication tokens via stolen consumer signing key; 25 organisations including US State Dept mailboxes accessed.",
+      "severity": "critical",
+      "exposure_class": "mailbox_content",
+      "ref": "Microsoft Storm-0558 2023-06"
+    },
+    {
+      "vendor": "microsoft_365",
+      "date": "2024-01-19",
+      "summary": "Midnight Blizzard (APT29) compromised Microsoft corporate email; source code and customer correspondence accessed.",
+      "severity": "high",
+      "exposure_class": "vendor_email_corp",
+      "ref": "Microsoft Midnight Blizzard 2024-01"
+    },
+    {
+      "vendor": "hubspot",
+      "date": "2022-03-18",
+      "summary": "HubSpot employee account compromised; customer contact data at ~30 crypto/fintech customers accessed.",
+      "severity": "high",
+      "exposure_class": "customer_crm_data",
+      "ref": "HubSpot incident 2022-03"
+    },
+    {
+      "vendor": "intercom",
+      "date": "2023-08-31",
+      "summary": "Intercom support data exposure via shared third-party platform (HAR-file class via Okta downstream).",
+      "severity": "medium",
+      "exposure_class": "support_metadata",
+      "ref": "Intercom / Okta downstream 2023-08"
+    },
+    {
+      "vendor": "zendesk",
+      "date": "2022-10-28",
+      "summary": "Zendesk employee SMS phishing led to brief unauthorised access to internal logging; no customer ticket data exfiltrated per disclosure.",
+      "severity": "medium",
+      "exposure_class": "vendor_internal_logs",
+      "ref": "Zendesk SMS phishing 2022-10"
+    },
+    {
+      "vendor": "sendgrid",
+      "date": "2018-04-09",
+      "summary": "Twilio SendGrid API keys leaked via misconfiguration at multiple customers; mass-mailing abuse.",
+      "severity": "medium",
+      "exposure_class": "api_key_misuse",
+      "ref": "SendGrid 2018 key leak"
+    },
+    {
+      "vendor": "constant_contact",
+      "date": "2021-05-25",
+      "summary": "USAID Constant Contact account compromised by APT29; phishing campaign sent to 3000+ contacts.",
+      "severity": "medium",
+      "exposure_class": "customer_sender_authority",
+      "ref": "Constant Contact / USAID 2021-05"
+    },
+    {
+      "vendor": "marketo",
+      "date": "2021-06-22",
+      "summary": "Adobe Marketo (BMC, Adobe) employee creds exposed on dark web; Marketo subdomain hosted leaks.",
+      "severity": "medium",
+      "exposure_class": "credential_leak_hosting",
+      "ref": "Marketo 2021-06"
+    }
+  ]
+}
