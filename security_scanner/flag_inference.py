@@ -514,6 +514,23 @@ def run_preflight(domain: str, sub_industry: Optional[str] = None,
     gdpr = infer_gdpr_suggestion(domain, html_content)
     pci = infer_pci_suggestion(domain, html_content)
 
+    # S-1 v1.1 — related-domain auto-discovery (cert SAN MVP).
+    # Surfaces candidate sibling domains for broker confirmation in
+    # the same pre-flight UX used for regulatory flags. Wrapped so a
+    # crt.sh outage / timeout never breaks the rest of pre-flight.
+    related_candidates = {"status": "skipped", "candidates": []}
+    try:
+        from related_domain_discovery import discover_related_domains
+        related_candidates = discover_related_domains(domain)
+    except Exception as _rd_err:
+        related_candidates = {
+            "status": "error",
+            "primary_domain": domain,
+            "candidates": [],
+            "methods_used": [],
+            "error": str(_rd_err)[:200],
+        }
+
     return {
         "domain": domain,
         "status": "ok",
@@ -529,4 +546,5 @@ def run_preflight(domain: str, sub_industry: Optional[str] = None,
             "gdpr_applicable": gdpr,
             "pci_applicable": pci,
         },
+        "related_candidates": related_candidates,
     }
