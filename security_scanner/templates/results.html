@@ -1143,6 +1143,50 @@
       </div>
     </div>
 
+    <!-- Third-Party JavaScript (S-2) -->
+    {% set tpjs = results.categories.get('third_party_js', {}) %}
+    {% if tpjs.status == 'completed' %}
+    {% set tpjs_total = tpjs.third_party_count | default(0) %}
+    {% set tpjs_sri_missing = tpjs.missing_sri_count | default(0) %}
+    {% set tpjs_compromised = tpjs.compromised_host_count | default(0) %}
+    {% set tpjs_tl = 'tl-crimson' if tpjs_compromised > 0 else ('tl-red' if (tpjs_total > 0 and tpjs_sri_missing == tpjs_total) else ('tl-amber' if tpjs_sri_missing > 0 else 'tl-green')) %}
+    <div class="cat-card">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light {{ tpjs_tl }}"></div><div class="cat-title">Third-Party JavaScript</div></div>
+        <div style="display:flex;align-items:center;gap:10px;"><span class="cat-grade">{{ tpjs_total }} third-party, {{ tpjs_sri_missing }} missing SRI</span><span class="chevron">&#9660;</span></div>
+      </div>
+      <div class="cat-body">
+        <table class="kv-table">
+          <tr><td>Scripts on homepage</td><td>{{ tpjs.total_scripts | default(0) }}</td></tr>
+          <tr><td>Third-party scripts</td><td>{{ tpjs_total }}</td></tr>
+          <tr><td>Missing SRI hash</td><td>{% if tpjs_sri_missing > 0 %}<span class="badge badge-amber">{{ tpjs_sri_missing }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+          <tr><td>Known-compromised hosts</td><td>{% if tpjs_compromised > 0 %}<span class="badge badge-red">{{ tpjs_compromised }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+        </table>
+        {% if tpjs.third_party_hosts %}
+        <div style="margin-top:8px;">
+          {% for h in tpjs.third_party_hosts[:8] %}
+          <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:.8rem;">
+            <strong>{{ h.host }}</strong>
+            {% if h.known_cdn %}<span class="badge badge-blue" style="font-size:.6rem;">CDN</span>{% endif %}
+            <span style="font-size:.72rem;color:var(--muted);">{{ h.count }} script(s)</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if tpjs.compromised_scripts %}
+        <div style="margin-top:8px;">
+          {% for c in tpjs.compromised_scripts %}
+          <div style="padding:4px 0;border-bottom:1px solid var(--border);font-size:.8rem;">
+            <span class="badge badge-red">COMPROMISED</span> <strong>{{ c.host }}</strong> — <span style="color:var(--muted);">{{ c.reason }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if tpjs.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in tpjs.issues %}<li class="issue-item"><span class="issue-icon issue-{% if 'CRITICAL' in i %}err{% else %}warn{% endif %}">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+
   </div>
 
   <!-- =================== EMAIL SECURITY =================== -->
@@ -1213,6 +1257,44 @@
         {% if eh.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in eh.issues %}<li class="issue-item"><span class="issue-icon issue-warn">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
       </div>
     </div>
+
+    <!-- Email-Vendor Surface (S-4) -->
+    {% set evs = results.categories.get('email_vendor_surface', {}) %}
+    {% if evs.status == 'completed' %}
+    {% set evs_count = evs.vendor_count | default(0) %}
+    {% set evs_weak = evs.weak_dmarc %}
+    {% set evs_policy = evs.dmarc_policy or 'missing' %}
+    {% set evs_tl = 'tl-red' if (evs_weak and evs_count >= 1) else ('tl-amber' if evs_count >= 3 else 'tl-green') %}
+    <div class="cat-card">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light {{ evs_tl }}"></div><div class="cat-title">Email-Vendor Surface (SPF)</div></div>
+        <div style="display:flex;align-items:center;gap:10px;"><span class="cat-grade">{{ evs_count }} vendor(s), DMARC p={{ evs_policy }}</span><span class="chevron">&#9660;</span></div>
+      </div>
+      <div class="cat-body">
+        <table class="kv-table">
+          <tr><td>Email vendors in SPF chain</td><td>{{ evs_count }}</td></tr>
+          <tr><td>Unknown includes</td><td>{{ evs.unknown_count | default(0) }}</td></tr>
+          <tr><td>DMARC policy</td><td>
+            {% if evs_policy == 'reject' %}<span class="badge badge-green">reject</span>
+            {% elif evs_policy == 'quarantine' %}<span class="badge badge-amber">quarantine</span>
+            {% elif evs_policy == 'none' %}<span class="badge badge-red">none</span>
+            {% else %}<span class="badge badge-red">missing</span>{% endif %}
+          </td></tr>
+        </table>
+        {% if evs.vendors_detected %}
+        <div style="margin-top:8px;">
+          {% for v in evs.vendors_detected %}
+          <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:.8rem;">
+            <strong>{{ v.vendor }}</strong>
+            <span style="font-size:.72rem;color:var(--muted);">{{ v.includes | join(', ') }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if evs.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in evs.issues %}<li class="issue-item"><span class="issue-icon issue-warn">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+    </div>
+    {% endif %}
 
   </div>
 
@@ -1901,6 +1983,117 @@
     </div>
     {% endif %}
 
+    <!-- Related Domains (Supply Chain) (S-1) -->
+    {% set rd = results.categories.get('related_domains', {}) %}
+    {% if rd.status == 'completed' and (rd.declared_count | default(0)) > 0 %}
+    {% set rd_crit = rd.critical_count | default(0) %}
+    {% set rd_high = rd.high_count | default(0) %}
+    {% set rd_scanned = rd.scanned_count | default(0) %}
+    {% set rd_tl = 'tl-crimson' if rd_crit > 0 else ('tl-red' if rd_high > 0 else 'tl-green') %}
+    <div class="cat-card">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light {{ rd_tl }}"></div><div class="cat-title">Supply-Chain / Related Domains</div></div>
+        <div style="display:flex;align-items:center;gap:10px;"><span class="cat-grade">{{ rd_scanned }} scanned, {{ rd_crit }} critical</span><span class="chevron">&#9660;</span></div>
+      </div>
+      <div class="cat-body">
+        <table class="kv-table">
+          <tr><td>Declared siblings</td><td>{{ rd.declared_count | default(0) }}</td></tr>
+          <tr><td>Scanned</td><td>{{ rd_scanned }}</td></tr>
+          <tr><td>Critical findings</td><td>{% if rd_crit > 0 %}<span class="badge badge-red">{{ rd_crit }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+          <tr><td>High-risk siblings</td><td>{% if rd_high > 0 %}<span class="badge badge-amber">{{ rd_high }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+          {% if rd.worst_domain %}<tr><td>Weakest sibling</td><td>{{ rd.worst_domain.domain }} <span style="color:var(--muted);">(LITE score {{ rd.worst_domain.lite_score }}/100)</span></td></tr>{% endif %}
+        </table>
+        {% if rd.dependants %}
+        <div style="margin-top:8px;">
+          {% for dep in rd.dependants %}
+          <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:.8rem;">
+            <strong>{{ dep.domain }}</strong>
+            {% set ds = dep.lite_score | default(100) %}
+            {% if ds < 60 %}<span class="badge badge-red">{{ ds }}/100</span>
+            {% elif ds < 85 %}<span class="badge badge-amber">{{ ds }}/100</span>
+            {% else %}<span class="badge badge-green">{{ ds }}/100</span>{% endif %}
+            {% if dep.critical_paths and dep.critical_paths > 0 %}<span style="font-size:.72rem;color:var(--muted);">{{ dep.critical_paths }} critical path(s)</span>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if rd.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in rd.issues %}<li class="issue-item"><span class="issue-icon issue-{% if 'CRITICAL' in i %}err{% else %}warn{% endif %}">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Dependency Manifest Leak (S-3) -->
+    {% set dm = results.categories.get('dependency_manifests', {}) %}
+    {% if dm.status == 'completed' %}
+    {% set dm_count = dm.exposed_manifests | length if dm.exposed_manifests else 0 %}
+    {% set dm_crit = dm.critical_count | default(0) %}
+    {% set dm_high = dm.high_count | default(0) %}
+    {% set dm_tl = 'tl-crimson' if dm_crit > 0 else ('tl-red' if dm_high > 0 else 'tl-green') %}
+    <div class="cat-card">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light {{ dm_tl }}"></div><div class="cat-title">Exposed Dependency Manifests</div></div>
+        <div style="display:flex;align-items:center;gap:10px;"><span class="cat-grade">{{ dm_count }} exposed</span><span class="chevron">&#9660;</span></div>
+      </div>
+      <div class="cat-body">
+        <table class="kv-table">
+          <tr><td>Manifests exposed</td><td>{% if dm_count > 0 %}<span class="badge badge-red">{{ dm_count }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+          <tr><td>Lockfiles (critical)</td><td>{% if dm_crit > 0 %}<span class="badge badge-red">{{ dm_crit }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+          <tr><td>Manifests (high)</td><td>{% if dm_high > 0 %}<span class="badge badge-amber">{{ dm_high }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+          <tr><td>Ecosystems</td><td>{{ dm.ecosystems | join(', ') if dm.ecosystems else '—' }}</td></tr>
+          <tr><td>Total dependencies leaked</td><td>{{ dm.total_dependencies | default(0) }}</td></tr>
+        </table>
+        {% if dm.exposed_manifests %}
+        <div style="margin-top:8px;">
+          {% for m in dm.exposed_manifests %}
+          <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:.8rem;">
+            <code style="color:#f87171;">{{ m.path }}</code>
+            <span class="badge badge-{% if m.severity == 'critical' %}red{% else %}amber{% endif %}" style="font-size:.6rem;">{{ m.severity }}</span>
+            <span style="font-size:.72rem;color:var(--muted);">{{ m.ecosystem }} · {{ m.dependency_count }} dep(s)</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if dm.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in dm.issues %}<li class="issue-item"><span class="issue-icon issue-{% if 'CRITICAL' in i %}err{% else %}warn{% endif %}">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Vendor Breach Correlation (S-5) -->
+    {% set vb = results.categories.get('vendor_breach', {}) %}
+    {% if vb.status == 'completed' %}
+    {% set vb_matches = vb.matches | length if vb.matches else 0 %}
+    {% set vb_crit = vb.critical_match_count | default(0) %}
+    {% set vb_high = vb.high_match_count | default(0) %}
+    {% set vb_tl = 'tl-crimson' if vb_crit > 0 else ('tl-red' if vb_high > 0 else ('tl-amber' if vb_matches > 0 else 'tl-green')) %}
+    <div class="cat-card">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light {{ vb_tl }}"></div><div class="cat-title">Vendor Breach Correlation</div></div>
+        <div style="display:flex;align-items:center;gap:10px;"><span class="cat-grade">{{ vb_matches }} match(es)</span><span class="chevron">&#9660;</span></div>
+      </div>
+      <div class="cat-body">
+        <table class="kv-table">
+          <tr><td>Vendors in SPF chain</td><td>{{ vb.vendors_detected | length if vb.vendors_detected else 0 }}</td></tr>
+          <tr><td>Breach matches</td><td>{% if vb_matches > 0 %}<span class="badge badge-red">{{ vb_matches }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+          <tr><td>Critical severity</td><td>{% if vb_crit > 0 %}<span class="badge badge-red">{{ vb_crit }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+          <tr><td>High severity</td><td>{% if vb_high > 0 %}<span class="badge badge-amber">{{ vb_high }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+        </table>
+        {% if vb.matches %}
+        <div style="margin-top:8px;">
+          {% for m in vb.matches[:6] %}
+          {% set months = ((m.age_days | default(0)) // 30) %}
+          <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:.8rem;">
+            <strong>{{ m.vendor }}</strong>
+            <span class="badge badge-{% if m.severity == 'critical' %}red{% elif m.severity == 'high' %}amber{% else %}grey{% endif %}" style="font-size:.6rem;">{{ m.severity }}</span>
+            <span style="font-size:.72rem;color:var(--muted);">{{ m.date }} · ~{{ months if months > 0 else 1 }} mo · {{ m.exposure_class }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if vb.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in vb.issues %}<li class="issue-item"><span class="issue-icon issue-{% if 'CRITICAL' in i %}err{% else %}warn{% endif %}">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+
   </div>
 
   <!-- =================== TECH & GOVERNANCE =================== -->
@@ -1933,6 +2126,38 @@
         {% endif %}
       </div>
     </div>
+
+    <!-- CMS Plugin SBOM (S-10) -->
+    {% set cms = results.categories.get('cms_plugin_sbom', {}) %}
+    {% if cms.status == 'completed' and cms.is_wordpress %}
+    {% set cms_count = cms.plugin_count | default(0) %}
+    {% set cms_vers = cms.versioned_count | default(0) %}
+    {% set cms_tl = 'tl-red' if cms_vers >= 3 else ('tl-amber' if cms_count >= 5 else 'tl-green') %}
+    <div class="cat-card">
+      <div class="cat-header" onclick="toggle(this)">
+        <div class="cat-left"><div class="traffic-light {{ cms_tl }}"></div><div class="cat-title">CMS Plugin Surface (WordPress)</div></div>
+        <div style="display:flex;align-items:center;gap:10px;"><span class="cat-grade">{{ cms_count }} plugin(s), {{ cms_vers }} versioned</span><span class="chevron">&#9660;</span></div>
+      </div>
+      <div class="cat-body">
+        <table class="kv-table">
+          <tr><td>WordPress detected</td><td><span class="badge badge-blue">Yes</span></td></tr>
+          <tr><td>Plugins detected</td><td>{% if cms_count >= 5 %}<span class="badge badge-amber">{{ cms_count }}</span>{% else %}{{ cms_count }}{% endif %}</td></tr>
+          <tr><td>Versions readable</td><td>{% if cms_vers > 0 %}<span class="badge badge-red">{{ cms_vers }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
+        </table>
+        {% if cms.plugins_detected %}
+        <div style="margin-top:8px;">
+          {% for p in cms.plugins_detected %}
+          <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:.8rem;">
+            <code>{{ p.slug }}</code>
+            {% if p.version %}<span class="badge badge-red" style="font-size:.6rem;">v{{ p.version }}</span>{% else %}<span class="badge badge-amber" style="font-size:.6rem;">enumerable</span>{% endif %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if cms.issues %}<ul class="issue-list" style="margin-top:8px;">{% for i in cms.issues %}<li class="issue-item"><span class="issue-icon issue-warn">&#9888;</span>{{ i }}</li>{% endfor %}</ul>{% endif %}
+      </div>
+    </div>
+    {% endif %}
 
     <!-- Domain Intelligence -->
     {% set di = results.categories.domain_intel %}

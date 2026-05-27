@@ -2098,6 +2098,360 @@ def cat_fraudulent_domains(d, S):
     return parts
 
 
+def cat_related_domains(d, S):
+    rd = d.get("related_domains", {})
+    if rd.get("status") == "skipped" or rd.get("declared_count", 0) == 0:
+        return []  # Render nothing when broker did not declare siblings
+    declared = rd.get("declared_count", 0)
+    scanned  = rd.get("scanned_count", 0)
+    crit     = rd.get("critical_count", 0)
+    high     = rd.get("high_count", 0)
+    col      = C_CRITICAL if crit > 0 else (C_RED if high > 0 else C_GREEN)
+    rows = [
+        ("Declared siblings", declared),
+        ("Scanned",           scanned),
+        ("Critical findings", crit),
+        ("High-risk siblings", high),
+    ]
+    worst = rd.get("worst_domain") or {}
+    if worst:
+        rows.append(("Weakest sibling",
+                     f"{worst.get('domain','')} (LITE score {worst.get('lite_score',100)}/100)"))
+    for dep in (rd.get("dependants") or [])[:5]:
+        rows.append((dep.get("domain", ""),
+                     f"LITE score {dep.get('lite_score',100)}/100"
+                     f"{' — '+str(dep.get('critical_paths'))+' critical path(s)' if dep.get('critical_paths') else ''}"))
+    fb = (f"{crit} critical finding(s) across {scanned} declared related domain(s) — review supplier security posture."
+          if crit > 0 else
+          (f"{high} of {scanned} declared related domain(s) score below 60 — review supplier security posture."
+           if high > 0 else
+           f"{scanned} declared related domain(s) scanned — no critical findings."))
+    parts = build_cat_card("Supply-Chain / Related Domains", col,
+                          f"{scanned} scanned, {crit} critical",
+                          rows, rd.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if crit > 0 or high > 0:
+        parts.append(Paragraph(
+            f"{scanned} domain(s) declared by the broker as related entities or suppliers were scanned in LITE "
+            "mode (SSL, DNS-port exposure, and information disclosure). Findings on these domains can be imputed "
+            "to the insured under aggregator / supplier-liability theory — a breach at any of them may trigger "
+            "civil claims even when the insured's own perimeter is clean.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Engage each high-risk sibling to remediate the specific findings (LITE score &lt; 60).", S["body"]))
+        parts.append(Paragraph("2. Add a security-posture clause to supplier / inter-company agreements.", S["body"]))
+        parts.append(Paragraph("3. Re-scan affected siblings after remediation and confirm score recovery.", S["body"]))
+    else:
+        parts.append(Paragraph(
+            f"All {scanned} declared related domain(s) passed the LITE-mode supplier checks. Continue to "
+            "include siblings in the supply-chain scope of future scans so degradations are caught early.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
+
+
+def cat_dependency_manifests(d, S):
+    dm = d.get("dependency_manifests", {})
+    if dm.get("status") not in ("completed",):
+        return []
+    manifests = dm.get("exposed_manifests", []) or []
+    crit = dm.get("critical_count", 0)
+    high = dm.get("high_count", 0)
+    if not manifests:
+        col = C_GREEN
+    else:
+        col = C_CRITICAL if crit > 0 else C_RED
+    rows = [
+        ("Manifests exposed",    len(manifests)),
+        ("Lockfiles (critical)", crit),
+        ("Manifests (high)",     high),
+        ("Ecosystems",           ", ".join(dm.get("ecosystems", [])) or "—"),
+        ("Total dependencies",   dm.get("total_dependencies", 0)),
+    ]
+    for m in manifests[:5]:
+        rows.append((m.get("path", ""),
+                     f"{m.get('ecosystem','')} · {m.get('dependency_count',0)} dep(s) · {m.get('severity','')}"))
+    fb = (f"{len(manifests)} dependency manifest(s) exposed — exact versions are now public and CVE-chainable."
+          if manifests else
+          "No dependency manifests exposed at common web-root paths.")
+    parts = build_cat_card("Exposed Dependency Manifests", col,
+                          f"{len(manifests)} exposed", rows,
+                          dm.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if manifests:
+        parts.append(Paragraph(
+            f"{len(manifests)} dependency manifest file(s) were found publicly accessible at the web root. "
+            "Lockfiles (package-lock.json, composer.lock, Gemfile.lock, requirements.txt with pinned "
+            "versions) expose the exact version of every dependency — an attacker can feed this directly into "
+            "OSV.dev / NVD to compile a list of known-exploitable CVEs without any reconnaissance effort.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Block public access to the exposed manifest paths in your web server config (deny .json / lock files at the root).", S["body"]))
+        parts.append(Paragraph("2. Confirm build / deploy pipelines do not ship lockfiles to the public web root.", S["body"]))
+        parts.append(Paragraph("3. Audit the disclosed dependency list against known CVEs and patch the high-severity items first.", S["body"]))
+    else:
+        parts.append(Paragraph(
+            "No dependency manifests were found at the common web-root paths (package.json, composer.json, "
+            "requirements.txt, etc.). This is the expected configuration and prevents attackers from "
+            "harvesting your exact dependency versions for CVE chaining.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
+
+
+def cat_third_party_js(d, S):
+    tpjs = d.get("third_party_js", {})
+    if tpjs.get("status") not in ("completed",):
+        return []
+    total       = tpjs.get("total_scripts", 0)
+    third       = tpjs.get("third_party_count", 0)
+    no_sri      = tpjs.get("missing_sri_count", 0)
+    compromised = tpjs.get("compromised_host_count", 0)
+    col = C_CRITICAL if compromised > 0 else (C_RED if (third > 0 and no_sri == third) else
+          (C_AMBER if no_sri > 0 else C_GREEN))
+    rows = [
+        ("Scripts on homepage",      total),
+        ("Third-party scripts",      third),
+        ("Missing SRI hash",         no_sri),
+        ("Known-compromised hosts",  compromised),
+    ]
+    for h in (tpjs.get("third_party_hosts") or [])[:6]:
+        label = h.get("host", "")
+        if h.get("known_cdn"):
+            label += " · CDN"
+        rows.append((label, f"{h.get('count', 0)} script(s)"))
+    for c in (tpjs.get("compromised_scripts") or [])[:3]:
+        rows.append((f"  COMPROMISED: {c.get('host','')}", c.get("reason", "")))
+    fb = (f"{compromised} script(s) from known-compromised CDN(s) — replace immediately."
+          if compromised > 0 else
+          (f"{no_sri} of {third} third-party scripts lack Subresource Integrity — supply-chain tampering risk."
+           if no_sri > 0 else
+           f"{third} third-party script(s) loaded with SRI integrity hashes — supply-chain controls in place."))
+    parts = build_cat_card("Third-Party JavaScript", col,
+                          f"{third} third-party, {no_sri} missing SRI",
+                          rows, tpjs.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if compromised > 0 or no_sri > 0:
+        parts.append(Paragraph(
+            "Every external script loaded into your pages runs with the same privileges as your own code — "
+            "it can read forms, intercept payment fields, and exfiltrate data. Subresource Integrity (SRI) "
+            "hashes pin each script to a known good version, so a hijack of the upstream CDN (Magecart 2018, "
+            "polyfill.io 2024) cannot silently replace the script. Missing SRI on third-party scripts is the "
+            "single biggest predictor of card-skimming and form-skimming breaches.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        if compromised > 0:
+            parts.append(Paragraph("1. Replace scripts from known-compromised CDNs immediately — these are confirmed supply-chain incidents.", S["body"]))
+            parts.append(Paragraph("2. Pin all remaining third-party scripts with SRI integrity attributes (sha384 hashes).", S["body"]))
+            parts.append(Paragraph("3. Move payment / login pages to a strict Content-Security-Policy that disallows unpinned external scripts.", S["body"]))
+        else:
+            parts.append(Paragraph("1. Add Subresource Integrity (integrity=\"sha384-...\") attributes to every third-party script tag.", S["body"]))
+            parts.append(Paragraph("2. Configure a Content-Security-Policy that disallows scripts without integrity hashes on sensitive pages.", S["body"]))
+            parts.append(Paragraph("3. Periodically review the list of third-party origins and remove ones that are no longer needed.", S["body"]))
+    else:
+        parts.append(Paragraph(
+            "All third-party scripts on the homepage carry Subresource Integrity hashes, so a hijack of any "
+            "upstream CDN cannot silently swap them out. Maintain this control by adding SRI hashes to every "
+            "new third-party script and tracking integrity-mismatch failures in error logging.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
+
+
+def cat_email_vendor_surface(d, S):
+    evs = d.get("email_vendor_surface", {})
+    if evs.get("status") not in ("completed",):
+        return []
+    vendors    = evs.get("vendors_detected", []) or []
+    count      = evs.get("vendor_count", 0)
+    weak_dmarc = evs.get("weak_dmarc", False)
+    policy     = evs.get("dmarc_policy") or "missing"
+    col = C_RED if (weak_dmarc and count >= 1) else (
+          C_AMBER if count >= 6 else (C_AMBER if count >= 3 else C_GREEN))
+    rows = [
+        ("Email vendors in SPF chain", count),
+        ("Unknown includes",           evs.get("unknown_count", 0)),
+        ("DMARC policy",               policy),
+    ]
+    for v in vendors[:8]:
+        rows.append((v.get("vendor", ""), ", ".join(v.get("includes", []))))
+    fb = (f"{count} email-vendor(s) in SPF chain with weak DMARC (p={policy}) — phishing-via-supplier risk."
+          if (weak_dmarc and count >= 1) else
+          (f"{count} email-vendor(s) detected in SPF chain — wide fourth-party surface."
+           if count >= 6 else
+           f"{count} email-vendor(s) detected — DMARC policy: {policy}."))
+    parts = build_cat_card("Email-Vendor Surface (SPF)", col,
+                          f"{count} vendor(s), DMARC p={policy}",
+                          rows, evs.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if weak_dmarc and count >= 1:
+        parts.append(Paragraph(
+            f"Your SPF record authorises {count} third-party email vendor(s) to send mail on your behalf. "
+            f"With DMARC policy set to '{policy}', a credential compromise at any one of these vendors lands "
+            "phishing emails in customer inboxes that pass authentication checks. This is the same attack "
+            "class that drove the Mailchimp 2023 and Constant Contact 2021 incidents downstream into "
+            "customer organisations.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Set DMARC policy to p=quarantine or p=reject to enforce vendor authentication.", S["body"]))
+        parts.append(Paragraph("2. Audit each vendor — confirm which still need send authority and remove the rest.", S["body"]))
+        parts.append(Paragraph("3. Monitor DMARC aggregate reports for anomalous vendor sending patterns.", S["body"]))
+    elif count >= 6:
+        parts.append(Paragraph(
+            f"Your SPF chain authorises {count} third-party email vendors — every one of them is implicitly "
+            "trusted to send mail as your domain. A wide vendor surface multiplies fourth-party breach "
+            "exposure: a breach at any single vendor (Mailchimp, Okta, Microsoft 365 etc.) becomes a "
+            "phishing path into your customer base.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Audit the vendor list — remove SPF includes for vendors no longer in use.", S["body"]))
+        parts.append(Paragraph("2. Confirm DMARC is set to p=quarantine or p=reject and TLS-RPT is enabled.", S["body"]))
+        parts.append(Paragraph("3. Use sub-domain delegation (e.g. marketing.yourdomain.com) to compartmentalise vendor authority.", S["body"]))
+    else:
+        parts.append(Paragraph(
+            f"Your SPF chain authorises {count} email vendor(s) with DMARC policy '{policy}' — a focused "
+            "vendor surface with proper authentication enforcement. Continue to review the vendor list "
+            "during quarterly compliance reviews so unused authorisations are removed.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
+
+
+def cat_cms_plugin_sbom(d, S):
+    cms = d.get("cms_plugin_sbom", {})
+    if cms.get("status") == "skipped" or not cms.get("is_wordpress"):
+        return []
+    plugins = cms.get("plugins_detected", []) or []
+    versioned = cms.get("versioned_count", 0)
+    count = cms.get("plugin_count", 0)
+    col = C_RED if versioned >= 3 else (C_AMBER if count >= 5 else C_GREEN)
+    rows = [
+        ("WordPress detected", "Yes"),
+        ("Plugins detected",   count),
+        ("Versions readable",  versioned),
+    ]
+    for p in plugins[:8]:
+        ver = p.get("version") or "—"
+        rows.append((p.get("slug", ""), f"version {ver}" if ver != "—" else "directory enumerable"))
+    fb = (f"{versioned} WordPress plugin version(s) readable — directly CVE-chainable."
+          if versioned > 0 else
+          (f"{count} popular WordPress plugin(s) detected — wide CMS attack surface."
+           if count >= 5 else
+           f"{count} popular WordPress plugin(s) detected — limited CMS attack surface."))
+    parts = build_cat_card("CMS Plugin Surface (WordPress)", col,
+                          f"{count} plugin(s), {versioned} versioned",
+                          rows, cms.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if versioned > 0 or count >= 5:
+        parts.append(Paragraph(
+            f"This site is running WordPress with at least {count} popular plugin(s) detectable by external "
+            f"probing, and {versioned} of them publish their version string in readme.txt. Outdated WordPress "
+            "plugins are the top external ransomware entry vector for SA SMEs — attackers automate scans for "
+            "specific plugin slugs at version-strings with public CVEs (e.g. Revolution Slider 4.x, "
+            "WooCommerce &lt; 4.9, Contact Form 7 &lt; 5.3).",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Update every detected plugin to its latest version and enable automatic security updates where supported.", S["body"]))
+        parts.append(Paragraph("2. Remove plugins no longer in use — every active plugin is attack surface even when patched.", S["body"]))
+        parts.append(Paragraph("3. Block enumeration of /wp-content/plugins/ at the web-server level so version strings stop leaking.", S["body"]))
+        parts.append(Paragraph("4. Deploy a WordPress-aware WAF (Wordfence, Patchstack) for virtual patching of plugin CVEs.", S["body"]))
+    else:
+        parts.append(Paragraph(
+            "WordPress is in use but the public plugin surface is limited and version strings are not "
+            "readable. Continue to apply plugin security updates promptly and prune unused plugins.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
+
+
+def cat_vendor_breach(d, S):
+    vb = d.get("vendor_breach", {})
+    if vb.get("status") not in ("completed",):
+        return []
+    matches = vb.get("matches", []) or []
+    crit = vb.get("critical_match_count", 0)
+    high = vb.get("high_match_count", 0)
+    col = C_CRITICAL if crit > 0 else (C_RED if high > 0 else (C_AMBER if matches else C_GREEN))
+    rows = [
+        ("Vendors in SPF chain",    len(vb.get("vendors_detected", []) or [])),
+        ("Breach matches",          len(matches)),
+        ("Critical severity",       crit),
+        ("High severity",           high),
+    ]
+    for m in matches[:6]:
+        months = max(1, (m.get("age_days") or 0) // 30)
+        rows.append((f"{m.get('vendor','')} ({m.get('severity','')})",
+                     f"{m.get('date','')} · ~{months} mo · {m.get('exposure_class','')}"))
+    fb = (
+        f"{crit} critical-severity breach(es) at vendor(s) in your email send-authority chain — review credential rotation."
+        if crit > 0 else
+        (f"{high} high-severity breach(es) at vendor(s) in your email send-authority chain."
+         if high > 0 else
+         ("Vendor surface matched against breach DB — no severe incidents within the lookback window."
+          if vb.get("vendors_detected") else
+          "No vendor surface detected in SPF chain — no correlation possible."))
+    )
+    parts = build_cat_card("Vendor Breach Correlation", col,
+                          f"{len(matches)} match(es)", rows,
+                          vb.get("issues", []), S, fallback=fb)
+
+    parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
+    parts.append(Spacer(1, 1 * mm))
+    if matches:
+        top = matches[0]
+        months = max(1, (top.get("age_days") or 0) // 30)
+        parts.append(Paragraph(
+            f"At least one vendor in your email send-authority chain ({top.get('vendor','')}) suffered a "
+            f"confirmed public-record breach approximately {months} month(s) ago "
+            f"({top.get('date','')}, {top.get('severity','')}, {top.get('exposure_class','')}). "
+            "Customer-key and token rotation after a vendor breach is typically incomplete even years later, "
+            "so any credentials, API keys or session tokens shared with this vendor at the time of incident "
+            "should be treated as potentially compromised until proven otherwise.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Rotate any API keys, OAuth tokens and service-account credentials issued to the affected vendor since the incident date.", S["body"]))
+        parts.append(Paragraph("2. Force re-authentication for staff accounts that used the vendor for SSO or session storage.", S["body"]))
+        parts.append(Paragraph("3. Confirm the vendor's post-incident hardening and ensure your contract reflects current security expectations.", S["body"]))
+        parts.append(Paragraph("4. Monitor DMARC and audit logs for anomalous activity that pre-dates the rotation date.", S["body"]))
+    elif vb.get("vendors_detected"):
+        parts.append(Paragraph(
+            "Your detected email vendors were correlated against the curated public-record breach database "
+            "and no severe incidents fell inside the lookback window. Continue to monitor each vendor's "
+            "advisories and re-scan periodically — new disclosures will update this view.",
+            S["body"]))
+    else:
+        parts.append(Paragraph(
+            "No third-party email vendors were detected in the SPF chain, so there is no fourth-party "
+            "vendor-breach exposure to correlate at this time.",
+            S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
+
+
 def cat_rsi(results, S):
     """RSI (Ransomware Susceptibility Index) card for PDF — insurance analytics."""
     ins = results if "rsi" in results else results.get("insurance", {})
@@ -5151,6 +5505,7 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         story += cat_headers(cats, S)
         story += cat_waf(cats, S)
         story += cat_website(cats, S)
+        story += cat_third_party_js(cats, S)
 
         # ── Information Security ────────────────────────────────────────────
         story += section_with_first_card("INFORMATION SECURITY", S, cat_info_disclosure(cats, S))
@@ -5158,6 +5513,7 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         # ── Email Security ──────────────────────────────────────────────────
         story += section_with_first_card("EMAIL SECURITY", S, cat_email(cats, S))
         story += cat_email_hardening(cats, S)
+        story += cat_email_vendor_surface(cats, S)
 
         # ── Network & Infrastructure ────────────────────────────────────────
         story += section_with_first_card("NETWORK & INFRASTRUCTURE", S, cat_dns(cats, S))
@@ -5177,6 +5533,9 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         story += cat_credential_risk(cats, S)
         story += cat_virustotal(cats, S)
         story += cat_fraudulent_domains(cats, S)
+        story += cat_related_domains(cats, S)
+        story += cat_dependency_manifests(cats, S)
+        story += cat_vendor_breach(cats, S)
 
         # ── Technology & Governance ─────────────────────────────────────────
         story += section_with_first_card("TECHNOLOGY & GOVERNANCE", S, cat_tech(cats, S))
@@ -5185,6 +5544,7 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         story += cat_privacy_compliance(cats, S)
         story += cat_security_policy(cats, S)
         story += cat_payment(cats, S)
+        story += cat_cms_plugin_sbom(cats, S)
         story += cat_glasswing(cats, S)
 
         # ── Compliance Framework Mapping ────────────────────────────────────
