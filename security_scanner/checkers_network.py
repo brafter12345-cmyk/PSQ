@@ -205,16 +205,33 @@ class SubdomainChecker:
         result["unique_ips_found"] = len(all_ips)
 
         # --- Check for subdomain takeover vulnerabilities ---
-        # 2026-05-27 audit fix: cap raised 60 → 150 to match the CT
-        # discovery cap above. Previously 90 subdomains discovered via
-        # CT logs were silently dropped from takeover checking. The
-        # CNAME-takeover probe is HEAD-only with a short timeout, so
-        # the cost of scanning 150 vs 60 is modest (~30s worst-case at
-        # max_workers=10) and the missed-finding risk is high.
+        # Coverage budget calibration (2026-05-27 audit follow-up):
+        #
+        # The probe itself is a full GET (not HEAD) with body-fingerprint
+        # match — Heroku "no-such-app", Vercel "Deployment not found",
+        # GitHub Pages "There isn't a GitHub Pages site here" — required
+        # to confirm a dangling CNAME. Per-probe wall-time is ~5-10s
+        # (DNS resolve + getaddrinfo + HTTP GET with allow_redirects).
+        #
+        # At max_workers=10 the throughput is ~10-20 probes per 10s.
+        # The original (cap=60, outer_timeout=30s) under-covered: at
+        # full CT discovery (150 subdomains) ~90 would never complete.
+        # An earlier audit "fix" raised cap → 150 but kept timeout=30s
+        # — submitted more futures but no extra completions, same
+        # under-coverage with worse wasted work.
+        #
+        # This iteration: cap=150 (match CT discovery) AND outer
+        # timeout=90s (lets all 150 complete at 10-15s per batch ×
+        # 15 batches). Adds 60s to subdomain-checker wall-clock in the
+        # worst case, which is acceptable inside the heavy-checker
+        # serialisation (subdomains is already wrapped with a 90s
+        # run_with_timeout in scanner.py, so total budget aligns).
+        # Per-subdomain GETs are spread across 150 distinct hosts so
+        # no single per-apex WAF gets pummeled.
         takeover_vulnerable = []
         with ThreadPoolExecutor(max_workers=10) as ex:
             futures = {ex.submit(self._check_cname_takeover, sub): sub for sub in subdomains[:150]}
-            for future in as_completed(futures, timeout=30):
+            for future in as_completed(futures, timeout=90):
                 try:
                     result_to = future.result(timeout=5)
                     if result_to:

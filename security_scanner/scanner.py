@@ -199,7 +199,14 @@ class SecurityScanner:
         # unresponsive servers.
         heavy_checkers = [
             ("ssl",         SSLChecker().check,              [domain], 75),
-            ("subdomains",  SubdomainChecker().check,        [domain], 90),
+            # Raised 90→150 (2026-05-27): SubdomainChecker now scans all
+            # 150 CT-discovered subdomains for takeover (previously capped
+            # at 60 inside an inner 30s loop, leaving ~90 unchecked). Pre-
+            # takeover workflow uses ~40s (CT fetch + brute + resolve);
+            # 150 takeover probes at 10-15s each / max_workers=10 needs
+            # ~110s extra. 150s outer budget gives the takeover loop
+            # ~110s to complete, matching the inner 90s as_completed cap.
+            ("subdomains",  SubdomainChecker().check,        [domain], 150),
         ]
         if include_fraudulent_domains:
             heavy_checkers.append(
