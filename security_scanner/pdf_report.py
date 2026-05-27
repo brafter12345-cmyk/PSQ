@@ -2161,10 +2161,12 @@ def cat_dependency_manifests(d, S):
     manifests = dm.get("exposed_manifests", []) or []
     crit = dm.get("critical_count", 0)
     high = dm.get("high_count", 0)
+    crit_cves = dm.get("total_critical_cves", 0)
+    total_cves = dm.get("total_cves", 0)
     if not manifests:
         col = C_GREEN
     else:
-        col = C_CRITICAL if crit > 0 else C_RED
+        col = C_CRITICAL if (crit > 0 or crit_cves > 0) else C_RED
     rows = [
         ("Manifests exposed",    len(manifests)),
         ("Lockfiles (critical)", crit),
@@ -2172,12 +2174,30 @@ def cat_dependency_manifests(d, S):
         ("Ecosystems",           ", ".join(dm.get("ecosystems", [])) or "—"),
         ("Total dependencies",   dm.get("total_dependencies", 0)),
     ]
+    if dm.get("osv_lookups_done", 0) > 0:
+        rows.append((
+            "OSV.dev cross-reference",
+            f"{total_cves} CVE(s) ({crit_cves} critical/high) "
+            f"across {dm.get('osv_lookups_done', 0)} version queries",
+        ))
+        for cve in (dm.get("top_critical_cves") or [])[:5]:
+            rows.append((
+                f"  {cve.get('cve_id', '')}",
+                f"{cve.get('package','')} {cve.get('version','')} "
+                f"({cve.get('severity','')}, CVSS {cve.get('cvss_score', 0)})",
+            ))
     for m in manifests[:5]:
         rows.append((m.get("path", ""),
                      f"{m.get('ecosystem','')} · {m.get('dependency_count',0)} dep(s) · {m.get('severity','')}"))
-    fb = (f"{len(manifests)} dependency manifest(s) exposed — exact versions are now public and CVE-chainable."
-          if manifests else
-          "No dependency manifests exposed at common web-root paths.")
+    if crit_cves > 0:
+        fb = (f"{crit_cves} critical/high-severity CVE(s) cross-referenced "
+              f"via OSV.dev across {len(manifests)} exposed manifest(s) — "
+              "actionable patch targets.")
+    elif manifests:
+        fb = (f"{len(manifests)} dependency manifest(s) exposed — exact "
+              "versions are now public and CVE-chainable.")
+    else:
+        fb = "No dependency manifests exposed at common web-root paths."
     parts = build_cat_card("Exposed Dependency Manifests", col,
                           f"{len(manifests)} exposed", rows,
                           dm.get("issues", []), S, fallback=fb)

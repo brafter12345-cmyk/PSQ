@@ -2041,14 +2041,35 @@
           <tr><td>Manifests (high)</td><td>{% if dm_high > 0 %}<span class="badge badge-amber">{{ dm_high }}</span>{% else %}<span class="badge badge-green">0</span>{% endif %}</td></tr>
           <tr><td>Ecosystems</td><td>{{ dm.ecosystems | join(', ') if dm.ecosystems else '—' }}</td></tr>
           <tr><td>Total dependencies leaked</td><td>{{ dm.total_dependencies | default(0) }}</td></tr>
+          {% if dm.osv_lookups_done and dm.osv_lookups_done > 0 %}
+          <tr><td>OSV.dev cross-reference</td><td>
+            {% if (dm.total_critical_cves | default(0)) > 0 %}<span class="badge badge-red">{{ dm.total_critical_cves }} critical/high</span>{% endif %}
+            {% set _med = (dm.total_cves | default(0)) - (dm.total_critical_cves | default(0)) %}
+            {% if _med > 0 %}<span class="badge badge-amber">{{ _med }} med/low</span>{% endif %}
+            {% if (dm.total_cves | default(0)) == 0 %}<span class="badge badge-green">0 CVEs</span>{% endif %}
+            <span style="font-size:.7rem;color:var(--muted);">({{ dm.osv_lookups_done }} version queries)</span>
+          </td></tr>
+          {% endif %}
         </table>
+        {% if dm.top_critical_cves %}
+        <div style="margin-top:8px;">
+          <div style="font-size:.78rem;color:#fca5a5;margin-bottom:4px;font-weight:500;">Top critical/high CVEs (OSV.dev):</div>
+          {% for cve in dm.top_critical_cves %}
+          <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border);font-size:.78rem;">
+            <code style="color:#f87171;">{{ cve.cve_id }}</code>
+            <span class="badge badge-{% if cve.severity == 'CRITICAL' %}red{% else %}amber{% endif %}" style="font-size:.6rem;">{{ cve.severity }}</span>
+            <span style="font-size:.72rem;color:var(--muted);">{{ cve.package }} {{ cve.version }} · CVSS {{ cve.cvss_score }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
         {% if dm.exposed_manifests %}
         <div style="margin-top:8px;">
           {% for m in dm.exposed_manifests %}
           <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:.8rem;">
             <code style="color:#f87171;">{{ m.path }}</code>
             <span class="badge badge-{% if m.severity == 'critical' %}red{% else %}amber{% endif %}" style="font-size:.6rem;">{{ m.severity }}</span>
-            <span style="font-size:.72rem;color:var(--muted);">{{ m.ecosystem }} · {{ m.dependency_count }} dep(s)</span>
+            <span style="font-size:.72rem;color:var(--muted);">{{ m.ecosystem }} · {{ m.dependency_count }} dep(s){% if m.critical_cve_count and m.critical_cve_count > 0 %} · <span style="color:#fca5a5;">{{ m.critical_cve_count }} crit CVE(s)</span>{% endif %}</span>
           </div>
           {% endfor %}
         </div>

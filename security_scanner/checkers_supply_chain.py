@@ -28,7 +28,7 @@ from urllib.parse import urlparse
 from scanner_utils import *
 from checkers_core import SSLChecker
 from checkers_network import DNSInfrastructureChecker
-from checkers_threats import InformationDisclosureChecker
+from checkers_threats import InformationDisclosureChecker, OSVChecker
 
 
 class RelatedDomainsChecker:
@@ -135,9 +135,11 @@ class RelatedDomainsChecker:
 
 class DependencyManifestChecker:
     # Manifests grouped by ecosystem. Each tuple is (path, ecosystem,
-    # parser-key). The parser-key selects an extraction strategy in
-    # _extract_dependencies. Severity reflects how much actionable
-    # CVE-discovery signal the manifest gives an attacker:
+    # parser-key, severity). The parser-key selects an extraction
+    # strategy in _extract_dependencies. The ecosystem is the OSV.dev
+    # ecosystem identifier used by OSVChecker.query_version.
+    # Severity reflects how much actionable CVE-discovery signal the
+    # manifest gives an attacker:
     #
     #   - lockfile (package-lock.json, composer.lock, Gemfile.lock,
     #     requirements.txt, go.sum, Cargo.lock) reveals EXACT pinned
@@ -163,7 +165,25 @@ class DependencyManifestChecker:
         ("/pom.xml",            "java",   "pom",            "high"),
     ]
 
+    # OSV.dev ecosystem identifiers for the .query_version() API.
+    ECOSYSTEM_TO_OSV = {
+        "node":   "npm",
+        "python": "PyPI",
+        "php":    "Packagist",
+        "ruby":   "RubyGems",
+        "go":     "Go",
+        "rust":   "crates.io",
+        "java":   "Maven",
+    }
+    # Pinned-version regex: only query OSV.dev when we have an exact
+    # version (not a range like ^1.2.0 or ~1.2.0 — those would either
+    # mass-flag or mass-miss). For SemVer ranges we skip — the broker
+    # gets the manifest-leak finding but no actionable CVE count.
+    EXACT_VERSION_RE = re.compile(r"^\d+\.\d+(\.\d+)?([-+][\w.]+)?$")
+
     MAX_DEPS_RETURNED = 50    # cap per manifest to bound result size
+    MAX_OSV_LOOKUPS_PER_SCAN = 30  # cap total OSV calls — 10 req/s rate limit
+    OSV_CRIT_HIGH_SEVERITIES = {"CRITICAL", "HIGH"}
 
     def _probe(self, url: str):
         from http_client import HTTP
@@ -308,6 +328,90 @@ class DependencyManifestChecker:
             return deps[:self.MAX_DEPS_RETURNED]
         return deps[:self.MAX_DEPS_RETURNED]
 
+    def _osv_lookup_dep(self, osv, ecosystem: str, name: str,
+                          version: str) -> list:
+        """Query OSV.dev for a single (ecosystem, name, version) tuple.
+        Returns the list of vuln dicts (already-parsed by OSVChecker)
+        or an empty list on miss / error."""
+        if not name or not version:
+            return []
+        if not self.EXACT_VERSION_RE.match(version.strip()):
+            return []  # skip SemVer ranges; would mass-flag/miss
+        osv_eco = self.ECOSYSTEM_TO_OSV.get(ecosystem)
+        if not osv_eco:
+            return []
+        try:
+            return osv.query_version(name, version, osv_eco) or []
+        except Exception:
+            return []
+
+    def _enrich_with_osv(self, exposed_manifests: list) -> dict:
+        """Cross-reference extracted deps against OSV.dev. Caps total
+        lookups to bound API rate and scan time. Adds per-manifest
+        cve_count + critical_cve_count + cves[] and returns aggregate
+        totals across all manifests for the issues / scoring layer."""
+        osv = OSVChecker()
+        total_cves = 0
+        total_critical = 0
+        cves_global = []
+        lookups_done = 0
+        # Spread the budget across manifests in inverse order of size
+        # so a lockfile with 1000 deps doesn't starve the smaller ones.
+        manifests_sorted = sorted(
+            exposed_manifests,
+            key=lambda m: m.get("dependency_count", 0),
+        )
+        per_manifest_budget = max(
+            1, self.MAX_OSV_LOOKUPS_PER_SCAN // max(1, len(manifests_sorted))
+        )
+        for m in manifests_sorted:
+            if lookups_done >= self.MAX_OSV_LOOKUPS_PER_SCAN:
+                break
+            m["cve_count"] = 0
+            m["critical_cve_count"] = 0
+            m["cves"] = []
+            ecosystem = m.get("ecosystem", "")
+            budget = min(per_manifest_budget,
+                         self.MAX_OSV_LOOKUPS_PER_SCAN - lookups_done)
+            for dep in (m.get("dependencies") or [])[:budget]:
+                if lookups_done >= self.MAX_OSV_LOOKUPS_PER_SCAN:
+                    break
+                lookups_done += 1
+                vulns = self._osv_lookup_dep(
+                    osv, ecosystem, dep.get("name", ""), dep.get("version", "")
+                )
+                for v in vulns:
+                    sev = (v.get("severity") or "").upper()
+                    cve_entry = {
+                        "package": dep.get("name", ""),
+                        "version": dep.get("version", ""),
+                        "ecosystem": ecosystem,
+                        "cve_id": v.get("cve") or v.get("id", ""),
+                        "severity": v.get("severity", ""),
+                        "cvss_score": v.get("cvss_score") or 0,
+                        "summary": (v.get("summary") or "")[:160],
+                    }
+                    m["cves"].append(cve_entry)
+                    m["cve_count"] += 1
+                    if sev in self.OSV_CRIT_HIGH_SEVERITIES:
+                        m["critical_cve_count"] += 1
+                        cves_global.append(cve_entry)
+                    total_cves += 1
+                    if sev in self.OSV_CRIT_HIGH_SEVERITIES:
+                        total_critical += 1
+            # Trim per-manifest stored CVE list to keep result size manageable
+            m["cves"] = m["cves"][:10]
+        return {
+            "lookups_done": lookups_done,
+            "lookup_cap": self.MAX_OSV_LOOKUPS_PER_SCAN,
+            "total_cves": total_cves,
+            "total_critical_cves": total_critical,
+            "top_critical_cves": sorted(
+                cves_global,
+                key=lambda c: -(c.get("cvss_score") or 0),
+            )[:5],
+        }
+
     def check(self, domain: str) -> dict:
         result = {
             "status": "completed",
@@ -316,6 +420,10 @@ class DependencyManifestChecker:
             "ecosystems": [],
             "critical_count": 0,
             "high_count": 0,
+            "osv_lookups_done": 0,
+            "total_cves": 0,
+            "total_critical_cves": 0,
+            "top_critical_cves": [],
             "score": 100,
             "issues": [],
         }
@@ -358,8 +466,24 @@ class DependencyManifestChecker:
                                             if m["severity"] == "critical")
             result["high_count"] = sum(1 for m in result["exposed_manifests"]
                                         if m["severity"] == "high")
+
+            # OSV.dev cross-reference (S-3 v1.1) — turn the leaked
+            # version map into an ACTIONABLE CVE count. Only exact-
+            # pinned versions are looked up; SemVer ranges are skipped.
+            osv_agg = self._enrich_with_osv(result["exposed_manifests"])
+            result["osv_lookups_done"] = osv_agg["lookups_done"]
+            result["total_cves"] = osv_agg["total_cves"]
+            result["total_critical_cves"] = osv_agg["total_critical_cves"]
+            result["top_critical_cves"] = osv_agg["top_critical_cves"]
+
             penalty = result["critical_count"] * 30 + result["high_count"] * 15
+            # Additional penalty for actionable CVEs surfaced via OSV.
+            # Capped so the manifest-leak severity penalty stays
+            # dominant — manifest leak is the cause; CVEs are the
+            # observable consequence.
+            penalty += min(30, result["total_critical_cves"] * 5)
             result["score"] = max(0, 100 - penalty)
+
             crit_paths = [m["path"] for m in result["exposed_manifests"]
                            if m["severity"] == "critical"]
             if crit_paths:
@@ -375,6 +499,22 @@ class DependencyManifestChecker:
                     f"{len(high_paths)} dependency manifest(s) exposed "
                     f"({', '.join(high_paths)}) — dependency names + SemVer "
                     "ranges leaked"
+                )
+            if result["total_critical_cves"] > 0:
+                top_pkgs = ", ".join(sorted({
+                    c["package"] for c in result["top_critical_cves"][:5]
+                }))
+                result["issues"].append(
+                    f"CRITICAL: {result['total_critical_cves']} critical / "
+                    f"high-severity CVE(s) cross-referenced via OSV.dev "
+                    f"across the leaked dependency map "
+                    f"(top affected: {top_pkgs})"
+                )
+            elif result["total_cves"] > 0:
+                result["issues"].append(
+                    f"{result['total_cves']} known CVE(s) cross-referenced "
+                    "via OSV.dev across the leaked dependency map "
+                    "(medium / low severity)"
                 )
 
         return result
