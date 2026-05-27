@@ -277,12 +277,13 @@ def run(industry: str = "retail",
         ],
         "vendor_breach": [
             ("overall_risk_score", True, 0, 0.5),
-            ("fin_p99", True, 0, 1.0),
-            ("fin_p99_5", True, 0, 1.0),
-            # S-5 is intentionally a catastrophe-tail signal; the central
-            # tendency moves through the +0.04 vulnerability uplift but is
-            # mostly washed out by the Monte Carlo. Anything positive proves
-            # wiring; the meaningful signal lives in fin_p99 / fin_p99_5.
+            # No separate K_TAIL_SC widening — supply-chain effect flows
+            # through the vulnerability uplift only (per 2026-05-27 design
+            # review). The MC distribution shifts up naturally, so any
+            # positive movement on fin_p99 proves wiring without needing
+            # a large delta threshold.
+            ("fin_p99", True, 0, 0.1),
+            ("fin_p99_5", True, 0, 0.1),
             ("fin_most_likely", True, 0, 0.1),
         ],
     }
@@ -329,12 +330,17 @@ def run(industry: str = "retail",
     _assert_moves("worst_stack", baseline, after_all, "fin_p99",
                    must_increase=True, min_delta_pct=5.0,
                    passes=passes, failures=failures)
-    if after_all["sc_tail_applied"]:
-        passes.append(("worst_stack", "sc_tail_applied", None, True, None))
-        print("PASS [worst_stack] supply_chain_tail_adjustment applied")
+    # K_TAIL_SC removed (2026-05-27): supply-chain effect flows through
+    # vulnerability uplift only — no separate cat-tail widening.
+    # supply_chain_tail_adjustment.applied is expected to be False now.
+    if not after_all["sc_tail_applied"]:
+        passes.append(("worst_stack", "sc_tail_NOT_applied (by design)",
+                        None, False, None))
+        print("PASS [worst_stack] supply_chain_tail_adjustment NOT applied (by design — no double-counting)")
     else:
-        failures.append(("worst_stack", "sc_tail_applied", None, False, None, True))
-        print("FAIL [worst_stack] supply_chain_tail_adjustment not applied")
+        failures.append(("worst_stack", "sc_tail_applied", None, True,
+                         None, False))
+        print("FAIL [worst_stack] supply_chain_tail_adjustment applied (should be False after K_TAIL_SC removal)")
     if after_all["sc_uplift"] > 0:
         passes.append(("worst_stack", "sc_uplift", None, after_all["sc_uplift"], None))
         print(f"PASS [worst_stack] supply_chain_vulnerability_uplift = {after_all['sc_uplift']}")

@@ -2638,66 +2638,43 @@ class FinancialImpactCalculator:
                     ),
                 }
 
-        # ── Supply-chain catastrophe tail inflation (SCN-029 K_TAIL pattern) ──
-        # Independent of WAF blinding. A confirmed vendor breach in the
-        # email-send-authority chain (S-5) or a critical finding on a
-        # declared supplier domain (S-1) materially widens the right tail —
-        # both vectors carry observable historical precedents of single
-        # incidents driving multi-percentile loss jumps (Mailchimp-Trezor
-        # 2022, Okta-1Password 2023, Talbot-mrcourier civil liability).
-        # The mode/median anchor preserves the central estimate; only the
-        # P75-P99.6 catastrophe view widens.
-        sc_tail_drivers = []
-        sc_shortfall = 0.0
-        vb_s5 = categories.get("vendor_breach", {})
-        if vb_s5.get("status") == "completed":
-            vb_crit = vb_s5.get("critical_match_count", 0)
-            vb_high = vb_s5.get("high_match_count", 0)
-            if vb_crit > 0:
-                sc_shortfall += min(0.08, vb_crit * 0.05)
-                sc_tail_drivers.append(f"S-5: {vb_crit} critical vendor breach match(es)")
-            if vb_high > 0:
-                sc_shortfall += min(0.05, vb_high * 0.02)
-                sc_tail_drivers.append(f"S-5: {vb_high} high-severity vendor breach match(es)")
-        rd_s1 = categories.get("related_domains", {})
-        if rd_s1.get("status") == "completed":
-            rd_crit = rd_s1.get("critical_count", 0)
-            if rd_crit > 0:
-                sc_shortfall += min(0.06, rd_crit * 0.025)
-                sc_tail_drivers.append(f"S-1: {rd_crit} critical sibling finding(s)")
-        # Cap supply-chain tail shortfall at 0.20 (vs WAF blind-spot cap of
-        # 0.60). Supply-chain widens the tail but never as much as a
-        # severely-blinded scan would, because the underlying signal is
-        # observed not hypothesised.
-        sc_shortfall = min(0.20, sc_shortfall)
-        sc_tail_adj = {"applied": False}
-        if sc_shortfall > 0:
-            # Dampened to K_TAIL_SC = 1.0 (matches the WAF blind-spot tail
-            # of 1.20 from below). Supply-chain widens the tail but should
-            # not blow past WAF-blindness widening on its own; both
-            # together compound naturally.
-            K_TAIL_SC = 1.00
-            sc_infl = 1.0 + K_TAIL_SC * sc_shortfall
-            med_t = float(np.median(mc_total))
-            mc_total = np.where(mc_total > med_t,
-                                med_t + (mc_total - med_t) * sc_infl, mc_total)
-            med_b = float(np.median(mc_breach_total))
-            mc_breach_total = np.where(mc_breach_total > med_b,
-                                       med_b + (mc_breach_total - med_b) * sc_infl,
-                                       mc_breach_total)
-            sc_tail_adj = {
-                "applied": True,
-                "drivers": sc_tail_drivers,
-                "supply_chain_shortfall": round(sc_shortfall, 3),
-                "tail_inflation_factor": round(sc_infl, 3),
-                "basis": (
-                    "Confirmed vendor-breach matches (S-5) or critical "
-                    "supplier-domain findings (S-1) widen catastrophe "
-                    "percentiles (P75-P99.6). Mode and median anchored. "
-                    "Supply-chain incidents have empirical precedent of "
-                    "driving single-event multi-percentile loss jumps."
-                ),
-            }
+        # NOTE on supply-chain and the catastrophe tail (2026-05-27 design
+        # review with user, post empirical research):
+        #
+        # An earlier iteration of this file applied a separate K_TAIL_SC
+        # widening to the catastrophe tail (P75-P99.6) when supply-chain
+        # critical findings were present (analogous to the WAF blind-spot
+        # tail below). On reflection that was DOUBLE-COUNTING. Cat events
+        # are by definition the worst-case outcome under the modelled
+        # risks; if supply-chain raises p_breach (via the vulnerability
+        # uplift above), the entire MC distribution shifts right and the
+        # tail moves naturally — no separate post-hoc widening required.
+        #
+        # The empirical case for an ADDITIONAL widening would be
+        # conditional fat-tail behaviour: MOVEit 2023 per-org loss
+        # distribution is Pareto-like (top 1% of victims absorbed
+        # ~60-70% of total reported costs; IBM CoDB 2024 + Emsisoft
+        # tracking). PERT lognormal in the MC doesn't capture that
+        # shape natively. BUT the right fix for that is a CONDITIONAL
+        # LGB widening (raise the sigma of the loss-given-breach
+        # distribution when the sampled initial-access vector is
+        # supply-chain), not a blanket post-MC tail stretch. That
+        # refactor is deferred — see [[scanner-supplychain-financial-
+        # wiring-cat-tail-review-2026-05-27]] memory note.
+        #
+        # The WAF blind-spot K_TAIL below remains because it represents
+        # EPISTEMIC uncertainty (we couldn't see the finding), which
+        # cannot flow through p_breach — it's a different signal class.
+        sc_tail_adj = {
+            "applied": False,
+            "basis": (
+                "Supply-chain effect flows through vulnerability uplift "
+                "(see supply_chain_vulnerability_uplift) and the natural "
+                "MC distribution shift. Separate cat-tail widening would "
+                "double-count. Future work: conditional LGB widening "
+                "anchored to MOVEit per-org Pareto distribution."
+            ),
+        }
 
         mc_stats = self._mc_percentiles(mc_total)
         mc_breach_stats = self._mc_percentiles(mc_breach_total)

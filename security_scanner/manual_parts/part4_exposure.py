@@ -1471,10 +1471,13 @@ def build(doc):
         "Scoring: ",
         "Penalty per match = SEVERITY_PENALTY (critical=25, "
         "high=15, medium=8, low=3) × linear age decay. Contributes "
-        "up to +0.04 to vulnerability uplift (central tendency) AND "
-        "drives the catastrophe-tail K_TAIL_SC widening at "
-        "P75-P99.6. Empirically vendor-breach is the most reliable "
-        "tail-driver in the model — see SCN-029 K_TAIL pattern."
+        "up to +0.04 to the vulnerability uplift in the financial "
+        "model. The catastrophe-tail percentiles (P75-P99.6) move "
+        "naturally through the Monte Carlo as the vulnerability uplift "
+        "shifts the entire distribution rightward — no separate "
+        "tail-widening is applied on top (an earlier iteration did "
+        "exactly that and was removed during the 2026-05-27 design "
+        "review to avoid double-counting the same signal)."
     )
 
     add_warning(
@@ -1483,6 +1486,21 @@ def build(doc):
         "rules as darkweb_providers.py — only CONFIRMED public-record "
         "incidents are added, each with a citable source field. The "
         "broker can defend each row in a FAIS audit."
+    )
+
+    add_note(
+        doc,
+        "Empirical anchor for the calibration: IBM Cost of a Data "
+        "Breach 2024 reports supply-chain compromise as the initial "
+        "attack vector in 12% of breaches (vs Verizon DBIR 2025's 30% "
+        "third-party 'involvement' figure, which bundles upstream "
+        "compromise with partner-data exposure and credential reuse). "
+        "Mandiant M-Trends 2025 puts the strict trojanised-vendor "
+        "subset at ~3%. The defensible 'upstream root cause' rate "
+        "lies in the 12-20% band. The FAIR model under-estimates "
+        "loss-given-breach for the 12% SC-vectored slice — see "
+        "FIN-9 in the gap analysis for the conditional LGB Pareto "
+        "refinement that addresses this."
     )
 
     # ── Section summary ──────────────────────────────────────────────────
