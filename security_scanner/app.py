@@ -97,6 +97,7 @@ CHECKER_MANIFEST = [
         {"id": "virustotal", "label": "VirusTotal Intelligence"},
         {"id": "subdomains", "label": "Subdomain Recon"},
         {"id": "fraudulent_domains", "label": "Lookalike Domains"},
+        {"id": "related_domains", "label": "Supply-Chain / Related Domains"},
     ]},
     {"section": "Technology & Governance", "checkers": [
         {"id": "tech_stack", "label": "Technology Stack"},
@@ -532,7 +533,8 @@ def run_scan(scan_id: str, domain: str, industry: str = "other",
              annual_revenue: float = 0, annual_revenue_zar: int = 0, country: str = "",
              include_fraudulent_domains: bool = False, client_ips: list = None,
              skip_dehashed: bool = False, skip_intelx: bool = False,
-             regulatory_flags: dict = None, sub_industry: str = None):
+             regulatory_flags: dict = None, sub_industry: str = None,
+             related_domains: list = None):
     progress_q = queue.Queue()
     _scan_progress[scan_id] = progress_q
 
@@ -559,6 +561,7 @@ def run_scan(scan_id: str, domain: str, industry: str = "other",
                 country=country,
                 include_fraudulent_domains=include_fraudulent_domains,
                 client_ips=client_ips,
+                related_domains=related_domains,
             )
 
             # Post-scan: scan_context (peer rating needs sub_industry +
@@ -804,6 +807,17 @@ def start_scan():
             except ValueError:
                 continue
 
+    # Broker-declared related/supplier domains (S-1 supply-chain). Each is
+    # subject to the same valid_domain check as the primary; v1.1 will add
+    # auto-discovery from cert SAN/WHOIS/analytics ID feeding broker confirm.
+    raw_related = data.get("related_domains", [])
+    related_domains = []
+    if isinstance(raw_related, list):
+        for rd_str in raw_related:
+            rd_clean = str(rd_str).strip().lower().removeprefix("https://").removeprefix("http://").split("/")[0]
+            if rd_clean and valid_domain(rd_clean):
+                related_domains.append(rd_clean)
+
     scan_id = str(uuid.uuid4())
     effective_revenue = annual_revenue_zar if annual_revenue_zar > 0 else annual_revenue
     save_scan(scan_id, domain, industry, effective_revenue, country)
@@ -836,7 +850,7 @@ def start_scan():
         target=run_scan,
         args=(scan_id, domain, industry, annual_revenue, annual_revenue_zar, country,
               include_fraudulent_domains, client_ips, skip_dehashed, skip_intelx,
-              regulatory_flags, sub_industry),
+              regulatory_flags, sub_industry, related_domains),
         daemon=True,
     )
     t.start()

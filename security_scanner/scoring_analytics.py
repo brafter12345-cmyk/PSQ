@@ -486,6 +486,7 @@ class RiskScorer:
         "ransomware_risk":      0.06,
         "data_breach_index":    0.03,
         "financial_impact":     0.02,
+        "related_domains":      0.04,
     }  # Sum — includes all checkers from both branches
 
     RECOMMENDATIONS = {
@@ -678,6 +679,11 @@ class RiskScorer:
         fin_res = results.get("financial_impact", {})
         fin_risk = inv(fin_res.get("score", 50)) if fin_res.get("status") == "completed" else 0
 
+        # Related-domain (supply-chain) risk — only contributes when the
+        # broker declared siblings. status="skipped" zeros via redistribution.
+        rd = results.get("related_domains", {})
+        rd_risk = inv(rd.get("score", 100)) if rd.get("status") == "completed" else 0
+
         weighted = (
             ssl_risk         * effective_weights.get("ssl", 0) +
             email_risk       * effective_weights.get("email_security", 0) +
@@ -703,7 +709,8 @@ class RiskScorer:
             ext_ip_risk      * effective_weights.get("external_ips", 0) +
             rsi_risk         * effective_weights.get("ransomware_risk", 0) +
             dbi_risk         * effective_weights.get("data_breach_index", 0) +
-            fin_risk         * effective_weights.get("financial_impact", 0)
+            fin_risk         * effective_weights.get("financial_impact", 0) +
+            rd_risk          * effective_weights.get("related_domains", 0)
         )
 
         risk_score = round(weighted * 10)

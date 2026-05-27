@@ -8,6 +8,7 @@ from scanner_utils import *
 from checkers_core import *
 from checkers_network import *
 from checkers_threats import *
+from checkers_supply_chain import RelatedDomainsChecker
 from scoring_analytics import *
 from http_client import HTTP, _apex_of
 
@@ -107,7 +108,8 @@ class SecurityScanner:
              annual_revenue_zar: int = 0,
              country: str = "",
              include_fraudulent_domains: bool = False,
-             client_ips: list = None) -> dict:
+             client_ips: list = None,
+             related_domains: list = None) -> dict:
         domain = domain.lower().strip().removeprefix("https://").removeprefix("http://").split("/")[0]
         # Fresh DNS cache for this scan — prevents cross-scan leakage and stale records.
         dns_cache.clear()
@@ -259,6 +261,24 @@ class SecurityScanner:
             cat_results[name] = run_with_timeout(fn, args=tuple(args), timeout=timeout)
             checker_durations[name] = round(time.perf_counter() - t0, 3)
             self._notify(on_progress, name, "done", cat_results[name])
+
+        # --- Related-domain LITE scan (broker-declared suppliers/siblings) ---
+        # Each declared sibling gets SSL + DNS-port + info_disclosure probes,
+        # rolled up worst-of-N into a single category. Skipped when no
+        # domains are declared. v1.0 broker-declared only — v1.1 will add
+        # cert-SAN/WHOIS/analytics-ID auto-discovery (see project memory:
+        # project_related_domain_discovery.md).
+        if related_domains:
+            self._notify(on_progress, "related_domains", "running")
+            t0 = time.perf_counter()
+            cat_results["related_domains"] = run_with_timeout(
+                RelatedDomainsChecker().check,
+                args=(domain, related_domains),
+                timeout=min(300, 60 * max(1, len(related_domains))),
+            )
+            checker_durations["related_domains"] = round(time.perf_counter() - t0, 3)
+            self._notify(on_progress, "related_domains", "done",
+                         cat_results["related_domains"])
 
         # --- Expand IP pool with subdomain-resolved IPs ---
         sub_result = cat_results.get("subdomains", {})
