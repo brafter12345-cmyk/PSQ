@@ -2,7 +2,7 @@
 Section 4.6 — Exposure & Reputation
 Phishield Cyber Risk Scanner User Manual
 
-Covers all 11 sub-checkers in the Exposure & Reputation category:
+Covers all 17 sub-checkers in the Exposure & Reputation category:
   1. Credential Exposure (HIBP)
   2. IP/Domain Reputation (DNSBL)
   3. Exposed Admin Panels
@@ -14,6 +14,12 @@ Covers all 11 sub-checkers in the Exposure & Reputation category:
   9. Credential Risk Assessment
  10. VirusTotal Reputation
  11. Fraudulent Domains (Typosquat)
+ 12. Supply-Chain / Related Domains (S-1)
+ 13. Exposed Dependency Manifests (S-3)
+ 14. Third-Party JavaScript (S-2)
+ 15. Email-Vendor Surface (S-4)
+ 16. CMS Plugin Surface (S-10)
+ 17. Vendor Breach Correlation (S-5)
 """
 
 from manual_helpers import (
@@ -1153,14 +1159,342 @@ def build(doc):
         "someone is actively setting up infrastructure for an attack."
     )
 
+    # ══════════════════════════════════════════════════════════════════════
+    # 4.6.12  Supply-Chain / Related Domains (S-1)
+    # ══════════════════════════════════════════════════════════════════════
+    add_h2(doc, "4.6.12  Supply-Chain / Related Domains (S-1)")
+
+    add_bold_body(
+        doc,
+        "What it checks: ",
+        "When the broker declares sibling, supplier, or group-related "
+        "domains in the scan request, this checker scans each declared "
+        "domain in LITE mode (SSL/TLS certificate posture, DNS-port "
+        "exposure, and information disclosure paths). Findings are rolled "
+        "up worst-of-N into a single supply-chain category that feeds "
+        "both the headline risk score and the civil-liability uplift in "
+        "the financial-impact model."
+    )
+
+    add_bold_body(
+        doc,
+        "How it works: ",
+        "The broker provides the related_domains list as part of the "
+        "scan request body. Each sibling is probed in parallel with a "
+        "45-second wall-clock budget per domain (capped at 10 siblings to "
+        "bound scan time). For each sibling the scanner computes a LITE "
+        "score (0-100) combining SSL grade, DNS-port risk, and "
+        "info-disclosure findings. The worst-performing sibling drives "
+        "the category traffic-light. Critical findings (e.g. exposed "
+        ".env, exposed database dumps) are flagged separately and feed "
+        "into the catastrophe-tail inflation in the FAIR Monte Carlo."
+    )
+
+    add_bold_body(
+        doc,
+        "Why it matters for insurance: ",
+        "Under aggregator-liability theory a breach at a declared "
+        "supplier can be imputed back to the insured. The Lloyd's "
+        "Talbot mrcourier case is the canonical precedent — Talbot's "
+        "insured was held liable for downstream losses originating at "
+        "an undeclared supplier. Surfacing declared siblings during "
+        "underwriting lets the broker price the civil-liability "
+        "channel explicitly and prevents the 'undeclared supplier' "
+        "blind spot that has empirically driven multi-percentile "
+        "claim jumps."
+    )
+
+    add_bold_body(
+        doc,
+        "Scoring: ",
+        "Score = worst-of-N LITE score across all scanned siblings. The "
+        "category contributes up to +0.03 to the RSI ransomware base "
+        "(operational pivot path) and up to +0.04 to the vulnerability "
+        "uplift in the financial model (civil-liability inflator). "
+        "Critical findings on any sibling also drive the catastrophe "
+        "tail K_TAIL_SC widening at P75-P99.6."
+    )
+
+    add_note(
+        doc,
+        "v1.0 is broker-declared only. v1.1 (deferred) adds "
+        "auto-discovery via cert SAN, WHOIS registrant match, and "
+        "analytics-ID correlation — the broker confirms auto-detected "
+        "siblings via the same pre-flight UI used for regulatory flags."
+    )
+
+    # ══════════════════════════════════════════════════════════════════════
+    # 4.6.13  Exposed Dependency Manifests (S-3)
+    # ══════════════════════════════════════════════════════════════════════
+    add_h2(doc, "4.6.13  Exposed Dependency Manifests (S-3)")
+
+    add_bold_body(
+        doc,
+        "What it checks: ",
+        "The scanner probes the web root for exposed dependency "
+        "manifest files across seven ecosystems: Node (package.json, "
+        "package-lock.json, yarn.lock), PHP (composer.json, "
+        "composer.lock), Python (requirements.txt, Pipfile, "
+        "Pipfile.lock), Ruby (Gemfile, Gemfile.lock), Go (go.mod, "
+        "go.sum), Rust (Cargo.toml, Cargo.lock), and Java (pom.xml). "
+        "For each exposed file the scanner parses the dependency map "
+        "and reports the count by ecosystem."
+    )
+
+    add_bold_body(
+        doc,
+        "How it works: ",
+        "Each manifest path is probed in parallel with HEAD-then-GET to "
+        "minimise WAF noise. A 200 response with parseable manifest "
+        "content is treated as 'exposed'. Lockfiles (which carry exact "
+        "pinned versions) are classified as 'critical' severity because "
+        "they directly enable OSV-chained CVE discovery; manifest files "
+        "(which carry only SemVer ranges) are 'high' because they "
+        "still leak the dependency list."
+    )
+
+    add_bold_body(
+        doc,
+        "Why it matters for insurance: ",
+        "Exposed lockfiles eliminate the reconnaissance step from a "
+        "ransomware-via-vulnerable-dependency attack. The attacker "
+        "downloads package-lock.json, feeds it to OSV.dev, and "
+        "receives a working list of CVEs with public exploits — no "
+        "scanning, no fingerprinting required. Patchstack 2024 data "
+        "shows 11.6% of WordPress plugin CVEs are actively exploited; "
+        "the same pattern applies to npm/Composer/PyPI."
+    )
+
+    add_bold_body(
+        doc,
+        "Scoring: ",
+        "Penalty = 30 per critical lockfile + 15 per manifest, capped "
+        "at -100. Contributes up to +0.04 to RSI raw base. Remediation "
+        "is cheap (deny /package*.json, /*.lock at the web server) so "
+        "the remediation panel weights this finding for rapid action."
+    )
+
+    # ══════════════════════════════════════════════════════════════════════
+    # 4.6.14  Third-Party JavaScript (S-2)
+    # ══════════════════════════════════════════════════════════════════════
+    add_h2(doc, "4.6.14  Third-Party JavaScript (S-2)")
+
+    add_bold_body(
+        doc,
+        "What it checks: ",
+        "The scanner fetches the homepage HTML and enumerates every "
+        "<script src=...> tag pointing at a third-party origin. For "
+        "each external script it tracks whether a Subresource Integrity "
+        "(SRI) hash is present and whether the host appears on the "
+        "known-compromised CDN list (currently polyfill.io 2024 sale, "
+        "bootcss/bootcdn 2018 Magecart). Hosts on the known-CDN "
+        "allow-list (googleapis, gstatic, cloudflare, cloudfront, "
+        "akamaihd, fastly, azureedge, jsdelivr, unpkg, cdnjs, etc.) "
+        "are labelled but not penalised on the CDN signal alone."
+    )
+
+    add_bold_body(
+        doc,
+        "How it works: ",
+        "Script tag parsing uses a forgiving regex (case-insensitive, "
+        "handles single/double quotes, supports protocol-relative URLs "
+        "and relative paths). The host is resolved via urlparse; "
+        "first-party hosts (same apex or sub-domain) are excluded. "
+        "Each third-party script is matched against the "
+        "KNOWN_COMPROMISED_HOSTS dict (suffix-match) and the "
+        "KNOWN_CDN_SUFFIXES tuple."
+    )
+
+    add_bold_body(
+        doc,
+        "Why it matters for insurance: ",
+        "Every external script runs with the same privileges as the "
+        "insured's own code — it can read forms, intercept payment "
+        "fields, and exfiltrate data. SRI hashes pin each script to a "
+        "known good version, so an upstream CDN hijack (Magecart 2018, "
+        "polyfill.io 2024) cannot silently replace the script. "
+        "Polyfill.io alone compromised 100,000+ sites including Hulu, "
+        "Mercedes-Benz, WarnerBros, and JSTOR. This is the single "
+        "biggest predictor of card-skimming and form-skimming breaches."
+    )
+
+    add_bold_body(
+        doc,
+        "Scoring: ",
+        "Penalty = 60 per known-compromised host (capped) + 10-20 "
+        "based on SRI coverage on third-party scripts + 5 if >15 "
+        "distinct third-party origins (consolidation signal). "
+        "Contributes up to +0.05 RSI raw and +0.06 to the "
+        "financial-model vulnerability uplift (Magecart channel)."
+    )
+
+    # ══════════════════════════════════════════════════════════════════════
+    # 4.6.15  Email-Vendor Surface (S-4)
+    # ══════════════════════════════════════════════════════════════════════
+    add_h2(doc, "4.6.15  Email-Vendor Surface (SPF, S-4)")
+
+    add_bold_body(
+        doc,
+        "What it checks: ",
+        "The scanner walks the SPF include: chain (depth-5 cap) and "
+        "classifies each include against 24 known email-SaaS vendor "
+        "patterns (SendGrid, Mailgun, Mailchimp, Amazon SES, Microsoft "
+        "365, Google Workspace, Klaviyo, HubSpot, Salesforce, "
+        "Marketo, Constant Contact, ActiveCampaign, Mailjet, Postmark, "
+        "SparkPost, SendinBlue/Brevo, Zendesk, Freshdesk, Intercom, "
+        "Pardot, Oracle Responsys, Netcore, and SA-local Everlytic). "
+        "It also fetches the DMARC policy at _dmarc.<domain>."
+    )
+
+    add_bold_body(
+        doc,
+        "Why it matters for insurance: ",
+        "Every vendor in the SPF chain is implicitly authorised to "
+        "send mail as the insured. A compromise at any single vendor "
+        "(Mailchimp 2022/2023, Constant Contact 2021, Microsoft "
+        "Storm-0558 2023) becomes a phishing path directly into the "
+        "insured's customer base. The risk is dramatically larger "
+        "when DMARC policy is 'none' or absent — CISA BOD 18-01 "
+        "cohort data shows DMARC p=reject reduces phishing inbox "
+        "success from 69% to 14% (~80% relative reduction)."
+    )
+
+    add_bold_body(
+        doc,
+        "Scoring: ",
+        "Penalty graduates with vendor count: +5 at >=3 vendors, +15 "
+        "at >=6 vendors. An additional +20 penalty fires when DMARC "
+        "is weak AND there is at least one vendor in the chain. "
+        "Contributes up to +0.02 RSI raw."
+    )
+
+    add_note(
+        doc,
+        "A vendor of 'unknown' (not on the classification list) is "
+        "still counted but separately flagged — broker should review "
+        "whether the unknown include is legitimate or a stale "
+        "configuration artefact."
+    )
+
+    # ══════════════════════════════════════════════════════════════════════
+    # 4.6.16  CMS Plugin Surface (S-10)
+    # ══════════════════════════════════════════════════════════════════════
+    add_h2(doc, "4.6.16  CMS Plugin Surface — WordPress (S-10)")
+
+    add_bold_body(
+        doc,
+        "What it checks: ",
+        "WordPress-only. A cheap discriminator probes /wp-content/, "
+        "/wp-login.php, and /wp-includes/; if none respond the "
+        "checker reports 'skipped' (the site is not WordPress and "
+        "the card does not render in the report). When WordPress is "
+        "detected, the scanner enumerates 25 popular plugin slugs by "
+        "HEADing /wp-content/plugins/<slug>/ and harvests version "
+        "strings from /wp-content/plugins/<slug>/readme.txt via the "
+        "'Stable tag:' header."
+    )
+
+    add_bold_body(
+        doc,
+        "Why it matters for insurance: ",
+        "Patchstack 2024 reported 7,633 WordPress vulnerabilities, "
+        "96% of which were in plugins; 11.6% are actively exploited "
+        "in the wild. For SA SMEs this is the dominant external "
+        "ransomware entry vector per the Sophos State of Ransomware "
+        "SA 2024 report (69% of SA orgs hit, malicious email + "
+        "exploitation as top root causes). Readable version strings "
+        "are directly CVE-chainable — the attacker reads the version "
+        "from readme.txt and goes straight to the CVE database."
+    )
+
+    add_bold_body(
+        doc,
+        "Scoring: ",
+        "Penalty = up to 30 based on plugin count + up to 20 based "
+        "on versioned-readable count. Contributes up to +0.04 RSI raw "
+        "(highest single supply-chain RSI factor, reflecting the "
+        "empirical dominance of WP plugins as an SA SME attack "
+        "vector)."
+    )
+
+    # ══════════════════════════════════════════════════════════════════════
+    # 4.6.17  Vendor Breach Correlation (S-5)
+    # ══════════════════════════════════════════════════════════════════════
+    add_h2(doc, "4.6.17  Vendor Breach Correlation (S-5)")
+
+    add_bold_body(
+        doc,
+        "What it checks: ",
+        "The scanner re-extracts the email-vendor surface (same SPF "
+        "include-chain walk as S-4) and cross-references each "
+        "detected vendor against a curated editorial breach database "
+        "(vendor_breaches.json). The current database carries 14 "
+        "confirmed public-record breaches across 10 vendors: "
+        "Mailchimp (2022 x2 + 2023), Salesforce/Heroku (2022 + 2023), "
+        "Okta (2022 + 2023), Microsoft 365 (Storm-0558 2023, Midnight "
+        "Blizzard 2024), HubSpot, Intercom, Zendesk, SendGrid, "
+        "Constant Contact, and Marketo."
+    )
+
+    add_bold_body(
+        doc,
+        "How it works: ",
+        "The database is loaded once per process and indexed by "
+        "vendor key. Each match has a date, severity "
+        "(critical/high/medium/low), and exposure_class (e.g. "
+        "session_tokens, customer_email_lists, mailbox_content). "
+        "Each match's penalty decays linearly with age over a "
+        "5-year lookback window — full SEVERITY_PENALTY at age=0, "
+        "zero at LOOKBACK_DAYS. Five years is empirically supported "
+        "because customer-key rotation post-disclosure is typically "
+        "incomplete years after the incident (Ponemon Third-Party "
+        "Risk 2023)."
+    )
+
+    add_bold_body(
+        doc,
+        "Why it matters for insurance: ",
+        "This is the strongest broker-narrative signal in the "
+        "supply-chain layer: 'your supplier was breached N months "
+        "ago — have credentials been rotated?'. Case anchors include "
+        "MOVEit Cl0p 2023 (2,700+ orgs / USD 12-15B aggregate "
+        "economic impact via ONE vendor breach), Polyfill.io 2024 "
+        "(100,000+ sites compromised), Storm-0558 (25 orgs incl. US "
+        "State Department via ONE forged Microsoft key), and the "
+        "Mailchimp 0ktapus cluster 2022-2023 (668 customer accounts "
+        "across 3 incidents → downstream phishing at Trezor, "
+        "DigitalOcean, WooCommerce)."
+    )
+
+    add_bold_body(
+        doc,
+        "Scoring: ",
+        "Penalty per match = SEVERITY_PENALTY (critical=25, "
+        "high=15, medium=8, low=3) × linear age decay. Contributes "
+        "up to +0.04 to vulnerability uplift (central tendency) AND "
+        "drives the catastrophe-tail K_TAIL_SC widening at "
+        "P75-P99.6. Empirically vendor-breach is the most reliable "
+        "tail-driver in the model — see SCN-029 K_TAIL pattern."
+    )
+
+    add_warning(
+        doc,
+        "Editorial discipline: vendor_breaches.json follows the same "
+        "rules as darkweb_providers.py — only CONFIRMED public-record "
+        "incidents are added, each with a citable source field. The "
+        "broker can defend each row in a FAIS audit."
+    )
+
     # ── Section summary ──────────────────────────────────────────────────
-    add_h2(doc, "4.6.12  Section Summary — Interpreting Exposure Results")
+    add_h2(doc, "4.6.18  Section Summary — Interpreting Exposure Results")
 
     add_body(
         doc,
-        "The eleven checkers in this section work together to provide a "
-        "360-degree view of a domain's exposure and reputation profile. "
-        "When interpreting results, consider the following priority "
+        "The seventeen checkers in this section work together to provide "
+        "a 360-degree view of a domain's exposure and reputation profile "
+        "— including the six supply-chain signals (4.6.12-17) that close "
+        "the historical gap between observed posture and supplier-chain "
+        "risk. When interpreting results, consider the following priority "
         "framework:"
     )
 

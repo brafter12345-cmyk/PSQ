@@ -1,14 +1,29 @@
-"""Regenerate report outputs from cached scan JSON.
+"""Regenerate report outputs from a cached scan JSON, re-running the
+scoring + financial-impact pipeline against the CURRENT code.
 
-Loads the most recent cached scan from test_fixtures/, runs the current
-pdf_report.generate_pdf() against it for both full and summary report
-types, and renders the HTML results template offline so the user can
-review the new layout without needing the live Render server. No
-network calls - purely uses the cached data.
+Loads a cached scan JSON, optionally overrides scan context (revenue,
+industry, ZAR vs USD), re-runs RiskScorer + RansomwareIndex +
+DataBreachIndex + FinancialImpactCalculator + RemediationSimulator
+through the live code path, then renders Broker Summary PDF, Full
+Technical PDF, and the offline HTML results page. No network calls.
 
-Useful when the scanner is under a temporary WAF block at the target
-or when iterating on report layout without burning live scan budget.
+This is the canonical way to preview broker-facing outputs after any
+change to scoring or financial-impact code — pair with
+verify_supply_chain_financial_wiring.py to confirm wiring first.
+
+Examples
+--------
+  # Defaults: most recent phishield_R10M_finance_*.json
+  python tooling/regen_outputs_from_cache.py
+
+  # Takealot with the corrected R13.5B revenue
+  python tooling/regen_outputs_from_cache.py \\
+      --fixture test_fixtures/takealot_baseline.json \\
+      --revenue-zar 13500000000 \\
+      --industry retail \\
+      --tag takealot_r135b
 """
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -19,63 +34,164 @@ HERE = Path(__file__).parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))
 
-# Locate the cached JSON (use today's if present, fall back to yesterday)
-fixtures = ROOT / "test_fixtures"
-candidates = sorted(fixtures.glob("phishield_R10M_finance_*.json"), reverse=True)
-if not candidates:
-    print("No cached phishield_R10M_finance_*.json found in test_fixtures/")
-    sys.exit(1)
-src = candidates[0]
-print(f"Loading cached scan: {src.name} ({src.stat().st_size // 1024} KB)")
 
-with src.open("r", encoding="utf-8") as f:
-    results = json.load(f)
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser()
+    p.add_argument("--fixture", type=Path, default=None,
+                    help="Path to cached scan JSON. Defaults to most "
+                         "recent test_fixtures/phishield_R10M_finance_*.json.")
+    p.add_argument("--revenue-zar", type=int, default=0,
+                    help="Override annual_revenue_zar (forces ZAR FAIR path).")
+    p.add_argument("--revenue-usd", type=float, default=0.0,
+                    help="Override annual_revenue (USD path) if no ZAR set.")
+    p.add_argument("--industry", default=None,
+                    help="Override industry (e.g. retail, financial-services).")
+    p.add_argument("--tag", default=None,
+                    help="Output filename suffix; defaults to fixture stem.")
+    p.add_argument("--no-rescore", action="store_true",
+                    help="Skip rescoring (use cached insurance numbers as-is).")
+    return p.parse_args()
 
-# Output directory next to the cached JSON
-outdir = fixtures / "regen_outputs"
-outdir.mkdir(exist_ok=True)
 
-# --- Full PDF ---
-print("\n[1/3] Regenerating full PDF...")
-from pdf_report import generate_pdf
-full_bytes = generate_pdf(results, report_type="full")
-full_path = outdir / "phishield_full_2026-05-15.pdf"
-full_path.write_bytes(full_bytes)
-print(f"  -> {full_path}  ({full_path.stat().st_size // 1024} KB)")
+def _resolve_fixture(arg_path: Path | None) -> Path:
+    if arg_path:
+        return arg_path if arg_path.is_absolute() else (ROOT / arg_path)
+    fixtures = ROOT / "test_fixtures"
+    candidates = sorted(fixtures.glob("phishield_R10M_finance_*.json"),
+                         reverse=True)
+    if not candidates:
+        print("No cached phishield_R10M_finance_*.json found and no "
+               "--fixture supplied", file=sys.stderr)
+        sys.exit(1)
+    return candidates[0]
 
-# --- Summary PDF ---
-print("\n[2/3] Regenerating summary PDF...")
-summary_bytes = generate_pdf(results, report_type="summary")
-summary_path = outdir / "phishield_summary_2026-05-15.pdf"
-summary_path.write_bytes(summary_bytes)
-print(f"  -> {summary_path}  ({summary_path.stat().st_size // 1024} KB)")
 
-# --- HTML render via Jinja2 (offline; no Flask required) ---
-print("\n[3/3] Rendering HTML results page...")
-from jinja2 import Environment, FileSystemLoader
-templates = ROOT / "templates"
-env = Environment(loader=FileSystemLoader(str(templates)),
-                  autoescape=True)
-template = env.get_template("results.html")
-# The template expects `results` + a few helper variables; pass the
-# cached scan as `results`. scan_id is synthetic for the offline render.
-html_out = template.render(results=results, scan_id="cached-2026-05-15")
-html_path = outdir / "phishield_results_2026-05-15.html"
-html_path.write_text(html_out, encoding="utf-8")
-print(f"  -> {html_path}  ({html_path.stat().st_size // 1024} KB)")
+def _rescore(results: dict, *, revenue_zar: int, revenue_usd: float,
+             industry: str | None) -> dict:
+    """Re-run scoring + financial impact through the live code path.
 
-print(f"\nAll three outputs in: {outdir}")
-print("\nQuick checks (post-Batch 5/6/7 features should all render):")
-sc = results.get("_scan_completeness", {})
-print(f"  - per_checker_seconds: {len(sc.get('per_checker_seconds', {}))} entries")
-print(f"  - waf_status: {sc.get('waf_status', 'absent in cached JSON - pre-WAF-tracker scan')}")
-fin = results.get("insurance", {}).get("financial_impact", {})
-le = fin.get("loss_exposure", {}).get("scenarios", {})
-print(f"  - loss_exposure scenarios: {list(le.keys())}")
-cat = fin.get("regulatory_exposure", {}).get("catastrophe_stack", {})
-print(f"  - catastrophe_stack capacity_factor: {cat.get('capacity_factor')}")
-print(f"  - catastrophe_stack total: R{cat.get('total_cat_stack_zar', 0):,}")
-flags = fin.get("regulatory_exposure", {}).get("flags", {})
-print(f"  - flags keys: {list(flags.keys())}")
-auto = flags.get("_auto_detected")
-print(f"  - _auto_detected present: {auto is not None}")
+    Required because cached `insurance.*` numbers are frozen against the
+    code at the time of the scan; any wiring change (new RSI factors,
+    catastrophe-tail logic, vulnerability uplift) requires re-running.
+    """
+    from scoring_analytics import (
+        RiskScorer, RansomwareIndex, DataBreachIndex,
+        FinancialImpactCalculator, RemediationSimulator,
+    )
+    cats = results.get("categories", {})
+    ctx = results.setdefault("scan_context", {})
+    if industry:
+        ctx["industry"] = industry
+    if revenue_zar:
+        ctx["annual_revenue_zar"] = revenue_zar
+    if revenue_usd:
+        ctx["annual_revenue"] = revenue_usd
+    industry = ctx.get("industry") or "other"
+    rev_zar = int(ctx.get("annual_revenue_zar") or 0)
+    rev_usd = float(ctx.get("annual_revenue") or 0)
+
+    scorer = RiskScorer()
+    risk_score, risk_level, recs = scorer.calculate(cats, waf_apex_status=None)
+    results["overall_risk_score"] = risk_score
+    results["risk_level"] = risk_level
+    results["recommendations"] = recs
+    cats["_overall_score"] = risk_score
+
+    rsi_calc = RansomwareIndex()
+    rsi = rsi_calc.calculate(cats, industry=industry,
+                              annual_revenue=rev_usd or rev_zar)
+    results.setdefault("insurance", {})["rsi"] = rsi
+
+    fic = FinancialImpactCalculator()
+    fin = fic.calculate(cats, rsi,
+                         annual_revenue=rev_usd,
+                         industry=industry.title(),
+                         annual_revenue_zar=rev_zar)
+    results["insurance"]["financial_impact"] = fin
+
+    dbi_calc = DataBreachIndex()
+    results["insurance"]["dbi"] = dbi_calc.calculate(cats)
+
+    sim = RemediationSimulator()
+    results["insurance"]["remediation"] = sim.calculate(
+        cats, rsi, fin, annual_revenue=rev_zar or rev_usd,
+        industry=industry,
+    )
+    return results
+
+
+def main() -> int:
+    args = _parse_args()
+    src = _resolve_fixture(args.fixture)
+    tag = args.tag or src.stem
+    print(f"Loading cached scan: {src.name} ({src.stat().st_size // 1024} KB)")
+
+    with src.open("r", encoding="utf-8") as f:
+        results = json.load(f)
+
+    if not args.no_rescore:
+        print("Re-running scoring + financial-impact through current code...")
+        results = _rescore(results,
+                            revenue_zar=args.revenue_zar,
+                            revenue_usd=args.revenue_usd,
+                            industry=args.industry)
+        rsi = results["insurance"]["rsi"]
+        fin = results["insurance"]["financial_impact"]
+        print(f"  risk_score = {results['overall_risk_score']} "
+               f"({results['risk_level']})")
+        print(f"  rsi_score  = {rsi['rsi_score']}  ({rsi['risk_label']})")
+        rp = fin.get("return_periods", {})
+        eal = fin.get("estimated_annual_loss", {}).get("most_likely")
+        if eal:
+            print(f"  EAL most_likely = R{eal:,.0f}")
+        if rp:
+            print(f"  1-in-100 = R{rp['1_in_100']['loss_zar']:,.0f}")
+            print(f"  1-in-200 = R{rp['1_in_200']['loss_zar']:,.0f}")
+            print(f"  1-in-250 = R{rp['1_in_250']['loss_zar']:,.0f}")
+        sc_tail = fin.get("supply_chain_tail_adjustment", {}) or {}
+        if sc_tail.get("applied"):
+            print(f"  supply-chain tail applied: drivers = "
+                   f"{sc_tail.get('drivers')}")
+        sc_uplift = fin.get("supply_chain_vulnerability_uplift", {}) or {}
+        if sc_uplift.get("value", 0) > 0:
+            print(f"  supply-chain vuln uplift = {sc_uplift['value']} "
+                   f"({sc_uplift.get('factors')})")
+
+    outdir = ROOT / "test_fixtures" / "regen_outputs"
+    outdir.mkdir(exist_ok=True)
+
+    print("\n[1/3] Regenerating full PDF...")
+    from pdf_report import generate_pdf
+    full_path = outdir / f"{tag}_full.pdf"
+    full_path.write_bytes(generate_pdf(results, report_type="full"))
+    print(f"  -> {full_path}  ({full_path.stat().st_size // 1024} KB)")
+
+    print("\n[2/3] Regenerating broker summary PDF...")
+    summary_path = outdir / f"{tag}_summary.pdf"
+    summary_path.write_bytes(generate_pdf(results, report_type="summary"))
+    print(f"  -> {summary_path}  ({summary_path.stat().st_size // 1024} KB)")
+
+    print("\n[3/3] Rendering HTML results page...")
+    from jinja2 import Environment, FileSystemLoader
+    env = Environment(loader=FileSystemLoader(str(ROOT / "templates")),
+                      autoescape=True)
+    template = env.get_template("results.html")
+    html_path = outdir / f"{tag}_results.html"
+    html_path.write_text(
+        template.render(
+            results=results, domain=results.get("domain_scanned", ""),
+            timestamp=results.get("scan_timestamp", ""),
+            scan_id=f"regen-{tag}",
+            risk_score=results.get("overall_risk_score", 0),
+            risk_level=results.get("risk_level", "Unknown"),
+        ),
+        encoding="utf-8",
+    )
+    print(f"  -> {html_path}  ({html_path.stat().st_size // 1024} KB)")
+
+    print(f"\nAll three outputs in: {outdir}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
