@@ -1996,29 +1996,17 @@ def cat_website(d, S):
 def cat_web_ranking(d, S):
     wr = d.get("web_ranking", {})
     rank = wr.get("rank")
-    # Support both scanner data formats (new format uses "ranked", old uses "in_list"/"score")
-    if wr.get("ranked") is not None:
-        col = C_GREEN if wr.get("ranked") else C_AMBER
-        rows = [
-            ("Ranked",      "Yes" if wr.get("ranked") else "Not in top 1M"),
-            ("Position",    f"#{rank:,}" if rank else "—"),
-            ("Popularity",  wr.get("popularity", "Unranked")),
-            ("Rank Band",   wr.get("rank_label", "Unranked")),
-        ]
-        fb = f"Ranked #{rank:,} in Tranco top 1M — established web presence." if wr.get("ranked") else "Not in the Tranco top 1M — lower traffic volume, which is typical for SME websites."
-        parts = build_cat_card("Web Ranking (Tranco)", col, wr.get("rank_label", "Unranked"), rows, wr.get("issues", []), S, fallback=fb)
-    else:
-        score = wr.get("score", 30)
-        col = _tl(score >= 70, score >= 40)
-        rows = [
-            ("Tranco Rank", f"#{rank:,}" if rank else "Not in top 1M"),
-            ("In List", "Yes" if wr.get("in_list") else "No"),
-            ("Score", f"{score}/100"),
-        ]
-        fb = f"Ranked #{rank:,} — established web presence." if rank else "Not ranked in Tranco top 1M — typical for SME websites."
-        parts = build_cat_card("Web Ranking (Tranco)", col,
-                              f"#{rank:,}" if rank else "Unranked",
-                              rows, wr.get("issues", []), S, fallback=fb)
+    score = wr.get("score", 30)
+    col = _tl(score >= 70, score >= 40)
+    rows = [
+        ("Tranco Rank", f"#{rank:,}" if rank else "Not in top 1M"),
+        ("In List", "Yes" if wr.get("in_list") else "No"),
+        ("Score", f"{score}/100"),
+    ]
+    fb = f"Ranked #{rank:,} — established web presence." if rank else "Not ranked in Tranco top 1M — typical for SME websites."
+    parts = build_cat_card("Web Ranking (Tranco)", col,
+                          f"#{rank:,}" if rank else "Unranked",
+                          rows, wr.get("issues", []), S, fallback=fb)
     parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
     parts.append(Spacer(1, 1 * mm))
     parts.append(Paragraph(
@@ -2071,14 +2059,16 @@ def cat_info_disclosure(d, S):
 
 def cat_fraudulent_domains(d, S):
     fd     = d.get("fraudulent_domains", {})
-    found  = fd.get("fraudulent_domains_found", 0)
+    found  = fd.get("resolved_count", 0)
     col    = C_CRITICAL if found > 3 else (C_RED if found > 0 else C_GREEN)
     rows   = [
-        ("Variants checked",  fd.get("variants_checked", 0)),
+        ("Variants checked",  fd.get("total_permutations", 0)),
         ("Lookalikes found",  found),
     ]
-    for dom in fd.get("domains", [])[:5]:
-        rows.append((dom.get("type", "lookalike"), f"{dom.get('domain','')} ({dom.get('cert_issuer','')})"))
+    for dom in fd.get("fraudulent_domains", [])[:5]:
+        sim = dom.get("similarity")
+        sim_str = f" ({int(sim)}% similar)" if sim else ""
+        rows.append((dom.get("technique", "lookalike"), f"{dom.get('domain','')}{sim_str}"))
     fb = f"{found} lookalike domain(s) detected — these could be used for phishing attacks against staff or customers." if found > 0 else "No active lookalike domains detected — low brand impersonation risk."
     parts = build_cat_card("Fraudulent Domains (Typosquat)", col, f"{found} found", rows, fd.get("issues", []), S, fallback=fb)
 
@@ -3172,14 +3162,16 @@ def build_summary_table(results: dict, S) -> Table:
         rows.append(row("Est. Annual Loss", f"{cur_sym} {fin_ml:,.0f}",
                          C_CRITICAL if fin_score < 30 else C_AMBER if fin_score < 70 else C_GREEN))
 
-    fd_count = cats.get("fraudulent_domains", {}).get("fraudulent_domains_found", 0)
+    fd_count = cats.get("fraudulent_domains", {}).get("resolved_count", 0)
     if fd_count:
         rows.append(row("Fraudulent Domains", f"{fd_count} lookalike(s)",
                          C_CRITICAL if fd_count > 3 else C_RED if fd_count > 0 else C_GREEN))
 
-    wr_label = cats.get("web_ranking", {}).get("rank_label", "Unranked")
+    wr = cats.get("web_ranking", {})
+    wr_rank = wr.get("rank")
+    wr_label = f"#{wr_rank:,}" if wr_rank else "Unranked"
     rows.append(row("Web Ranking (Tranco)", wr_label,
-                     C_GREEN if cats.get("web_ranking", {}).get("ranked") else C_AMBER))
+                     C_GREEN if wr.get("in_list") else C_AMBER))
 
     tbl = Table(rows, colWidths=[18, 45 * mm, INNER_W - 18 - 45 * mm])
     style = [
@@ -3486,7 +3478,8 @@ def _build_attackers_view(results: dict, S) -> list:
     if ip_count: recon_findings.append(f"{ip_count} external IPs discoverable")
     if sub_count: recon_findings.append(f"{sub_count} subdomains enumerable")
     if emails: recon_findings.append(f"{emails} email addresses found in breach databases")
-    if tech.get("server_header"): recon_findings.append(f"Server technology exposed: {tech.get('server_header', '')}")
+    server_sw = tech.get("server_software") or []
+    if server_sw: recon_findings.append(f"Server technology exposed: {', '.join(server_sw[:3])}")
 
     _PHASE_BG = {"CRITICAL": C_CRITICAL_BG, "HIGH": C_RED_BG, "MEDIUM": C_AMBER_BG, "LOW": C_GREEN_BG}
     _PHASE_FG = {"CRITICAL": "#991b1b", "HIGH": "#dc2626", "MEDIUM": "#92400e", "LOW": "#166534"}

@@ -163,6 +163,8 @@ class TechStackChecker:
 
             result["js_libraries"] = js_libs
 
+            result["eol_count"] = len(result["eol_detected"])
+
             result["score"] = max(0, result["score"])
 
         except Exception as e:

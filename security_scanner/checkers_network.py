@@ -427,6 +427,7 @@ class DNSInfrastructureChecker:
             "status": "completed", "dns_records": {}, "reverse_dns": None,
             "open_ports": [], "server_info": {}, "issues": [], "risk_score": 0,
             "zone_transfer": {"tested": False, "vulnerable": False, "ns_tested": 0, "records_leaked": 0},
+            "dnssec_enabled": False,
         }
         if ip:
             result["ip"] = ip
@@ -435,6 +436,7 @@ class DNSInfrastructureChecker:
                 result["dns_records"] = self._get_dns_records(domain)
                 result["reverse_dns"] = self._get_reverse_dns(domain, ip=ip)
                 result["zone_transfer"] = self._check_zone_transfer(domain, result["dns_records"])
+                result["dnssec_enabled"] = self._check_dnssec(domain)
             result["open_ports"] = self._scan_ports(domain, ip=ip)
             result["server_info"] = self._fingerprint_server(domain)
             result["risk_score"], result["issues"] = self._assess_risk(
@@ -442,6 +444,15 @@ class DNSInfrastructureChecker:
         except Exception as e:
             result["status"] = "error"; result["error"] = str(e)
         return result
+
+    def _check_dnssec(self, domain: str) -> bool:
+        # DNSKEY presence at the apex = DNSSEC-signed zone. DS at the parent
+        # adds chain-of-trust validation but is queried separately and isn't
+        # required for the "DNSSEC enabled" determination at this level.
+        try:
+            return bool(dns_cache.resolve(domain, "DNSKEY"))
+        except Exception:
+            return False
 
     def _check_zone_transfer(self, domain: str, dns_records: dict) -> dict:
         """Attempt AXFR zone transfer against each NS server. Most will refuse (expected).
