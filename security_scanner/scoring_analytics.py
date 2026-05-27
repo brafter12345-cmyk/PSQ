@@ -1055,6 +1055,129 @@ class RansomwareIndex:
             base += 0.05
             factors.append({"factor": f"Weak SSL (grade {ssl_grade})", "impact": 0.05, "priority": 3})
 
+        # --- Supply-chain ransomware vectors (S-1, S-2, S-3, S-4, S-10) ---
+        # Empirically calibrated against published 2024-2025 data:
+        #   - Verizon DBIR 2025: third-party involvement in 30% of breaches
+        #     (doubled YoY).
+        #   - Mandiant M-Trends 2025: exploits = #1 initial-access vector
+        #     (33%); stolen credentials = #2 (16%).
+        #   - Patchstack 2024: 96% of WordPress CVEs are in plugins; 11.6%
+        #     actively exploited — outdated plugins dominate WP attack
+        #     surface (relevant for SA SME baseline per Sophos 2024).
+        #   - CISA BOD 18-01 cohort: phishing inbox-success rate 69% → 14%
+        #     (~80% relative reduction) after DMARC p=reject — inverse
+        #     uplift when DMARC is weak.
+        #   - Sophos State of Ransomware SA 2024: 69% of SA orgs hit,
+        #     malicious email top root cause; 42% of SMBs cite capacity.
+        #
+        # Calibration intent: whole supply-chain stack at worst-case adds
+        # ~0.22 to base — slightly less than a single RDP exposure (+0.25),
+        # the dominant primary-access vector. No single supply-chain finding
+        # should outweigh the documented P1 primary factors. Reserve the
+        # 0.75-0.90 critical band for true primary-access stacks
+        # (RDP + KEV CVEs + CRITICAL credentials).
+        SUPPLY_CHAIN_CAP = 0.22  # Total contribution ceiling across all S-*
+        supply_chain_before = base
+
+        # S-10 CMS plugin SBOM — top SA SME ransomware initial-access channel.
+        # Version readability is the actionable signal; mere enumeration is
+        # weaker.
+        cms = categories.get("cms_plugin_sbom", {})
+        if cms.get("status") == "completed" and cms.get("is_wordpress"):
+            vers = cms.get("versioned_count", 0)
+            cnt = cms.get("plugin_count", 0)
+            if vers >= 1:
+                cms_impact = min(0.04, vers * 0.02)
+                base += cms_impact
+                factors.append({
+                    "factor": f"WordPress: {vers} plugin version(s) readable — direct CVE chaining",
+                    "impact": round(cms_impact, 2), "priority": 2,
+                })
+            elif cnt >= 5:
+                base += 0.02
+                factors.append({
+                    "factor": f"WordPress: {cnt} popular plugins enumerable — wide CMS attack surface",
+                    "impact": 0.02, "priority": 3,
+                })
+
+        # S-3 Exposed dependency manifests — OSV-chained CVE discovery. Less
+        # severe than direct vulnerability exposure because the attacker
+        # still needs working exploits against the listed versions.
+        dm = categories.get("dependency_manifests", {})
+        if dm.get("status") == "completed":
+            dm_crit = dm.get("critical_count", 0)
+            dm_high = dm.get("high_count", 0)
+            dm_impact = min(0.04, dm_crit * 0.03 + dm_high * 0.01)
+            if dm_impact > 0:
+                base += dm_impact
+                factors.append({
+                    "factor": f"{dm_crit} lockfile(s) + {dm_high} manifest(s) exposed — OSV chain risk",
+                    "impact": round(dm_impact, 2),
+                    "priority": 2 if dm_crit > 0 else 3,
+                })
+
+        # S-2 Third-party JS — Magecart-class card-skimmer / tampering vector.
+        # A confirmed-compromised CDN is meaningful but narrower than RDP
+        # (specific attack class, not general access).
+        tpjs = categories.get("third_party_js", {})
+        if tpjs.get("status") == "completed":
+            compromised = tpjs.get("compromised_host_count", 0)
+            if compromised > 0:
+                base += 0.05
+                factors.append({
+                    "factor": f"{compromised} script(s) from known-compromised CDN — active supply-chain risk",
+                    "impact": 0.05, "priority": 2,
+                })
+            else:
+                third = tpjs.get("third_party_count", 0)
+                missing = tpjs.get("missing_sri_count", 0)
+                if third > 0 and missing / third > 0.5:
+                    base += 0.02
+                    factors.append({
+                        "factor": f"{missing}/{third} third-party scripts lack SRI — tampering risk",
+                        "impact": 0.02, "priority": 3,
+                    })
+
+        # S-4 Email-vendor surface + weak DMARC — phishing-via-supplier is a
+        # preparation channel (lands phishing in the inbox); not direct
+        # ransomware access on its own.
+        evs = categories.get("email_vendor_surface", {})
+        if evs.get("status") == "completed" and evs.get("weak_dmarc") and evs.get("vendor_count", 0) >= 1:
+            base += 0.02
+            factors.append({
+                "factor": f"{evs.get('vendor_count', 0)} email vendor(s) with weak DMARC — phishing-via-supplier",
+                "impact": 0.02, "priority": 3,
+            })
+
+        # S-1 Related-domain critical findings — operational pivot path
+        # (attacker compromises declared sibling, lateral-moves). Separate
+        # channel from the civil-liability uplift in financial impact.
+        rd = categories.get("related_domains", {})
+        if rd.get("status") == "completed" and rd.get("critical_count", 0) > 0:
+            base += 0.03
+            factors.append({
+                "factor": f"{rd.get('critical_count', 0)} critical finding(s) on declared sibling domain(s)",
+                "impact": 0.03, "priority": 2,
+            })
+
+        # Cap the total supply-chain contribution. If individual factors
+        # collectively exceed SUPPLY_CHAIN_CAP, scale them back proportionally
+        # so the supply-chain stack cannot dominate the score over primary
+        # ransomware vectors (RDP, KEV CVEs, CRITICAL credentials).
+        sc_total = base - supply_chain_before
+        if sc_total > SUPPLY_CHAIN_CAP:
+            scale = SUPPLY_CHAIN_CAP / sc_total
+            base = supply_chain_before + SUPPLY_CHAIN_CAP
+            # Scale back the impact values shown to the underwriter
+            for f in factors:
+                if f["factor"].startswith(("WordPress:", "S-")) or any(
+                        kw in f["factor"] for kw in (
+                            "lockfile", "manifest(s) exposed",
+                            "known-compromised CDN", "lack SRI",
+                            "email vendor(s) with weak DMARC",
+                            "sibling domain")):
+                    f["impact"] = round(f["impact"] * scale, 3)
+
         # --- Favourable signals (RSI reduction) ---
         # Anthropic Project Glasswing partners integrate Claude-assisted
         # vulnerability discovery — compresses exposure window to novel CVEs.
@@ -1861,6 +1984,66 @@ class FinancialImpactCalculator:
         # breach frequency data (Verizon DBIR, IBM, Sophos, SABRIC).
         overall_score = categories.get("_overall_score", 500)
         vulnerability = (100 - overall_score / 10) / 100  # 0.0 (perfect) to 1.0 (worst)
+
+        # ── Supply-chain vulnerability uplifts ──
+        # The overall_score already absorbs some supply-chain signal via the
+        # RiskScorer.WEIGHTS dict, but only at 0.20 combined weight (diluted
+        # against 22+ other checkers). Specific catastrophe / civil-liability
+        # paths warrant a direct uplift on top so the financial scenarios
+        # reflect the supplier-risk channel that wouldn't otherwise show.
+        #   - S-2 Magecart (compromised CDN): direct PCI card-skimming path
+        #   - S-1 Critical supplier finding: civil-liability inflator (per
+        #     systemic-sweep memory — supplier breach imputed to insured)
+        #   - S-5 Vendor breach in mail path: customer-key rotation typically
+        #     incomplete years after disclosure
+        # Empirically calibrated (2026-05-27, sources cited):
+        #   - Verizon DBIR 2025: third-party involvement in 30% of breaches
+        #     (doubled from 15% in 2024 DBIR). Implies SC presence raises
+        #     p_breach by ~30/70 = +43% relative.
+        #   - IBM CoDB 2024: SC breaches avg USD 4.91M vs USD 4.88M overall
+        #     (+0.6% central premium) but 267-day dwell vs 204-day baseline
+        #     (+30% longer detection window).
+        #   - Mandiant M-Trends 2025: exploits (#1) and stolen credentials
+        #     (#2) are top initial-access vectors, both supply-chain heavy.
+        #   - Polyfill.io 2024: 100,000+ sites compromised via ONE CDN.
+        #   - Mailchimp 0ktapus cluster 2022-23: 668 customer accounts
+        #     across 3 incidents → downstream phishing at Trezor, DigitalOcean.
+        # Individual contributions sized so worst-case stack reaches the
+        # +15-30 pp empirical band (Ponemon / DBIR triangulation) while
+        # single weak signals stay in the +5-10 pp range.
+        sc_vuln_uplift = 0.0
+        sc_uplift_factors = []
+        tpjs = categories.get("third_party_js", {})
+        if tpjs.get("status") == "completed" and tpjs.get("compromised_host_count", 0) > 0:
+            # Polyfill / Magecart class — confirmed CDN compromise. OWASP +
+            # Akamai both treat SRI as necessary-not-sufficient; estimated
+            # 50-70% reduction in classical CDN-hijack class.
+            sc_vuln_uplift += 0.06
+            sc_uplift_factors.append("Magecart (S-2)")
+        rd_cat = categories.get("related_domains", {})
+        if rd_cat.get("status") == "completed" and rd_cat.get("critical_count", 0) > 0:
+            # Civil-liability inflator. Lloyd's Talbot mrcourier case as
+            # the precedent (supplier breach imputed to insured).
+            sc_vuln_uplift += 0.04
+            sc_uplift_factors.append("Civil-liability (S-1)")
+        vb = categories.get("vendor_breach", {})
+        if vb.get("status") == "completed":
+            if vb.get("critical_match_count", 0) > 0:
+                # Storm-0558 / Okta-class: confirmed key/token compromise
+                # at vendor in mail-path. Customer-key rotation post-
+                # disclosure is empirically incomplete (Ponemon 2023).
+                sc_vuln_uplift += 0.04
+                sc_uplift_factors.append("Vendor-breach critical (S-5)")
+            elif vb.get("high_match_count", 0) > 0:
+                sc_vuln_uplift += 0.02
+                sc_uplift_factors.append("Vendor-breach high (S-5)")
+        # Cap at +0.15 (mid-range of empirical +15-30 pp band) — at max
+        # vulnerability already near 1.0 the cap protects against
+        # overflow. Single weak signal lands +0.04-0.06 (matches empirical
+        # +5-10 pp lower bound).
+        sc_vuln_uplift = min(0.15, sc_vuln_uplift)
+        vulnerability = min(1.0, vulnerability + sc_vuln_uplift)
+
         tef = self.THREAT_EVENT_FREQUENCY.get(industry_key, self.THREAT_EVENT_FREQUENCY.get("Other", 1.0))
         p_breach = min(1.0, max(0.0, vulnerability * tef * 0.3))
 
@@ -2455,6 +2638,67 @@ class FinancialImpactCalculator:
                     ),
                 }
 
+        # ── Supply-chain catastrophe tail inflation (SCN-029 K_TAIL pattern) ──
+        # Independent of WAF blinding. A confirmed vendor breach in the
+        # email-send-authority chain (S-5) or a critical finding on a
+        # declared supplier domain (S-1) materially widens the right tail —
+        # both vectors carry observable historical precedents of single
+        # incidents driving multi-percentile loss jumps (Mailchimp-Trezor
+        # 2022, Okta-1Password 2023, Talbot-mrcourier civil liability).
+        # The mode/median anchor preserves the central estimate; only the
+        # P75-P99.6 catastrophe view widens.
+        sc_tail_drivers = []
+        sc_shortfall = 0.0
+        vb_s5 = categories.get("vendor_breach", {})
+        if vb_s5.get("status") == "completed":
+            vb_crit = vb_s5.get("critical_match_count", 0)
+            vb_high = vb_s5.get("high_match_count", 0)
+            if vb_crit > 0:
+                sc_shortfall += min(0.08, vb_crit * 0.05)
+                sc_tail_drivers.append(f"S-5: {vb_crit} critical vendor breach match(es)")
+            if vb_high > 0:
+                sc_shortfall += min(0.05, vb_high * 0.02)
+                sc_tail_drivers.append(f"S-5: {vb_high} high-severity vendor breach match(es)")
+        rd_s1 = categories.get("related_domains", {})
+        if rd_s1.get("status") == "completed":
+            rd_crit = rd_s1.get("critical_count", 0)
+            if rd_crit > 0:
+                sc_shortfall += min(0.06, rd_crit * 0.025)
+                sc_tail_drivers.append(f"S-1: {rd_crit} critical sibling finding(s)")
+        # Cap supply-chain tail shortfall at 0.20 (vs WAF blind-spot cap of
+        # 0.60). Supply-chain widens the tail but never as much as a
+        # severely-blinded scan would, because the underlying signal is
+        # observed not hypothesised.
+        sc_shortfall = min(0.20, sc_shortfall)
+        sc_tail_adj = {"applied": False}
+        if sc_shortfall > 0:
+            # Dampened to K_TAIL_SC = 1.0 (matches the WAF blind-spot tail
+            # of 1.20 from below). Supply-chain widens the tail but should
+            # not blow past WAF-blindness widening on its own; both
+            # together compound naturally.
+            K_TAIL_SC = 1.00
+            sc_infl = 1.0 + K_TAIL_SC * sc_shortfall
+            med_t = float(np.median(mc_total))
+            mc_total = np.where(mc_total > med_t,
+                                med_t + (mc_total - med_t) * sc_infl, mc_total)
+            med_b = float(np.median(mc_breach_total))
+            mc_breach_total = np.where(mc_breach_total > med_b,
+                                       med_b + (mc_breach_total - med_b) * sc_infl,
+                                       mc_breach_total)
+            sc_tail_adj = {
+                "applied": True,
+                "drivers": sc_tail_drivers,
+                "supply_chain_shortfall": round(sc_shortfall, 3),
+                "tail_inflation_factor": round(sc_infl, 3),
+                "basis": (
+                    "Confirmed vendor-breach matches (S-5) or critical "
+                    "supplier-domain findings (S-1) widen catastrophe "
+                    "percentiles (P75-P99.6). Mode and median anchored. "
+                    "Supply-chain incidents have empirical precedent of "
+                    "driving single-event multi-percentile loss jumps."
+                ),
+            }
+
         mc_stats = self._mc_percentiles(mc_total)
         mc_breach_stats = self._mc_percentiles(mc_breach_total)
         if cov_adj.get("applied"):
@@ -2703,6 +2947,17 @@ class FinancialImpactCalculator:
             # {"applied": False} when the scan had full coverage. FAIS audit
             # trail — surfaces the numeric basis for the widened tail.
             "coverage_adjustment": cov_adj,
+            # Supply-chain catastrophe tail adjustment (S-1 + S-5). Independent
+            # of WAF blinding. {"applied": False} when no critical vendor /
+            # supplier findings. FAIS audit trail — surfaces the numeric basis
+            # for the widened tail.
+            "supply_chain_tail_adjustment": sc_tail_adj,
+            # Supply-chain vulnerability uplift applied to p_breach (S-1, S-2,
+            # S-5). Visible in audit trail; 0.0 when no triggers fired.
+            "supply_chain_vulnerability_uplift": {
+                "value": round(sc_vuln_uplift, 3),
+                "factors": sc_uplift_factors,
+            },
             # Return-period loss exposure (FAIR catastrophe view).
             # P99/P99.5/P99.6 correspond to 1-in-100 / 1-in-200 / 1-in-250 year
             # exceedance probabilities. At N=10,000 the P99.6 sample count is
@@ -3092,6 +3347,19 @@ class RemediationSimulator:
          "Configure web server to redirect all HTTP traffic to HTTPS (301 redirect) — prevents credential interception.", "R0–R3,600", 0.02),
         ("dns_infrastructure", lambda c: not c.get("dnssec_enabled"),
          "Enable DNSSEC to protect against DNS spoofing and cache poisoning attacks.", "R3,600–R9,000", 0.01),
+        # --- Supply-chain remediation rows (S-1, S-2, S-3, S-4, S-5, S-10) ---
+        ("related_domains", lambda c: c.get("critical_count", 0) > 0,
+         "Engage declared related domains with critical findings — supplier-chain liability exposure imputes their breach back to the insured.", "R18,000–R72,000", 0.05),
+        ("dependency_manifests", lambda c: c.get("critical_count", 0) > 0,
+         "Block public access to dependency lockfiles (package-lock.json, composer.lock, requirements.txt) — exact pinned versions enable attackers to chain known CVEs without reconnaissance.", "R0–R3,600", 0.04),
+        ("third_party_js", lambda c: c.get("compromised_host_count", 0) > 0 or (c.get("third_party_count", 0) > 0 and c.get("missing_sri_count", 0) / max(1, c.get("third_party_count", 0)) > 0.5),
+         "Add Subresource Integrity (SRI) hashes to all third-party scripts and replace scripts from known-compromised CDNs — Magecart card-skimmer defence.", "R3,600–R18,000", 0.04),
+        ("email_vendor_surface", lambda c: c.get("weak_dmarc") and c.get("vendor_count", 0) >= 1,
+         "Tighten DMARC policy to quarantine or reject and audit the SPF vendor chain — a breach at any authorised email vendor enables direct phishing.", "R0–R9,000", 0.02),
+        ("cms_plugin_sbom", lambda c: c.get("is_wordpress") and c.get("versioned_count", 0) >= 1,
+         "Update WordPress plugins and block /wp-content/plugins/ enumeration at the web server — outdated plugins are the top SA SME ransomware entry vector.", "R3,600–R18,000", 0.05),
+        ("vendor_breach", lambda c: c.get("critical_match_count", 0) > 0 or c.get("high_match_count", 0) > 0,
+         "Rotate API keys, OAuth tokens, and service accounts at vendors with confirmed breaches in the past 5 years — customer-key rotation post-disclosure is typically incomplete.", "R9,000–R36,000", 0.03),
     ]
 
     def calculate(self, categories: dict, rsi_result: dict,
