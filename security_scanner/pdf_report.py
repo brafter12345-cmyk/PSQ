@@ -2889,18 +2889,24 @@ def loss_exposure_scenarios_block(d, S):
     table.setStyle(TableStyle([
         ("FONTNAME",      (0, 0), (-1, 0),   "Helvetica-Bold"),
         ("FONTSIZE",      (0, 0), (-1, -1),  9),
-        ("BACKGROUND",    (0, 0), (-1, 0),   C_BLUE),
-        ("TEXTCOLOR",     (0, 0), (-1, 0),   colors.white),
+        # Match the cat-card title-bar styling used throughout the
+        # rest of the document — light grey background with dark navy
+        # text. The original bright C_BLUE header stood out as an
+        # inconsistency (only this table used it; everything else
+        # uses the C_GREY_1 / C_NAVY pairing).
+        ("BACKGROUND",    (0, 0), (-1, 0),   C_GREY_1),
+        ("TEXTCOLOR",     (0, 0), (-1, 0),   C_NAVY),
+        ("LINEBELOW",     (0, 0), (-1, 0),   1.0, C_NAVY),
         ("VALIGN",        (0, 0), (-1, -1),  "MIDDLE"),
         ("ALIGN",         (1, 0), (-1, -1),  "RIGHT"),
         ("ALIGN",         (0, 0), (0, -1),   "LEFT"),
-        ("LINEBELOW",     (0, 0), (-1, 0),   0.5, C_GREY_2),
         ("LEFTPADDING",   (0, 0), (-1, -1),  8),
         ("RIGHTPADDING",  (0, 0), (-1, -1),  8),
         ("TOPPADDING",    (0, 0), (-1, -1),  5),
         ("BOTTOMPADDING", (0, 0), (-1, -1),  5),
         ("ROWBACKGROUNDS",(0, 1), (-1, -1),  [colors.white, C_GREY_1]),
-        ("BOX",           (0, 0), (-1, -1),  0.5, C_GREY_2),
+        ("BOX",           (0, 0), (-1, -1),  0.25, C_GREY_2),
+        ("INNERGRID",     (0, 1), (-1, -1),  0.25, C_GREY_2),
         # Highlight the catastrophe rows
         ("FONTNAME",      (0, 3), (-1, 5),   "Helvetica-Bold"),
     ]))
@@ -4796,11 +4802,20 @@ def _assessment_slide_score_and_kpis(results):
 
     # The navy panel needs to bleed to the left edge — use a 2-column container
     # with no padding on the left side.
+    # Gap between navy block and right-col text:
+    #   - RIGHTPADDING (0,0) = 36 → 36pt of white space after the navy
+    #     panel ends, inside the navy cell
+    #   - LEFTPADDING (1,0) = 28 → 28pt of additional white space before
+    #     the right-col content begins
+    # Total gap = 64pt (~22.6mm). The original 36pt felt cramped per
+    # user feedback (2026-05-28); 64pt gives the "Executive Summary"
+    # heading visible breathing room from the navy block.
     container = Table([[navy_panel, right_col]],
                        colWidths=[330, ASX_PAGE_W - 330 - 50])
     container.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("LEFTPADDING", (0, 0), (0, 0), 0),
+        ("LEFTPADDING", (1, 0), (1, 0), 28),
         ("RIGHTPADDING", (0, 0), (0, 0), 36),
         ("RIGHTPADDING", (1, 0), (-1, -1), 0),
         ("TOPPADDING", (0, 0), (-1, -1), 0),

@@ -88,7 +88,7 @@
     .tl-crimson { background: var(--critical); box-shadow: 0 0 7px var(--critical); }
     .tl-blue    { background: var(--blue);     box-shadow: 0 0 7px var(--blue); }
     .cat-title { font-weight: 600; font-size: 0.9rem; }
-    .cat-grade { font-weight: 700; font-size: 1rem; }
+    .cat-grade { font-weight: 700; font-size: 1rem; white-space: nowrap; flex-shrink: 0; }
     .chevron { color: var(--muted); font-size: 0.75rem; transition: transform 0.2s; }
     .cat-body { display: none; padding: 0 16px 14px; border-top: 1px solid var(--border); }
     .cat-body.open { display: block; }
@@ -1857,11 +1857,12 @@
       </div>
     </div>
 
-    <!-- IntelX Dark Web Monitoring -->
+    <!-- IntelX Dark Web Monitoring (full-width card — recent-findings rows
+         carry long file paths/URLs that need horizontal room to wrap legibly) -->
     {% set ix = results.categories.get('intelx', {}) %}
     {% if ix and ix.status != 'no_api_key' %}
     {% set ix_tl = 'tl-crimson' if ix.get('darkweb_count', 0) > 0 else ('tl-red' if ix.get('paste_count', 0) > 5 else ('tl-amber' if ix.get('total_results', 0) > 0 else 'tl-green')) %}
-    <div class="cat-card">
+    <div class="cat-card" style="grid-column: 1 / -1;">
       <div class="cat-header" onclick="toggle(this)">
         <div class="cat-left"><div class="traffic-light {{ ix_tl }}"></div><div class="cat-title">Dark Web Monitoring (IntelX)</div></div>
         <div style="display:flex;align-items:center;gap:10px;">
@@ -1878,11 +1879,11 @@
         </table>
         {% if ix.recent_results %}
         <div style="margin-top:10px;font-size:.76rem;font-weight:700;color:var(--muted);text-transform:uppercase;">Recent Findings</div>
-        <table class="kv-table" style="margin-top:6px;">
+        <table class="kv-table" style="margin-top:6px;table-layout:fixed;width:100%;">
           {% for rec in ix.recent_results[:8] %}
           <tr>
-            <td style="font-size:.75rem;color:var(--muted);">{{ rec.date }}</td>
-            <td style="font-size:.75rem;">{{ rec.name }} <span style="color:var(--muted);">({{ rec.media }})</span></td>
+            <td style="font-size:.75rem;color:var(--muted);width:90px;white-space:nowrap;">{{ rec.date }}</td>
+            <td style="font-size:.75rem;word-break:break-all;font-family:ui-monospace,monospace;">{{ rec.name }} <span style="color:var(--muted);font-family:inherit;">({{ rec.media }})</span></td>
           </tr>
           {% endfor %}
         </table>
