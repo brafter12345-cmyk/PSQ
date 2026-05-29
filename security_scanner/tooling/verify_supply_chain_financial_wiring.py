@@ -2,6 +2,21 @@
 Verification loop — asserts that each of the six supply-chain checkers
 moves the relevant loss bucket(s) in the scoring + financial-impact model.
 
+THIS IS HALF OF A TWO-STEP PRE-DEPLOY GATE. This script only exercises
+the SCORING pipeline (synthetic cat_results dicts → calculators); it
+does NOT actually run `SecurityScanner.scan()`, so it cannot catch
+import / scoping / NameError / AttributeError defects in the scan
+orchestration code path. A `UnboundLocalError` in scan() broke every
+live scan from 2026-05-27 to 2026-05-28 because this verifier passed
+30/30 while production was silently dead.
+
+The companion script `tooling/verify_scan_smoke.py` runs a real
+end-to-end scan against example.com and DOES catch that class of
+bug. Run BOTH before pushing master → origin:
+
+    py tooling/verify_supply_chain_financial_wiring.py   # fast (~5s)
+    py tooling/verify_scan_smoke.py                       # slow (~60-180s)
+
 Run this AFTER any change to:
   - scoring_analytics.py (WEIGHTS, RSI factors, DBI components,
     FinancialImpactCalculator, RemediationSimulator)
