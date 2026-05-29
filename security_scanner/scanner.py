@@ -650,7 +650,13 @@ class SecurityScanner:
         # finding in all six broker-facing surfaces.
         self._notify(on_progress, "third_party_correlation", "running")
         try:
-            from checkers_supply_chain import EmailVendorSurfaceChecker
+            # NOTE: EmailVendorSurfaceChecker is already imported at module
+            # scope (top of file). A duplicate local `from ... import` here
+            # would make Python treat the name as a local variable for the
+            # ENTIRE scan() function, shadowing the module-level import and
+            # raising UnboundLocalError at the domain_checkers dict line
+            # ~190 — which previously broke EVERY scan in production after
+            # commit 0eb1483 / ab68921 / 92a5ae1 until this fix.
             hr = cat_results.get("hudson_rock", {})
             evs = cat_results.get("email_vendor_surface", {})
             vb = cat_results.get("vendor_breach", {})
