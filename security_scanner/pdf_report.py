@@ -3091,20 +3091,11 @@ def peer_benchmark_card(results, S):
     """
     ins = results.get("insurance", {}) or {}
     pb = ins.get("peer_benchmarking") or {}
-    if not pb or pb.get("status") not in ("ok", "insufficient_data"):
+    if not pb or pb.get("status") != "ok":
+        # Insufficient pool (or no data): omit the section entirely so the
+        # client-facing PDF carries no "Insufficient Pool" placeholder.
+        # The internal HTML dashboard still surfaces the note.
         return []
-
-    # Insufficient-data path: render a small note rather than the
-    # full card. Brokers see WHY peer rating is not available.
-    if pb.get("status") == "insufficient_data":
-        ev = pb.get("evidence") or "Insufficient peer scans for a stable percentile."
-        return [
-            Spacer(1, 3 * mm),
-            Paragraph("<b>Peer Benchmarking — Insufficient Pool</b>", S["cat_title"]),
-            Spacer(1, 2 * mm),
-            Paragraph(f"<i>{ev}</i>", S["body"]),
-            Spacer(1, 3 * mm),
-        ]
 
     rating = pb.get("peer_rating", 0)
     pct = pb.get("percentile", 0)
