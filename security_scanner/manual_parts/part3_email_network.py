@@ -862,10 +862,24 @@ def build(doc):
         "RDP Exposure (Port 3389): ",
         "The Remote Desktop Protocol is the single most exploited initial access "
         "vector for ransomware. The scanner checks whether port 3389 is open on "
-        "your public IP addresses. An exposed RDP service is rated as a critical "
+        "every discovered IP address — not only the IP your domain name "
+        "resolves to, but also subdomain IPs and any verified origin servers "
+        "found behind a CDN (see Origin IP Discovery below). If RDP is open on "
+        "any of these, the headline ‘RDP Exposed’ finding is raised and the "
+        "specific IP(s) are listed. An exposed RDP service is rated as a critical "
         "finding because automated attack tools continuously scan the entire "
         "internet for open RDP, and compromised RDP credentials are bought and "
         "sold on criminal marketplaces."
+    )
+
+    add_note(
+        doc,
+        "Coverage note: a domain behind Cloudflare or another CDN resolves only "
+        "to the CDN’s edge IPs, where port 3389 is always closed. A naive check "
+        "of the domain name alone would therefore report ‘RDP Exposed: No’ even "
+        "when the real origin server has RDP open. The scanner reconciles the RDP "
+        "finding across all discovered IPs and attempts to locate the hidden "
+        "origin (see below) so this exposure is not missed."
     )
 
     add_bullet(doc, "RDP exposed directly to the internet is a critical finding regardless of whether it is patched.")
@@ -950,4 +964,61 @@ def build(doc):
         "detectable via port scanning. The scanner does not test VPN "
         "authentication strength or check for known vulnerabilities in the "
         "detected VPN product."
+    )
+
+    # ── 4.5.5  Origin IP Discovery (CDN Bypass) ──────────────────────────────
+    add_h2(doc, "4.5.5  Origin IP Discovery (CDN Bypass)")
+
+    add_body(
+        doc,
+        "When a domain sits behind a CDN or WAF such as Cloudflare, it resolves "
+        "only to the provider’s edge IP addresses. The organisation’s real "
+        "server — the ‘origin’ — is hidden. This is good for DDoS protection, "
+        "but it also means a scan of the domain name alone never sees services "
+        "running directly on the origin (RDP, databases, admin panels), because "
+        "those ports are closed on the CDN edge. Attackers routinely locate the "
+        "origin and connect to it directly, bypassing the CDN entirely."
+    )
+
+    add_bold_body(
+        doc,
+        "How the scanner finds the origin: ",
+        "Candidate origin IPs are gathered from historical DNS records (via "
+        "SecurityTrails — the pre-CDN origin is usually still in the history). "
+        "Each candidate is then automatically verified: the scanner opens a TLS "
+        "connection to the candidate IP presenting the target domain name and "
+        "checks that the certificate it serves actually covers that domain. Only "
+        "IPs that pass this certificate match are treated as confirmed origins "
+        "and added to the scan — so an exposed service on the real server "
+        "surfaces in the report even though the domain is CDN-fronted."
+    )
+
+    add_bold_body(
+        doc,
+        "Verified vs candidate: ",
+        "Confirmed origins are labelled ‘verified’ and are scanned in full. IPs "
+        "that appear in historical DNS but do not currently serve the domain’s "
+        "certificate are listed as ‘candidate (unverified)’ and are deliberately "
+        "NOT scanned — they may since have been reassigned to an unrelated third "
+        "party, and scanning them would be both inaccurate and inappropriate. "
+        "Both lists appear in the report’s Origin IP Discovery card for "
+        "transparency."
+    )
+
+    add_note(
+        doc,
+        "This check is fully automated and requires no broker or analyst "
+        "confirmation. The certificate match is the proof of ownership, so the "
+        "scanner can act on a discovered origin on its own — while still never "
+        "actively scanning an IP it cannot tie back to the target domain."
+    )
+
+    add_bold_body(
+        doc,
+        "Requirements & limitations: ",
+        "Origin discovery runs only when a SecurityTrails API key is configured; "
+        "without it the step is skipped silently. Historical DNS does not always "
+        "contain the current origin, and an origin that terminates TLS with a "
+        "different certificate (or no public certificate) will not be verified. "
+        "Absence of a discovered origin is therefore not proof that none exists."
     )
