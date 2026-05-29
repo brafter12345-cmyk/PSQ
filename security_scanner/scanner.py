@@ -315,6 +315,31 @@ class SecurityScanner:
                 "ips": new_ips,
             })
 
+        # --- Expand IP pool with VERIFIED Cloudflare-bypass origin IPs ---
+        # A CDN-fronted domain resolves only to edge IPs; the real origin
+        # (which may expose RDP / databases / admin) is invisible to plain
+        # A-record discovery. discover_origin_ips() pulls candidates from
+        # historical DNS and AUTO-VERIFIES each by TLS cert match — only IPs
+        # that currently serve THIS domain's certificate are added to the
+        # scan pool. Unverified candidates are surfaced for transparency but
+        # never scanned (they may have been reassigned to a third party).
+        try:
+            from origin_discovery import discover_origin_ips
+            origin = discover_origin_ips(domain, self.securitytrails_api_key)
+        except Exception as e:
+            origin = {"status": "error", "error": str(e),
+                      "candidates": [], "verified": [], "unverified": []}
+        cat_results["origin_discovery"] = origin
+        verified_new = [ip for ip in origin.get("verified", []) if ip not in all_ips]
+        if verified_new:
+            all_ips = all_ips + verified_new
+            for ip in verified_new:
+                ip_sources.setdefault(ip, []).append("verified_origin")
+            results["discovered_ips"] = all_ips
+            results["ip_sources"] = ip_sources
+            results["origin_ips_added"] = len(verified_new)
+            self._notify(on_progress, "origin_ips", "done", {"ips": verified_new})
+
         # --- Run IP-level checkers on ALL discovered IPs ---
         # Same instrumentation pattern as the domain-level batch: emit
         # "running" at execution start, not at submission, so per-IP UI
@@ -368,6 +393,26 @@ class SecurityScanner:
             results["categories"][checker_name] = self._aggregate_ip_results(
                 per_ip_results, checker_name
             )
+
+        # --- Phase 4a: Reconcile RDP exposure across ALL discovered IPs ---
+        # vpn_remote only probes the apex domain, which usually resolves to a
+        # Cloudflare/edge IP where 3389 is closed — so RDP on an origin IP was
+        # being reported as "No". The per-IP port scan (dns_infrastructure)
+        # probes 3389 on every discovered IP; surface any hit in the headline
+        # rdp_exposed field instead of hiding it behind the apex probe.
+        rdp_ips = []
+        for ip, checks in per_ip_results.items():
+            ports = (checks.get("dns_infrastructure", {}) or {}).get("open_ports", []) or []
+            if any(p.get("port") == 3389 for p in ports):
+                rdp_ips.append(ip)
+        if rdp_ips:
+            vpn = results["categories"].setdefault("vpn_remote", {})
+            vpn["rdp_exposed_ips"] = rdp_ips
+            if not vpn.get("rdp_exposed"):
+                vpn["rdp_exposed"] = True
+                vpn.setdefault("issues", []).append(
+                    f"RDP (port 3389) exposed on {', '.join(rdp_ips)} — "
+                    "directly accessible from internet")
 
         # --- Phase 4b: External IP Aggregation (feeds CVE panel) ---
         self._notify(on_progress, "external_ips", "running")

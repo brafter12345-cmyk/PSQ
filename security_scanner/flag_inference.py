@@ -424,9 +424,25 @@ GDPR_KEYWORDS = re.compile(
 EU_LANGUAGE_HINTS = re.compile(
     r'(?:lang=["\']|hreflang=["\'])(de|fr|it|es|nl|pt|pl|sv|fi|da|el|cs|hu|ro|bg)(?:[-_]|["\'])',
     re.IGNORECASE)
+# Payment / checkout signals. Broadened beyond a handful of gateways to
+# cover SA-local gateways, card-input field markers, storefront/checkout UI
+# text, and structured-data commerce markers (the last work on SPA shells
+# where the rendered checkout lives client-side / on a subpath).
 PAYMENT_FORM_HINTS = re.compile(
-    r"(stripe|paypal|payfast|peach[- ]?payment|yoco|adyen|braintree|"
-    r"checkout\.com|2checkout|sagepay|opayo|woocommerce|shopify)",
+    r"stripe|paypal|payfast|peach[- ]?payments?|yoco|ozow|snapscan|zapper"
+    r"|netcash|paygate|dpo[- ]?pay|\bpayu\b|paystack|flutterwave|razorpay"
+    r"|adyen|braintree|checkout\.com|2checkout|sagepay|opayo|worldpay"
+    r"|squareup|mollie|klarna|afterpay"
+    r"|cc-number|card[-_ ]?number|cardnumber|\bcvv\b|\bcvc\b|data-stripe|card-element"
+    r"|add[ -]to[ -](?:cart|basket)|proceed to checkout|view cart"
+    r"|/(?:cart|checkout|basket)\b"
+    r'|"@type"\s*:\s*"(?:Product|Offer|Store|OnlineStore)"',
+    re.IGNORECASE)
+# E-commerce PLATFORM fingerprints — a strong signal of both consumer-facing
+# (B2C) status and PCI applicability (these platforms process cards).
+ECOMMERCE_PLATFORM_HINTS = re.compile(
+    r"shopify|woocommerce|wp-content/plugins/woocommerce|magento|bigcommerce"
+    r"|prestashop|opencart|wix\s*stores?|squarespace-commerce|ecwid",
     re.IGNORECASE)
 
 
@@ -452,10 +468,15 @@ def infer_pci_suggestion(domain: Optional[str], html_content: Optional[str] = No
     result = {"auto_detected": False, "evidence": "No payment-form signals detected"}
     if not html_content:
         return result
+    plat = ECOMMERCE_PLATFORM_HINTS.search(html_content)
+    if plat:
+        result.update(auto_detected=True,
+                      evidence=f"E-commerce platform detected ({plat.group(0)}) — processes card payments")
+        return result
     m = PAYMENT_FORM_HINTS.search(html_content)
     if m:
         result.update(auto_detected=True,
-                      evidence=f"Payment / e-commerce signal detected ({m.group(1)})")
+                      evidence=f"Payment / checkout signal detected ({m.group(0)[:40]})")
     return result
 
 
@@ -505,6 +526,7 @@ def run_preflight(domain: str, sub_industry: Optional[str] = None,
     b2c = infer_b2c(
         sub_industry,
         payment_form_detected=bool(html_content and PAYMENT_FORM_HINTS.search(html_content)),
+        ecommerce_tech_detected=bool(html_content and ECOMMERCE_PLATFORM_HINTS.search(html_content)),
         insurance_subtype=insurance_subtype.get("insurance_subtype"),
     )
     ai = infer_accountable_institution(sub_industry)
