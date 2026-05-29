@@ -78,17 +78,20 @@
     /* Category cards */
     .categories { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-bottom: 20px; align-items: start; }
     .cat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
-    .cat-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; cursor: pointer; user-select: none; transition: background 0.15s; }
+    .cat-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; min-height: 56px; box-sizing: border-box; cursor: pointer; user-select: none; transition: background 0.15s; }
     .cat-header:hover { background: var(--surface2); }
-    .cat-left { display: flex; align-items: center; gap: 10px; }
+    /* Allow the title column to keep its width so long, verbose grade strings
+       wrap instead of squeezing the title into 3-4 lines (uneven card heights). */
+    .cat-header > div:last-child { flex: 0 1 auto; min-width: 0; justify-content: flex-end; }
+    .cat-left { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1 1 auto; }
     .traffic-light { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
     .tl-green   { background: var(--low);      box-shadow: 0 0 7px var(--low); }
     .tl-amber   { background: var(--medium);   box-shadow: 0 0 7px var(--medium); }
     .tl-red     { background: var(--high);     box-shadow: 0 0 7px var(--high); }
     .tl-crimson { background: var(--critical); box-shadow: 0 0 7px var(--critical); }
     .tl-blue    { background: var(--blue);     box-shadow: 0 0 7px var(--blue); }
-    .cat-title { font-weight: 600; font-size: 0.9rem; }
-    .cat-grade { font-weight: 700; font-size: 1rem; white-space: nowrap; flex-shrink: 0; }
+    .cat-title { font-weight: 600; font-size: 0.9rem; min-width: 0; line-height: 1.25; }
+    .cat-grade { font-weight: 700; font-size: 1rem; white-space: normal; text-align: right; }
     .chevron { color: var(--muted); font-size: 0.75rem; transition: transform 0.2s; }
     .cat-body { display: none; padding: 0 16px 14px; border-top: 1px solid var(--border); }
     .cat-body.open { display: block; }
