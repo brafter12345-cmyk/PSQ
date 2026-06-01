@@ -86,6 +86,13 @@ def build_credential_correlation(cat_results: dict, today=None) -> dict:
             except Exception:
                 continue
 
+    # Primary credential-date source: DeHashed breach sources cross-referenced
+    # to HIBP named-breach dates (+ KNOWN_BREACH_DATES fallback for compilation
+    # lists) — the rough date guesstimate, enriched onto dehashed.enriched_sources.
+    for s in (de.get("enriched_sources") or []):
+        bd = s.get("breach_date")
+        if bd and bd != "Unknown":
+            _consume(bd)
     for rec in (ix.get("recent_results") or []):
         _consume(rec.get("date"))
     for d in (de.get("breach_details") or []):

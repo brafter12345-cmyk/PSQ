@@ -1701,9 +1701,14 @@ class HIBPBreachMetadata:
                     "passwords_in_breach": "Passwords" in match["data_classes"],
                 })
             else:
+                # Fall back to curated dates for known compilation / combo
+                # lists that are NOT in HIBP's named-breach catalog (the rough
+                # date "guesstimate" before further enrichment). Without this,
+                # stuffing lists like ALIEN TXTBASE / Naz.API return "Unknown".
+                fallback = CredentialRiskClassifier.KNOWN_BREACH_DATES.get(source_lower)
                 enriched_sources.append({
                     "name": source,
-                    "breach_date": "Unknown",
+                    "breach_date": fallback or "Unknown",
                     "records": 0,
                     "data_exposed": [],
                     "verified": False,
@@ -1727,10 +1732,15 @@ class CredentialRiskClassifier:
     # Known breach dates for common sources not in HIBP
     KNOWN_BREACH_DATES = {
         "alien txtbase": "2024-12-01",
+        "naz.api": "2024-09-01",
+        "apollo": "2018-07-23",
         "socradar.io": "2024-08-01",
         "collection #1": "2019-01-01",
+        "collection #2-5": "2019-01-01",
         "anti public combo list": "2016-12-01",
         "exploit.in": "2017-05-01",
+        "rockyou2024": "2024-07-01",
+        "rockyou2021": "2021-06-01",
     }
 
     @staticmethod
