@@ -11,11 +11,19 @@ import / scoping / NameError / AttributeError defects in the scan
 orchestration code path.
 
 This script runs a REAL scan against `example.com` (canonical IANA
-test domain) with paid-API checkers skipped (`skip_dehashed=True`,
-`skip_intelx=True`) so the test exercises the full `scan()` code path
-without burning credit. Network failures on individual checkers are
-tolerated; only **scan-startup-class** errors (Unbound / Name /
-Import / Attribute) cause the smoke test to fail.
+test domain). It exercises the full `scan()` code path while consuming
+ZERO paid-API credits: `SecurityScanner()` is constructed with NO API
+keys (see below), so every paid checker — IntelX, DeHashed, VirusTotal,
+SecurityTrails, Shodan(full-API), HIBP — returns `no_api_key` and spends
+nothing. This matters: the IntelX free tier is only ~50 search credits
+per cycle (1/scan), so smoke tests MUST stay credit-free. Network
+failures on individual checkers are tolerated; only **scan-startup-class**
+errors (Unbound / Name / Import / Attribute) cause the smoke to fail.
+
+CAUTION — manual production verification: a scan against the live
+`/api/scan` endpoint DOES use the real keys and WILL burn credits. When
+verifying prod manually, pass `skip_intelx:true` (and `skip_dehashed:true`)
+in the POST body to avoid draining the limited IntelX/DeHashed credits.
 
 Wall-clock budget: 90-180s depending on network. Run alongside the
 math-only verifier as the second step of the pre-deploy gate.
@@ -86,6 +94,9 @@ def run(domain: str = "example.com",
         traceback.print_exc()
         return 2
 
+    # Constructed with NO API keys on purpose → every paid checker (IntelX,
+    # DeHashed, etc.) returns no_api_key and spends ZERO credits. Do NOT pass
+    # real keys here; the IntelX free tier is only ~50 credits/cycle.
     s = SecurityScanner()
 
     last_progress_ts = [time.perf_counter()]
