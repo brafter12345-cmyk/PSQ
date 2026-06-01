@@ -73,10 +73,15 @@ separate decision.
 ### IntelX (free tier) — current state + Wednesday testing
 
 Confirmed 2026-05-29: the configured IntelX key **works** (the "trial expired"
-note was stale). The **free tier refreshes ~500 query credits/day** (40
-results/search) — i.e. it is **recurring/daily**, not a one-off trial. So it
-is usable now for **low-volume / ad-hoc broker scans**, but the 40-results cap
-and daily ceiling make it **insufficient for the 4,000-client cohort**.
+note was stale). **Correction (2026-05-31, verified live via
+`/authenticate/info`):** the free tier's search cap is **`CreditMax = 50`** for
+`/intelligent/search` (NOT ~500 — that was a wrong code comment). `CreditReset`
+is present so credits **do replenish** (recurring, not one-off), but the cap is
+only **~50 search credits per cycle** (1 credit/scan), and max 3 concurrent
+searches. So it is usable only for a **handful of ad-hoc scans per cycle** —
+**far too small for the 4,000-client cohort or sustained broker volume.** A
+sustainable paid replacement is therefore the real requirement. Avoid burning
+credits on test scans (`skip_intelx:true` for smoke tests).
 
 - **Action (before 2026-06-03 calibration test):** add `INTELX_API_KEY` to
   **Render** (it's currently set locally but NOT on Render — that's why prod

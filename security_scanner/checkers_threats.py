@@ -1942,7 +1942,9 @@ class IntelXChecker:
     """
     Searches Intelligence X for dark web pastes, leaked documents, and
     breach data associated with a domain. Two-step: initiate search, poll results.
-    Free tier: 40 results/search, ~500 credits/day.
+    Free tier: 40 results/search; /intelligent/search CreditMax = 50 per reset
+    cycle (NOT ~500 — verified 2026-05-31 against /authenticate/info, which
+    returns Credit / CreditMax / CreditReset for the search path). Very limited.
     """
     API_URL = "https://free.intelx.io"
 
