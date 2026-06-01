@@ -746,6 +746,39 @@ def intelx_balance():
         return jsonify({"status": "error", "balance": None, "error": str(e)})
 
 
+@app.route("/api/credential-export", methods=["POST"])
+def credential_export():
+    """On-demand encrypted credential export (Phase 2 / Manual 6.4). Re-queries
+    DeHashed live, builds the full CSV (incl passwords), encrypts it, and streams
+    it back as a one-time download. NOTHING is stored. Gated on `consent` (the
+    signed consent form is enforced operationally before this is called)."""
+    data = request.get_json(force=True, silent=True) or {}
+    domain = str(data.get("domain", "")).strip().lower()
+    domain = domain.removeprefix("https://").removeprefix("http://").split("/")[0]
+    consent = bool(data.get("consent"))
+    age_pub = (data.get("age_public_key") or "").strip() or None
+    passphrase = (data.get("passphrase") or "").strip() or None
+    if not domain or not consent:
+        return jsonify({"status": "error",
+                        "error": "domain and explicit consent:true are required"}), 400
+    if not DEHASHED_API_KEY:
+        return jsonify({"status": "error", "error": "DeHashed not configured"}), 503
+    if not (age_pub or passphrase):
+        return jsonify({"status": "error",
+                        "error": "provide age_public_key (preferred) or passphrase"}), 400
+    try:
+        from credential_export import generate_encrypted_export
+        fname, blob, method, n = generate_encrypted_export(
+            domain, DEHASHED_API_KEY, age_recipient=age_pub, passphrase=passphrase)
+    except Exception as e:
+        return jsonify({"status": "error", "error": str(e)[:200]}), 500
+    from flask import Response
+    return Response(blob, mimetype="application/octet-stream", headers={
+        "Content-Disposition": f"attachment; filename={fname}",
+        "X-Export-Method": method, "X-Record-Count": str(n),
+        "Cache-Control": "no-store"})
+
+
 @app.route("/api/scan", methods=["POST"])
 def start_scan():
     data = request.get_json(silent=True) or {}
