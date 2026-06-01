@@ -27,10 +27,18 @@ A card is not "accurate" until it passes this 5-step ground-truth check on a
    data dict. Confirm the card shows the verified data and is **consistent across
    exec deck / broker summary / full report / HTML**.
 
-4. **Benchmark against an external reference** (e.g. a reinsurer's equivalent card).
-   Where you differ, *prove* which is correct.
+4. **Benchmark against an authoritative source of truth.**
+   The reinsurer's report is ONE benchmark — but our scanner tests far more
+   cards than a typical/reinsurer scan, so **many cards have no reinsurer
+   equivalent**. For any card *without* an external benchmark, pick a **typical,
+   well-known/respected reference for that finding type** (an authoritative
+   example) and validate our output against *its* ground truth. Where you
+   differ, *prove* which is correct.
 
-5. **Run live on `takealot.com`**, trace any discrepancy through
+5. **Run live on a reference target that ACTUALLY exhibits the finding.**
+   `takealot.com` is the default fixed target — but where it doesn't show the
+   card's finding, **choose a well-known target that does**, run the same test
+   through our scanner, and trace any discrepancy through
    render → data-capture → attribution, fix, and re-verify.
 
 ## Pass criteria
