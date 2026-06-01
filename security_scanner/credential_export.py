@@ -15,6 +15,7 @@ import csv
 import io
 import os
 import subprocess
+from datetime import datetime, timezone
 
 try:
     import requests
@@ -22,6 +23,81 @@ except ImportError:
     requests = None
 
 DEHASHED_V2 = "https://api.dehashed.com/v2/search"
+
+# Per-row disclaimer surfaced at the top of every export. The whole point of the
+# match_type / confidence columns is that NOT every hit is a stolen credential:
+# a browser-History reference means the site was merely visited, an aggregated
+# domain-index dump lists thousands of domains, whereas a Passwords/Autofill
+# capture is an actual credential. Only HIGH-confidence rows should be weighed
+# as evidence of compromise; LOW-confidence rows are monitoring signals and need
+# a content-fetch of the specific dump to confirm before they justify treating
+# breach probability as raised. See User Manual §6.4.
+_DISCLAIMER = (
+    "CONFIDENCE GUIDE — high = credential/secret actually captured "
+    "(password/autofill/credit-card store); medium = session data (cookies) or "
+    "hashed password; low = site merely referenced (browser history) or listed "
+    "in an aggregated multi-domain dump. LOW-confidence rows are monitoring "
+    "signals, NOT confirmed theft — request a content-fetch of the named dump to "
+    "confirm before acting on them as a breach."
+)
+
+
+def _recency_band(age_days):
+    """Mirror of scanner._cred_recency_band — kept local so this module stays
+    importable without the heavy scanner package."""
+    if age_days is None:
+        return ""
+    if age_days < 30:   return "<30d"
+    if age_days < 90:   return "30-90d"
+    if age_days < 180:  return "90-180d"
+    if age_days < 360:  return "180-360d"
+    if age_days < 730:  return "1-2yr"
+    return ">2yr"
+
+
+def _age_days(date_str, today):
+    if not date_str or str(date_str) == "Unknown":
+        return None
+    s = str(date_str)[:10]
+    for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
+        try:
+            dt = datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
+            return max(0, (today - dt).days)
+        except ValueError:
+            continue
+    return None
+
+
+def _credential_confidence(entry):
+    """A DeHashed record's evidentiary weight: an actual password is high, a
+    hash is medium, an email-only breach appearance is low."""
+    if _g(entry, "password"):
+        return "plaintext_password", "high"
+    if _g(entry, "hashed_password"):
+        return "hashed_password", "medium"
+    return "email_only", "low"
+
+
+def _leak_match_type(name):
+    """Classify an IntelX stealer-log path by what was actually exposed. The
+    folder inside the .rar is the tell: Passwords/Autofill/CreditCards = a real
+    secret captured (HIGH); Cookies = a session token (MEDIUM); History = the
+    site was only visited (LOW); a domain-sorted aggregate index = lowest
+    specificity (LOW)."""
+    n = (name or "").lower()
+    if "password" in n or "/login" in n:
+        return "password_store", "high"
+    if "autofill" in n:
+        return "autofill", "high"
+    if "credit" in n or "/cc" in n or "card" in n:
+        return "credit_cards", "high"
+    if "cookie" in n:
+        return "cookies", "medium"
+    if "history" in n:
+        return "browser_history", "low"
+    if "slow-dom" in n or "domain" in n or "/all" in n:
+        return "aggregated_domain_index", "low"
+    return "unspecified", "low"
 
 
 def _fetch_dehashed_full(domain, api_key, max_pages=5, size=100):
@@ -58,14 +134,66 @@ def _g(entry, key):
     return v if v is not None else ""
 
 
-def build_credential_csv(entries):
-    """CSV with full detail INCLUDING passwords (export-only)."""
+_COLUMNS = ["record_type", "source", "date", "recency_band", "match_type",
+            "confidence", "email", "username", "password", "hashed_password",
+            "note"]
+
+
+def build_credential_csv(entries, source_meta=None, leak_references=None,
+                         today=None):
+    """Unified, date-clustered export INCLUDING passwords (export-only).
+
+    Two record types in one file, sorted newest-first so the most recent
+    circulation leads:
+      - ``credential``     — a DeHashed leak record (may carry a password).
+      - ``leak_reference`` — an IntelX stealer-log posting referencing the
+                             domain (no credential in-hand; match_type says how
+                             specific the hit is).
+    ``source_meta`` maps a lower-cased source name to
+    ``{"date": "YYYY-MM-DD", "combo": bool}`` (from the scan's enriched
+    sources), so each credential inherits its source's breach-date guesstimate
+    and recency band. Encryption is applied to whatever this returns — enriching
+    the rows never touches the crypto."""
+    today = today or datetime.now(timezone.utc)
+    source_meta = source_meta or {}
+    rows = []
+
+    for e in entries:
+        src = _g(e, "database_name") or _g(e, "database")
+        meta = source_meta.get((src or "").lower().strip(), {})
+        date = meta.get("date", "")
+        band = _recency_band(_age_days(date, today))
+        mtype, conf = _credential_confidence(e)
+        note = ("aggregator/combo source — re-circulated historical data, "
+                "not necessarily a fresh compromise") if meta.get("combo") else ""
+        rows.append({
+            "record_type": "credential", "source": src, "date": date,
+            "recency_band": band, "match_type": mtype, "confidence": conf,
+            "email": _g(e, "email"), "username": _g(e, "username"),
+            "password": _g(e, "password"),
+            "hashed_password": _g(e, "hashed_password"), "note": note,
+        })
+
+    for ref in (leak_references or []):
+        name = ref.get("name") or ref.get("bucket") or ""
+        date = str(ref.get("date") or "")[:10]
+        band = _recency_band(_age_days(date, today))
+        mtype, conf = _leak_match_type(name)
+        rows.append({
+            "record_type": "leak_reference", "source": "IntelX", "date": date,
+            "recency_band": band, "match_type": mtype, "confidence": conf,
+            "email": "", "username": "", "password": "", "hashed_password": "",
+            "note": name,
+        })
+
+    rows.sort(key=lambda r: (r["date"] or "0000-00-00"), reverse=True)
+
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["email", "username", "password", "hashed_password", "database"])
-    for e in entries:
-        w.writerow([_g(e, "email"), _g(e, "username"), _g(e, "password"),
-                    _g(e, "hashed_password"), _g(e, "database_name")])
+    w.writerow(_COLUMNS)
+    w.writerow(["_disclaimer", "", "", "", "", "", "", "", "", "", _DISCLAIMER])
+    for r in rows:
+        w.writerow([r[c] for c in _COLUMNS])
     return buf.getvalue().encode("utf-8")
 
 
@@ -105,10 +233,17 @@ def encrypt_aes_openssl(data, passphrase):
 
 
 def generate_encrypted_export(domain, dehashed_api_key, age_recipient=None,
-                              passphrase=None):
-    """Returns (filename, ciphertext_bytes, method, record_count). Nothing stored."""
+                              passphrase=None, source_meta=None,
+                              leak_references=None):
+    """Returns (filename, ciphertext_bytes, method, record_count). Nothing stored.
+
+    ``source_meta`` / ``leak_references`` come from the domain's latest scan
+    (breach-date guesstimates + IntelX dump postings) so the export carries the
+    same recency clustering as the dashboard. Both optional — without them the
+    export still produces credentials, just without dates/leak references."""
     entries = _fetch_dehashed_full(domain, dehashed_api_key)
-    csv_bytes = build_credential_csv(entries)
+    csv_bytes = build_credential_csv(entries, source_meta=source_meta,
+                                     leak_references=leak_references)
     safe = "".join(c for c in (domain or "export") if c.isalnum() or c in ".-")
     if age_recipient:
         return (f"{safe}-credentials.csv.age",

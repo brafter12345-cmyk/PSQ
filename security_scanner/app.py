@@ -766,10 +766,32 @@ def credential_export():
     if not (age_pub or passphrase):
         return jsonify({"status": "error",
                         "error": "provide age_public_key (preferred) or passphrase"}), 400
+    # Pull recency clustering (breach-date guesstimates) + IntelX leak-reference
+    # postings from the domain's latest completed scan, so the export carries the
+    # same date clustering as the dashboard WITHOUT spending new credits. Both
+    # are optional — a missing/old scan just yields a dateless export.
+    source_meta, leak_references = {}, []
+    try:
+        from scanner import COMBO_LIST_SOURCES
+        with get_db() as conn:
+            srow = conn.execute(
+                "SELECT results FROM scans WHERE domain=? AND status='completed' "
+                "ORDER BY created_at DESC LIMIT 1", (domain,)).fetchone()
+        if srow and srow["results"]:
+            cats = (json.loads(srow["results"]) or {}).get("categories", {})
+            for s in (cats.get("dehashed", {}) or {}).get("enriched_sources", []) or []:
+                nm = (s.get("name") or "").lower().strip()
+                if nm:
+                    source_meta[nm] = {"date": s.get("breach_date", ""),
+                                       "combo": nm in COMBO_LIST_SOURCES}
+            leak_references = (cats.get("intelx", {}) or {}).get("recent_results", []) or []
+    except Exception:
+        source_meta, leak_references = {}, []  # enrichment is best-effort
     try:
         from credential_export import generate_encrypted_export
         fname, blob, method, n = generate_encrypted_export(
-            domain, DEHASHED_API_KEY, age_recipient=age_pub, passphrase=passphrase)
+            domain, DEHASHED_API_KEY, age_recipient=age_pub, passphrase=passphrase,
+            source_meta=source_meta, leak_references=leak_references)
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)[:200]}), 500
     from flask import Response

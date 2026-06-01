@@ -343,6 +343,50 @@ def build(doc):
         "while an outsider cannot reconstruct them.",
     )
 
+    add_bold_body(
+        doc,
+        "Export file format — date-clustered, with a confidence column: ",
+        "The encrypted CSV is sorted newest-first and carries the same recency "
+        "clustering the dashboard shows, so the client can act on the freshest "
+        "circulation first. Columns: record_type, source, date, recency_band, "
+        "match_type, confidence, email, username, password, hashed_password, "
+        "note. Two record types appear in the one file: 'credential' (a DeHashed "
+        "leak record, which may include a password) and 'leak_reference' (an "
+        "IntelX stealer-log posting that references the domain). Each credential "
+        "inherits its source's breach-date guesstimate and recency band; note "
+        "that this is a per-SOURCE date, not a per-record date (DeHashed records "
+        "carry no reliable individual date).",
+    )
+
+    add_bold_body(
+        doc,
+        "The confidence column — and why it governs breach-probability decisions: ",
+        "Not every hit is a stolen credential, and the confidence column makes "
+        "that explicit. HIGH = a secret was actually captured (a plaintext "
+        "password, or an Autofill / Passwords / credit-card store in a stealer "
+        "log). MEDIUM = session data (cookies) or a hashed password. LOW = the "
+        "site was merely referenced (a browser-History entry) or the domain "
+        "appears in an aggregated multi-domain dump that lists thousands of "
+        "sites. The distinction is decisive for underwriting: a LOW-confidence "
+        "match is a MONITORING signal, not evidence of compromise, and should "
+        "NOT on its own be read as raising the breach probability. To act on a "
+        "low-confidence hit — or to justify any uplift to the probability of "
+        "breach / RSI — request a content-fetch of the specific named dump to "
+        "confirm whether a phishield credential (not just a visited URL) was "
+        "actually exposed.",
+    )
+
+    add_note(
+        doc,
+        "Worked example: a domain may show recent (30-90 day) leak references "
+        "that are ALL low-confidence (aggregated indexes plus a single browser-"
+        "History entry), while its only high-confidence rows are years-old "
+        "password records from a re-circulated combo list. The honest reading "
+        "is 'recently CIRCULATING, but no fresh high-confidence theft' — the "
+        "catastrophe model is unaffected, but the probability-of-breach input "
+        "should not be inflated by the low-confidence freshness alone.",
+    )
+
     add_bold_body(doc, "Operator workflow (broker / scanner user): ", "")
     add_bullet(doc, "1. Obtain the client's SIGNED CONSENT form and upload it — this is the authorisation gate and the FAIS / POPIA audit trail.")
     add_bullet(doc, "2. Obtain the client's age PUBLIC key (the client generates it — see below). A public key is safe to share openly.")
