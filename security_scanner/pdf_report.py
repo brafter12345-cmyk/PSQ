@@ -4562,7 +4562,8 @@ def _assessment_kill_chain(results: dict) -> list:
     rdp = cats.get("vpn_remote", {}).get("rdp_exposed", False)
     hrp = cats.get("high_risk_protocols", {}).get("exposed_services", [])
     cred_leaks = dh.get("total_entries", 0)
-    infostealers = cats.get("hudson_rock", {}).get("compromised_employees", 0)
+    hr_cat = cats.get("hudson_rock", {})
+    infostealers = hr_cat.get("compromised_employees", 0)
     p2_sev = sevs["access"]
     p2f = []
     if rdp: p2f.append("RDP exposed on port 3389")
@@ -4571,7 +4572,10 @@ def _assessment_kill_chain(results: dict) -> list:
         p2f.append(f"{(svc.get('service') or 'service').capitalize()} open on port {svc.get('port', '?')}")
     if cred_leaks: p2f.append(f"{cred_leaks} stolen credentials available to reuse")
     if cred_leaks > 0 and len(p2f) < 3: p2f.append("Enables automated credential stuffing")
-    if infostealers and len(p2f) < 3:   p2f.append(f"{infostealers} infostealer-infected device(s)")
+    if infostealers and len(p2f) < 3:
+        _isd = hr_cat.get("days_since_compromise")
+        p2f.append(f"{infostealers} infostealer-infected device(s)"
+                   + (f", most recent {_isd}d ago" if _isd is not None else ""))
     if not p2f: p2f = ["No clear initial-access vectors identified"]
 
     # Phase 3: Exploitation
@@ -4642,10 +4646,17 @@ def _assessment_top_findings(results: dict) -> list:
                   + (f", incl. {staff_n} staff account(s)" if staff_n else "")
                   + (f" and {svc_n} service(s) captured from {hr_emp} infected employee device(s)"
                      if svc_n else ""))
+        # Counts also go in the SUMMARY so they show on the exec-deck banner
+        # (which renders the primary finding's summary, not its detail).
+        extra = ""
+        if staff_n or svc_n:
+            extra = (f" {staff_n} staff account(s)" if staff_n else "")
+            extra += (f" and {svc_n} service(s)" if svc_n else "")
+            extra += " exposed."
         cands.append((weight[level], {
             "level": level,
             "headline": f"Overall credential risk is classified as {level}",
-            "summary": "Significantly elevated probability of unauthorised access via compromised credentials.",
+            "summary": "Significantly elevated probability of unauthorised access via compromised credentials." + extra,
             "detail": counts + " — staff email addresses and possibly passwords are circulating in breach databases, the fuel for automated password-guessing attacks."
         }))
 
