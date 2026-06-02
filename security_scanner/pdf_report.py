@@ -1167,10 +1167,14 @@ def cat_subdomains(d, S):
     parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
     parts.append(Spacer(1, 1 * mm))
     total = subs.get("total_count", 0)
+    # Only claim CT-log sourcing when crt.sh actually returned data; otherwise
+    # enumeration was DNS-only and asserting "via Certificate Transparency"
+    # would be inaccurate.
+    src = "via Certificate Transparency logs" if subs.get("ct_source_ok") else "via DNS enumeration"
     if risky:
         risky_list = ", ".join(risky[:5])
         parts.append(Paragraph(
-            f"{total} subdomain(s) were discovered via Certificate Transparency logs, of which {len(risky)} "
+            f"{total} subdomain(s) were discovered {src}, of which {len(risky)} "
             f"have potentially sensitive names ({risky_list}). Subdomains named 'dev', 'staging', 'test', or 'admin' "
             "often run with weaker security controls and may expose internal tools, unpatched software, or "
             "debug interfaces that attackers can exploit as an alternative entry point.",
@@ -1183,7 +1187,7 @@ def cat_subdomains(d, S):
         parts.append(Paragraph("3. Apply the same security standards (HTTPS, authentication, patching) to all subdomains.", S["body"]))
     else:
         parts.append(Paragraph(
-            f"{total} subdomain(s) were discovered via Certificate Transparency logs. None have names that suggest "
+            f"{total} subdomain(s) were discovered {src}. None have names that suggest "
             "exposed development, staging, or administrative environments. This is a positive indicator of "
             "controlled subdomain management.",
             S["body"]))

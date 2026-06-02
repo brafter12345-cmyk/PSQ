@@ -870,42 +870,99 @@ class CMSPluginSBOMChecker:
 
     def _is_wordpress(self, domain: str) -> bool:
         from http_client import HTTP
-        # Cheap discriminator: HEAD /wp-content/ — if directory exists and
-        # is readable (200/301/403 with WP signature), we're on WP. Pure
-        # 404 means almost certainly not WordPress.
-        for path in ("/wp-content/", "/wp-login.php", "/wp-includes/"):
-            try:
-                head = HTTP.head(f"https://{domain}{path}", timeout=6,
-                                  allow_redirects=False)
-                if head is None:
-                    continue
-                if head.status_code in (200, 301, 302, 401, 403):
+        # Robust discriminator. The previous version accepted ANY
+        # 200/301/302/401/403 on /wp-content/ etc., so a CDN/WAF catch-all
+        # (which 200s or 403s every path, including random ones) tripped it
+        # for non-WordPress sites (e.g. takealot, a Next.js SPA behind
+        # Cloudflare). Require a *genuine* WordPress fingerprint and bail if
+        # a random control path looks identical (catch-all). Mirrors the
+        # 200-only + body-sanity gate in S-3 DependencyManifestChecker._probe.
+        base = f"https://{domain}"
+
+        # (a) Catch-all guard — fetch a random nonsense path. If it 200s with
+        #     a real body, the host echoes content to everything and no probe
+        #     below can be trusted.
+        import secrets
+        rand_path = f"/{secrets.token_hex(8)}-notreal.txt"
+        catch_all_body = ""
+        try:
+            ctrl = HTTP.get(base + rand_path, timeout=6, allow_redirects=False)
+            if ctrl is not None and ctrl.status_code == 200:
+                try:
+                    catch_all_body = (ctrl.text or "")[:2000]
+                except Exception:
+                    catch_all_body = ""
+        except Exception:
+            catch_all_body = ""
+
+        # (b) Homepage HTML markers — wp-content/wp-includes asset refs or a
+        #     WordPress generator meta tag are reliable, body-confirmed.
+        try:
+            home = HTTP.get(base + "/", timeout=8, allow_redirects=True)
+            if home is not None and home.status_code == 200:
+                html = (home.text or "").lower()
+                if ('content="wordpress' in html
+                        or "/wp-content/" in html
+                        or "/wp-includes/" in html):
                     return True
-            except Exception:
-                continue
+        except Exception:
+            pass
+
+        # (c) wp-login.php must return 200 with a genuine WP login body —
+        #     not a catch-all 200. Reject if it matches the control body.
+        try:
+            login = HTTP.get(base + "/wp-login.php", timeout=6,
+                             allow_redirects=False)
+            if login is not None and login.status_code == 200:
+                body = (login.text or "")
+                low = body.lower()
+                if (len(body) >= 10
+                        and body != catch_all_body
+                        and ("user_login" in low or "wp-submit" in low
+                             or "wordpress" in low)):
+                    return True
+        except Exception:
+            pass
+
         return False
 
     def _probe_plugin(self, base: str, dirname: str) -> dict:
         from http_client import HTTP
+        # A plugin counts as PRESENT only when its readme.txt returns HTTP 200
+        # AND the body is a genuine WordPress plugin readme. The old version
+        # accepted any 200/301/302/401/403 on the plugin *directory* as
+        # evidence — so a CDN/WAF that 403s (or 200s) every path reported all
+        # 25 probed plugins as installed. A bare 403 dir is not evidence of a
+        # plugin. Mirrors the 200-only + body-sanity gate in S-3
+        # DependencyManifestChecker._probe.
         plugin_root = f"{base}/wp-content/plugins/{dirname}/"
-        try:
-            head = HTTP.head(plugin_root, timeout=6, allow_redirects=False)
-        except Exception:
-            return None
-        if head is None or head.status_code not in (200, 301, 302, 401, 403):
-            return None
-        version = ""
         try:
             r = HTTP.get(f"{plugin_root}readme.txt", timeout=6,
                           allow_redirects=False)
-            if r is not None and r.status_code == 200 and r.text:
-                m = self.README_VERSION_RE.search(r.text[:8000])
-                if m:
-                    version = m.group(1)
         except Exception:
-            pass
+            return None
+        if r is None or r.status_code != 200:
+            return None
+        try:
+            text = r.text or ""
+        except Exception:
+            return None
+        if len(text) < 10:
+            return None
+        head = text.lower()[:300]
+        if "<html" in head or "<!doctype" in head:
+            return None  # CDN/WAF HTML shell, not a readme
+        # Real WordPress plugin readme.txt markers (readme.txt spec). At least
+        # one must be present, else this is a catch-all / error body.
+        low = text.lower()
+        if not ("=== " in text or "stable tag:" in low or "tested up to:" in low):
+            return None
+        version = ""
+        m = self.README_VERSION_RE.search(text[:8000])
+        if m:
+            version = m.group(1)
         return {"slug": dirname, "version": version,
-                "status_code": head.status_code}
+                "status_code": r.status_code}
 
     def check(self, domain: str) -> dict:
         result = {

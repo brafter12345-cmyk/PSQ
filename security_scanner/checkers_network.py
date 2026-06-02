@@ -70,6 +70,18 @@ class SubdomainChecker:
         except Exception:
             return []
 
+    def _wildcard_ips(self, domain: str) -> set:
+        """Detect wildcard DNS. Resolve two random non-existent labels under
+        the apex; if they resolve, the domain has a wildcard (*.domain) and
+        brute-force "hits" are phantoms, not real subdomains. Returns the set
+        of IPs the wildcard answers with (empty set => no wildcard)."""
+        import secrets
+        ips = set()
+        for _ in range(2):
+            label = f"nx-{secrets.token_hex(8)}.{domain}"
+            ips.update(self._resolves(label))
+        return ips
+
     def _check_cname_takeover(self, subdomain: str) -> Optional[dict]:
         """Check if a subdomain's CNAME points to an unclaimed/dangling service.
         Returns takeover info dict if vulnerable, None otherwise."""
@@ -131,6 +143,8 @@ class SubdomainChecker:
             "total_count": 0,
             "ct_count": 0,
             "brute_count": 0,
+            "ct_source_ok": False,
+            "wildcard_dns": False,
             "issues": [],
             "score": 100,
         }
@@ -140,49 +154,80 @@ class SubdomainChecker:
         seen = set()
         subdomains = []
 
-        # --- Source 1: Certificate Transparency via crt.sh ---
-        try:
-            r = requests.get(
-                f"https://crt.sh/?q=%.{domain}&output=json",
-                timeout=20, headers={"User-Agent": USER_AGENT}
-            )
-            if r.status_code == 200:
-                entries = r.json()
-                for entry in entries:
-                    names = entry.get("name_value", "").split("\n")
-                    for name in names:
-                        name = name.strip().lower().lstrip("*.")
-                        if name and name != domain and domain in name and name not in seen:
-                            seen.add(name)
-                            subdomains.append(name)
-                result["ct_count"] = len(subdomains)
-        except Exception:
-            pass  # crt.sh can be slow/unreliable — continue with brute-force
+        # --- Source 1 (PRIMARY): Certificate Transparency via crt.sh ---
+        # crt.sh is the authoritative, non-intrusive source. The previous
+        # %-prefix query (%.{domain}) and a single attempt meant a slow/empty
+        # crt.sh silently fell through to brute-force while the PDF still
+        # narrated "discovered via Certificate Transparency". Use %25 (URL-
+        # encoded wildcard) and retry once before giving up, and record
+        # ct_source_ok so downstream narration is honest.
+        ct_count = 0
+        for attempt in range(2):
+            try:
+                r = requests.get(
+                    f"https://crt.sh/?q=%25.{domain}&output=json",
+                    timeout=20, headers={"User-Agent": USER_AGENT}
+                )
+                if r.status_code == 200 and r.text.strip():
+                    entries = r.json()
+                    for entry in entries:
+                        names = entry.get("name_value", "").split("\n")
+                        for name in names:
+                            name = name.strip().lower().lstrip("*.")
+                            if name and name != domain and domain in name and name not in seen:
+                                seen.add(name)
+                                subdomains.append(name)
+                                ct_count += 1
+                    result["ct_source_ok"] = True
+                    break
+            except Exception:
+                pass  # retry once, then fall through to brute-force
+        result["ct_count"] = ct_count
 
-        # --- Source 2: DNS brute-force for common prefixes ---
-        brute_candidates = [
-            f"{prefix}.{domain}" for prefix in self.BRUTE_PREFIXES
-            if f"{prefix}.{domain}" not in seen
-        ]
+        # --- Wildcard-DNS guard ---
+        # Before trusting any brute-forced result, resolve random non-existent
+        # labels. If they resolve, *.{domain} is a wildcard, so brute "hits"
+        # like jenkins./grafana./backup. are phantoms (they answer because
+        # everything answers), not real subdomains. Discard brute-force in
+        # that case and rely solely on crt.sh's authoritative list.
+        wildcard_ips = self._wildcard_ips(domain)
+        result["wildcard_dns"] = bool(wildcard_ips)
+
+        # --- Source 2: DNS brute-force for common prefixes (supplemental) ---
         brute_found = 0
-        with ThreadPoolExecutor(max_workers=20) as ex:
-            futures = {ex.submit(self._resolves, host): host for host in brute_candidates}
-            for future in as_completed(futures, timeout=15):
-                host = futures[future]
-                try:
-                    ips = future.result(timeout=3)
-                    if ips:
-                        seen.add(host)
-                        subdomains.append(host)
-                        brute_found += 1
-                except Exception:
-                    pass
+        if wildcard_ips:
+            # Wildcard apex — brute-force is unreliable; skip it entirely.
+            result["issues"].append(
+                "Wildcard DNS detected (*." + domain + " resolves) — "
+                "DNS brute-force suppressed to avoid fabricated subdomains; "
+                "enumeration is Certificate-Transparency-only."
+            )
+        else:
+            brute_candidates = [
+                f"{prefix}.{domain}" for prefix in self.BRUTE_PREFIXES
+                if f"{prefix}.{domain}" not in seen
+            ]
+            with ThreadPoolExecutor(max_workers=20) as ex:
+                futures = {ex.submit(self._resolves, host): host for host in brute_candidates}
+                for future in as_completed(futures, timeout=15):
+                    host = futures[future]
+                    try:
+                        ips = future.result(timeout=3)
+                        # Guard against any residual wildcard answers.
+                        if ips and not (set(ips) & wildcard_ips):
+                            seen.add(host)
+                            subdomains.append(host)
+                            brute_found += 1
+                    except Exception:
+                        pass
         result["brute_count"] = brute_found
 
-        # Cap and store
+        # Cap and store. ct_count is recomputed against the cap so it can
+        # never exceed total_count.
         subdomains = subdomains[:150]
         result["subdomains"] = subdomains
         result["total_count"] = len(subdomains)
+        result["ct_count"] = min(result["ct_count"], result["total_count"])
 
         # --- Resolve all subdomains to IPs (for attack surface mapping) ---
         resolved_ips = {}
