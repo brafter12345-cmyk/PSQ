@@ -12,7 +12,7 @@
 
 The recompute surfaced two structural problems. Calibrating *around* them would waste the session.
 
-### 0.1 🔴 The vulnerability curve is POLARITY-INVERTED (regression from Wave 1)
+### 0.1 ✅ The vulnerability curve was POLARITY-INVERTED — POLARITY FIXED 2026-06-03 (commit `1cc204d`); curve SHAPE still to calibrate
 `scoring_analytics.py:2038` — `vulnerability = (100 − overall_score/10)/100`, commented *"0.0 (perfect) to 1.0 (worst)"*. The comment proves the formula expects a **posture/security score (higher = better)**. But **Wave 1 wired in `risk_score` (0–1000, higher = WORSE)**. Net effect: a **well-postured org gets a HIGH p_breach**.
 - phishield **169 (Low risk)** → `vulnerability = 0.831` → **p_breach ≈ 0.36**. A low-risk org should be ~0.02–0.07.
 - a hypothetical **900 (terrible)** → `vulnerability = 0.10` → low p_breach. Backwards.
@@ -51,7 +51,7 @@ The recompute surfaced two structural problems. Calibrating *around* them would 
 
 ## 2. The iterative loop — for the dedicated calibration session (NOT this session)
 
-1. **Fix the two correctness items (0.1, 0.2)** + re-baseline the verifier.
+1. **Item 0.1 (polarity) is already fixed** (`1cc204d`, linear placeholder; verifier passed unchanged) — **calibrate its SHAPE** (linear vs convex k≈1.8) here. **Fix item 0.2 (dead USD path)** still to do.
 2. **Decide the p(breach) base rate** (the single highest-leverage choice — §1 row 1).
 3. Set, in order: vulnerability curve shape → the `0.3` → credential class (K1–K7) → RSI rebalance → SA fine expected-value → TEF → **tail/Pareto with the colleague** (their domain).
 4. **Overall-outcome panel:** map the *combined* calibration to real-world SA loss benchmarks (IBM SA R44.1M, Coveware ransom distributions, the return-period ladder) and the peer pool; iterate until the headline ZAR + 1-in-100/200/250 land defensibly.
