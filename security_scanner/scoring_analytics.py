@@ -36,7 +36,10 @@ _CYBER_INCIDENT_BANDS = (
 # residual - CAT_RESIDUAL_TAPER_MIN is the residual weight at <=R10M revenue;
 # CAT_RESIDUAL_TAPER_HI_ZAR is the revenue at which the taper reaches 1.0 (no
 # taper, large-cap). Lever 2: FINE_CAPACITY_FLOOR floors the capacity factor used
-# for fixed-cap statutory fines (POPIA/ECTA/sector). Env-overridable so the cat
+# for the broadly-applicable fixed-cap fines (POPIA s109 + ECTA) ONLY; the
+# discretionary sector mega-ceilings (FSCA/FIC/JSE/etc.) keep scaling by the
+# un-floored capacity factor, because those sanctions are size-proportionate.
+# Env-overridable so the cat
 # curve can be re-tuned in early-stage production WITHOUT a redeploy.
 import os as _os
 
@@ -50,7 +53,27 @@ def _cat_env_float(key, default, lo, hi):
 
 CAT_RESIDUAL_TAPER_MIN    = _cat_env_float("CAT_RESIDUAL_TAPER_MIN", 0.30, 0.0, 1.0)
 CAT_RESIDUAL_TAPER_HI_ZAR = _cat_env_float("CAT_RESIDUAL_TAPER_HI_ZAR", 2_000_000_000.0, 1e7, 1e12)
-FINE_CAPACITY_FLOOR       = _cat_env_float("FINE_CAPACITY_FLOOR", 0.60, 0.0, 1.0)
+FINE_CAPACITY_FLOOR       = _cat_env_float("FINE_CAPACITY_FLOOR", 0.80, 0.0, 1.0)
+
+
+def _revenue_elasticity(rev):
+    """Continuous (kink-free) revenue-scaling exponent. Linear in log10(revenue)
+    through the former stepped bands' transition midpoints - tracks the old
+    calibration at band centres but removes the step discontinuities, which had
+    produced small non-monotonic kinks in the cat-as-%-of-revenue curve. Flat
+    0.60 below R10M, flat 0.35 at/above R2bn."""
+    import math
+    pts = [(7.0, 0.60), (7.398, 0.55), (7.699, 0.50), (8.0, 0.46),
+           (8.301, 0.42), (8.699, 0.39), (9.0, 0.365), (9.301, 0.35)]
+    L = math.log10(max(float(rev), 1.0))
+    if L <= pts[0][0]:
+        return pts[0][1]
+    if L >= pts[-1][0]:
+        return pts[-1][1]
+    for (l0, e0), (l1, e1) in zip(pts, pts[1:]):
+        if l0 <= L <= l1:
+            return e0 + (e1 - e0) * (L - l0) / (l1 - l0)
+    return pts[-1][1]
 
 
 def _grade_probability(pct, bands):
@@ -2102,22 +2125,10 @@ class FinancialImpactCalculator:
         MEDIAN_REVENUE = 200_000_000   # R200M — SA mid-market reference point
         C4_PROPORTION = 0.1040         # Ransom share from claims data (ransom-inclusive)
 
-        if annual_revenue_zar >= 1_000_000_000:
-            elasticity = 0.35
-        elif annual_revenue_zar >= 500_000_000:
-            elasticity = 0.38
-        elif annual_revenue_zar >= 200_000_000:
-            elasticity = 0.40
-        elif annual_revenue_zar >= 100_000_000:
-            elasticity = 0.44
-        elif annual_revenue_zar >= 50_000_000:
-            elasticity = 0.48
-        elif annual_revenue_zar >= 25_000_000:
-            elasticity = 0.52
-        elif annual_revenue_zar >= 10_000_000:
-            elasticity = 0.58
-        else:
-            elasticity = 0.60
+        # Continuous (kink-free) revenue elasticity - replaces the former stepped
+        # bands whose discontinuities produced small non-monotonic kinks in the
+        # cat-as-%-of-revenue curve (smoothed 2026-06-08; tracks old band centres).
+        elasticity = _revenue_elasticity(annual_revenue_zar)
 
         revenue_ratio = annual_revenue_zar / MEDIAN_REVENUE
         revenue_scale = revenue_ratio ** elasticity  # Revenue scaling factor (reused)
@@ -2313,26 +2324,31 @@ class FinancialImpactCalculator:
         # face proportionally lower enforcement, not the full ceiling.
         # Pattern A capacity factor (revenue band table) applied.
         capacity_factor = self._capacity_factor(annual_revenue_zar)
-        # Lever 2 (cat refinement, 2026-06-08): a statutory FIXED-CAP fine
-        # (POPIA s109 R10M, ECTA, sector ceilings) does not scale down with
-        # company size the way discretionary enforcement does - a serious
-        # breach at a micro FSP can attract most of the statutory ceiling in a
-        # 1-in-X catastrophe. Floor the capacity factor used for the fixed-cap
-        # fines so small QUALIFYING entities carry genuine fine exposure. The
-        # %-of-turnover frameworks (GDPR / CPA / PCI) are untouched - they
-        # already scale with revenue. Only the fines that QUALIFY fire (POPIA
-        # baseline; GDPR / PCI / sector by reg_flags), so this lifts real
-        # exposure, not phantom fines.
+        # Lever 2 (cat refinement, 2026-06-08): a broadly-applicable statutory
+        # FIXED-CAP fine (POPIA s109 R10M, ECTA R1M) does not scale down with
+        # company size the way discretionary enforcement does - a serious breach
+        # at a micro FSP can attract most of that ceiling in a 1-in-X catastrophe.
+        # Floor the capacity factor used for THESE fines so small QUALIFYING
+        # entities carry genuine fine exposure (POPIA R10M x 0.80 = R8M).
+        #
+        # The floor is DELIBERATELY NOT applied to the discretionary sector
+        # mega-ceilings (FSCA R100M / FIC R50M / JSE R7.5M / etc.): those
+        # sanctions are size-proportionate, so a R5M FSP cannot plausibly attract
+        # R40M of FIC. The sector stack therefore keeps scaling by the UN-FLOORED
+        # capacity_factor. The %-of-turnover frameworks (GDPR / CPA / PCI) are
+        # untouched - they already scale with revenue.
         fine_capacity_factor = max(capacity_factor, FINE_CAPACITY_FLOOR)
         sector_frameworks = self._sector_cat_stack(
             sub_industry, reg_flags.get("sub_industry_detail"), reg_flags)
         sector_cat_raw = sum(stat_max for _, stat_max in sector_frameworks)
-        sector_cat_scaled = int(round(sector_cat_raw * fine_capacity_factor))
+        # Un-floored capacity_factor (NOT fine_capacity_factor): sector ceilings
+        # are size-proportionate and must keep scaling down with revenue.
+        sector_cat_scaled = int(round(sector_cat_raw * capacity_factor))
         # Per-framework scaled breakdown for the audit panel in the PDF.
         sector_cat_breakdown = [
             {"framework": name,
              "statutory_max_zar": stat_max,
-             "cat_scaled_zar": int(round(stat_max * fine_capacity_factor))}
+             "cat_scaled_zar": int(round(stat_max * capacity_factor))}
             for name, stat_max in sector_frameworks
         ]
 

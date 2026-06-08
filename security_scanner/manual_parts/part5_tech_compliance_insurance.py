@@ -853,10 +853,14 @@ def build(doc):
         "both for failure to comply with an enforcement notice, with zero "
         "private-commercial fines. The catastrophe view uses the full "
         "R10 million Section 109 statutory ceiling, scaled by the enterprise "
-        "capacity factor - but that factor is floored (at 0.60) for the fixed-"
-        "cap statutory fines, because a serious breach at even a small qualifying "
-        "entity can attract most of the statutory ceiling, so the fine is not "
-        "discounted away by company size. GDPR exposure (4% of "
+        "capacity factor - but that factor is floored (at 0.80) for the "
+        "POPIA and ECTA fixed-cap ceilings only, because a serious breach at "
+        "even a small qualifying entity can attract most of those broadly-"
+        "applicable statutory ceilings, so the fine is not discounted away by "
+        "company size. The high discretionary sector ceilings (such as FSCA "
+        "R100M and FIC R50M) keep scaling by the un-floored capacity factor, "
+        "so a small qualifying entity is not modelled as facing most of a "
+        "R100M sector ceiling. GDPR exposure (4% of "
         "global turnover, uncapped) and PCI DSS fines are added where the "
         "scan input toggles indicate they apply."
     )
@@ -1318,12 +1322,13 @@ def build(doc):
 
     add_body(doc,
         "Worked example - R200M listed FS broker (B2C, accountable "
-        "institution), capacity factor 0.65: POPIA R10M x 0.65 = R6.5M; "
-        "ECTA R1M x 0.65 = R0.65M; CPA 10% x R200M = R20M (no factor - "
-        "percentage already scales); FSCA R100M x 0.65 = R65M; FIC R50M "
-        "x 0.65 = R32.5M; JSE R7.5M x 0.65 = R4.875M. Total cat stack: "
-        "approximately R129.5M. The same entity at R10M revenue "
-        "(capacity factor 0.15) would face approximately R24M total."
+        "institution), capacity factor 0.65: POPIA R10M x 0.80 (floored) = "
+        "R8M; ECTA R1M x 0.80 (floored) = R0.8M; CPA 10% x R200M = R20M (no "
+        "factor - percentage already scales); FSCA R100M x 0.65 = R65M; FIC "
+        "R50M x 0.65 = R32.5M; JSE R7.5M x 0.65 = R4.875M. Total cat stack: "
+        "approximately R131.2M. The same entity at R10M revenue (capacity "
+        "factor 0.15, with POPIA/ECTA still floored to 0.80 but the sector "
+        "lines scaling at 0.15) would face approximately R33.4M total."
     )
 
     add_h2(doc, "How flag inputs reach the cat stack (auto-detection -> broker confirmation -> calculation)")
