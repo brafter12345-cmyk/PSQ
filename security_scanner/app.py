@@ -48,7 +48,9 @@ SECURITYTRAILS_API_KEY = os.environ.get("SECURITYTRAILS_API_KEY")  # Optional �
 SHODAN_API_KEY         = os.environ.get("SHODAN_API_KEY")          # Optional — free account
 INTELX_API_KEY         = os.environ.get("INTELX_API_KEY")          # Optional — free tier
 DB_PATH = os.environ.get("DB_PATH", "scans.db")
-MAX_CONCURRENT = int(os.environ.get("MAX_CONCURRENT_SCANS", "5"))
+# Default 2 for the Render 512MB / 1-worker tier (env-overridable via
+# MAX_CONCURRENT_SCANS; production sets it explicitly). Per-process semaphore.
+MAX_CONCURRENT = int(os.environ.get("MAX_CONCURRENT_SCANS", "2"))
 
 VALID_INDUSTRIES = [
     "Agriculture", "Communications", "Consumer", "Education", "Energy",
