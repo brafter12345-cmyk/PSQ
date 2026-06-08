@@ -1051,6 +1051,22 @@ def scan_history(domain: str):
     return jsonify([dict(r) for r in rows])
 
 
+def _json_for_script(obj):
+    """json.dumps escaped for safe embedding inside an inline <script> tag.
+
+    json.dumps does NOT neutralise </script> or <!-- , so any scanned field
+    containing such a sequence (e.g. a captured banner / error page with an
+    inline script) would close the tag early and spill the rest of the JSON
+    into the page - a render break AND a stored-XSS vector. Escape </ , <!--
+    and the JS line/paragraph separators (invalid bare in JS string literals).
+    """
+    return (json.dumps(obj, default=str)
+            .replace("</", "<\\/")
+            .replace("<!--", "<\\!--")
+            .replace("\u2028", "\\u2028")
+            .replace("\u2029", "\\u2029"))
+
+
 @app.route("/results/<scan_id>")
 def view_results(scan_id: str):
     row = fetch_scan(scan_id)
@@ -1065,9 +1081,9 @@ def view_results(scan_id: str):
         domain=row["domain"],
         status=row["status"],
         results=results,
-        results_json=json.dumps(results, default=str) if results else "null",
+        results_json=_json_for_script(results) if results else "null",
         checker_manifest=CHECKER_MANIFEST,
-        manifest_json=json.dumps(CHECKER_MANIFEST),
+        manifest_json=_json_for_script(CHECKER_MANIFEST),
     )
 
 
