@@ -1055,11 +1055,12 @@ SA_INDUSTRY_COSTS = {
     "Retail":                     {"breach_cost_zar": 35_280_000, "cost_per_record": 1505, "multiplier": 0.80},
     "Agriculture":                {"breach_cost_zar": 28_670_000, "cost_per_record": 1223, "multiplier": 0.65},
     # SIC divisions added 2026-06-09 (were missing -> fell back to "Other").
-    # Breach-cost anchored BY ANALOGY to the nearest IBM-SA sibling (PROVISIONAL,
-    # pending a per-sector IBM/DBIR calibration pass); RSI + BI already distinct.
-    "Mining":                     {"breach_cost_zar": 39_690_000, "cost_per_record": 1693, "multiplier": 0.90},  # ~Transportation
-    "Construction":               {"breach_cost_zar": 28_670_000, "cost_per_record": 1223, "multiplier": 0.65},  # ~Agriculture
-    "Wholesale Trade":            {"breach_cost_zar": 35_280_000, "cost_per_record": 1505, "multiplier": 0.80},  # ~Retail
+    # Relative risk positioning from the corporate rating engine risk tables
+    # (authoritative), mapped onto the IBM-SA breach-cost scale (mult x R44.1M;
+    # cost/record = mult x 1881). RSI + BI factors already distinct, unchanged.
+    "Mining":                     {"breach_cost_zar": 28_670_000, "cost_per_record": 1223, "multiplier": 0.65},  # Agriculture band (corp rating engine)
+    "Construction":               {"breach_cost_zar": 39_690_000, "cost_per_record": 1693, "multiplier": 0.90},  # Transportation band (corp rating engine)
+    "Wholesale Trade":            {"breach_cost_zar": 17_200_000, "cost_per_record":  734, "multiplier": 0.39},  # ~40% less risky than Agriculture (B2B distribution, not client-facing)
     "Government":                 {"breach_cost_zar": 76_730_000, "cost_per_record": 3273, "multiplier": 1.74},
     "Legal":                      {"breach_cost_zar": 56_890_000, "cost_per_record": 2426, "multiplier": 1.29},
     "Other":                      {"breach_cost_zar": 44_100_000, "cost_per_record": 1881, "multiplier": 1.00},
