@@ -4441,6 +4441,51 @@ def _build_vulnerability_posture(results: dict, S) -> list:
 _KILL_CHAIN_SEV_ORDER = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 
 
+def _supply_chain_attacker_findings(cats: dict) -> dict:
+    """Supply-chain findings mapped to kill-chain phases (Card-Verification Step 7).
+    Returns {'access': [...], 'exploit': [...]} - supplier-vectored entry in Initial
+    Access, exploitable third-party components in Exploitation. Same fields the
+    Supply-Chain Exposure slide uses, so the narrative and the slide never diverge."""
+    vb = cats.get("vendor_breach", {}) or {}
+    tpc = cats.get("third_party_correlation", {}) or {}
+    evs = cats.get("email_vendor_surface", {}) or {}
+    tpjs = cats.get("third_party_js", {}) or {}
+    dm = cats.get("dependency_manifests", {}) or {}
+    cms = cats.get("cms_plugin_sbom", {}) or {}
+    access, exploit = [], []
+    # Phase 2 - supplier-vectored initial access
+    matches = vb.get("matches") or []
+    if matches:
+        top = matches[0]; mo = max(1, (top.get("age_days") or 0) // 30)
+        access.append(f"{len(matches)} breached supplier(s) (e.g. {top.get('vendor','?')} "
+                      f"~{mo}mo ago) - supply-chain credential reuse, rotation often incomplete")
+    hr_tp = tpc.get("hudson_rock_third_party_count", 0)
+    if hr_tp:
+        access.append(f"{hr_tp} third-party / vendor credential exposure(s) in infostealer "
+                      f"data - supply-chain backdoor")
+    if evs.get("weak_dmarc") and evs.get("vendor_count", 0) >= 1:
+        access.append(f"{evs.get('vendor_count')} email vendor(s) authorised with weak DMARC "
+                      f"(p={evs.get('dmarc_policy') or 'missing'}) - phishing-via-supplier")
+    # Phase 3 - exploitable third-party components
+    comp = tpjs.get("compromised_host_count", 0); miss = tpjs.get("missing_sri_count", 0)
+    if comp:
+        exploit.append(f"{comp} compromised third-party script(s) live - Magecart-style "
+                       f"client-side code injection")
+    elif miss:
+        exploit.append(f"{miss} third-party script(s) without integrity (SRI) - supply-chain "
+                       f"tampering risk")
+    if cms.get("is_wordpress") and cms.get("versioned_count", 0) > 0:
+        exploit.append(f"{cms.get('versioned_count')} WordPress plugin(s) with readable versions "
+                       f"- known plugin CVEs are a top SA SME exploit vector")
+    crit_cves = dm.get("total_critical_cves", 0); man = dm.get("exposed_manifests") or []
+    if crit_cves:
+        exploit.append(f"{crit_cves} critical CVE(s) from an exposed dependency manifest - "
+                       f"zero-recon exploit chaining")
+    elif man:
+        exploit.append(f"{len(man)} exposed dependency manifest(s) - version map enables CVE chaining")
+    return {"access": access, "exploit": exploit}
+
+
 def _kill_chain_severities(results: dict) -> dict:
     """Single source of truth for the four attacker-kill-chain phase severities.
 
@@ -4464,9 +4509,16 @@ def _kill_chain_severities(results: dict) -> dict:
     hrp = cats.get("high_risk_protocols", {}).get("exposed_services", []) or []
     cred_leaks = cats.get("dehashed", {}).get("total_entries", 0)
     infostealers = cats.get("hudson_rock", {}).get("compromised_employees", 0)
-    access = ("CRITICAL" if (rdp or infostealers > 0)
-              else "HIGH" if (len(hrp) > 0 or cred_leaks > 5)
-              else "MEDIUM" if cred_leaks > 0 else "LOW")
+    # Supply-chain initial-access escalators (Step 7).
+    _vb = cats.get("vendor_breach", {}) or {}
+    _tpc = cats.get("third_party_correlation", {}) or {}
+    _evs = cats.get("email_vendor_surface", {}) or {}
+    sc_acc_crit = _vb.get("critical_match_count", 0) > 0
+    sc_acc_high = _vb.get("high_match_count", 0) > 0 or _tpc.get("hudson_rock_third_party_count", 0) > 0
+    sc_acc_med = bool(_vb.get("matches")) or (_evs.get("weak_dmarc") and _evs.get("vendor_count", 0) >= 1)
+    access = ("CRITICAL" if (rdp or infostealers > 0 or sc_acc_crit)
+              else "HIGH" if (len(hrp) > 0 or cred_leaks > 5 or sc_acc_high)
+              else "MEDIUM" if (cred_leaks > 0 or sc_acc_med) else "LOW")
 
     # Phase 3 — Exploitation
     osv = cats.get("osv_vulns", {})
@@ -4474,8 +4526,15 @@ def _kill_chain_severities(results: dict) -> dict:
     osv_high = osv.get("high_count", 0)
     ssl_grade = cats.get("ssl", {}).get("grade", "A")
     hh_score = cats.get("http_headers", {}).get("score", 100)
-    exploit = ("CRITICAL" if osv_crit > 0
-               else "HIGH" if (osv_high > 0 or ssl_grade in ("D", "E", "F"))
+    # Supply-chain exploitation escalators (Step 7).
+    _tpjs = cats.get("third_party_js", {}) or {}
+    _dm = cats.get("dependency_manifests", {}) or {}
+    _cms = cats.get("cms_plugin_sbom", {}) or {}
+    sc_exp_crit = _tpjs.get("compromised_host_count", 0) > 0 or _dm.get("total_critical_cves", 0) > 0
+    sc_exp_high = (_cms.get("is_wordpress") and _cms.get("versioned_count", 0) > 0) \
+        or _tpjs.get("missing_sri_count", 0) > 0 or bool(_dm.get("exposed_manifests"))
+    exploit = ("CRITICAL" if (osv_crit > 0 or sc_exp_crit)
+               else "HIGH" if (osv_high > 0 or ssl_grade in ("D", "E", "F") or sc_exp_high)
                else "MEDIUM" if hh_score < 50 else "LOW")
 
     # Phase 4 — Data Access & Impact
@@ -4549,6 +4608,7 @@ def _build_attackers_view(results: dict, S) -> list:
     if infostealers: access_findings.append(f"{infostealers} employee device(s) with active infostealer — real-time credential theft")
     dmarc = cats.get("email_security", {}).get("dmarc", {})
     if not dmarc.get("present"): access_findings.append("No DMARC policy — domain can be spoofed for phishing attacks against employees")
+    access_findings += _supply_chain_attacker_findings(cats)["access"]  # Step 7
 
     rows.append([Paragraph(f"<b><font color='{_PHASE_FG[access_risk]}'>Phase 2: INITIAL ACCESS [{access_risk}]</font></b>", S["kv_key"]),
                  Paragraph(f"<font color='{_PHASE_FG[access_risk]}'><b>How an attacker would break in</b></font>", S["kv_val"])])
@@ -4571,6 +4631,7 @@ def _build_attackers_view(results: dict, S) -> list:
     if ssl_grade in ("D", "E", "F"): exploit_findings.append(f"SSL grade {ssl_grade} — weak encryption enables man-in-the-middle interception")
     headers = cats.get("http_headers", {}).get("score", 100)
     if headers < 40: exploit_findings.append(f"Security headers score {headers}% — vulnerable to XSS, clickjacking, and injection attacks")
+    exploit_findings += _supply_chain_attacker_findings(cats)["exploit"]  # Step 7
     if not exploit_findings: exploit_findings.append("No critical exploitation vectors identified from external scan")
 
     rows.append([Paragraph(f"<b><font color='{_PHASE_FG[exploit_risk]}'>Phase 3: EXPLOITATION [{exploit_risk}]</font></b>", S["kv_key"]),
@@ -4769,6 +4830,8 @@ def _assessment_kill_chain(results: dict) -> list:
         svc = hrp[0]
         p2f.append(f"{(svc.get('service') or 'service').capitalize()} open on port {svc.get('port', '?')}")
     if cred_leaks: p2f.append(f"{cred_leaks} stolen credentials available to reuse")
+    for _scf in _supply_chain_attacker_findings(cats)["access"]:  # Step 7
+        if len(p2f) < 3: p2f.append(_scf)
     if cred_leaks > 0 and len(p2f) < 3: p2f.append("Enables automated credential stuffing")
     if infostealers and len(p2f) < 3:
         _isd = hr_cat.get("days_since_compromise")
@@ -4786,6 +4849,8 @@ def _assessment_kill_chain(results: dict) -> list:
     if ssl_grade in ("D", "E", "F"): p3f.append(f"SSL grade {ssl_grade} enables interception")
     if hh_score < 50: p3f.append(f"Security headers at {hh_score}% only")
     if osv_crit: p3f.append(f"{osv_crit} critical CVE(s) with known exploits")
+    for _scf in _supply_chain_attacker_findings(cats)["exploit"]:  # Step 7
+        if len(p3f) < 3: p3f.append(_scf)
     if hh_score < 50 and len(p3f) < 3: p3f.append("Exposed to XSS & clickjacking")
     if not p3f: p3f = ["No critical exploitation vectors identified"]
 
