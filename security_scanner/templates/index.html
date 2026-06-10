@@ -137,7 +137,7 @@
 
         <div class="field">
           <label class="field-label" for="revenue">Annual Revenue (ZAR)</label>
-          <input type="number" id="revenue" name="annual_revenue_zar" placeholder="e.g. 50000000" min="0" step="1" />
+          <input type="text" inputmode="numeric" id="revenue" name="annual_revenue_zar" placeholder="e.g. 50 000 000" autocomplete="off" />
           <div class="field-hint">Required for FAIR-based financial impact estimation. Leave blank to skip.</div>
         </div>
 
@@ -559,6 +559,20 @@ document.getElementById('industry').addEventListener('change', () => {
   document.getElementById('health-detail-field').style.display = isHealth ? '' : 'none';
 });
 
+// Annual Revenue: en-ZA thousands spacing (like the SME Rating Engine).
+// Raw digits on focus for easy editing, space-grouped on blur; the submit
+// handler reads digits-only so the formatted display never reaches the API.
+(function () {
+  const rev = document.getElementById('revenue');
+  if (!rev) return;
+  const digits = (v) => (v || '').replace(/[^\d]/g, '');
+  const grouped = (v) => { const d = digits(v); return d ? Number(d).toLocaleString('en-ZA') : ''; };
+  rev.addEventListener('focus', () => { rev.value = digits(rev.value); });
+  rev.addEventListener('blur', () => { rev.value = grouped(rev.value); });
+  rev.addEventListener('paste', () => { setTimeout(() => { rev.value = grouped(rev.value); }, 0); });
+  rev.value = grouped(rev.value);  // format any pre-filled value on load
+})();
+
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   errorEl.style.display = 'none';
@@ -571,7 +585,7 @@ form.addEventListener('submit', async (e) => {
   const industry = document.getElementById('industry').value;
   if (industry !== 'Other') body.industry = industry;
 
-  const revenue = parseInt(document.getElementById('revenue').value, 10);
+  const revenue = parseInt(document.getElementById('revenue').value.replace(/[^\d]/g, ''), 10);
   if (revenue > 0) body.annual_revenue_zar = revenue;
 
   if (document.getElementById('fraud-check').checked) body.include_fraudulent_domains = true;
