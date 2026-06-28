@@ -50,6 +50,10 @@ SECURITYTRAILS_API_KEY = os.environ.get("SECURITYTRAILS_API_KEY")  # Optional �
 SHODAN_API_KEY         = os.environ.get("SHODAN_API_KEY")          # Optional — free account
 INTELX_API_KEY         = os.environ.get("INTELX_API_KEY")          # Optional — free tier
 DB_PATH = os.environ.get("DB_PATH", "scans.db")
+# WS1: the scanner's `scans`/`scan_checkpoints` tables live in scanner_db (Postgres
+# when DATABASE_URL is set, else this same SQLite file). The CRM tables stay on the
+# legacy get_db() below; scanner<->CRM links were dropped, so there is no join.
+import scanner_db
 # Default 2 for the Render 512MB / 1-worker tier (env-overridable via
 # MAX_CONCURRENT_SCANS; production sets it explicitly). Per-process semaphore.
 MAX_CONCURRENT = int(os.environ.get("MAX_CONCURRENT_SCANS", "2"))
@@ -244,35 +248,24 @@ def get_db():
 
 
 def init_db():
+    # WS1: the scanner tables (scans, scan_checkpoints) are owned by scanner_db now
+    # — Postgres when DATABASE_URL is set, else the same SQLite file. The CRM tables
+    # below stay on the legacy get_db().
+    scanner_db.init_schema()
     with get_db() as conn:
+        # Legacy CRM-side `scans` table. When the scanner runs on SQLite (no
+        # DATABASE_URL) this is the SAME table scanner_db uses, so CRM linkage still
+        # works. When the scanner runs on Postgres, this stays empty and the CRM's
+        # scan-linkage queries simply return nothing — i.e. links dropped, with no
+        # CRM code changes and no cross-store join. Scanner reads go to scanner_db.
         conn.execute("""
             CREATE TABLE IF NOT EXISTS scans (
-                id          TEXT PRIMARY KEY,
-                domain      TEXT NOT NULL,
-                status      TEXT NOT NULL DEFAULT 'pending',
-                results     TEXT,
-                risk_score  INTEGER,
-                risk_level  TEXT,
-                industry    TEXT DEFAULT 'other',
-                annual_revenue REAL DEFAULT 0,
-                country     TEXT DEFAULT '',
-                created_at  TEXT NOT NULL,
-                completed_at TEXT
+                id TEXT PRIMARY KEY, domain TEXT, status TEXT, results TEXT,
+                risk_score INTEGER, risk_level TEXT, industry TEXT, annual_revenue REAL,
+                country TEXT, client_id TEXT DEFAULT '', created_at TEXT, completed_at TEXT
             )
         """)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_domain ON scans(domain)")
-        # Migration: add new columns to existing tables
-        for col, coltype, default in [
-            ("industry", "TEXT", "'other'"),
-            ("annual_revenue", "REAL", "0"),
-            ("country", "TEXT", "''"),
-            ("client_id", "TEXT", "''"),
-        ]:
-            try:
-                conn.execute(f"ALTER TABLE scans ADD COLUMN {col} {coltype} DEFAULT {default}")
-            except sqlite3.OperationalError:
-                pass  # Column already exists
-
         # CRM tables
         conn.execute("""
             CREATE TABLE IF NOT EXISTS clients (
@@ -540,47 +533,23 @@ def init_db():
         conn.commit()
 
 
+# WS1: these delegate to scanner_db (Postgres when DATABASE_URL is set, else the
+# same SQLite file). Signatures unchanged so every call site is untouched.
 def save_scan(scan_id: str, domain: str, industry: str = "other",
               annual_revenue: float = 0, country: str = ""):
-    with get_db() as conn:
-        conn.execute(
-            "INSERT INTO scans (id, domain, status, industry, annual_revenue, country, created_at) VALUES (?,?,?,?,?,?,?)",
-            (scan_id, domain, "pending", industry, annual_revenue, country,
-             datetime.now(timezone.utc).isoformat())
-        )
-        conn.commit()
+    scanner_db.save_scan(scan_id, domain, industry, annual_revenue, country)
 
 
 def update_scan(scan_id: str, results: dict):
-    with get_db() as conn:
-        conn.execute(
-            """UPDATE scans SET status=?, results=?, risk_score=?, risk_level=?, completed_at=?
-               WHERE id=?""",
-            (
-                "completed",
-                json.dumps(results, default=str),
-                results.get("overall_risk_score"),
-                results.get("risk_level"),
-                datetime.now(timezone.utc).isoformat(),
-                scan_id,
-            )
-        )
-        conn.commit()
+    scanner_db.update_scan(scan_id, results)
 
 
 def mark_failed(scan_id: str, error: str):
-    with get_db() as conn:
-        conn.execute(
-            "UPDATE scans SET status='failed', results=?, completed_at=? WHERE id=?",
-            (json.dumps({"error": error}), datetime.now(timezone.utc).isoformat(), scan_id)
-        )
-        conn.commit()
+    scanner_db.mark_failed(scan_id, error)
 
 
 def fetch_scan(scan_id: str):
-    with get_db() as conn:
-        row = conn.execute("SELECT * FROM scans WHERE id=?", (scan_id,)).fetchone()
-    return dict(row) if row else None
+    return scanner_db.fetch_scan(scan_id)
 
 
 # Scans hold status "pending" for their whole run (there is no "running"
@@ -916,10 +885,7 @@ def credential_export():
     source_meta, leak_references = {}, []
     try:
         from scanner import COMBO_LIST_SOURCES
-        with get_db() as conn:
-            srow = conn.execute(
-                "SELECT results FROM scans WHERE domain=? AND status='completed' "
-                "ORDER BY created_at DESC LIMIT 1", (domain,)).fetchone()
+        srow = scanner_db.latest_completed_for_domain(domain)  # WS1: scanner store
         if srow and srow["results"]:
             cats = (json.loads(srow["results"]) or {}).get("categories", {})
             for s in (cats.get("dehashed", {}) or {}).get("enriched_sources", []) or []:
@@ -1237,13 +1203,7 @@ def scan_history(domain: str):
     domain = domain.lower().strip()
     if not valid_domain(domain):
         return jsonify({"error": "Invalid domain"}), 400
-    with get_db() as conn:
-        rows = conn.execute(
-            """SELECT id, domain, status, risk_score, risk_level, created_at, completed_at
-               FROM scans WHERE domain=? ORDER BY created_at DESC LIMIT 10""",
-            (domain,)
-        ).fetchall()
-    return jsonify([dict(r) for r in rows])
+    return jsonify(scanner_db.scan_history(domain, limit=10))  # WS1: scanner store
 
 
 def _json_for_script(obj):
