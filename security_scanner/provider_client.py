@@ -33,12 +33,15 @@ changes no runtime behaviour.
 """
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING, cast
 
 try:
     import requests
 except ImportError:  # pragma: no cover - requests is a hard dep of the scanner
     requests = None
+
+if TYPE_CHECKING:
+    from requests import Response
 
 from http_client import DomainRateLimiter
 from resilience import (
@@ -94,17 +97,17 @@ class ProviderClient:
         self._on_call = on_call
 
     # ---- public verbs ----------------------------------------------------
-    def get(self, url, **kwargs):
+    def get(self, url, **kwargs) -> "Response | None":
         return self.request("GET", url, **kwargs)
 
-    def post(self, url, **kwargs):
+    def post(self, url, **kwargs) -> "Response | None":
         return self.request("POST", url, **kwargs)
 
-    def head(self, url, **kwargs):
+    def head(self, url, **kwargs) -> "Response | None":
         return self.request("HEAD", url, **kwargs)
 
     # ---- core ------------------------------------------------------------
-    def request(self, method, url, **kwargs):
+    def request(self, method, url, **kwargs) -> "Response | None":
         if requests is None:
             return None
 
@@ -112,7 +115,7 @@ class ProviderClient:
         if self._cache is not None:
             hit = self._cache.get(self.name, method, url, kwargs)
             if hit is not None:
-                return hit
+                return cast("Response", hit)
 
         # 2. per-provider quota pacing (single bucket keyed by provider name).
         self._limiter.acquire(self.name)
@@ -145,7 +148,7 @@ class ProviderClient:
             except Exception:
                 pass
 
-        return resp
+        return cast("Optional[Response]", resp)
 
     # ---- introspection for ops/tests -------------------------------------
     @property

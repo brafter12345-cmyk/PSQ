@@ -1,0 +1,18 @@
+{
+  "entries": {
+    "GET https://crt.sh/?output=json&q=examplecorp.co.za": {
+      "content_b64": "W3sibmFtZV92YWx1ZSI6ImV4YW1wbGVjb3JwLmNvLnphXG53d3cuZXhhbXBsZWNvcnAuY28uemEiLCJpc3N1ZXJfbmFtZSI6IkM9VVMsIE89TGV0J3MgRW5jcnlwdCwgQ049UjMifSx7Im5hbWVfdmFsdWUiOiJzaG9wLmV4YW1wbGVjb3JwLmNvLnphIiwiaXNzdWVyX25hbWUiOiJDPVVTIn1d",
+      "encoding": "utf-8",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "reason": null,
+      "status_code": 200,
+      "url": "https://crt.sh/"
+    }
+  },
+  "request_log": [
+    "GET https://crt.sh/?output=json&q=examplecorp.co.za"
+  ],
+  "version": 1
+}

@@ -1,0 +1,12 @@
+{
+  "rows": [
+    {
+      "issuer_name": "C=US, O=Let's Encrypt, CN=R3",
+      "name_value": "examplecorp.co.za\nwww.examplecorp.co.za"
+    },
+    {
+      "issuer_name": "C=US",
+      "name_value": "shop.examplecorp.co.za"
+    }
+  ]
+}

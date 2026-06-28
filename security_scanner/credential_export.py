@@ -22,6 +22,10 @@ try:
 except ImportError:
     requests = None
 
+# WS0: route DeHashed through the per-provider seam. DEHASHED.post returns None on
+# a failed request instead of raising; the paging loop maps that to its break.
+from providers import DEHASHED
+
 DEHASHED_V2 = "https://api.dehashed.com/v2/search"
 
 # Per-row disclaimer surfaced at the top of every export. The whole point of the
@@ -107,14 +111,14 @@ def _fetch_dehashed_full(domain, api_key, max_pages=5, size=100):
         return entries
     for page in range(1, max_pages + 1):
         try:
-            r = requests.post(
+            r = DEHASHED.post(
                 DEHASHED_V2,
                 json={"query": f"domain:{domain}", "page": page, "size": size},
                 headers={"Content-Type": "application/json",
                          "Dehashed-Api-Key": api_key,
                          "User-Agent": "PhishieldScanner/1.0"},
                 timeout=30)
-            if r.status_code != 200:
+            if r is None or r.status_code != 200:
                 break
             batch = (r.json().get("entries") or r.json().get("results") or [])
             if not batch:

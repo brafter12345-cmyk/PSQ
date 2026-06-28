@@ -47,6 +47,11 @@ try:
 except ImportError:
     REQUESTS_AVAILABLE = False
 
+# WS0: route crt.sh through the per-provider seam. CRTSH adds no retry of its own
+# (max_attempts=1), so the hand-rolled retry loop below keeps its exact semantics.
+# CRTSH.get returns None on a failed request instead of raising.
+from providers import CRTSH
+
 
 CRT_SH_URL = "https://crt.sh/"
 # crt.sh's hosted Postgres backend can take 10-25 seconds on a cold
@@ -124,13 +129,13 @@ def _crtsh_query(domain: str, retries: int = 2) -> list:
     import time
     for attempt in range(retries + 1):
         try:
-            r = requests.get(
+            r = CRTSH.get(
                 CRT_SH_URL,
                 params={"q": domain, "output": "json"},
                 headers={"User-Agent": USER_AGENT},
                 timeout=HTTP_TIMEOUT,
             )
-            if r.status_code == 200 and r.text:
+            if r is not None and r.status_code == 200 and r.text:
                 try:
                     data = r.json()
                     if data:
