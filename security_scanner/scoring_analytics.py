@@ -555,6 +555,12 @@ class RiskScorer:
     the WAF bonus discounted separately. Don't naively divide WEIGHTS
     by their sum — that would double-deflate the derived scoring rows.
     """
+    # WS7 completeness floor: if the excluded (failed+skipped) weight reaches this
+    # fraction of total, or a must-have checker is missing, the score is graded
+    # low-confidence (see _scan_completeness in calculate()).
+    COVERAGE_FLOOR = 0.30
+    MUST_HAVE_CHECKERS = ("ssl", "http_headers", "exposed_admin", "shodan_vulns")
+
     WEIGHTS = {
         "ssl":                  0.09,
         "email_security":       0.06,
@@ -948,6 +954,21 @@ class RiskScorer:
         # Only genuine failures count against completeness — skipped (no API key,
         # toggle off) are expected and don't indicate an incomplete scan.
         assessable = len(self.WEIGHTS) - len(skipped_checkers)
+        # WS7 completeness floor: a cyber-insurance score must not be emitted as a
+        # clean, unqualified number when too much of the signal is missing. Grade
+        # confidence off the EXCLUDED-WEIGHT fraction (not just count) + a must-have
+        # set; downstream renderers surface the disclaimer (same path as the WAF
+        # "partial coverage" notice). _scan_completeness is golden-masked, so adding
+        # these fields doesn't perturb the scoring gate.
+        total_weight = sum(self.WEIGHTS.values()) or 1
+        excluded_fraction = round(excluded_weight / total_weight, 3)
+        must_have_missing = sorted(set(self.MUST_HAVE_CHECKERS) & excluded)
+        if excluded_fraction >= self.COVERAGE_FLOOR or must_have_missing:
+            confidence = "low_confidence"
+        elif failed_checkers:
+            confidence = "partial"
+        else:
+            confidence = "full"
         scan_completeness = {
             "total_checkers": len(self.WEIGHTS),
             "assessable_checkers": assessable,
@@ -956,6 +977,20 @@ class RiskScorer:
             "failed_count": len(failed_checkers),
             "completeness_pct": round((1 - len(failed_checkers) / assessable) * 100) if assessable > 0 else 100,
             "score_reliable": len(failed_checkers) == 0,
+            "excluded_weight_fraction": excluded_fraction,
+            "must_have_missing": must_have_missing,
+            "confidence_level": confidence,
+            "score_qualified": confidence != "full",
+            "disclaimer": (
+                "" if confidence == "full" else
+                f"Partial coverage: {round(excluded_fraction * 100)}% of the weighted "
+                f"signal was unavailable"
+                + (f" (including must-have checker(s): {', '.join(must_have_missing)})"
+                   if must_have_missing else "")
+                + ". This risk score is " + (
+                    "LOW-CONFIDENCE and should not be used for underwriting without a "
+                    "re-scan." if confidence == "low_confidence" else
+                    "qualified — re-scan recommended for a complete assessment.")),
         }
         # Store in results so it can be accessed by PDF/HTML
         results["_scan_completeness"] = scan_completeness

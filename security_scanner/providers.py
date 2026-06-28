@@ -71,9 +71,16 @@ def _client(name: str, *, rate: float = 5.0, burst: int = 10,
 
 
 def _record_call(provider, method=""):
+    # WS9 metric + WS10/SCALE-17 durable usage mirror (Redis counters are a cache of
+    # this). Both best-effort — metering must never break a provider call.
     try:
         from observability import record_provider_call
         record_provider_call(provider, method)
+    except Exception:
+        pass
+    try:
+        import scanner_db
+        scanner_db.record_usage(provider)
     except Exception:
         pass
 

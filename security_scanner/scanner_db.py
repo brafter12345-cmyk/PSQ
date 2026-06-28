@@ -207,6 +207,31 @@ def init_schema() -> None:
     migrate()
 
 
+# --- WS10 durable usage ledger (SCALE-17) + DLQ ---------------------------
+def record_usage(provider: str, n: int = 1, day: "str | None" = None) -> None:
+    """Append-only-ish per-(provider,day) spend mirror. The Redis counters are a
+    rebuildable cache of THIS durable record (so a lost Redis loses only the
+    rate-limit window, not billing/attribution history)."""
+    day = day or datetime.now(timezone.utc).date().isoformat()
+    _run("INSERT INTO usage (provider, day, calls) VALUES (?,?,?) "
+         "ON CONFLICT (provider, day) DO UPDATE SET calls = usage.calls + ?",
+         (provider, day, n, n))
+
+
+def usage_for(provider: str, day: "str | None" = None) -> int:
+    day = day or datetime.now(timezone.utc).date().isoformat()
+    row = _run("SELECT calls FROM usage WHERE provider=? AND day=?",
+               (provider, day), fetch="one")
+    return int(row["calls"]) if row else 0
+
+
+def list_dead_jobs() -> list:
+    """DLQ: jobs that exhausted attempts (the row IS the DLQ record — scan_id,
+    attempts, error; the surviving checkpoints are queryable via load_checkpoints)."""
+    return _run("SELECT * FROM scan_jobs WHERE status='dead' ORDER BY created_at",
+                fetch="all")
+
+
 # --- WS2 job queue ops ----------------------------------------------------
 def enqueue_job(job_id: str, scan_id: str, payload: dict, pool: str = "default") -> None:
     _run("INSERT INTO scan_jobs (id, scan_id, pool, payload, status, created_at) "
