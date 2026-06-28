@@ -51,15 +51,12 @@ from resilience import (
 
 
 class ResultCache:
-    """WS6b result-cache protocol. ``get`` returns a cached response-like object
-    or ``None`` (miss); ``put`` stores one. Implementations own TTLs, the global
-    ``(provider, params)`` key, and the single-flight lease (see SCALE-08a). The
-    default client uses no cache; this is the slot, not an implementation."""
+    """WS6b result-cache protocol (see result_cache.py). ``fetch`` is get-or-compute
+    with single-flight: it returns a cached response, or runs ``compute`` (the real
+    provider call) on a miss while coalescing concurrent identical calls onto one.
+    ``force_refresh`` bypasses the read but still takes the lease + writes."""
 
-    def get(self, provider: str, method: str, url: str, kwargs: dict):
-        raise NotImplementedError
-
-    def put(self, provider: str, method: str, url: str, kwargs: dict, response) -> None:
+    def fetch(self, provider, method, url, kwargs, compute, force_refresh=False):
         raise NotImplementedError
 
 
@@ -114,60 +111,41 @@ class ProviderClient:
         return self.request("HEAD", url, **kwargs)
 
     # ---- core ------------------------------------------------------------
-    def request(self, method, url, **kwargs) -> "Response | None":
+    def request(self, method, url, force_refresh: bool = False, **kwargs) -> "Response | None":
         if requests is None:
             return None
-
-        # 1. WS6b cache read (global (provider, params) key; disabled by default).
-        #    A cache hit spends nothing, so it bypasses the kill-switch below.
-        if self._cache is not None:
-            hit = self._cache.get(self.name, method, url, kwargs)
-            if hit is not None:
-                return cast("Response", hit)
-
-        # 2. WS5b credit kill-switch: once the provider's daily budget is spent,
-        #    skip the call entirely (checker sees None -> marked skipped).
-        if self._ledger is not None and not self._ledger.allow_call(self.name):
-            return None
-
-        # 3. per-provider quota pacing (single bucket keyed by provider name).
-        self._limiter.acquire(self.name)
-
         kwargs.setdefault("timeout", self._default_timeout)
 
-        def _do():
-            # Meter every real outbound attempt (retries count as spend too).
-            if self._ledger is not None:
-                self._ledger.record_call(self.name)
-            if self._on_call is not None:
-                self._on_call(self.name, method)
-            return requests.request(method, url, **kwargs)
+        # The actual provider call: kill-switch -> pace -> meter -> retry/breaker.
+        # Runs only on a genuine cache miss (and once, via single-flight).
+        def _provider_call():
+            if self._ledger is not None and not self._ledger.allow_call(self.name):
+                return None  # WS5b kill-switch: daily budget spent
+            self._limiter.acquire(self.name)
 
-        # 4. retry + breaker. guarded_call returns the last response (so a
-        #    terminal 4xx flows back for the caller to inspect) and re-raises only
-        #    if every attempt raised; a tripped breaker raises CircuitOpenError.
-        #    can_retry enforces the WS7 retry budget so an outage can't storm cost.
-        can_retry = ((lambda: self._ledger.allow_retry(self.name))
-                     if self._ledger is not None else None)
-        try:
-            resp = guarded_call(_do, breaker=self._breaker, retry=self._retry,
-                                classify_result=classify_response, can_retry=can_retry)
-        except CircuitOpenError:
-            return None
-        except Exception:
-            # Every retry raised (e.g. persistent connection error). Match the
-            # raw-site contract: surface as None, let the checker mark skipped.
-            return None
+            def _do():
+                if self._ledger is not None:
+                    self._ledger.record_call(self.name)  # meter every attempt
+                if self._on_call is not None:
+                    self._on_call(self.name, method)
+                return requests.request(method, url, **kwargs)
 
-        # 4. WS6b cache write (only successful, non-retriable responses).
-        if self._cache is not None and resp is not None \
-                and classify_response(resp) != "retriable":
+            can_retry = ((lambda: self._ledger.allow_retry(self.name))
+                         if self._ledger is not None else None)
             try:
-                self._cache.put(self.name, method, url, kwargs, resp)
+                return guarded_call(_do, breaker=self._breaker, retry=self._retry,
+                                    classify_result=classify_response, can_retry=can_retry)
+            except CircuitOpenError:
+                return None
             except Exception:
-                pass
+                return None  # every retry raised -> None, checker marks skipped
 
-        return cast("Optional[Response]", resp)
+        # WS6b: route through the result cache (get-or-compute + single-flight) when
+        # one is configured; otherwise call the provider directly.
+        if self._cache is not None:
+            return cast("Optional[Response]", self._cache.fetch(
+                self.name, method, url, kwargs, _provider_call, force_refresh))
+        return cast("Optional[Response]", _provider_call())
 
     # ---- introspection for ops/tests -------------------------------------
     @property

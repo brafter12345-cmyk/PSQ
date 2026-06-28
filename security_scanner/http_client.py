@@ -42,6 +42,7 @@ Usage:
 """
 
 import re
+import json as _json
 import time
 import threading
 from collections import defaultdict, deque, Counter
@@ -280,8 +281,7 @@ class ProbeCache:
     def lookup(self, url: str, method: str = "GET"):
         raise NotImplementedError
 
-    def store(self, url: str, method: str, status_code: int,
-              response_headers: dict, body_hash: Optional[str] = None) -> None:
+    def store(self, url: str, method: str, response) -> None:
         raise NotImplementedError
 
     def invalidate(self, url: Optional[str] = None,
@@ -296,11 +296,130 @@ class _NullProbeCache(ProbeCache):
     def lookup(self, url, method="GET"):
         return None
 
-    def store(self, url, method, status_code, response_headers, body_hash=None):
+    def store(self, url, method, response):
         pass
 
     def invalidate(self, url=None, apex=None):
         pass
+
+
+# WS6a (SCN-026): TTL per status class, from the ProbeCache docstring.
+def _probe_ttl(status_code: int) -> int:
+    if 200 <= status_code < 300:
+        return 86400          # 2xx: 24h
+    if status_code == 404:
+        return 604800         # 404: 7d
+    if status_code in (403, 451, 406):
+        return 21600          # WAF-ish: 6h
+    if status_code in (429, 503):
+        return 1800           # rate-limited: 30m
+    if 500 <= status_code < 600:
+        return 3600           # other 5xx: 1h
+    return 3600
+
+
+def _probe_dump(response) -> str:
+    import base64 as _b64
+    try:
+        content = response.content or b""
+    except Exception:
+        content = b""
+    return _json.dumps({
+        "status_code": int(getattr(response, "status_code", 0) or 0),
+        "headers": dict(getattr(response, "headers", {}) or {}),
+        "url": getattr(response, "url", None),
+        "encoding": getattr(response, "encoding", None),
+        "b64": _b64.b64encode(content).decode("ascii"),
+    })
+
+
+def _probe_load(blob: str):
+    import base64 as _b64
+    d = _json.loads(blob)
+    r = requests.models.Response()
+    r.status_code = d.get("status_code", 0)
+    r._content = _b64.b64decode(d.get("b64", "") or "")
+    r._content_consumed = True
+    r.url = d.get("url")
+    r.encoding = d.get("encoding")
+    r.headers = requests.structures.CaseInsensitiveDict(d.get("headers") or {})
+    return r
+
+
+class InMemoryProbeCache(ProbeCache):
+    """Single-process probe cache (full response + status-based TTL)."""
+
+    def __init__(self):
+        self._d = {}
+        self._lock = threading.Lock()
+
+    def lookup(self, url, method="GET"):
+        with self._lock:
+            ent = self._d.get((method, url))
+            if ent and ent[0] > time.time():
+                return _probe_load(ent[1])
+            return None
+
+    def store(self, url, method, response):
+        if response is None:
+            return
+        with self._lock:
+            self._d[(method, url)] = (time.time() + _probe_ttl(response.status_code),
+                                      _probe_dump(response))
+
+    def invalidate(self, url=None, apex=None):
+        with self._lock:
+            if url is not None:
+                for m in ("GET", "HEAD", "POST"):
+                    self._d.pop((m, url), None)
+            elif apex is not None:
+                for k in [k for k in self._d if _apex_of(k[1]) == apex]:
+                    self._d.pop(k, None)
+            else:
+                self._d.clear()
+
+
+class RedisProbeCache(ProbeCache):
+    """Shared probe cache in Redis (full response + status-based TTL)."""
+
+    def __init__(self, redis):
+        self.r = redis
+
+    def _key(self, method, url):
+        return f"pc:{method}:{url}"
+
+    def lookup(self, url, method="GET"):
+        blob = self.r.get(self._key(method, url))
+        return _probe_load(blob) if blob is not None else None
+
+    def store(self, url, method, response):
+        if response is None:
+            return
+        self.r.set(self._key(method, url), _probe_dump(response),
+                   ex=_probe_ttl(response.status_code))
+
+    def invalidate(self, url=None, apex=None):
+        if url is not None:
+            self.r.delete(self._key("GET", url), self._key("HEAD", url),
+                          self._key("POST", url))
+
+
+def make_probe_cache():
+    """Redis probe cache when REDIS_URL set; in-process when PROBE_CACHE_INPROC=1;
+    else the no-op (single-box default unchanged — gates unaffected)."""
+    import os
+    if os.environ.get("PROBE_CACHE", "1") == "0":
+        return _NullProbeCache()
+    try:
+        from redis_support import get_redis
+        r = get_redis()
+        if r is not None:
+            return RedisProbeCache(r)
+    except Exception:
+        pass
+    if os.environ.get("PROBE_CACHE_INPROC") == "1":
+        return InMemoryProbeCache()
+    return _NullProbeCache()
 
 
 # ---------------------------------------------------------------------------
@@ -381,16 +500,17 @@ class HttpClient:
 
     # ---- Internal --------------------------------------------------------
 
-    def _request(self, method, url, **kwargs):
+    def _request(self, method, url, force_refresh=False, **kwargs):
         if requests is None:
             return None
         apex = _apex_of(url)
 
-        # Cache lookup. _NullProbeCache always returns None, so this is a
-        # no-op until a real cache implementation is plugged in.
-        cached = self.probe_cache.lookup(url, method)
-        if cached is not None:
-            return cached
+        # WS6a cache lookup. _NullProbeCache always returns None (single-box
+        # default). force_refresh bypasses the read but still re-stores below.
+        if not force_refresh:
+            cached = self.probe_cache.lookup(url, method)
+            if cached is not None:
+                return cached
 
         # Apply rate limit (no-op if apex is empty)
         if apex:
@@ -434,9 +554,9 @@ class HttpClient:
                         self.waf_tracker.record_challenge(apex, vendor)
                         break
 
-        # Store in cache (no-op for _NullProbeCache).
+        # Store full response in cache (no-op for _NullProbeCache).
         try:
-            self.probe_cache.store(url, method, r.status_code, dict(r.headers))
+            self.probe_cache.store(url, method, r)
         except Exception:
             pass
 
@@ -457,5 +577,11 @@ try:
     _redis_apex = maybe_redis_limiter(rate=2.0, burst=5, namespace="apex")
     if _redis_apex is not None:
         HTTP.rate_limiter = _redis_apex
+except Exception:
+    pass
+
+# WS6a: activate the probe cache (Redis when REDIS_URL set, else no-op default).
+try:
+    HTTP.probe_cache = make_probe_cache()
 except Exception:
     pass

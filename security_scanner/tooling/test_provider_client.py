@@ -119,12 +119,13 @@ try:
     class MemoryCache(pc.ResultCache):
         def __init__(self):
             self.store = {}
-            self.reads = 0
-        def get(self, provider, method, url, kwargs):
-            self.reads += 1
-            return self.store.get((provider, method, url))
-        def put(self, provider, method, url, kwargs, response):
-            self.store[(provider, method, url)] = response
+        def fetch(self, provider, method, url, kwargs, compute, force_refresh=False):
+            key = (provider, method, url)
+            if not force_refresh and key in self.store:
+                return self.store[key]
+            r = compute()
+            self.store[key] = r
+            return r
 
     cache = MemoryCache()
     fake = FakeTransport([200, 200])

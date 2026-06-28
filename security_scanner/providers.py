@@ -27,6 +27,11 @@ from __future__ import annotations
 from provider_client import ProviderClient
 from resilience import CircuitBreaker, RetryPolicy
 from usage_ledger import InMemoryUsageLedger
+from result_cache import make_result_cache
+
+# WS6b: one shared result cache (Redis single-flight when REDIS_URL is set; None
+# single-box by default — see make_result_cache).
+_CACHE = make_result_cache()
 
 # WS7 is now ON: clients retry transient failures, trip a breaker on sustained
 # failure (-> checker marked skipped, scoring redistributes), and are bounded by a
@@ -60,6 +65,7 @@ def _client(name: str, *, rate: float = 5.0, burst: int = 10,
         breaker=CircuitBreaker(failure_threshold=failure_threshold,
                                reset_timeout=reset_timeout, name=name),
         ledger=_LEDGER,
+        cache=_CACHE,
     )
 
 
