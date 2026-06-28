@@ -1,0 +1,29 @@
+{
+  "entries": {
+    "GET https://free.intelx.io/intelligent/search/result?id=abc-123": {
+      "content_b64": "eyJyZWNvcmRzIjpbeyJuYW1lIjoibGVhay50eHQiLCJidWNrZXQiOiJsZWFrcyIsIm1lZGlhIjowLCJkYXRlIjoiMjAyNi0wMS0wMSIsInR5cGVoIjoiRG9jdW1lbnQifV0sInN0YXR1cyI6MX0=",
+      "encoding": "utf-8",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "reason": null,
+      "status_code": 200,
+      "url": "https://free.intelx.io/intelligent/search/result"
+    },
+    "POST https://free.intelx.io/intelligent/search #bc3e107c3c66f0e1": {
+      "content_b64": "eyJpZCI6ImFiYy0xMjMifQ==",
+      "encoding": "utf-8",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "reason": null,
+      "status_code": 200,
+      "url": "https://free.intelx.io/intelligent/search"
+    }
+  },
+  "request_log": [
+    "GET https://free.intelx.io/intelligent/search/result?id=abc-123",
+    "POST https://free.intelx.io/intelligent/search #bc3e107c3c66f0e1"
+  ],
+  "version": 1
+}

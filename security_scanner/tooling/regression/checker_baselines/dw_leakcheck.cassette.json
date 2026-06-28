@@ -1,0 +1,18 @@
+{
+  "entries": {
+    "GET https://leakcheck.io/api/v2/query/examplecorp.co.za?limit=100&type=domain": {
+      "content_b64": "eyJyZXN1bHQiOlt7ImVtYWlsIjoiYUBleGFtcGxlY29ycC5jby56YSIsIm9yaWdpbiI6ImRhcmtuZXQiLCJzb3VyY2UiOnsibmFtZSI6IkJyZWFjaFgiLCJkYXRlIjoiMjAyNi0wMS0wMSJ9fV19",
+      "encoding": "utf-8",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "reason": null,
+      "status_code": 200,
+      "url": "https://leakcheck.io/api/v2/query/examplecorp.co.za"
+    }
+  },
+  "request_log": [
+    "GET https://leakcheck.io/api/v2/query/examplecorp.co.za?limit=100&type=domain"
+  ],
+  "version": 1
+}

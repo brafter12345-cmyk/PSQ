@@ -1,0 +1,14 @@
+{
+  "error": null,
+  "records": [
+    {
+      "category": "darkweb",
+      "date": "2026-01-01",
+      "name": "a@examplecorp.co.za",
+      "provider": "leakcheck",
+      "source": "BreachX",
+      "type_label": "Stealer/combolist"
+    }
+  ],
+  "status": "completed"
+}

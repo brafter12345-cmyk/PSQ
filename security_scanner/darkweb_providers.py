@@ -39,6 +39,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+# WS0: route the dark-web providers through the per-provider seam. Clients add no
+# retry (max_attempts=1, so IntelX's own poll loop is unchanged) and return None on
+# a failed request instead of raising — mapped to each query()'s error result.
+from providers import INTELX, SNUSBASE, LEAKCHECK, WHITEINTEL
+
 
 # ---------------------------------------------------------------------------
 # Normalised record / result shape
@@ -126,10 +131,11 @@ class IntelXProvider(DarkWebProvider):
         if not self.is_configured():
             return ProviderResult(status="no_api_key")
         try:
-            import requests
-            r = requests.post(f"{self.API_URL}/intelligent/search",
+            r = INTELX.post(f"{self.API_URL}/intelligent/search",
                 json={"term": domain, "maxresults": self.MAX_RESULTS, "timeout": 5, "sort": 4, "media": 0},
                 headers={"X-Key": self.api_key}, timeout=15)
+            if r is None:
+                return ProviderResult(status="error", error="no response")
             if r.status_code == 401:
                 return ProviderResult(status="auth_failed")
             if r.status_code != 200:
@@ -140,9 +146,9 @@ class IntelXProvider(DarkWebProvider):
             time.sleep(3)
             records_raw = []
             for _ in range(3):
-                r2 = requests.get(f"{self.API_URL}/intelligent/search/result",
+                r2 = INTELX.get(f"{self.API_URL}/intelligent/search/result",
                     params={"id": sid}, headers={"X-Key": self.api_key}, timeout=10)
-                if r2.status_code != 200:
+                if r2 is None or r2.status_code != 200:
                     break
                 data = r2.json()
                 records_raw.extend(data.get("records", []))
@@ -184,11 +190,12 @@ class SnusbaseProvider(DarkWebProvider):
         if not self.is_configured():
             return ProviderResult(status="no_api_key")
         try:
-            import requests
-            r = requests.post(self.API_URL,
+            r = SNUSBASE.post(self.API_URL,
                 json={"terms": [domain], "types": ["_domain"], "wildcard": False},
                 headers={"Auth": self.api_key, "Content-Type": "application/json"},
                 timeout=20)
+            if r is None:
+                return ProviderResult(status="error", error="no response")
             if r.status_code == 401 or r.status_code == 403:
                 return ProviderResult(status="auth_failed")
             if r.status_code != 200:
@@ -232,10 +239,11 @@ class LeakCheckProvider(DarkWebProvider):
         if not self.is_configured():
             return ProviderResult(status="no_api_key")
         try:
-            import requests
-            r = requests.get(f"{self.API_URL}/{domain}",
+            r = LEAKCHECK.get(f"{self.API_URL}/{domain}",
                 params={"type": "domain", "limit": 100},
                 headers={"X-API-Key": self.api_key}, timeout=20)
+            if r is None:
+                return ProviderResult(status="error", error="no response")
             if r.status_code in (401, 403):
                 return ProviderResult(status="auth_failed")
             if r.status_code != 200:
@@ -282,10 +290,11 @@ class WhiteIntelProvider(DarkWebProvider):
         if not self.is_configured():
             return ProviderResult(status="no_api_key")
         try:
-            import requests
-            r = requests.post(self.API_URL,
+            r = WHITEINTEL.post(self.API_URL,
                 json={"apikey": self.api_key, "domain": domain},
                 timeout=20)
+            if r is None:
+                return ProviderResult(status="error", error="no response")
             if r.status_code in (401, 403):
                 return ProviderResult(status="auth_failed")
             if r.status_code != 200:

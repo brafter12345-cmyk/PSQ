@@ -1,0 +1,29 @@
+{
+  "entries": {
+    "GET https://api.shodan.io/shodan/host/count?key=%3Credacted%3E&query=ssl.cert.subject.cn%3Aexamplecorp.co.za": {
+      "content_b64": "eyJ0b3RhbCI6NDJ9",
+      "encoding": "utf-8",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "reason": null,
+      "status_code": 200,
+      "url": "https://api.shodan.io/shodan/host/count"
+    },
+    "GET https://api.shodan.io/shodan/host/search?key=%3Credacted%3E&query=ssl.cert.subject.cn%3Aexamplecorp.co.za": {
+      "content_b64": "eyJtYXRjaGVzIjpbeyJpcF9zdHIiOiIxOTguNTEuMTAwLjkifV19",
+      "encoding": "utf-8",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "reason": null,
+      "status_code": 200,
+      "url": "https://api.shodan.io/shodan/host/search"
+    }
+  },
+  "request_log": [
+    "GET https://api.shodan.io/shodan/host/count?key=%3Credacted%3E&query=ssl.cert.subject.cn%3Aexamplecorp.co.za",
+    "GET https://api.shodan.io/shodan/host/search?key=%3Credacted%3E&query=ssl.cert.subject.cn%3Aexamplecorp.co.za"
+  ],
+  "version": 1
+}

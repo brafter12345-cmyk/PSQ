@@ -1,0 +1,18 @@
+{
+  "entries": {
+    "POST https://api.snusbase.com/data/search #6b90462e66ab78f3": {
+      "content_b64": "eyJyZXN1bHRzIjp7IlNURUFMRVJfTE9HUyI6W3siZW1haWwiOiJhQGV4YW1wbGVjb3JwLmNvLnphIiwibGFzdGlwX2RhdGUiOiIyMDI2LTAxLTAxIn1dfX0=",
+      "encoding": "utf-8",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "reason": null,
+      "status_code": 200,
+      "url": "https://api.snusbase.com/data/search"
+    }
+  },
+  "request_log": [
+    "POST https://api.snusbase.com/data/search #6b90462e66ab78f3"
+  ],
+  "version": 1
+}

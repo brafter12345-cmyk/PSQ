@@ -1,0 +1,18 @@
+{
+  "entries": {
+    "GET https://api.securitytrails.com/v1/history/examplecorp.co.za/dns/a": {
+      "content_b64": "eyJyZWNvcmRzIjpbeyJ2YWx1ZXMiOlt7ImlwIjoiMjAzLjAuMTEzLjQifV19LHsidmFsdWVzIjpbeyJpcCI6IjIwMy4wLjExMy41In1dfV19",
+      "encoding": "utf-8",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "reason": null,
+      "status_code": 200,
+      "url": "https://api.securitytrails.com/v1/history/examplecorp.co.za/dns/a"
+    }
+  },
+  "request_log": [
+    "GET https://api.securitytrails.com/v1/history/examplecorp.co.za/dns/a"
+  ],
+  "version": 1
+}

@@ -1,0 +1,14 @@
+{
+  "error": null,
+  "records": [
+    {
+      "category": "darkweb",
+      "date": "2026-01-01",
+      "name": "a@examplecorp.co.za",
+      "provider": "snusbase",
+      "source": "STEALER_LOGS",
+      "type_label": "Stealer log"
+    }
+  ],
+  "status": "completed"
+}

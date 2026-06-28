@@ -1,0 +1,14 @@
+{
+  "error": null,
+  "records": [
+    {
+      "category": "leak",
+      "date": "2026-01-01",
+      "name": "leak.txt",
+      "provider": "intelx",
+      "source": "leaks",
+      "type_label": "Document"
+    }
+  ],
+  "status": "completed"
+}

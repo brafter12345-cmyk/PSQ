@@ -32,6 +32,10 @@ try:
 except ImportError:
     REQUESTS_AVAILABLE = False
 
+# WS0: route SecurityTrails + Shodan through the per-provider seam. Clients add no
+# retry (max_attempts=1) and return None on a failed request instead of raising.
+from providers import SECURITYTRAILS, SHODAN
+
 try:
     from cryptography import x509
     CRYPTO_AVAILABLE = True
@@ -52,12 +56,12 @@ def _fetch_historical_a(domain: str, api_key: str) -> list:
     if not REQUESTS_AVAILABLE:
         return []
     try:
-        r = requests.get(
+        r = SECURITYTRAILS.get(
             ST_HISTORY_URL.format(domain=domain),
             headers={"APIKEY": api_key, "Accept": "application/json"},
             timeout=15,
         )
-        if r.status_code != 200:
+        if r is None or r.status_code != 200:
             return []
         data = r.json()
     except Exception:
@@ -92,16 +96,16 @@ def _shodan_cert_hosts(domain: str, api_key: str):
         return count, ips, used
     query = f"ssl.cert.subject.cn:{domain}"
     try:
-        rc = requests.get(SHODAN_COUNT_URL,
-                          params={"key": api_key, "query": query}, timeout=15)
-        if rc.status_code == 200:
+        rc = SHODAN.get(SHODAN_COUNT_URL,
+                        params={"key": api_key, "query": query}, timeout=15)
+        if rc is not None and rc.status_code == 200:
             count = rc.json().get("total")
     except Exception:
         pass
     try:
-        rs = requests.get(SHODAN_SEARCH_URL,
-                          params={"key": api_key, "query": query}, timeout=20)
-        if rs.status_code == 200:
+        rs = SHODAN.get(SHODAN_SEARCH_URL,
+                        params={"key": api_key, "query": query}, timeout=20)
+        if rs is not None and rs.status_code == 200:
             used = True
             for m in (rs.json().get("matches") or []):
                 ip = (m.get("ip_str") or "").strip()
