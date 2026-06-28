@@ -3,7 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CyberRisk Assessment — Scan</title>
+  <title>New CyberRisk Assessment · Phishield</title>
+  <meta name="robots" content="noindex, nofollow">
+  <!-- Shared design tokens + Inter font from the dashboard bundle, so the
+       scan form matches the results dashboard exactly. -->
+  <link rel="stylesheet" href="/static/dashboard/app.css">
   <style>
     :root {
       --bg: #0f1117; --surface: #1a1d27; --surface2: #222636; --border: #2e3347;
@@ -72,14 +76,90 @@
     .scan-elapsed { color: var(--muted); font-size: 0.76rem; margin-top: 8px; }
 
     .footer { text-align: center; color: var(--muted); font-size: 0.76rem; padding: 18px 0; border-top: 1px solid var(--border); margin-top: 4px; }
+
+    /* ===================================================================
+       Redesign overlay — matches the CyberRisk dashboard design system.
+       Appended so these rules win over the legacy styles above; the form
+       markup, IDs and JS are untouched.
+       =================================================================== */
+    :root {
+      --bg: var(--app-bg); --surface: var(--panel-bg); --surface2: var(--panel-bg-elevated);
+      --text: var(--text-primary); --muted: var(--text-muted); --blue: var(--accent-bright);
+      --card-bg: var(--panel-bg-elevated); --radius: 14px;
+    }
+    body { font-family: var(--font-sans); background: var(--app-bg); color: var(--text-primary); font-size: 13.5px; }
+    .container { max-width: 620px; padding: 26px 20px 10px; }
+
+    /* brand topbar */
+    .header { border-bottom: none; margin-bottom: 16px; padding-bottom: 0; }
+    .brandmark { display: flex; align-items: center; gap: 11px; }
+    .brandmark .sq { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; color: #fff;
+      background: linear-gradient(150deg, var(--accent-bright), var(--accent)); box-shadow: 0 8px 20px -10px var(--accent); flex-shrink: 0; }
+    .brandmark .sq svg { width: 19px; height: 19px; }
+    .brandtext { display: flex; flex-direction: column; line-height: 1.1; }
+    .brandtext .nm { font-size: 13px; font-weight: 700; letter-spacing: .08em; }
+    .brandtext .sb { font-size: 9px; font-weight: 600; letter-spacing: .16em; color: var(--text-muted); }
+    .header-sub { font-size: 11.5px; color: var(--text-muted); }
+
+    /* card */
+    .form-wrap { max-width: 620px; }
+    .form-card { background: var(--panel-bg); background-image: var(--panel-gradient); border: 1px solid var(--border); border-radius: 14px; padding: 24px 22px; }
+    .form-title { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+    .form-desc { font-size: 12.5px; color: var(--text-secondary); margin-bottom: 20px; }
+
+    /* fields */
+    .field-label { font-size: 11.5px; font-weight: 600; color: var(--text-secondary); }
+    .field-hint { font-size: 11px; color: var(--text-muted); margin-top: 5px; }
+    input[type="text"], input[type="number"], select, textarea {
+      background-color: var(--panel-bg-elevated) !important; border: 1px solid var(--border) !important;
+      border-radius: 9px !important; color: var(--text-primary) !important; font-family: var(--font-sans);
+      font-size: 13px; padding: 9px 12px; transition: border-color .15s, box-shadow .15s;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--accent) !important; box-shadow: 0 0 0 3px var(--accent-soft) !important; outline: none;
+    }
+    input::placeholder, textarea::placeholder { color: var(--text-muted); }
+
+    /* section divider label */
+    .sec-label { font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+      color: var(--text-muted); margin: 20px 0 12px; padding-top: 16px; border-top: 1px solid var(--border); }
+
+    /* toggles */
+    .toggle-slider { background: var(--border-emphasis); }
+    .toggle input:checked + .toggle-slider { background: var(--accent); }
+    .toggle-label { font-size: 12.5px; font-weight: 500; color: var(--text-primary); }
+    .toggle-note { font-size: 11px; color: var(--text-muted); }
+
+    /* submit */
+    .submit-btn { background: linear-gradient(150deg, var(--accent-bright), var(--accent)); border-radius: 10px;
+      box-shadow: 0 8px 22px -10px var(--accent); font-weight: 600; font-size: 13.5px; padding: 12px; margin-top: 8px; }
+    .submit-btn:hover { filter: brightness(1.08); background: linear-gradient(150deg, var(--accent-bright), var(--accent)); }
+
+    /* error */
+    .error-msg { background: var(--critical-soft); color: var(--critical); border: 1px solid color-mix(in srgb, var(--critical) 30%, transparent);
+      border-radius: 9px; padding: 9px 12px; font-size: 12px; }
+
+    /* preflight banner + auto-discovery box (override inline styles) */
+    #preflight-banner { background: var(--info-soft) !important; border-left: 3px solid var(--info) !important;
+      color: var(--info) !important; border-radius: 8px !important; font-size: 11.5px !important; }
+    #related-candidates-list { background: var(--accent-soft) !important; border: 1px solid var(--border-emphasis) !important; border-radius: 10px !important; }
+    #sub-industry-dropdown { background: var(--panel-bg-elevated) !important; border: 1px solid var(--border-emphasis) !important;
+      border-radius: 9px !important; box-shadow: 0 16px 40px -16px rgba(0,0,0,.7) !important; }
+
+    /* footer */
+    .footer { border-top: 1px solid var(--border); color: var(--text-muted); font-size: 11px;
+      display: flex; flex-direction: column; gap: 3px; align-items: center; padding: 16px; }
   </style>
 </head>
 <body>
 <div class="container">
 
   <div class="header">
-    <div class="logo">&#128737; CyberRisk Assessment</div>
-    <div class="header-sub">Phishield Cyber Protect Cover</div>
+    <div class="brandmark">
+      <span class="sq"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 2v20"/></svg></span>
+      <div class="brandtext"><span class="nm">PHISHIELD</span><span class="sb">CYBER PROTECT</span></div>
+    </div>
+    <div class="header-sub">CyberRisk Assessment</div>
   </div>
 
   <div class="form-wrap">
@@ -141,6 +221,8 @@
           <div class="field-hint">Required for FAIR-based financial impact estimation. Leave blank to skip.</div>
         </div>
 
+        <div class="sec-label">Scan Options</div>
+
         <div class="field">
           <div class="toggle-row">
             <label class="toggle">
@@ -180,7 +262,7 @@
           </div>
         </div>
 
-        <div style="margin:10px 0 6px;font-size:.76rem;font-weight:600;color:var(--muted,#94a3b8);text-transform:uppercase;letter-spacing:.5px;">Regulatory Exposure</div>
+        <div class="sec-label">Regulatory Exposure</div>
         <div id="preflight-banner" style="display:none;font-size:.76rem;color:#60a5fa;background:rgba(96,165,250,0.08);border-left:3px solid #60a5fa;padding:8px 12px;margin-bottom:10px;border-radius:4px;line-height:1.4;"></div>
 
         <div class="field">
@@ -265,6 +347,8 @@
           .auto-badge.suggestion { color:#fbbf24; background:rgba(251,191,36,0.12); border-color:rgba(251,191,36,0.3); }
         </style>
 
+        <div class="sec-label">Supply Chain &amp; Additional Assets</div>
+
         <!-- Related / supplier domains (S-1 supply-chain) -->
         <div class="field">
           <label class="field-label" for="related-domains">Related / Supplier Domains (optional)
@@ -296,7 +380,7 @@
           <div class="field-hint">Known external-facing IPs not linked to the primary domain. Comma or newline separated. Leave blank to scan domain IPs only.</div>
         </div>
 
-        <button type="submit" class="submit-btn" id="submit-btn">&#128270; Start Scan</button>
+        <button type="submit" class="submit-btn" id="submit-btn">Start Assessment</button>
       </form>
 
       <div id="scan-progress" class="scan-progress">
@@ -310,7 +394,10 @@
 
 </div>
 
-<div class="footer">PHISHIELD UMA (Pty) Ltd &nbsp;|&nbsp; Authorised Financial Services Provider &nbsp;|&nbsp; FSP 46418</div>
+<div class="footer">
+  <span>Passive external assessment only • No intrusive testing • For insurance underwriting use</span>
+  <span>PHISHIELD UMA (Pty) Ltd • Authorised Financial Services Provider • FSP 46418</span>
+</div>
 
 <script>
 // Sub-industry hierarchy for BI factor selection

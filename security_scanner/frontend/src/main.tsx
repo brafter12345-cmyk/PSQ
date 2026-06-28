@@ -12,11 +12,18 @@ async function bootstrap() {
   // dead-code-eliminated from the shipped bundle. In production window.RESULTS
   // is always set by results.html before app.js runs.
   if (import.meta.env.DEV && !window.RESULTS) {
-    const mod = await import('./dev/sampleResults.json')
-    const sample = mod.default as unknown as Results
-    window.RESULTS = sample
-    window.SCAN_META = { status: 'completed', domain: sample.domain_scanned, scanId: 'dev-local' }
-    window.CHECKER_MANIFEST = []
+    // Optional local dev fixture — gitignored, never committed. Drop a real
+    // RESULTS payload at src/dev/sampleResults.json to develop standalone.
+    // import.meta.glob resolves to {} when the file is absent, so the build
+    // never depends on it.
+    const fixtures = import.meta.glob('./dev/sampleResults.json', { import: 'default' })
+    const load = fixtures['./dev/sampleResults.json']
+    if (load) {
+      const sample = (await load()) as Results
+      window.RESULTS = sample
+      window.SCAN_META = { status: 'completed', domain: sample.domain_scanned, scanId: 'dev-local' }
+      window.CHECKER_MANIFEST = []
+    }
     // dev-only: ?progress previews the scan-in-progress experience with a
     // representative manifest (SSE will fall back to harmless polling).
     if (new URLSearchParams(location.search).has('progress')) {

@@ -33,6 +33,13 @@
       "runtimeArgs": ["-c", "import os, runpy; os.environ['PORT']='5057'; os.chdir(r'C:/Users/rudol/.gemini/antigravity/PSQ/security_scanner'); runpy.run_path('app.py', run_name='__main__')"],
       "cwd": "C:/Users/rudol/.gemini/antigravity/PSQ/security_scanner",
       "port": 5057
+    },
+    {
+      "name": "scanner-static",
+      "runtimeExecutable": "C:/Program Files/Python312/python.exe",
+      "runtimeArgs": ["-m", "http.server", "8010"],
+      "cwd": "C:/Users/rudol/.gemini/antigravity/PSQ/security_scanner",
+      "port": 8010
     }
   ]
 }

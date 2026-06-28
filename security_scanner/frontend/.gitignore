@@ -2,3 +2,5 @@ node_modules/
 .vite/
 *.local
 dist/
+# Local-only dev fixture (real scan payload) — never committed
+src/dev/sampleResults.json
