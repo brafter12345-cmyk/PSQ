@@ -1,0 +1,38 @@
+{
+  "entries": {
+    "GET https://cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-domain?domain=phishield.com": {
+      "content_b64": "eyJ0b3RhbCI6MSwidG90YWxTdGVhbGVycyI6MzU3MjA4NTcsImVtcGxveWVlcyI6MCwidXNlcnMiOjAsInRoaXJkX3BhcnRpZXMiOjEsImxvZ28iOiJodHRwczovL2Nkbi5icmFuZGZldGNoLmlvL3BoaXNoaWVsZC5jb20vZmFsbGJhY2svbGV0dGVybWFyaz9jPTFleGlkVEYxMmNPb1VCOU5TV3hsTiIsImRhdGEiOnsiZW1wbG95ZWVzX3VybHMiOltdLCJjbGllbnRzX3VybHMiOltdLCJhbGxfdXJscyI6W119LCJ0b3RhbFVybHMiOjAsInN0YXRzIjp7InRvdGFsRW1wbG95ZWVzIjowLCJ0b3RhbFVzZXJzIjowLCJlbXBsb3llZXNfdXJscyI6W10sImNsaWVudHNfdXJscyI6W10sImVtcGxveWVlc19jb3VudCI6W10sImNsaWVudHNfY291bnQiOltdfSwiaXNfc2hvcGlmeSI6ZmFsc2V9",
+      "encoding": "utf-8",
+      "headers": {
+        "CF-RAY": "a12e56e32937ad07-CPT",
+        "Cache-Control": "max-age=14400",
+        "Connection": "keep-alive",
+        "Content-Encoding": "br",
+        "Content-Security-Policy": "frame-ancestors 'none'",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 28 Jun 2026 17:16:29 GMT",
+        "Nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+        "Report-To": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=958d95zesN8aZqd6525U0aNHic2XAnfKeXuJpZpsU9BfbRzMnM2oQqXxMqUrn4RNuJ0O5Wg0T%2BfyQg5VJCljch%2B0QSunN4NjKxbi7S7q8cgYgKfNpyAe3FbO%2BkL7OEc9mE3XuGGf9A6m\"}]}",
+        "Server": "cloudflare",
+        "Strict-Transport-Security": "max-age=15552000; includeSubDomains; preload",
+        "Transfer-Encoding": "chunked",
+        "X-Frame-Options": "deny",
+        "access-control-allow-credentials": "true",
+        "cf-cache-status": "MISS",
+        "etag": "W/\"183-YJ0XSmkhzmH04JJGO2xzZRx1t6Y\"",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "vary": "Origin",
+        "x-content-type-options": "nosniff",
+        "x-powered-by": "Express",
+        "x-xss-protection": "1; mode=block"
+      },
+      "reason": "OK",
+      "status_code": 200,
+      "url": "https://cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-domain?domain=phishield.com"
+    }
+  },
+  "request_log": [
+    "GET https://cavalier.hudsonrock.com/api/json/v2/osint-tools/search-by-domain?domain=phishield.com"
+  ],
+  "version": 1
+}

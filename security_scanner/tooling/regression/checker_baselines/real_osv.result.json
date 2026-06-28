@@ -1,0 +1,224 @@
+{
+  "v": [
+    {
+      "cve": "CVE-2022-28346",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-2gwj-7jmv-h26r",
+      "published": "2022-04-13T00:00:33Z",
+      "severity": "critical",
+      "source": "osv.dev",
+      "summary": "SQL Injection in Django"
+    },
+    {
+      "cve": "CVE-2023-24580",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-2hrw-hx67-34x6",
+      "published": "2023-02-15T03:30:47Z",
+      "severity": "high",
+      "source": "osv.dev",
+      "summary": "Resource exhaustion in Django"
+    },
+    {
+      "cve": "CVE-2021-45115",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-53qw-q765-4fww",
+      "published": "2022-01-12T19:20:53Z",
+      "severity": "high",
+      "source": "osv.dev",
+      "summary": "Denial-of-service in Django"
+    },
+    {
+      "cve": "CVE-2021-33203",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-68w8-qjq3-2gfm",
+      "published": "2021-06-10T17:21:00Z",
+      "severity": "moderate",
+      "source": "osv.dev",
+      "summary": "Path Traversal in Django"
+    },
+    {
+      "cve": "CVE-2022-23833",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-6cw3-g6wv-c2xv",
+      "published": "2022-02-04T00:00:26Z",
+      "severity": "high",
+      "source": "osv.dev",
+      "summary": "Infinite Loop in Django"
+    },
+    {
+      "cve": "CVE-2025-57833",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-6w2r-r2m5-xq5w",
+      "published": "2025-09-08T18:31:31Z",
+      "severity": "high",
+      "source": "osv.dev",
+      "summary": "Django is subject to SQL injection through its column aliases"
+    },
+    {
+      "cve": "CVE-2023-41164",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-7h4p-27mh-hmrw",
+      "published": "2023-11-03T06:36:29Z",
+      "severity": "moderate",
+      "source": "osv.dev",
+      "summary": "Django Denial of service vulnerability in django.utils.encoding.uri_to_iri"
+    },
+    {
+      "cve": "CVE-2025-48432",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-7xr5-9hcq-chf9",
+      "published": "2025-06-05T03:30:58Z",
+      "severity": "moderate",
+      "source": "osv.dev",
+      "summary": "Django Improper Output Neutralization for Logs vulnerability"
+    },
+    {
+      "cve": "CVE-2021-45116",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-8c5j-9r9f-c6w8",
+      "published": "2022-01-12T19:21:10Z",
+      "severity": "high",
+      "source": "osv.dev",
+      "summary": "Information disclosure in Django"
+    },
+    {
+      "cve": "CVE-2022-36359",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-8x94-hmjh-97hq",
+      "published": "2022-08-11T14:49:12Z",
+      "severity": "high",
+      "source": "osv.dev",
+      "summary": "Django vulnerable to Reflected File Download attack"
+    },
+    {
+      "cve": "CVE-2022-22818",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-95rw-fx8r-36v6",
+      "published": "2022-02-04T00:00:33Z",
+      "severity": "moderate",
+      "source": "osv.dev",
+      "summary": "Cross-site Scripting in Django"
+    },
+    {
+      "cve": "CVE-2025-64459",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-frmv-pr5f-9mcr",
+      "published": "2025-11-05T15:31:07Z",
+      "severity": "critical",
+      "source": "osv.dev",
+      "summary": "Django vulnerable to SQL injection via _connector keyword argument in QuerySet and Q objects."
+    },
+    {
+      "cve": "CVE-2023-43665",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-h8gc-pgj2-vjm3",
+      "published": "2023-11-03T06:36:30Z",
+      "severity": "high",
+      "source": "osv.dev",
+      "summary": "Django Denial-of-service in django.utils.text.Truncator"
+    },
+    {
+      "cve": "CVE-2023-36053",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-jh3w-4vvf-mjgr",
+      "published": "2023-07-03T15:30:45Z",
+      "severity": "high",
+      "source": "osv.dev",
+      "summary": "Django has regular expression denial of service vulnerability in EmailValidator/URLValidator"
+    },
+    {
+      "cve": "CVE-2021-45452",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-jrh2-hc4r-7jwx",
+      "published": "2022-01-12T19:21:04Z",
+      "severity": "moderate",
+      "source": "osv.dev",
+      "summary": "Directory-traversal in Django"
+    },
+    {
+      "cve": "CVE-2022-34265",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-p64x-8rxx-wf6q",
+      "published": "2022-07-05T00:00:53Z",
+      "severity": "critical",
+      "source": "osv.dev",
+      "summary": "Django `Trunc()` and `Extract()` database functions vulnerable to SQL Injection"
+    },
+    {
+      "cve": "CVE-2021-33571",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-p99v-5w3c-jqq9",
+      "published": "2021-06-10T17:21:12Z",
+      "severity": "high",
+      "source": "osv.dev",
+      "summary": "Django Access Control Bypass possibly leading to SSRF, RFI, and LFI attacks "
+    },
+    {
+      "cve": "CVE-2023-23969",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-q2jf-h9jm-m7p4",
+      "published": "2023-02-01T21:30:23Z",
+      "severity": "high",
+      "source": "osv.dev",
+      "summary": "Django contains Uncontrolled Resource Consumption via cached header"
+    },
+    {
+      "cve": "CVE-2021-32052",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-qm57-vhq3-3fwf",
+      "published": "2021-06-09T17:14:51Z",
+      "severity": "moderate",
+      "source": "osv.dev",
+      "summary": "Header injection possible in Django"
+    },
+    {
+      "cve": "CVE-2023-46695",
+      "cvss_estimated": true,
+      "cvss_score": null,
+      "epss": null,
+      "id": "GHSA-qmf9-6jqf-j8fq",
+      "published": "2023-11-02T06:30:25Z",
+      "severity": "high",
+      "source": "osv.dev",
+      "summary": "Django potential denial of service vulnerability in UsernameField on Windows"
+    }
+  ]
+}

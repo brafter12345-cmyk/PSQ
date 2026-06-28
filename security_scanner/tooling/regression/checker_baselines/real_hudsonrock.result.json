@@ -1,0 +1,18 @@
+{
+  "compromised_employees": 0,
+  "compromised_services": [],
+  "compromised_services_total": 0,
+  "compromised_users": 0,
+  "days_since_compromise": null,
+  "issues": [
+    "1 third-party exposure(s) detected \u2014 review supply chain partners and shared credential access."
+  ],
+  "last_employee_compromised": null,
+  "last_user_compromised": null,
+  "most_recent_compromise": null,
+  "score": 95,
+  "status": "completed",
+  "stealer_families": [],
+  "third_party_exposures": 1,
+  "total_compromised": 0
+}

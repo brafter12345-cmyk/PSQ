@@ -1,0 +1,46 @@
+{
+  "entries": {
+    "GET https://api.first.org/data/v1/epss?cve=CVE-2021-44228": {
+      "content_b64": "eyJzdGF0dXMiOiJPSyIsInN0YXR1cy1jb2RlIjoyMDAsInZlcnNpb24iOiIxLjAiLCJhY2Nlc3MiOiJwdWJsaWMiLCJ0b3RhbCI6MSwib2Zmc2V0IjowLCJsaW1pdCI6MTAwLCJkYXRhIjpbeyJjdmUiOiJDVkUtMjAyMS00NDIyOCIsImVwc3MiOiIwLjk5OTk5MDAwMCIsInBlcmNlbnRpbGUiOiIxLjAwMDAwMDAwMCIsImRhdGUiOiIyMDI2LTA2LTI4In1dfQo=",
+      "encoding": "utf-8",
+      "headers": {
+        "Accept-Ranges": "bytes",
+        "Access-Control-Allow-Headers": "x-requested-with",
+        "Access-Control-Allow-Methods": "GET, HEAD, OPTIONS",
+        "Access-Control-Allow-Origin": "*",
+        "Age": "0",
+        "Cache-Control": "public, max-age=86400, s-maxage=86400",
+        "Connection": "keep-alive",
+        "Content-Encoding": "gzip",
+        "Content-Length": "168",
+        "Content-Security-Policy": "default-src 'self'; img-src 'self' https: data:; font-src 'self' https:; media-src 'self' *.first.org; connect-src 'self' *.first.org; object-src 'self' *.first.org; frame-src https: data:; frame-ancestors 'self'; base-uri 'self'",
+        "Content-Type": "application/json; charset=utf-8",
+        "Date": "Sun, 28 Jun 2026 17:16:27 GMT",
+        "Link": "<https://api.first.org/data/v1/epss/schema> rel=describedBy",
+        "Permissions-Policy": "microphone=(), camera=(), autoplay=(self \"https://*.first.org\")",
+        "Referrer-Policy": "origin-when-cross-origin",
+        "Server": "nginx",
+        "Strict-Transport-Security": "max-age=31557600",
+        "Vary": "accept-encoding, Accept-Encoding",
+        "Via": "1.1 varnish",
+        "X-Access": "public, max-age=86400, s-maxage=86400",
+        "X-Cache": "MISS",
+        "X-Cache-Hits": "0",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "SAMEORIGIN, SAMEORIGIN",
+        "X-Served-By": "cache-cpt13821-CPT",
+        "X-Timer": "S1782666986.414621,VS0,VE681",
+        "X-Total": "1",
+        "X-Xss-Protection": "1; mode=block",
+        "alt-svc": "h3=\":443\";ma=86400,h3-29=\":443\";ma=86400,h3-27=\":443\";ma=86400"
+      },
+      "reason": "OK",
+      "status_code": 200,
+      "url": "https://api.first.org/data/v1/epss?cve=CVE-2021-44228"
+    }
+  },
+  "request_log": [
+    "GET https://api.first.org/data/v1/epss?cve=CVE-2021-44228"
+  ],
+  "version": 1
+}

@@ -1,0 +1,25 @@
+{
+  "entries": {
+    "GET https://phishield.com": {
+      "content_b64": "PCFET0NUWVBFIEhUTUwgUFVCTElDICItLy9XM0MvL0RURCBIVE1MIDQuMDEvL0VOIiAiaHR0cDovL3d3dy53My5vcmcvVFIvaHRtbDQvc3RyaWN0LmR0ZCI+CjxodG1sPjxoZWFkPgo8dGl0bGU+NDAzIEZvcmJpZGRlbjwvdGl0bGU+CjwvaGVhZD48Ym9keT4KPGgxPkZvcmJpZGRlbjwvaDE+CjxwPllvdSBkb24ndCBoYXZlIHBlcm1pc3Npb24gdG8gYWNjZXNzIHRoaXMgcmVzb3VyY2UuPC9wPgo8L2JvZHk+PC9odG1sPgo=",
+      "encoding": "iso-8859-1",
+      "headers": {
+        "Connection": "Keep-Alive",
+        "Content-Length": "239",
+        "Content-Type": "text/html; charset=iso-8859-1",
+        "Date": "Sun, 28 Jun 2026 17:16:11 GMT",
+        "Keep-Alive": "timeout=15, max=100",
+        "Referrer-Policy": "unsafe-url",
+        "Server": "Apache",
+        "X-Frame-Options": "SAMEORIGIN"
+      },
+      "reason": "Forbidden",
+      "status_code": 403,
+      "url": "https://phishield.com/"
+    }
+  },
+  "request_log": [
+    "GET https://phishield.com"
+  ],
+  "version": 1
+}
