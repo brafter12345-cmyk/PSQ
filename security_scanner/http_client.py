@@ -465,6 +465,10 @@ class HttpClient:
         self.rate_limiter = rate_limiter or DomainRateLimiter()
         self.waf_tracker = waf_tracker or WAFTracker()
         self.probe_cache = probe_cache or _NullProbeCache()
+        # Per-apex "catch-all / soft-404" flag, set by precheck(): when True every
+        # path returns success-like, so path enumeration is pointless.
+        self._catchall: dict = {}
+        self._catchall_lock = threading.Lock()
 
     # ---- Public methods --------------------------------------------------
 
@@ -491,6 +495,65 @@ class HttpClient:
     def waf_status(self, apex: str) -> dict:
         """Surface WAF status for an apex to the report renderers."""
         return self.waf_tracker.status(apex)
+
+    def hard_blocked(self, apex_or_url: str, min_samples: int = 8) -> bool:
+        """True when an apex shows SUSTAINED WAF blocking. Conservative: requires at
+        least `min_samples` observations so a single stray 403 can't trip it. Accepts
+        a bare apex/domain or a full URL."""
+        url = apex_or_url if "://" in apex_or_url else f"https://{apex_or_url}"
+        st = self.waf_tracker.status(_apex_of(url))
+        return bool(st.get("blocked")) and int(st.get("samples", 0)) >= min_samples
+
+    def stop_probing(self, apex_or_url: str, probed: int, *, min_probes: int = 10,
+                     min_samples: int = 8) -> bool:
+        """WAF-aware early-exit gate for path-enumeration checkers.
+
+        Returns True once a checker has probed at least `min_probes` of its OWN paths
+        AND the target either (a) is in sustained WAF blocking, or (b) was flagged as
+        catch-all / soft-404 by precheck() (every path returns success -> nothing to
+        find). The per-checker `probed` count keeps it fair regardless of checker
+        order. Never fires on a healthy target, so non-WAF scans are unchanged."""
+        url = apex_or_url if "://" in apex_or_url else f"https://{apex_or_url}"
+        apex = _apex_of(url)
+        # Catch-all / soft-404 (from precheck): enumeration can't find anything, so
+        # bail after only a few confirming probes — no need for the full min_probes.
+        with self._catchall_lock:
+            if self._catchall.get(apex):
+                return probed >= min(min_probes, 4)
+        if probed < min_probes:
+            return False
+        st = self.waf_tracker.status(apex)
+        return bool(st.get("blocked")) and int(st.get("samples", 0)) >= min_samples
+
+    def precheck(self, domain: str, *, bogus: int = 2) -> dict:
+        """Pre-scan WAF / soft-404 probe (opt-in; see WAF_PRECHECK / scan(waf_precheck)).
+
+        Fires a few requests up front so the heavy enumeration checkers can early-exit
+        instead of grinding full path lists:
+          * `bogus` random paths -> a real site 404s these; if they come back 200/3xx
+            the host is a catch-all (soft-404) and path enumeration can't find anything
+          * a couple of known WAF-trigger paths -> surface 403/406/451 EARLY so the
+            sustained-blocking signal is established before the big checkers run.
+        Populates the WAF tracker + the catch-all flag; returns a summary."""
+        import random
+        apex = _apex_of(f"https://{domain}")
+        statuses, non_404 = [], 0
+        for i in range(max(0, bogus)):
+            rp = f"/zz-{random.randint(10**7, 10**8)}-{i}-doesnotexist"
+            r = self.get(f"https://{domain}{rp}", timeout=6, allow_redirects=False)
+            if r is not None:
+                statuses.append(r.status_code)
+                if r.status_code in (200, 301, 302, 307, 308):
+                    non_404 += 1
+        for rp in ("/.git/config", "/.env", "/admin"):
+            r = self.get(f"https://{domain}{rp}", timeout=6, allow_redirects=False)
+            if r is not None:
+                statuses.append(r.status_code)
+        catch_all = bogus > 0 and non_404 >= bogus   # every bogus path looked "alive"
+        with self._catchall_lock:
+            self._catchall[apex] = catch_all
+        return {"apex": apex, "statuses": statuses, "catch_all": catch_all,
+                "waf": self.waf_status(apex)}
 
     def reset_for_scan(self, apex: Optional[str] = None) -> None:
         """Clear WAF history for a target apex at scan start. Cache is

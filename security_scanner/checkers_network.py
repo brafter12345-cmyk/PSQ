@@ -418,13 +418,20 @@ class VPNRemoteAccessChecker:
         # signature requires a genuine 200 with a non-trivial, non-error body
         # before a token match counts. (`require_200` is kept in the table for
         # documentation but is now the universal default.)
+        probed = 0
         for vpn_name, sigs in self.VPN_SIGNATURES.items():
             for path in sigs["paths"]:
+                # WAF-aware early-exit: once we've probed our own high-priority
+                # gateways and the apex is hard-blocking, stop hammering dead paths.
+                if HTTP.stop_probing(domain, probed):
+                    result["waf_truncated"] = True
+                    break
                 try:
                     r = HTTP.get(
                         f"https://{domain}{path}", timeout=5,
                         allow_redirects=True
                     )
+                    probed += 1
                     # Gate 1: must be a real 200 (not a 3xx/4xx/5xx or soft-404).
                     if r is None or r.status_code != 200:
                         continue
@@ -441,7 +448,7 @@ class VPNRemoteAccessChecker:
                         break
                 except Exception:
                     pass
-            if result["vpn_detected"]:
+            if result["vpn_detected"] or result.get("waf_truncated"):
                 break
 
         if not result["vpn_detected"]:

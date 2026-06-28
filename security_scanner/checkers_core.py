@@ -1199,8 +1199,19 @@ class ExposedAdminChecker:
         exposed = []
 
         from http_client import HTTP
+        import threading as _threading
+        _probed = {"n": 0}
+        _plock = _threading.Lock()
 
         def probe(path, risk):
+            # WAF-aware early-exit: once the apex is hard-blocking, skip the
+            # MEDIUM-risk long tail (all 403s). Critical/high paths are ALWAYS
+            # probed in full so we never miss a real exposure.
+            with _plock:
+                n = _probed["n"]
+                _probed["n"] += 1
+            if risk == "medium" and HTTP.stop_probing(domain, n):
+                return None
             # HEAD-first via HTTP.discover - reduces bandwidth and WAF
             # signature (the previous burst of 38 GETs at 15 workers was
             # textbook directory-enumeration pattern).

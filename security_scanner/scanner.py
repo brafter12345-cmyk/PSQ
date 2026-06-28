@@ -352,7 +352,8 @@ class SecurityScanner:
              include_fraudulent_domains: bool = False,
              client_ips: list = None,
              related_domains: list = None,
-             scan_id: str = None, resume: bool = False) -> dict:
+             scan_id: str = None, resume: bool = False,
+             waf_precheck: bool = None) -> dict:
         domain = domain.lower().strip().removeprefix("https://").removeprefix("http://").split("/")[0]
         # Fresh DNS cache for this scan — prevents cross-scan leakage and stale records.
         dns_cache.clear()
@@ -377,6 +378,20 @@ class SecurityScanner:
             "recommendations": [],
             "insurance": {},
         }
+
+        # Pre-scan WAF / soft-404 probe (opt-in). Off by default so default scans and
+        # the offline regression gates are unchanged. Enable with WAF_PRECHECK=1 (or
+        # scan(waf_precheck=True)) to establish the blocking / catch-all signal up
+        # front, letting the heavy enumeration checkers early-exit (much faster on
+        # WAF-protected / soft-404 targets like banks).
+        if waf_precheck is None:
+            waf_precheck = os.environ.get("WAF_PRECHECK", "").strip().lower() in (
+                "1", "true", "on", "yes")
+        if waf_precheck:
+            try:
+                results["scan_context"]["waf_precheck"] = HTTP.precheck(domain)
+            except Exception:
+                pass
 
         # --- Phase 1: IP Discovery + Client IP Merge ---
         self._notify(on_progress, "ip_discovery", "running")

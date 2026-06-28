@@ -1,0 +1,3 @@
+# Generated benchmark artifacts — keep the dir, ignore the outputs.
+*
+!.gitignore

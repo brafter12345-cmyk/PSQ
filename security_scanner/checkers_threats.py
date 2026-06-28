@@ -397,10 +397,16 @@ class PaymentSecurityChecker:
             result["status"] = "error"; return result
 
         payment_page_found = None
+        probed = 0
         for path in self.PAYMENT_PATHS:
+            # WAF-aware early-exit: stop enumerating once the apex is hard-blocking.
+            if HTTP.stop_probing(domain, probed):
+                result["waf_truncated"] = True
+                break
             try:
                 r = HTTP.get(f"https://{domain}{path}", timeout=4,
                              allow_redirects=True)
+                probed += 1
                 if r is not None and r.status_code == 200:
                     body = r.text[:50000].lower()
                     # Check if this looks like a payment page
@@ -2557,8 +2563,19 @@ class PrivacyComplianceChecker:
         if not urls:
             return None
         from http_client import HTTP
+        import threading as _threading
+        _probed = {"n": 0}
+        _plock = _threading.Lock()
 
         def _probe(url):
+            # WAF-aware early-exit: once we've probed enough candidates and the apex
+            # is hard-blocking, skip the rest (they'd all be 403s) — no network, no
+            # rate-limit wait.
+            with _plock:
+                n = _probed["n"]
+                _probed["n"] += 1
+            if HTTP.stop_probing(url, n):
+                return None
             # HEAD-first to check existence cheaply
             r = HTTP.discover(url, timeout=timeout, allow_redirects=True)
             if r is None or r.status_code != 200:
@@ -2897,9 +2914,25 @@ class InformationDisclosureChecker:
                 [(p, d, "medium", 10) for p, d in self.MEDIUM_PATHS]
             )
 
+            # WAF-aware early-exit: skip the medium-risk long tail once the apex is
+            # hard-blocking. Critical paths are ALWAYS probed in full.
+            import threading as _threading
+            _probed = {"n": 0}
+            _plock = _threading.Lock()
+
+            def _probe_guarded(url, risk):
+                if risk == "medium":
+                    with _plock:
+                        n = _probed["n"]
+                        _probed["n"] += 1
+                    if HTTP.stop_probing(domain, n):
+                        result["waf_truncated"] = True
+                        return (False, 0, 0)
+                return self._probe(url)
+
             with ThreadPoolExecutor(max_workers=3) as ex:
                 futures = {
-                    ex.submit(self._probe, f"{base}{path}"): (path, desc, risk, penalty)
+                    ex.submit(_probe_guarded, f"{base}{path}", risk): (path, desc, risk, penalty)
                     for path, desc, risk, penalty in probes
                 }
                 try:

@@ -1,0 +1,101 @@
+domain,organization,sector,size_tier
+standardbank.co.za,Standard Bank,Banking,large_corporate
+fnb.co.za,First National Bank,Banking,large_corporate
+absa.co.za,Absa Group,Banking,large_corporate
+nedbank.co.za,Nedbank,Banking,large_corporate
+capitecbank.co.za,Capitec Bank,Banking,large_corporate
+investec.com,Investec,Financial Services,large_corporate
+discovery.co.za,Discovery Limited,Insurance & Health,large_corporate
+sanlam.co.za,Sanlam,Insurance,large_corporate
+oldmutual.co.za,Old Mutual,Insurance,large_corporate
+santam.co.za,Santam,Insurance,large_corporate
+momentum.co.za,Momentum Metropolitan,Insurance,large_corporate
+liberty.co.za,Liberty Holdings,Insurance,large_corporate
+outsurance.co.za,OUTsurance,Insurance,large_corporate
+hollard.co.za,Hollard,Insurance,large_corporate
+vodacom.co.za,Vodacom,Telecommunications,large_corporate
+mtn.co.za,MTN Group,Telecommunications,large_corporate
+telkom.co.za,Telkom,Telecommunications,large_corporate
+shoprite.co.za,Shoprite Holdings,Retail,large_corporate
+picknpay.co.za,Pick n Pay,Retail,large_corporate
+woolworths.co.za,Woolworths Holdings,Retail,large_corporate
+takealot.com,Takealot,E-commerce,large_corporate
+clicks.co.za,Clicks Group,Retail Pharmacy,large_corporate
+dischem.co.za,Dis-Chem Pharmacies,Retail Pharmacy,large_corporate
+tfg.co.za,The Foschini Group,Retail,large_corporate
+mrpricegroup.com,Mr Price Group,Retail,large_corporate
+truworths.co.za,Truworths,Retail,large_corporate
+spar.co.za,SPAR Group,Retail,large_corporate
+sasol.com,Sasol,Energy & Chemicals,large_corporate
+angloamerican.com,Anglo American,Mining,large_corporate
+implats.co.za,Impala Platinum,Mining,large_corporate
+goldfields.com,Gold Fields,Mining,large_corporate
+harmony.co.za,Harmony Gold,Mining,large_corporate
+exxaro.com,Exxaro Resources,Mining,large_corporate
+sibanyestillwater.com,Sibanye-Stillwater,Mining,large_corporate
+naspers.com,Naspers,Technology & Media,large_corporate
+multichoice.com,MultiChoice Group,Media,large_corporate
+bidvest.com,Bidvest Group,Industrial Services,large_corporate
+barloworld.com,Barloworld,Industrial,large_corporate
+tigerbrands.com,Tiger Brands,FMCG,large_corporate
+mediclinic.com,Mediclinic International,Healthcare,large_corporate
+netcare.co.za,Netcare,Healthcare,large_corporate
+aspenpharma.com,Aspen Pharmacare,Pharmaceuticals,large_corporate
+growthpoint.co.za,Growthpoint Properties,Property,large_corporate
+avi.co.za,AVI Limited,FMCG,large_corporate
+makro.co.za,Makro,Retail,mid_market
+game.co.za,Game,Retail,mid_market
+builders.co.za,Builders,Retail,mid_market
+yuppiechef.com,Yuppiechef,E-commerce,mid_market
+netflorist.co.za,NetFlorist,E-commerce,mid_market
+superbalist.com,Superbalist,E-commerce,mid_market
+zando.co.za,Zando,E-commerce,mid_market
+faithful-to-nature.co.za,Faithful to Nature,E-commerce,mid_market
+loot.co.za,Loot,E-commerce,mid_market
+onedayonly.co.za,OneDayOnly,E-commerce,mid_market
+bidorbuy.co.za,bidorbuy,Marketplace,mid_market
+property24.com,Property24,PropTech,mid_market
+privateproperty.co.za,Private Property,PropTech,mid_market
+autotrader.co.za,AutoTrader SA,Automotive Marketplace,mid_market
+cars.co.za,Cars.co.za,Automotive,mid_market
+pnet.co.za,PNet,Recruitment,mid_market
+careers24.com,Careers24,Recruitment,mid_market
+hellopeter.com,HelloPeter,Consumer Reviews,mid_market
+afrihost.com,Afrihost,ISP,mid_market
+webafrica.co.za,Web Africa,ISP,mid_market
+mweb.co.za,MWEB,ISP,mid_market
+hetzner.co.za,Hetzner South Africa,Hosting,mid_market
+famousbrands.co.za,Famous Brands,Food Franchise,mid_market
+nandos.co.za,Nando's South Africa,Restaurants,mid_market
+cybercellar.com,Cybercellar,Wine E-commerce,sme
+wantitall.co.za,WantItAll,E-commerce,sme
+cashcrusaders.co.za,Cash Crusaders,Retail,sme
+hificorp.co.za,HiFi Corp,Electronics Retail,sme
+sweepsouth.com,SweepSouth,Home Services,sme
+getsmarter.com,GetSmarter,EdTech,sme
+snapnsave.co.za,SnapnSave,Retail Tech,sme
+uafrica.com,uAfrica,E-commerce Platform,sme
+parcelninja.com,Parcelninja,Logistics Tech,sme
+rsaweb.co.za,RSAWEB,ISP,sme
+axxess.co.za,Axxess,ISP,sme
+coolideas.co.za,Cool Ideas,ISP,sme
+frogfoot.com,Frogfoot Networks,Fibre,sme
+thecourierguy.co.za,The Courier Guy,Logistics,sme
+pricecheck.co.za,PriceCheck,Price Comparison,sme
+gov.za,South African Government,Government,public_sector
+sars.gov.za,South African Revenue Service,Government,public_sector
+eskom.co.za,Eskom,State-Owned Utility,public_sector
+transnet.net,Transnet,State-Owned Logistics,public_sector
+flysaa.com,South African Airways,State-Owned Airline,public_sector
+sapo.co.za,South African Post Office,State-Owned,public_sector
+csir.co.za,CSIR,Research Council,public_sector
+sabc.co.za,SABC,State Broadcaster,public_sector
+capetown.gov.za,City of Cape Town,Municipality,public_sector
+nra.co.za,SANRAL,State Roads Agency,public_sector
+uct.ac.za,University of Cape Town,Education,education
+wits.ac.za,University of the Witwatersrand,Education,education
+up.ac.za,University of Pretoria,Education,education
+sun.ac.za,Stellenbosch University,Education,education
+unisa.ac.za,University of South Africa,Education,education
+yoco.com,Yoco,Fintech,fintech
+ozow.com,Ozow,Fintech,fintech
