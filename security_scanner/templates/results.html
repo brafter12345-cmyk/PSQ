@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="robots" content="noindex, nofollow">
   <title>CyberRisk Assessment — {{ domain }} · Phishield</title>
-  <link rel="stylesheet" href="/static/dashboard/app.css">
+  <link rel="stylesheet" href="{{ request.script_root }}/static/dashboard/app.css">
   <style>
     /* Pre-hydration placeholder — dark, so there is no white flash before
        the React bundle paints. Replaced entirely once the app mounts. */
@@ -28,7 +28,7 @@
   <noscript>
     <div style="padding:24px;color:#f2f5fb;background:#060b14;font-family:sans-serif">
       This CyberRisk assessment dashboard requires JavaScript. The full report is
-      also available as a PDF via <a style="color:#8c72ff" href="/api/scan/{{ scan_id }}/pdf">Download PDF</a>.
+      also available as a PDF via <a style="color:#8c72ff" href="{{ request.script_root }}/api/scan/{{ scan_id }}/pdf">Download PDF</a>.
     </div>
   </noscript>
 
@@ -44,6 +44,6 @@
     };
     window.CHECKER_MANIFEST = {{ manifest_json | safe }};
   </script>
-  <script type="module" src="/static/dashboard/app.js"></script>
+  <script type="module" src="{{ request.script_root }}/static/dashboard/app.js"></script>
 </body>
 </html>

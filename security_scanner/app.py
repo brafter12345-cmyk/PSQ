@@ -33,6 +33,13 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
 CORS(app)  # Allow cross-origin calls from Vercel frontend
 
+# When fronted by a reverse proxy that mounts the app under a sub-path (e.g. Caddy
+# `handle_path /scanner/*` → X-Forwarded-Prefix: /scanner), honour the forwarded
+# prefix/proto/host so url_for, request.script_root and redirects are sub-path aware.
+# No-op for a root deploy (no X-Forwarded-* headers ⇒ script_root stays "").
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
 
 @app.template_filter('zar')
 def zar_filter(value):
@@ -731,8 +738,8 @@ def start_scan():
         "scan_id": scan_id,
         "domain": domain,
         "status": "pending",
-        "poll_url": f"/api/scan/{scan_id}",
-        "report_url": f"/results/{scan_id}",
+        "poll_url": f"{request.script_root}/api/scan/{scan_id}",
+        "report_url": f"{request.script_root}/results/{scan_id}",
     }
     if rejected_client_ips:
         response["rejected_client_ips"] = rejected_client_ips

@@ -9,7 +9,12 @@ import { fileURLToPath, URL } from 'node:url'
 export default defineConfig(({ command }) => ({
   plugins: [react()],
   // Dev server serves from root; production build is served by Flask under /static.
-  base: command === 'build' ? '/static/dashboard/' : '/',
+  // SCANNER_BASE_PATH lets us mount the whole app under a sub-path (e.g. "/scanner")
+  // so it can live at https://host/scanner without owning the domain root. Build with
+  // `SCANNER_BASE_PATH=/scanner npm run build`; leave it unset for a root deploy.
+  base: command === 'build'
+    ? `${(process.env.SCANNER_BASE_PATH ?? '').replace(/\/$/, '')}/static/dashboard/`
+    : '/',
   build: {
     outDir: fileURLToPath(new URL('../static/dashboard', import.meta.url)),
     emptyOutDir: true,

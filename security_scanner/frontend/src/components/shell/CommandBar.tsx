@@ -6,6 +6,7 @@ import {
 import { getScanMeta, getResults, fmtDateTime } from '../../data/results'
 import { getCoverageSummary } from '../../data/selectors'
 import styles from './CommandBar.module.css'
+import { withBase } from '../../base'
 
 const EXPORTS: Array<{ label: string; type: string; icon: typeof FileText; raw?: boolean }> = [
   { label: 'Broker Summary', type: 'summary', icon: FileText },
@@ -77,7 +78,7 @@ export default function CommandBar() {
             <div className={styles.menu} role="menu">
               {EXPORTS.map((e) => {
                 const Icon = e.icon
-                const href = e.raw ? `/api/scan/${meta.scanId}` : `/api/scan/${meta.scanId}/pdf?type=${e.type}`
+                const href = withBase(e.raw ? `/api/scan/${meta.scanId}` : `/api/scan/${meta.scanId}/pdf?type=${e.type}`)
                 return (
                   <a key={e.type} className={styles.menuItem} href={href} target="_blank" rel="noreferrer" role="menuitem" onClick={() => setOpen(false)}>
                     <Icon size={14} /> {e.label}

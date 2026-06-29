@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ShieldHalf, Server, Globe, CheckCircle2, Loader2, AlertTriangle } from 'lucide-react'
 import styles from './ScanProgress.module.css'
+import { withBase } from '../../base'
 
 type Status = 'pending' | 'running' | 'done'
 interface CheckerDef { id: string; label: string; per_ip?: boolean }
@@ -45,7 +46,7 @@ export default function ScanProgress({ scanId, domain }: { scanId: string; domai
       if (poll) return
       poll = setInterval(async () => {
         try {
-          const res = await fetch(`/api/scan/${scanId}`)
+          const res = await fetch(withBase(`/api/scan/${scanId}`))
           if (res.status === 200) { const d = await res.json(); if (d.status !== 'pending') reloadToResults() }
           else if (res.status === 500) { const d = await res.json(); setError(d.error || 'Scan failed') }
         } catch { /* keep polling */ }
@@ -53,7 +54,7 @@ export default function ScanProgress({ scanId, domain }: { scanId: string; domai
     }
 
     try {
-      es = new EventSource(`/api/scan/${scanId}/progress`)
+      es = new EventSource(withBase(`/api/scan/${scanId}/progress`))
       es.onmessage = (e) => {
         const data = JSON.parse(e.data)
         if (data.type === 'complete') { es?.close(); setTimeout(reloadToResults, 900); return }
