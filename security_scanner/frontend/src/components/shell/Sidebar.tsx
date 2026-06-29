@@ -3,10 +3,11 @@ import { ShieldHalf, ChevronDown } from 'lucide-react'
 import { NAV, type NavItem } from './nav'
 import { getScanMeta } from '../../data/results'
 import styles from './Sidebar.module.css'
+import { withBase } from '../../base'
 
 function pdfUrl(scanId: string, type: string): string {
   const t = type === 'raw' ? '' : `?type=${type}`
-  return type === 'raw' ? `/api/scan/${scanId}` : `/api/scan/${scanId}/pdf${t}`
+  return withBase(type === 'raw' ? `/api/scan/${scanId}` : `/api/scan/${scanId}/pdf${t}`)
 }
 
 function ItemLink({ item, scanId }: { item: NavItem; scanId: string }) {

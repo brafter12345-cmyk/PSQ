@@ -5,6 +5,7 @@ import {
 import Panel from '../primitives/Panel'
 import { getScanMeta } from '../../data/results'
 import styles from './QuickActions.module.css'
+import { withBase } from '../../base'
 
 interface Action {
   label: string
@@ -26,13 +27,13 @@ export default function QuickActions() {
   }
 
   const actions: Action[] = [
-    { label: 'Download Full Report', value: 'PDF', icon: Download, href: `/api/scan/${scanId}/pdf?type=full` },
+    { label: 'Download Full Report', value: 'PDF', icon: Download, href: withBase(`/api/scan/${scanId}/pdf?type=full`) },
     { label: 'Share Executive Summary', value: 'Secure link', icon: Share2, onClick: share },
     { label: 'Create Remediation Plan', value: 'Start now', icon: ListChecks, to: '/remediation' },
     { label: 'Schedule Continuous Scan', value: 'Daily', icon: CalendarClock, disabled: true, tip: 'Continuous scanning is not enabled for this account.' },
     { label: 'Compare With Previous Scan', value: 'View changes', icon: GitCompareArrows, disabled: true, tip: 'Requires at least one previous scan of this domain.' },
-    { label: 'Export Underwriting Data', value: 'CSV / JSON', icon: Table2, href: `/api/scan/${scanId}` },
-    { label: 'Re-run Assessment', value: 'New scan', icon: RefreshCw, href: '/' },
+    { label: 'Export Underwriting Data', value: 'CSV / JSON', icon: Table2, href: withBase(`/api/scan/${scanId}`) },
+    { label: 'Re-run Assessment', value: 'New scan', icon: RefreshCw, href: withBase('/') },
   ]
 
   return (

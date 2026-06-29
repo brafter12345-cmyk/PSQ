@@ -7,7 +7,7 @@
   <meta name="robots" content="noindex, nofollow">
   <!-- Shared design tokens + Inter font from the dashboard bundle, so the
        scan form matches the results dashboard exactly. -->
-  <link rel="stylesheet" href="/static/dashboard/app.css">
+  <link rel="stylesheet" href="{{ request.script_root }}/static/dashboard/app.css">
   <style>
     :root {
       --bg: #0f1117; --surface: #1a1d27; --surface2: #222636; --border: #2e3347;
@@ -475,7 +475,7 @@ const submitBtn = document.getElementById('submit-btn');
 // Fetch Dehashed credit balance on page load
 (async () => {
   try {
-    const r = await fetch('/api/dehashed/balance');
+    const r = await fetch('{{ request.script_root }}/api/dehashed/balance');
     const d = await r.json();
     const el = document.getElementById('dehashed-balance');
     if (d.status === 'active' && d.balance !== null) {
@@ -497,7 +497,7 @@ const submitBtn = document.getElementById('submit-btn');
 // Fetch IntelX credit balance on page load
 (async () => {
   try {
-    const r = await fetch('/api/intelx/balance');
+    const r = await fetch('{{ request.script_root }}/api/intelx/balance');
     const d = await r.json();
     const el = document.getElementById('intelx-balance');
     if (d.status === 'active' && d.balance !== null) {
@@ -549,7 +549,7 @@ async function runPreflight() {
   // take 10-30s on a cold query, broker shouldn't stare at a blank field.
   setRelatedCandidatesLoading();
   try {
-    const r = await fetch('/api/preflight', {
+    const r = await fetch('{{ request.script_root }}/api/preflight', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ domain, sub_industry: sub })
@@ -715,7 +715,7 @@ form.addEventListener('submit', async (e) => {
   submitBtn.disabled = true;
 
   try {
-    const res = await fetch('/api/scan', {
+    const res = await fetch('{{ request.script_root }}/api/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),

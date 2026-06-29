@@ -15,6 +15,7 @@ python-whois>=0.9.4
 
 # PDF report generation
 reportlab>=4.0.0
+pillow>=10.0.0          # image embedding in PDF cards (pdf_report.py)
 
 # Monte Carlo simulation for FAIR model
 numpy>=1.24.0
@@ -24,3 +25,10 @@ python-dotenv>=1.0.0
 
 # Production WSGI server
 gunicorn>=21.2.0
+
+# Postgres driver (WS1 — used when DATABASE_URL is set)
+psycopg2-binary>=2.9.0
+
+# Prometheus metrics (WS9 observability — hard import in observability.py).
+# OpenTelemetry tracing is optional (guarded); add opentelemetry-* to enable it.
+prometheus_client>=0.20.0
