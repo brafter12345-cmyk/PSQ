@@ -631,7 +631,7 @@ class SecurityScanner:
         # info-disclosure finding and must never be actively scanned. Reverse-DNS
         # is the strongest pre-scan signal (PTR is set by the IP owner); verified
         # origins are already cert-confirmed own infra and always scanned.
-        from ip_classification import classify_ip, OWNED, PRIVATE
+        from ip_classification import classify_ip, OWNED, PRIVATE, is_third_party
 
         def _ptr_lookup(ip):
             try:
@@ -727,6 +727,38 @@ class SecurityScanner:
                             "status": "timeout", "error": "Checker timed out", "issues": []}
                         checker_durations.setdefault(lbl, 180.0)
                         self._notify(on_progress, lbl, "done", per_ip_results[ip][checker_name])
+
+        # --- Phase 3b: Post-scan re-classification --------------------------
+        # The pre-scan chokepoint only had reverse-DNS. Now the IP checkers have
+        # grabbed banners and Shodan org/isp, so re-classify each scanned host
+        # and re-home any that prove VENDOR-operated but lacked a diagnostic PTR
+        # pre-scan — a no-PTR CDN edge (banner 'cloudflare'), a managed AWS ELB
+        # (banner 'awselb' on an ec2-* PTR), or an org-only SaaS host — out of
+        # the insured's own-infra into third_party_hosting. Verified origins are
+        # never re-homed. This lifts the pre-scan PTR-only result to the full
+        # own-vs-vendor split.
+        for ip in list(per_ip_results.keys()):
+            if "verified_origin" in ip_sources.get(ip, []):
+                continue
+            checks = per_ip_results[ip]
+            dns = checks.get("dns_infrastructure", {}) or {}
+            shod = checks.get("shodan_vulns", {}) or {}
+            banner = " ".join(
+                str(p.get("detected_version", "")) + " " + str(p.get("banner", ""))
+                for p in (dns.get("open_ports") or []))
+            bucket, label = classify_ip(ip, reverse_dns=dns.get("reverse_dns"),
+                                        org=shod.get("org"), banner=banner)
+            if is_third_party(bucket):
+                ip_classification[ip] = bucket
+                third_party_hosting.append({
+                    "ip": ip, "provider": label, "category": bucket,
+                    "subdomains": _ip_to_subs.get(ip, []),
+                    "reverse_dns": dns.get("reverse_dns"),
+                })
+                del per_ip_results[ip]
+        scan_ips = [ip for ip in scan_ips if ip in per_ip_results]
+        results["ip_classification"] = ip_classification
+        results["third_party_hosting"] = third_party_hosting
 
         # --- Phase 4: Aggregate IP-level results ---
         results["categories"] = cat_results
