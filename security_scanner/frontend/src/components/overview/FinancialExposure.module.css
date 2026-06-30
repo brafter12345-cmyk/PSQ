@@ -1,11 +1,11 @@
 .cur { font-size: 11px; font-weight: 600; color: var(--text-muted); }
 .grid {
   display: grid;
-  grid-template-columns: 184px minmax(320px, 1.6fr) minmax(240px, 1fr);
+  grid-template-columns: 216px minmax(300px, 1.6fr) minmax(240px, 1fr);
   gap: 20px;
 }
 
-.summary { display: flex; flex-direction: column; gap: 12px; border-right: 1px solid var(--border); padding-right: 18px; }
+.summary { display: flex; flex-direction: column; gap: 12px; border-right: 1px solid var(--border); padding-right: 18px; min-width: 0; overflow: hidden; }
 .sBlock { display: flex; flex-direction: column; gap: 2px; }
 .sLabel { font-size: 10.5px; color: var(--text-muted); }
 .sBig { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
