@@ -137,6 +137,31 @@ curl -s -o /dev/null -w "%{http_code}\n" https://veilguard.phishield.com/scanner
 Code changes are shipped from a workstation that has the repo + Node. The deploy is a clean
 tarball + an **idempotent** script (preserves `.env`, `secrets.env`, and the PG volume).
 
+### Source of truth = brafter (origin) master
+
+The VM is **tarball-deployed** — `/opt/phishield-scanner` is *not* a git checkout and does
+*not* pull from GitHub (no `.git`, no remote, no auto-pull). So brafter is the source by
+**convention**, enforced by how you deploy:
+
+1. Land changes on local `master`, then push to **brafter FIRST, then RJL** (local `master`'s
+   upstream is `origin` = brafter):
+   ```bash
+   git push                 # → brafter (origin/master)   [runs the pre-push gates + smoke]
+   git push rjl667 master   # → RJL (RJL667/PSQ, secondary mirror)
+   ```
+2. **Build the deploy tarball from local `master`** (== brafter `origin/master`), so what
+   ships to the VM is exactly what is on brafter. **Never deploy an unpushed / feature branch.**
+3. After deploying, verify VM == brafter by **sha256** (tar preserves the tarball's mtimes, so
+   don't trust mtime):
+   ```bash
+   gcloud compute ssh veilguard-prod-jnb --zone=africa-south1-a \
+       --command="sha256sum /opt/phishield-scanner/security_scanner/scanner.py"   # compare to local master
+   ```
+
+Remotes: `origin` = `github.com/brafter12345-cmyk/PSQ` (brafter) · `rjl667` =
+`github.com/RJL667/PSQ`. Rollback: the pre-rjl667 state is preserved as
+`backup/master-pre-rjl667-merge-2026-06-30` (`03ce0a2`) on brafter + locally.
+
 ```bash
 # 1. (only if the frontend changed) rebuild with the /scanner base.
 #    IMPORTANT on Git Bash/Windows: set the env var in a shell that does NOT mangle
@@ -152,8 +177,10 @@ tar -czf /tmp/scanner_deploy.tar.gz --exclude=.git --exclude='*/node_modules' \
 gcloud compute scp /tmp/scanner_deploy.tar.gz deploy/deploy_vm.sh \
     veilguard-prod-jnb:/tmp/ --zone=africa-south1-a
 
-# 3. run the idempotent deploy (re-extracts code, pip installs, migrates, restarts)
-gcloud compute ssh veilguard-prod-jnb --zone=africa-south1-a --command="bash /tmp/deploy_vm.sh"
+# 3. run the idempotent deploy (re-extracts code, pip installs, migrates, restarts).
+#    CRLF-normalise first if the script came from a Windows checkout (tr, not sed):
+gcloud compute ssh veilguard-prod-jnb --zone=africa-south1-a \
+    --command="tr -d '\r' < /tmp/deploy_vm.sh > /tmp/deploy_vm_unix.sh; bash /tmp/deploy_vm_unix.sh"
 ```
 
 The script ([`deploy/deploy_vm.sh`](../deploy/deploy_vm.sh)): unpacks → ensures

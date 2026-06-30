@@ -5,15 +5,29 @@
 # scanner on an Ubuntu VM. Safe to re-run: it preserves .env, secrets.env, and the
 # Postgres volume, and never touches anything else on the box (e.g. the Veilguard stack).
 #
-# Usage (from a workstation with the repo + gcloud):
+# SOURCE OF TRUTH = brafter (origin) master.
+#   The VM is TARBALL-deployed: /opt/phishield-scanner is NOT a git checkout and does
+#   NOT pull from GitHub. So "the VM is sourced from brafter" is a CONVENTION, not infra:
+#     1. land changes on local `master`, then push to brafter FIRST, then RJL:
+#          git push                  # -> brafter (origin/master), which is master's upstream
+#          git push rjl667 master    # -> RJL (secondary mirror)
+#     2. build the deploy tarball FROM local `master` (== brafter origin/master) so what
+#        ships to the VM is EXACTLY what is on brafter. Never deploy an unpushed or
+#        feature branch — that would put code on the VM that is not on brafter.
+#
+# Usage (from the repo root, on `master`, AFTER the two pushes above):
 #   tar -czf /tmp/scanner_deploy.tar.gz --exclude=.git --exclude='*/node_modules' \
 #       --exclude='*/__pycache__' --exclude='*.pyc' --exclude=scans.db --exclude=.env \
 #       -C <repo-root> security_scanner
 #   gcloud compute scp /tmp/scanner_deploy.tar.gz security_scanner/deploy/deploy_vm.sh \
 #       <vm>:/tmp/ --zone=<zone>
-#   gcloud compute ssh <vm> --zone=<zone> --command="bash /tmp/deploy_vm.sh"
+#   # CRLF-normalise the script (Windows checkout) on the VM, then run it:
+#   gcloud compute ssh <vm> --zone=<zone> \
+#       --command="tr -d '\r' < /tmp/deploy_vm.sh > /tmp/deploy_vm_unix.sh; bash /tmp/deploy_vm_unix.sh"
+#   # Verify VM == brafter by sha256 (tar preserves mtimes, so do NOT trust mtime):
+#   #   sha256sum /opt/phishield-scanner/security_scanner/scanner.py  (compare to local `master`)
 #
-# See security_scanner/docs/DEPLOYMENT.md for the full runbook.
+# See security_scanner/docs/DEPLOYMENT.md for the full runbook (if present).
 set -euo pipefail
 
 # --- knobs (override via env) ------------------------------------------------
