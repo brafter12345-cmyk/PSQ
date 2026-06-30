@@ -26,6 +26,7 @@ SEC = os.path.dirname(os.path.dirname(HERE))
 sys.path.insert(0, SEC)
 
 import checkers_network as cn
+import ip_classification as ipc
 
 
 class _FakeSocket:
@@ -93,8 +94,53 @@ SCENARIOS = {
 }
 
 
+# ---- IP-attribution ground truth (real takealot.com hosts, 2026-06-30) -------
+# (label, ip, reverse_dns, org, banner) -> expected ip_classification bucket.
+# Encodes the own-vs-vendor judgment that keeps third-party infrastructure (a
+# HostRocket shared host's FTP / "exposed Jupyter", CDN edges, managed LBs) out
+# of the insured's OWN attack surface, while still scanning the insured's own
+# IaaS VMs (an exposed Jenkins/Elasticsearch on their EC2/GCE is THEIR risk).
+# Without this gate the subdomain-IP path attributes 41 third-party hosts to the
+# target as its own exposure (the bug this audit found).
+CLASSIFY_SCENARIOS = [
+    # --- vendor-operated -> third-party (NOT scanned/attributed as own) ---
+    ("hostrocket_sharedhost", "66.147.238.15", "dirapp84.directorysecure.com",
+     "HostRocket Web Services", "220 Pure-FTPd", ipc.SAAS),
+    ("cloudfront_edge", "143.204.4.4", "server-143-204-4-4.jnb51.r.cloudfront.net",
+     None, "CloudFront", ipc.CDN),
+    ("akamai_edge", "23.196.227.231", "a23-196-227-231.deploy.static.akamaitechnologies.com",
+     None, "AkamaiGHost", ipc.CDN),
+    ("cloudflare_no_ptr", "104.16.71.64", None, None,
+     "HTTP/1.1 403 Forbidden\r\nServer: cloudflare", ipc.CDN),
+    ("salesforce_exacttarget", "13.111.150.233", "ja233.mta.exacttarget.com",
+     None, None, ipc.SAAS),
+    ("zendesk_org_only", "216.198.54.99", None, "Zendesk, Inc.", "", ipc.SAAS),
+    ("aws_elb_managed", "108.132.68.82", "ec2-108-132-68-82.eu-west-1.compute.amazonaws.com",
+     None, "awselb/2.0", ipc.CDN),   # ec2-style PTR but managed LB banner -> NOT owned
+    # --- insured-operated -> OWNED (scanned + attributed as the insured's) ---
+    ("aws_ec2_vm", "3.92.120.28", "ec2-3-92-120-28.compute-1.amazonaws.com",
+     "Amazon Data Services", "", ipc.OWNED),
+    ("gce_vm", "104.199.105.60", "60.105.199.104.bc.googleusercontent.com",
+     None, "", ipc.OWNED),
+    ("insured_dc_no_signal", "102.219.50.40", None, None, "", ipc.OWNED),
+    # --- private (internal host leaked in public DNS) -> never scanned ---
+    ("rfc1918_fortiauth", "10.0.1.250", None, None, None, ipc.PRIVATE),
+    ("rfc1918_elasticsearch", "10.28.32.100", None, None, None, ipc.PRIVATE),
+]
+
+
+def _check_classification(failures):
+    for label, ip, rdns, org, banner, expected in CLASSIFY_SCENARIOS:
+        got, _provider = ipc.classify_ip(ip, reverse_dns=rdns, org=org, banner=banner)
+        ok = (got == expected)
+        if not ok:
+            failures.append(f"classify[{label}]: {ip} -> {got!r} != expected {expected!r}")
+        print(f"  [{'PASS' if ok else 'FAIL'}] classify:{label:<24} -> {got}")
+
+
 def main():
     failures = []
+    _check_classification(failures)
     for name, sc in SCENARIOS.items():
         scan, hrp = _run(sc)
         scan_ports = {e["port"] for e in scan}
@@ -119,7 +165,8 @@ def main():
         for f in failures:
             print("  -", f)
         sys.exit(1)
-    print(f"ADVERSARIAL GATE PASS — {len(SCENARIOS)} ground-truth scenarios")
+    print(f"ADVERSARIAL GATE PASS — {len(SCENARIOS)} socket + {len(CLASSIFY_SCENARIOS)} "
+          f"ip-attribution ground-truth scenarios")
 
 
 if __name__ == "__main__":

@@ -22,6 +22,7 @@ import scanner_db
 # `except TimeoutError` silently fails to catch it and crashes the whole scan
 # the moment a phase exceeds its 180s budget (e.g. a target with many IPs).
 from concurrent.futures import TimeoutError as FuturesTimeoutError
+import socket
 
 # WS3: checkpoints older than this are treated as absent on resume (freshness
 # bound; per-data-type TTLs refine this in WS6). Default 6h.
@@ -619,7 +620,67 @@ class SecurityScanner:
             results["origin_ips_added"] = len(verified_new)
             self._notify(on_progress, "origin_ips", "done", {"ips": verified_new})
 
-        # --- Run IP-level checkers on ALL discovered IPs ---
+        # --- Classify the IP pool: scan/attribute only the insured's OWN infra -
+        # Apex A-records and subdomain-resolved IPs were piped into the port
+        # scanners RAW — only origin candidates were ever cert-gated (checker
+        # audit, 2026-06-30; see ip_classification.py). A subdomain that merely
+        # points at a CDN / cloud / SaaS / shared host means the PROVIDER's
+        # infrastructure, not the insured's: its exposed services are the
+        # provider's risk and belong under supply-chain, not the insured's own
+        # attack surface. RFC1918 hosts leaked in public DNS are an
+        # info-disclosure finding and must never be actively scanned. Reverse-DNS
+        # is the strongest pre-scan signal (PTR is set by the IP owner); verified
+        # origins are already cert-confirmed own infra and always scanned.
+        from ip_classification import classify_ip, OWNED, PRIVATE
+
+        def _ptr_lookup(ip):
+            try:
+                return socket.gethostbyaddr(ip)[0]
+            except Exception:
+                return None
+
+        ptr_map = {}
+        if all_ips:
+            with ThreadPoolExecutor(max_workers=16) as _ptr_ex:
+                _ptr_futs = {_ptr_ex.submit(_ptr_lookup, ip): ip for ip in all_ips}
+                try:
+                    for _pf in as_completed(_ptr_futs, timeout=30):
+                        ptr_map[_ptr_futs[_pf]] = _pf.result(timeout=5)
+                except FuturesTimeoutError:
+                    pass
+
+        _ip_to_subs = {}
+        for _sub, _sips in (sub_result.get("resolved_ips", {}) or {}).items():
+            for _sip in (_sips if isinstance(_sips, list) else [_sips]):
+                _ip_to_subs.setdefault(_sip, []).append(_sub)
+
+        scan_ips, third_party_hosting, internal_dns_leak, ip_classification = [], [], [], {}
+        for ip in all_ips:
+            if "verified_origin" in ip_sources.get(ip, []):
+                scan_ips.append(ip)
+                ip_classification[ip] = "owned"
+                continue
+            bucket, label = classify_ip(ip, reverse_dns=ptr_map.get(ip))
+            ip_classification[ip] = bucket
+            if bucket == PRIVATE:
+                internal_dns_leak.append({"ip": ip, "subdomains": _ip_to_subs.get(ip, [])})
+            elif bucket == OWNED:
+                scan_ips.append(ip)
+            else:
+                third_party_hosting.append({
+                    "ip": ip, "provider": label, "category": bucket,
+                    "subdomains": _ip_to_subs.get(ip, []),
+                    "reverse_dns": ptr_map.get(ip),
+                })
+        results["ip_classification"] = ip_classification
+        results["third_party_hosting"] = third_party_hosting
+        results["internal_dns_leak"] = internal_dns_leak
+        self._notify(on_progress, "ip_classification", "done", {
+            "owned": len(scan_ips), "third_party": len(third_party_hosting),
+            "internal": len(internal_dns_leak),
+        })
+
+        # --- Run IP-level checkers on the insured's OWN-infrastructure IPs ---
         # Same instrumentation pattern as the domain-level batch: emit
         # "running" at execution start, not at submission, so per-IP UI
         # status reflects actual execution rather than queue position.
@@ -637,7 +698,7 @@ class SecurityScanner:
 
         with ThreadPoolExecutor(max_workers=4) as ex:
             futures = {}
-            for ip in all_ips:
+            for ip in scan_ips:
                 per_ip_results[ip] = {}
                 for checker_name, fn in ip_checkers_templates.items():
                     label = f"{checker_name}:{ip}"
@@ -696,9 +757,12 @@ class SecurityScanner:
                     "directly accessible from internet")
 
         # --- Phase 4b: External IP Aggregation (feeds CVE panel) ---
+        # Own-infra surface = the insured's OWNED IPs only (scan_ips); third-party
+        # hosting + internal-DNS leaks are surfaced separately (results.
+        # third_party_hosting / internal_dns_leak).
         self._notify(on_progress, "external_ips", "running")
         results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
-            all_ips, per_ip_results, ip_sources=ip_sources
+            scan_ips, per_ip_results, ip_sources=ip_sources
         )
         self._notify(on_progress, "external_ips", "done",
                      results["categories"]["external_ips"])
@@ -888,7 +952,7 @@ class SecurityScanner:
                         per_ip_results, checker_name
                     )
                 results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
-                    all_ips, per_ip_results, ip_sources=ip_sources
+                    scan_ips, per_ip_results, ip_sources=ip_sources
                 )
         except Exception as _osv_err:
             # Log OSV enrichment errors instead of silently swallowing
@@ -901,7 +965,7 @@ class SecurityScanner:
         # --- Ensure re-aggregation always runs (even if OSV failed) ---
         try:
             results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
-                all_ips, per_ip_results, ip_sources=ip_sources
+                scan_ips, per_ip_results, ip_sources=ip_sources
             )
         except Exception:
             pass
