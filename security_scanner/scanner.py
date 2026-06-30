@@ -1185,6 +1185,18 @@ class SecurityScanner:
         # status field surfaces in the report renderers.
         # Reuse the pre-scoring WAF status (already read above).
         results["_scan_completeness"]["waf_status"] = waf_apex_status
+        # Checkers that explicitly EARLY-EXITED because the apex hard-blocked
+        # their path probing — they set their own `waf_truncated` flag. These are
+        # "not fully assessed" even though their benign 'nothing found' line
+        # (e.g. "No VPN detected") leaves `issues` non-empty, so the empty-issues
+        # heuristic below misses them. Record them for transparency and fold them
+        # into the affected set so coverage + the partial-coverage notice are
+        # accurate. (Currently set by vpn_remote, payment_security, info_disclosure.)
+        truncated = sorted(
+            cname for cname, cresult in cat_results.items()
+            if isinstance(cresult, dict) and cresult.get("waf_truncated")
+        )
+        results["_scan_completeness"]["waf_truncated_checkers"] = truncated
         # Compute per-checker WAF flags: a checker is flagged WAF-affected
         # if it reported "no data" outcomes while the apex shows blocked.
         # Used by the PDF / HTML to render per-card disclaimers.
@@ -1206,6 +1218,9 @@ class SecurityScanner:
                 issues = cresult.get("issues") or []
                 if not issues:
                     affected.append(cname)
+            # Fold in explicitly-truncated checkers (missed by the empty-issues
+            # heuristic when they emit a benign 'nothing found' line).
+            affected = sorted(set(affected) | set(truncated))
             results["_scan_completeness"]["waf_affected_checkers"] = affected
             # Coverage estimate: assessable - affected / assessable.
             # Fallback derives from the authoritative WEIGHTS count (the

@@ -29,6 +29,10 @@ gunicorn>=21.2.0
 # Postgres driver (WS1 — used when DATABASE_URL is set)
 psycopg2-binary>=2.9.0
 
+# Redis client (WS5a/WS6/WS8 — imported by redis_support.py only when REDIS_URL
+# is set; pinned so activating Redis on the VM doesn't ModuleNotFoundError).
+redis>=5.0.0
+
 # Prometheus metrics (WS9 observability — hard import in observability.py).
 # OpenTelemetry tracing is optional (guarded); add opentelemetry-* to enable it.
 prometheus_client>=0.20.0

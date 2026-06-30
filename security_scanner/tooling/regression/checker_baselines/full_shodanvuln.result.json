@@ -4,7 +4,7 @@
   "critical_count": 1,
   "cves": [
     {
-      "age_days": 1661,
+      "age_days": 1663,
       "attack_groups": [
         "APT41",
         "Lazarus",
@@ -46,7 +46,7 @@
     "1 CVE(s) are easily exploitable (network accessible, low complexity, no authentication required)",
     "1 CVE(s) are widely exploited (EPSS > 40%) \u2014 mass exploitation campaigns likely",
     "1 CVE(s) associated with known ransomware/malware: LockBit (Log4Shell)",
-    "PATCH MANAGEMENT: Oldest unpatched vulnerability is 1661 days old \u2014 indicates significant patch management deficiency",
+    "PATCH MANAGEMENT: Oldest unpatched vulnerability is 1663 days old \u2014 indicates significant patch management deficiency",
     "CRITICAL: 1 critical CVE(s) found on this IP \u2014 patch immediately"
   ],
   "kev_count": 1,
@@ -61,8 +61,8 @@
   "os": null,
   "patch_management": {
     "90_to_180_days": 0,
-    "average_age_days": 1661,
-    "oldest_unpatched_days": 1661,
+    "average_age_days": 1663,
+    "oldest_unpatched_days": 1663,
     "over_180_days": 1,
     "total_cves_aged": 1,
     "under_90_days": 0

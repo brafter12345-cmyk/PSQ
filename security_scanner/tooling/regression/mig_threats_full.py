@@ -106,6 +106,15 @@ def _cases():
     }
 
 
+# Frozen "now" for the gate so CVE-age derived fields (age_days,
+# patch_management.*_age_days, and the "X days old" issue string) are
+# deterministic across runs. Without this, ShodanVulnChecker computes
+# `datetime.utcnow() - published` (checkers_threats.py ~L844), which ticks +1/day
+# and produces a spurious gate failure the day after the baseline was frozen.
+# Both --record and verify run under this clock, so the age stays constant.
+_FROZEN_NOW = (2026, 6, 30)
+
+
 def _with_stubs(fn):
     import requests.sessions as S
     try:
@@ -113,12 +122,25 @@ def _with_stubs(fn):
         orig_resolve = dns.resolver.resolve
     except Exception:
         dns, orig_resolve = None, None
+    import datetime as _dtmod
+    orig_dt = _dtmod.datetime
+
+    class _FrozenDateTime(orig_dt):
+        @classmethod
+        def utcnow(cls):
+            return cls(*_FROZEN_NOW)
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls(*_FROZEN_NOW, tzinfo=tz) if tz else cls(*_FROZEN_NOW)
+
     orig_req, orig_sleep = S.Session.request, time.sleep
     orig_gai, orig_ghn = socket.getaddrinfo, socket.gethostbyname
     S.Session.request = _fake
     time.sleep = lambda *a, **k: None
     socket.getaddrinfo = lambda *a, **k: [(2, 1, 6, "", ("203.0.113.4", 0))]
     socket.gethostbyname = lambda *a, **k: "203.0.113.4"
+    _dtmod.datetime = _FrozenDateTime
     if orig_resolve is not None:
         dns.resolver.resolve = lambda *a, **k: []
     _reset_caches()
@@ -129,6 +151,7 @@ def _with_stubs(fn):
         time.sleep = orig_sleep
         socket.getaddrinfo = orig_gai
         socket.gethostbyname = orig_ghn
+        _dtmod.datetime = orig_dt
         if orig_resolve is not None:
             dns.resolver.resolve = orig_resolve
 

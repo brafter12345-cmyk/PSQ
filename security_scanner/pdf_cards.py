@@ -486,6 +486,26 @@ def cat_cloud(d, S):
     return parts
 
 
+def waf_truncation_note(cresult, S):
+    """Inline 'partial coverage' note for a card whose checker EARLY-EXITED
+    because the target's WAF / bot-manager hard-blocked path probing (the checker
+    set `waf_truncated`). Without it the card's benign 'nothing detected' verdict
+    reads as confirmed-clean when the check was actually cut short. Returns []
+    when the checker ran to completion, so callers can unconditionally do
+    `parts += waf_truncation_note(cresult, S)`."""
+    if not (isinstance(cresult, dict) and cresult.get("waf_truncated")):
+        return []
+    return [
+        Paragraph(
+            "<i><font color='#92400e'><b>Partial coverage — not fully "
+            "assessed.</b></font> The target's WAF / bot-management hard-blocked path "
+            "probing, so this check stopped before all paths were tested. Treat a "
+            "“nothing found” result here as unverified, not as confirmed "
+            "clean.</i>", S["body"]),
+        Spacer(1, 2 * mm),
+    ]
+
+
 def cat_vpn(d, S):
     vpn = d.get("vpn_remote", {})
     col = C_CRITICAL if vpn.get("rdp_exposed") else (C_GREEN if vpn.get("vpn_detected") else C_AMBER)
@@ -497,6 +517,7 @@ def cat_vpn(d, S):
     parts = build_cat_card("VPN & Remote Access", col,
                           "RDP EXPOSED" if vpn.get("rdp_exposed") else (vpn.get("vpn_name") or "None detected"),
                           rows, vpn.get("issues", []), S, fallback=fb)
+    parts += waf_truncation_note(vpn, S)
 
     parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
     parts.append(Spacer(1, 1 * mm))
@@ -941,6 +962,7 @@ def cat_payment(d, S):
     parts = build_cat_card("Payment Security (PCI)", col,
                           pay.get("payment_provider") or ("PCI Risk" if pay.get("self_hosted_payment_form") else "N/A"),
                           rows, pay.get("issues", []), S, fallback=fb)
+    parts += waf_truncation_note(pay, S)
 
     parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
     parts.append(Spacer(1, 1 * mm))
@@ -1659,6 +1681,7 @@ def cat_info_disclosure(d, S):
     fb = f"{len(exposed)} sensitive path(s) exposed — internal files or configuration may be accessible to attackers." if exposed else "No sensitive files or configuration paths are publicly accessible."
     parts = build_cat_card("Information Disclosure", col, f"{score}%",
                           rows, info.get("issues", []), S, fallback=fb)
+    parts += waf_truncation_note(info, S)
 
     parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
     parts.append(Spacer(1, 1 * mm))

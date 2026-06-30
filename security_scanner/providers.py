@@ -4,23 +4,31 @@ One `ProviderClient` per external provider, so every paid/quota'd call routes
 through a single controllable seam instead of a bare `requests.*`. Checkers import
 the client they need (`from providers import SHODAN`) and call `SHODAN.get(...)`.
 
-WS0 stance — *transparent routing, behaviour-preserving*:
-  * **No added retry** (`max_attempts=1`) — checkers that already own a retry loop
-    (crt.sh, OSV polling, IntelX polling) keep their exact semantics; checkers with
-    none don't suddenly gain extra outbound calls. WS7 turns retry on later by
-    raising `max_attempts` here — one edit, no checker touched.
-  * **Breaker effectively disabled** (`failure_threshold` enormous) — no mid-scan
-    trip changes results today; WS7 lowers it to enable the degrade-don't-fail path.
-  * **Gentle per-provider bucket** — pacing only (adds delay, never changes a
-    result or which calls are made), the machinery WS5a tightens into real quota
-    enforcement and swaps for the distributed (Redis) bucket.
-  * **Cache + metering slots empty** — WS6b result cache and WS5b usage ledger plug
-    in here later without touching a single call site.
+Current stance — *seam established, resilience + metering ON* (WS0 routing with
+WS6b/WS7/WS9 now activated; see `_client` below). NOTE: only the success path is
+covered by the record/replay regression gates — the failure-path behaviour below is
+live but exercised by the non-200 cassettes added under tooling/regression:
+  * **Retry ON** (`max_attempts=3`, exp backoff + jitter) for transient failures.
+    Checkers that own an outer retry loop (crt.sh, OSV / IntelX polling) keep their
+    own semantics; the success path is unchanged (a healthy first-try 2xx never
+    retries), which is why the migration gates stay green.
+  * **Circuit breaker ON** (`failure_threshold=5`) — after sustained failure a
+    provider returns `None` with no network call, so the scan degrades (checker
+    marked skipped, scoring redistributes) instead of stalling. A breaker can trip
+    mid-loop (e.g. per-CVE NVD enrichment), zeroing the remaining enrichment.
+  * **Usage ledger ON** — per-provider daily caps + a retry budget bound an outage
+    so it can't retry-storm into rate limits or paid cost. In-process today; the
+    distributed (Redis counters mirrored to a Postgres `usage` table) version swaps
+    in via the same interface.
+  * **Result cache slot** — `make_result_cache()`: Redis single-flight when
+    `REDIS_URL` is set, no-op single-box by default (keeps the gates deterministic).
+  * **Per-provider pacing bucket** — politeness only; WS5a tightens it into the
+    distributed quota bucket.
 
 `ProviderClient.request` returns a `requests.Response` (incl. terminal 4xx/5xx,
-which the caller still inspects) or `None` when the single attempt raised
-(connection error / timeout) — i.e. exactly the cases the old `try/except` around
-`requests.*` handled. Migrated call sites map `None` to their existing failure path.
+which the caller still inspects) or `None` when all attempts fail / the breaker is
+open — i.e. exactly the cases the old `try/except` around `requests.*` handled.
+Migrated call sites map `None` to their existing failure path.
 """
 from __future__ import annotations
 

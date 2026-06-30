@@ -747,7 +747,7 @@ export function getPeerSummary(r: Results | null): PeerSummary {
     industry: (p?.industry as string) || 'Other',
     subIndustry: (p?.sub_industry as string) || 'Unknown',
     revenueBand: (p?.revenue_band_display as string) || 'Unknown',
-    rating: typeof p?.rating === 'number' ? (p.rating as number) : null,
+    rating: typeof p?.peer_rating === 'number' ? (p.peer_rating as number) : null,
     percentile: typeof p?.percentile === 'number' ? (p.percentile as number) : null,
   }
 }

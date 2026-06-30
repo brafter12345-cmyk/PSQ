@@ -13,10 +13,12 @@ hardening so it cannot silently regress:
   3. Rate limiter    — _RateLimiter fixed window allows N then blocks
   4. Stale pending   — pending scan older than STALE_PENDING_S flips to
                        failed on poll; fresh pending stays 202
-  5. Queue timeout   — run_scan fails visibly (DB + SSE error event)
-                       when no semaphore slot frees within
+  5. Queue timeout   — run_scan fails visibly (DB failed + error event on
+                       the progress bus) when no semaphore slot frees within
                        SCAN_QUEUE_TIMEOUT_S, instead of queueing forever
-  6. SSE TTL sweep   — orphaned progress queues are dropped after TTL
+  6. Progress bus +  — WS8 progress bus stores/closes a scan's events, and
+     queue admission   the WS2 job queue rejects with 429 when full (these
+                       replaced the old in-memory _scan_progress dict + sweep)
   7. Schema version  — scanner stamps RESULTS_SCHEMA_VERSION
 
 Credit-free and network-free: run_scan is monkeypatched to a no-op for
@@ -145,29 +147,42 @@ def main():
         orig_run_scan("queue-timeout-id", "example.com")
         elapsed = time.time() - t0
         row = A.fetch_scan("queue-timeout-id")
-        q = A._scan_progress.get("queue-timeout-id")
-        evt = q.get_nowait() if q and not q.empty() else {}
+        # WS8: progress now flows through the progress bus, not the old
+        # in-memory _scan_progress dict — read the error event from there.
+        events = A.get_progress_bus().recent("queue-timeout-id")
+        emitted_error = any(isinstance(e, dict) and e.get("type") == "error" for e in events)
         check("queued scan fails visibly on slot timeout",
               row["status"] == "failed" and elapsed < 10,
               f"db_status={row['status']} elapsed={elapsed:.1f}s")
-        check("queue timeout emits SSE error event",
-              evt.get("type") == "error", f"event={evt}")
+        check("queue timeout publishes an error event to the progress bus",
+              emitted_error, f"events={events}")
     finally:
         A.SCAN_QUEUE_TIMEOUT_S = orig_timeout
         for _ in range(held):
             A._semaphore.release()
         A.run_scan = lambda *a, **k: None
 
-    # --- 6. SSE TTL sweep -------------------------------------------------
-    import queue as _q
-    A._scan_progress["orphan-id"] = _q.Queue()
-    A._scan_progress_created["orphan-id"] = time.time() - A._SSE_QUEUE_TTL_S - 60
-    A._scan_progress["live-id"] = _q.Queue()
-    A._scan_progress_created["live-id"] = time.time()
-    A._sweep_progress_queues()
-    check("orphaned SSE queue swept after TTL",
-          "orphan-id" not in A._scan_progress)
-    check("live SSE queue survives sweep", "live-id" in A._scan_progress)
+    # --- 6. Progress bus + job-queue admission ----------------------------
+    # WS8/WS2 replaced the old in-memory _scan_progress dict (+ its TTL sweep)
+    # with the progress bus and a bounded job queue. Verify the replacement
+    # mechanisms that now carry the same guarantees.
+    bus = A.get_progress_bus()
+    bus.publish("bus-smoke-id", {"type": "running"})
+    has_event = any(e.get("type") == "running" for e in bus.recent("bus-smoke-id"))
+    bus.close("bus-smoke-id")
+    check("progress bus stores then closes a scan's events",
+          has_event and bus.recent("bus-smoke-id") == [])
+
+    # Submit-time admission control: when the queue rejects (full), POST
+    # /api/scan returns 429 instead of unbounded scan pile-up.
+    orig_enqueue = A.SCAN_QUEUE.enqueue
+    A.SCAN_QUEUE.enqueue = lambda *a, **k: False
+    try:
+        r_full = client.post("/api/scan", json={"domain": "example.com"})
+        check("scan rejected with 429 when job queue full",
+              r_full.status_code == 429, f"status={r_full.status_code}")
+    finally:
+        A.SCAN_QUEUE.enqueue = orig_enqueue
 
     # --- 7. Results schema version ----------------------------------------
     from scanner import RESULTS_SCHEMA_VERSION
