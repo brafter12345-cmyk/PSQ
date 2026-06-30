@@ -44,7 +44,7 @@ export default function FinancialExposure({ r }: { r: Results }) {
             <div><dt>Potential saving</dt><dd style={{ color: 'var(--positive)' }}>{fmtZar(saving)}</dd></div>
             <div><dt>Reduction</dt><dd>{reduction != null ? fmtPct(reduction) : '—'}</dd></div>
             <div><dt>Premium tier</dt><dd>{fin.premiumTier ?? '—'}</dd></div>
-            <div><dt>Recommended cover</dt><dd>{fmtZar(fin.recommendedCover)}</dd></div>
+            <div><dt>Catastrophe (1-in-250)</dt><dd>{fmtZar(fin.catastropheExposure)}</dd></div>
           </dl>
         </div>
 

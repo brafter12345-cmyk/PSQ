@@ -177,7 +177,7 @@ export interface FinancialSummary {
   expectedAnnualLoss: number | null
   loss: { min: number | null; likely: number | null; max: number | null }
   premiumTier: string | null
-  recommendedCover: number | null
+  catastropheExposure: number | null
   scenarios: ScenarioRow[]
   composition: CompositionRow[]
 }
@@ -206,6 +206,14 @@ export function getFinancialSummary(r: Results | null): FinancialSummary {
   const composition: CompositionRow[] = scenarios.map((s) => ({
     ...s, share: s.loss / compTotal,
   }))
+  // Catastrophe (1-in-250 / P99.6 severity) from the cover ladder. Replaces the
+  // deprecated P95x1.2 "recommended cover" (retired SCN-019; FAIS: Phishield does
+  // not recommend a specific cover amount). Posture-independent single-severe-event
+  // severity — the cover-sizing ceiling the broker reads alongside the ladder.
+  const fiAny = fi as Record<string, unknown> | undefined
+  const cl = fiAny?.cover_ladder as Record<string, { loss_zar?: number }> | undefined
+  const rp = fiAny?.return_periods as Record<string, { loss_zar?: number }> | undefined
+  const catastrophe = cl?.catastrophic?.loss_zar ?? rp?.['1_in_250']?.loss_zar ?? null
   return {
     available: likely != null,
     currency: fi?.currency ?? 'ZAR',
@@ -216,8 +224,7 @@ export function getFinancialSummary(r: Results | null): FinancialSummary {
       max: total.max ?? eal?.maximum ?? null,
     },
     premiumTier: fi?.insurance_recommendation?.premium_risk_tier ?? null,
-    recommendedCover: fi?.insurance_recommendation?.recommended_cover_zar
-      ?? fi?.insurance_recommendations?.recommended_coverage ?? null,
+    catastropheExposure: typeof catastrophe === 'number' ? catastrophe : null,
     scenarios,
     composition,
   }

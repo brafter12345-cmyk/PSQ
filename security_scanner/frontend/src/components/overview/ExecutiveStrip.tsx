@@ -97,7 +97,7 @@ export default function ExecutiveStrip({ r }: { r: Results }) {
             </div>
             <dl className={styles.finStats}>
               <div><dt>Premium tier</dt><dd>{fin.premiumTier ?? '—'}</dd></div>
-              <div><dt>Recommended cover</dt><dd>{fmtZar(fin.recommendedCover)}</dd></div>
+              <div><dt>Catastrophe (1-in-250)</dt><dd>{fmtZar(fin.catastropheExposure)}</dd></div>
               <div><dt>Loss scenarios</dt><dd>{fin.scenarios.length ? `${fin.scenarios.length} modelled` : '—'}</dd></div>
               <div><dt>Top scenario</dt><dd>{fin.scenarios[0] ? `${fin.scenarios[0].label} · ${fmtZar(fin.scenarios[0].loss)}` : '—'}</dd></div>
             </dl>
