@@ -171,6 +171,21 @@ export function getDbiSummary(r: Results | null): DbiSummary {
 
 export interface ScenarioRow { key: string; label: string; loss: number }
 export interface CompositionRow { key: string; label: string; loss: number; share: number }
+/** Monte Carlo aggregate distribution for the modelled annual-loss range. */
+export interface MonteCarloSummary {
+  available: boolean
+  iterations: number | null
+  /** percentiles: p5 (low band) → p99_6 (1-in-250 tail) */
+  p5: number | null
+  p25: number | null
+  p50: number | null
+  mean: number | null
+  p75: number | null
+  p95: number | null
+  p99_6: number | null
+  ci90: { lower: number; upper: number } | null
+  ci50: { lower: number; upper: number } | null
+}
 export interface FinancialSummary {
   available: boolean
   currency: string
@@ -180,6 +195,7 @@ export interface FinancialSummary {
   catastropheExposure: number | null
   scenarios: ScenarioRow[]
   composition: CompositionRow[]
+  monteCarlo: MonteCarloSummary
 }
 
 const SCENARIO_LABELS: Record<string, string> = {
@@ -190,22 +206,49 @@ const SCENARIO_LABELS: Record<string, string> = {
   detection: 'Detection & escalation',
 }
 
+const EMPTY_MC: MonteCarloSummary = {
+  available: false, iterations: null,
+  p5: null, p25: null, p50: null, mean: null, p75: null, p95: null, p99_6: null,
+  ci90: null, ci50: null,
+}
+
 export function getFinancialSummary(r: Results | null): FinancialSummary {
   const fi = r?.insurance?.financial_impact
   const total = fi?.total ?? {}
   const eal = fi?.estimated_annual_loss
   const likely = total.most_likely ?? eal?.most_likely ?? null
-  const scenarios: ScenarioRow[] = Object.entries(fi?.scenarios ?? {})
+  // Loss scenarios — prefer the 4-category decomposition (Data Breach,
+  // Detection & Escalation, Ransom Demand, Business Interruption) the current
+  // scanner emits; fall back to the legacy 3-scenario block on older scans.
+  const sc4 = fi?.scenarios_4cat
+  const scenarioSource = (sc4 && Object.keys(sc4).length ? sc4 : fi?.scenarios) ?? {}
+  const scenarios: ScenarioRow[] = Object.entries(scenarioSource as Record<string, Record<string, unknown>>)
     .map(([key, v]) => ({
       key,
-      label: SCENARIO_LABELS[key] ?? key.replace(/_/g, ' '),
-      loss: (v as Record<string, number>).estimated_loss ?? 0,
+      label: (typeof v.label === 'string' && v.label) || SCENARIO_LABELS[key] || key.replace(/_/g, ' '),
+      loss: typeof v.estimated_loss === 'number' ? v.estimated_loss : 0,
     }))
     .sort((a, b) => b.loss - a.loss)
   const compTotal = scenarios.reduce((n, s) => n + s.loss, 0) || 1
   const composition: CompositionRow[] = scenarios.map((s) => ({
     ...s, share: s.loss / compTotal,
   }))
+  // Monte Carlo aggregate distribution — drives the modelled-loss-range visual.
+  const mc = fi?.monte_carlo
+  const mcT = (mc?.total ?? {}) as Record<string, number>
+  const ciVal = (c?: { lower?: number; upper?: number }) =>
+    c && typeof c.lower === 'number' && typeof c.upper === 'number' ? { lower: c.lower, upper: c.upper } : null
+  const monteCarlo: MonteCarloSummary = typeof mcT.p50 === 'number'
+    ? {
+        available: true,
+        iterations: typeof mc?.iterations === 'number' ? mc.iterations : null,
+        p5: mcT.p5 ?? null, p25: mcT.p25 ?? null, p50: mcT.p50 ?? null,
+        mean: mcT.mean ?? null, p75: mcT.p75 ?? null, p95: mcT.p95 ?? null,
+        p99_6: mcT.p99_6 ?? null,
+        ci90: ciVal(mc?.confidence_interval_90),
+        ci50: ciVal(mc?.confidence_interval_50),
+      }
+    : EMPTY_MC
   // Catastrophe (1-in-250 / P99.6 severity) from the cover ladder. Replaces the
   // deprecated P95x1.2 "recommended cover" (retired SCN-019; FAIS: Phishield does
   // not recommend a specific cover amount). Posture-independent single-severe-event
@@ -227,6 +270,7 @@ export function getFinancialSummary(r: Results | null): FinancialSummary {
     catastropheExposure: typeof catastrophe === 'number' ? catastrophe : null,
     scenarios,
     composition,
+    monteCarlo,
   }
 }
 
@@ -941,6 +985,21 @@ export interface VulnRecord {
   kev: boolean
   published: string | null
   source: string
+  // Rich detail surfaced in the per-CVE drill-down. Present on Shodan/InternetDB
+  // (NVD-enriched) records; absent/null on OSV package vulns.
+  description?: string | null
+  vector?: string | null
+  exploitMaturity?: string | null
+  ransomware?: string | null
+  mitreTechnique?: string | null
+  mitreTechniqueName?: string | null
+  mitreGroups?: string[]
+  epssPercentile?: number | null
+  ageDays?: number | null
+  hasPatch?: boolean | null
+  easilyExploitable?: boolean
+  widelyExploited?: boolean
+  zeroDay?: boolean
 }
 
 export function getVulnerabilityList(r: Results | null): VulnRecord[] {
@@ -971,6 +1030,7 @@ export function getVulnerabilityList(r: Results | null): VulnRecord[] {
       source: (v.source as string) ?? 'osv.dev',
     })
   }
+  const str = (v: unknown): string | null => (typeof v === 'string' && v ? v : null)
   for (const v of (cat(r, 'shodan_vulns')?.cves as Array<Record<string, unknown>> | undefined) ?? []) {
     push({
       id: String(v.cve_id ?? '—'),
@@ -983,6 +1043,19 @@ export function getVulnerabilityList(r: Results | null): VulnRecord[] {
       kev: !!v.kev || !!v.in_kev,
       published: (v.published as string) ?? null,
       source: 'internetdb',
+      description: str(v.description),
+      vector: str(v.vector),
+      exploitMaturity: str(v.exploit_maturity),
+      ransomware: str(v.ransomware_association),
+      mitreTechnique: str(v.attack_technique),
+      mitreTechniqueName: str(v.attack_technique_name),
+      mitreGroups: Array.isArray(v.attack_groups) ? (v.attack_groups as string[]) : [],
+      epssPercentile: typeof v.epss_percentile === 'number' ? v.epss_percentile : null,
+      ageDays: typeof v.age_days === 'number' ? v.age_days : null,
+      hasPatch: typeof v.has_patch === 'boolean' ? v.has_patch : null,
+      easilyExploitable: !!v.easily_exploitable,
+      widelyExploited: !!v.widely_exploited,
+      zeroDay: !!v.zero_day,
     })
   }
   // critical/high first, then by cvss desc, unknown sorts to the middle (not last)

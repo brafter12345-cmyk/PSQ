@@ -1,7 +1,7 @@
 .cur { font-size: 11px; font-weight: 600; color: var(--text-muted); }
 .grid {
   display: grid;
-  grid-template-columns: 150px minmax(320px, 1.6fr) minmax(240px, 1fr);
+  grid-template-columns: 184px minmax(320px, 1.6fr) minmax(240px, 1fr);
   gap: 20px;
 }
 
@@ -11,9 +11,9 @@
 .sBig { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .sMid { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .sStats { display: flex; flex-direction: column; gap: 7px; margin: 4px 0 0; }
-.sStats div { display: flex; justify-content: space-between; gap: 8px; }
-.sStats dt { font-size: 11px; color: var(--text-muted); }
-.sStats dd { font-size: 12px; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.sStats div { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.sStats dt { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+.sStats dd { font-size: 12px; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 .distHead { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 14px; }
 .dist { display: flex; flex-direction: column; }
@@ -30,6 +30,26 @@
 .rangeMid b { color: var(--text-primary); }
 .rangeRight { align-items: flex-end; }
 .disclaimer { font-size: 10.5px; color: var(--text-muted); line-height: 1.45; margin-top: 16px; max-width: 60ch; }
+
+/* Monte Carlo probability-interval distribution */
+.mc { margin-top: 4px; }
+.mcTrack { position: relative; height: 26px; border-radius: 7px; background: var(--border); margin: 26px 0 10px; overflow: visible; }
+.mcBand90 { position: absolute; top: 0; bottom: 0; border-radius: 6px; background: color-mix(in srgb, var(--warning) 26%, transparent); border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent); }
+.mcBand50 { position: absolute; top: 0; bottom: 0; border-radius: 5px; background: linear-gradient(90deg, color-mix(in srgb, var(--high) 55%, transparent), color-mix(in srgb, var(--critical) 60%, transparent)); }
+.mcMean { position: absolute; top: -3px; bottom: -3px; width: 0; border-left: 2px dashed var(--text-muted); transform: translateX(-50%); }
+.mcMedian { position: absolute; top: -6px; bottom: -6px; width: 3px; border-radius: 2px; background: var(--text-primary); transform: translateX(-50%); box-shadow: 0 0 0 3px var(--panel-bg); }
+.mcScale { display: flex; justify-content: space-between; gap: 6px; }
+.mcScale span { display: flex; flex-direction: column; }
+.mcScale b { font-size: 12.5px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mcScale i { font-size: 9.5px; font-style: normal; color: var(--text-muted); white-space: nowrap; }
+.mcScaleMid { align-items: center; text-align: center; }
+.mcScaleEnd { align-items: flex-end; text-align: right; }
+.mcLegend { display: flex; flex-wrap: wrap; gap: 5px 14px; margin-top: 12px; }
+.mcLegend span { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-secondary); }
+.mcLegend i { width: 12px; height: 9px; border-radius: 2px; }
+.lg50 { background: var(--critical); }
+.lg90 { background: color-mix(in srgb, var(--warning) 45%, transparent); border: 1px solid color-mix(in srgb, var(--warning) 55%, transparent); }
+.lgMed { width: 3px !important; height: 12px !important; border-radius: 1px; background: var(--text-primary); }
 
 .right { display: flex; flex-direction: column; border-left: 1px solid var(--border); padding-left: 18px; }
 .ladder { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; }

@@ -86,6 +86,19 @@ export interface FinancialImpact {
   score?: number
   estimated_annual_loss?: { minimum?: number; most_likely?: number; maximum?: number }
   scenarios?: Record<string, Record<string, number>>
+  // 4-category loss decomposition (Data Breach / Detection & Escalation /
+  // Ransom Demand / Business Interruption). Each carries a display label and
+  // estimated_loss; current scans emit this alongside the legacy `scenarios`.
+  scenarios_4cat?: Record<string, { label?: string; estimated_loss?: number; note?: string; components?: string; [k: string]: unknown }>
+  // Monte Carlo aggregate distribution + confidence intervals.
+  monte_carlo?: {
+    iterations?: number
+    method?: string
+    total?: Record<string, number>
+    confidence_interval_90?: { lower?: number; upper?: number }
+    confidence_interval_50?: { lower?: number; upper?: number }
+    [k: string]: unknown
+  }
   insurance_recommendation?: {
     minimum_cover_zar?: number
     recommended_cover_zar?: number

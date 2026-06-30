@@ -46,16 +46,16 @@
 }
 .dbiSeg > span { display: block; width: 100%; border-radius: 3px; }
 
-.finGrid { display: grid; grid-template-columns: 1fr 1.1fr; gap: 14px; height: 100%; align-items: center; }
+.finGrid { display: grid; grid-template-columns: 0.85fr 1.25fr; gap: 14px; height: 100%; align-items: center; }
 .finPrimary { display: flex; flex-direction: column; gap: 3px; }
 .finLabel { font-size: 11px; color: var(--text-muted); }
 .finBig { font-size: 27px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; line-height: 1.05; }
 .finRange { font-size: 11px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 
-.finStats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; margin: 0; }
+.finStats { display: grid; grid-template-columns: 1fr; gap: 6px; margin: 0; }
 .finStats div { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.finStats dt { font-size: 10.5px; color: var(--text-muted); }
-.finStats dd { font-size: 12.5px; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.finStats dt { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; }
+.finStats dd { font-size: 12.5px; font-weight: 600; color: var(--text-primary); font-variant-numeric: tabular-nums; line-height: 1.25; }
 
 .tip { position: relative; display: inline-flex; color: var(--text-muted); cursor: help; }
 .tip:hover .tipBody, .tip:focus .tipBody { opacity: 1; visibility: visible; }

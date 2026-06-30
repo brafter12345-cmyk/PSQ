@@ -30,11 +30,12 @@ export function getScanMeta(): ScanMeta {
 
 const ZAR = new Intl.NumberFormat('en-ZA', { maximumFractionDigits: 0 })
 
-/** Rand value, compacted for large magnitudes (R 1.2M, R 493k). */
+/** Rand value, compacted for large magnitudes (R 2.1bn, R 1.2M, R 493k). */
 export function fmtZar(value: number | null | undefined, opts: { compact?: boolean } = {}): string {
   if (value == null || Number.isNaN(value)) return '—'
   const compact = opts.compact ?? true
   const abs = Math.abs(value)
+  if (compact && abs >= 1_000_000_000) return `R ${(value / 1_000_000_000).toFixed(1)}bn`
   if (compact && abs >= 1_000_000) return `R ${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`
   if (compact && abs >= 10_000) return `R ${Math.round(value / 1000)}k`
   return `R ${ZAR.format(Math.round(value))}`

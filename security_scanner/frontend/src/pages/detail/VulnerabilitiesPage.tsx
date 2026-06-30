@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Panel from '../../components/primitives/Panel'
 import { SeverityBadge } from '../../components/primitives/Status'
 import EvidenceTable, { type Column } from '../../components/detail/EvidenceTable'
+import EvidenceDrawer, { type DrawerTarget } from '../../components/drawer/EvidenceDrawer'
 import { PageTitle, StatGrid } from '../../components/detail/parts'
 import { fmtDate } from '../../data/results'
 import { getResults } from '../../data/results'
@@ -20,6 +21,7 @@ export default function VulnerabilitiesPage({ r = getResults()! }: { r?: Results
   const all = getVulnerabilityList(r)
   const sum = getVulnerabilitySummary(r)
   const [filter, setFilter] = useState('all')
+  const [drawer, setDrawer] = useState<DrawerTarget | null>(null)
   const rows = all.filter(FILTERS.find((f) => f.key === filter)!.test)
 
   const unknownSev = all.filter((v) => v.severity === 'unknown').length
@@ -39,6 +41,7 @@ export default function VulnerabilitiesPage({ r = getResults()! }: { r?: Results
     { key: 'pub', header: 'Published', align: 'right', render: (v) => v.published ? fmtDate(v.published) : <span className={styles.dash}>—</span> },
     { key: 'src', header: 'Source', render: (v) => <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{v.source}</span> },
     { key: 'status', header: 'Status', render: (v) => <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{v.severity === 'unknown' || v.cvss == null ? 'Needs validation' : 'Open'}</span> },
+    { key: 'detail', header: '', align: 'right', render: () => <span style={{ fontSize: 11, color: 'var(--accent-bright)', fontWeight: 600 }}>Detail ›</span> },
   ]
 
   return (
@@ -75,8 +78,11 @@ export default function VulnerabilitiesPage({ r = getResults()! }: { r?: Results
         flush
       >
         <EvidenceTable columns={columns} rows={rows} getKey={(v, i) => `${v.id}-${i}`}
-          empty="No vulnerability records for this scan." />
+          empty="No vulnerability records for this scan."
+          onRowClick={(v) => setDrawer({ kind: 'cve', cve: v })} />
       </Panel>
+
+      <EvidenceDrawer target={drawer} onClose={() => setDrawer(null)} />
     </div>
   )
 }

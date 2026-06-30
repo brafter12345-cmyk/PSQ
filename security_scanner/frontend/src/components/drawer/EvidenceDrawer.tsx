@@ -1,14 +1,23 @@
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
 import { createPortal } from 'react-dom'
-import { getResults, fmtDateTime } from '../../data/results'
+import { getResults, fmtDateTime, fmtDate } from '../../data/results'
 import { cat, CATEGORY_LABELS, getCoverageSummary } from '../../data/selectors'
+import type { VulnRecord } from '../../data/selectors'
 import { normalizeState, isConclusive, inconclusiveLabel } from '../../data/checkerState'
-import { StatusBadge } from '../primitives/Status'
+import { StatusBadge, SeverityBadge } from '../primitives/Status'
 import styles from './EvidenceDrawer.module.css'
 
-export interface DrawerTarget { kind: 'category' | 'coverage'; id: string }
+export type DrawerTarget =
+  | { kind: 'category' | 'coverage'; id: string }
+  | { kind: 'cve'; cve: VulnRecord }
 type Tab = 'overview' | 'evidence' | 'technical'
+
+const MATURITY_LABEL: Record<string, string> = {
+  weaponized: 'Weaponized — public exploit code in active use',
+  poc_public: 'PoC public — proof-of-concept exploit available',
+  theoretical: 'Theoretical — no known public exploit',
+}
 
 // Plain-language business meaning per checker (spec §26 "business meaning").
 const MEANING: Record<string, string> = {
@@ -101,6 +110,46 @@ function CategoryBody({ id, tab }: { id: string; tab: Tab }) {
   )
 }
 
+function CveBody({ v, tab }: { v: VulnRecord; tab: Tab }) {
+  if (tab === 'technical') {
+    return <pre className={styles.raw}>{JSON.stringify(v, null, 2)}</pre>
+  }
+  const pct = (n: number | null | undefined) => (typeof n === 'number' ? `${(n * 100).toFixed(1)}%` : '—')
+  const rows: Array<[string, unknown]> = [
+    ['Severity', v.severity === 'unknown' ? 'Unknown' : v.severity],
+    ['CVSS base score', v.cvss != null ? v.cvss.toFixed(1) : 'unscored'],
+    ['CVSS vector', v.vector || '—'],
+    ['EPSS (exploit probability)', v.epss != null ? `${pct(v.epss)}${v.epssPercentile != null ? ` · ${pct(v.epssPercentile)} pctl` : ''}` : '—'],
+    ['Exploit maturity', v.exploitMaturity ? (MATURITY_LABEL[v.exploitMaturity] ?? v.exploitMaturity) : '—'],
+    ['CISA KEV', v.kev ? 'Yes — known exploited' : 'No'],
+    ['Ransomware association', v.ransomware || 'None recorded'],
+    ['MITRE ATT&CK', v.mitreTechnique ? `${v.mitreTechnique}${v.mitreTechniqueName ? ` · ${v.mitreTechniqueName}` : ''}` : '—'],
+    ['Threat groups', v.mitreGroups && v.mitreGroups.length ? v.mitreGroups.join(', ') : '—'],
+    ['Patch available', v.hasPatch == null ? '—' : v.hasPatch ? 'Yes' : 'No (unpatched)'],
+    ['Patch age', v.ageDays != null ? `${v.ageDays} days since disclosure` : '—'],
+    ['Published', v.published ? fmtDate(v.published) : '—'],
+    ['Package', v.pkg ? `${v.pkg}${v.version ? ` @ ${v.version}` : ''}` : '—'],
+    ['Source', v.source],
+  ]
+  const flags: string[] = []
+  if (v.zeroDay) flags.push('Zero-day / no patch')
+  if (v.easilyExploitable) flags.push('Easily exploitable (network · low complexity · no privileges)')
+  if (v.widelyExploited) flags.push('Widely exploited in the wild')
+  if (v.kev) flags.push('On the CISA Known Exploited Vulnerabilities catalog')
+  return (
+    <div className={styles.section}>
+      {v.description && <p className={styles.lead}>{v.description}</p>}
+      {flags.length > 0 && <div className={styles.warnBox}>{flags.join('  ·  ')}</div>}
+      <KVBlock rows={rows} />
+      {tab === 'overview' && (
+        <div className={styles.hint}>Switch to the Technical tab for the full structured record. Severity, EPSS,
+          KEV and exploit-maturity are correlated from NVD, FIRST EPSS, CISA KEV and exploit databases — theoretical
+          exposure from external fingerprints, not a confirmed live exploit.</div>
+      )}
+    </div>
+  )
+}
+
 export default function EvidenceDrawer({ target, onClose }: { target: DrawerTarget | null; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>('overview')
   useEffect(() => { setTab('overview') }, [target])
@@ -113,12 +162,15 @@ export default function EvidenceDrawer({ target, onClose }: { target: DrawerTarg
 
   if (!target) return null
   const r = getResults()
+  const cveRec = target.kind === 'cve' ? target.cve : null
   const isCoverage = target.kind === 'coverage'
-  const c = isCoverage ? undefined : cat(r, target.id)
-  const title = isCoverage ? 'WAF / Bot-Manager Intervention' : (CATEGORY_LABELS[target.id] ?? target.id.replace(/_/g, ' '))
+  const c = target.kind === 'category' ? cat(r, target.id) : undefined
+  const title = target.kind === 'cve' ? (target.cve.cve ?? target.cve.id)
+    : target.kind === 'coverage' ? 'WAF / Bot-Manager Intervention'
+    : (CATEGORY_LABELS[target.id] ?? target.id.replace(/_/g, ' '))
   const state = isCoverage ? 'blocked' : normalizeState(c?.status)
   const stateLabel = isCoverage ? 'Blocked' : (c && !isConclusive(c) ? inconclusiveLabel(c.status as string) : undefined)
-  const tabs: Tab[] = ['overview', 'evidence', 'technical']
+  const tabs: Tab[] = cveRec ? ['overview', 'technical'] : ['overview', 'evidence', 'technical']
 
   return createPortal(
     <div className={styles.overlay} onMouseDown={onClose}>
@@ -126,7 +178,11 @@ export default function EvidenceDrawer({ target, onClose }: { target: DrawerTarg
         <header className={styles.head}>
           <div className={styles.headMain}>
             <h2 className={styles.title}>{title}</h2>
-            <StatusBadge state={state} label={stateLabel} />
+            {cveRec
+              ? (cveRec.severity === 'unknown'
+                  ? <StatusBadge state="not_assessed" label="Unknown severity" />
+                  : <SeverityBadge severity={cveRec.severity} />)
+              : <StatusBadge state={state} label={stateLabel} />}
           </div>
           <button className={styles.close} onClick={onClose} aria-label="Close"><X size={18} /></button>
         </header>
@@ -139,10 +195,12 @@ export default function EvidenceDrawer({ target, onClose }: { target: DrawerTarg
           ))}
         </div>
         <div className={styles.scroll}>
-          {isCoverage ? <CoverageBody tab={tab} /> : <CategoryBody id={target.id} tab={tab} />}
+          {cveRec ? <CveBody v={cveRec} tab={tab} />
+            : isCoverage ? <CoverageBody tab={tab} />
+            : <CategoryBody id={(target as { id: string }).id} tab={tab} />}
         </div>
         <footer className={styles.foot}>
-          <span>Data source: external passive scan</span>
+          <span>{cveRec ? 'Source: NVD · FIRST EPSS · CISA KEV · exploit DBs' : 'Data source: external passive scan'}</span>
           <span>{fmtDateTime(r?.scan_timestamp)}</span>
         </footer>
       </aside>

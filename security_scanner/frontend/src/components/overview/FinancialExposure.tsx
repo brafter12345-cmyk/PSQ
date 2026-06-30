@@ -1,11 +1,53 @@
 import Panel from '../primitives/Panel'
 import EmptyState from '../primitives/EmptyState'
-import { fmtZar, fmtPct } from '../../data/results'
+import { fmtZar, fmtPct, fmtNum } from '../../data/results'
 import { getFinancialSummary } from '../../data/selectors'
+import type { MonteCarloSummary } from '../../data/selectors'
 import type { Results } from '../../types/results'
 import styles from './FinancialExposure.module.css'
 
 const COMP_COLORS = ['var(--critical)', 'var(--high)', 'var(--warning)', 'var(--info)', 'var(--accent)']
+
+/**
+ * Monte Carlo probability-interval visual: the coloured band shows where the
+ * modelled annual loss is likely to fall. Inner (darker) band = central 50% of
+ * outcomes, outer band = central 90%; the full track spans P5 → the 1-in-250
+ * tail (P99.6). The median marker sits on the most-likely outcome.
+ */
+function McDistribution({ mc }: { mc: MonteCarloSummary }) {
+  const lo = mc.p5 ?? 0
+  const hi = mc.p99_6 ?? mc.p95 ?? lo + 1
+  const span = Math.max(hi - lo, 1)
+  const at = (v: number | null) => `${Math.max(0, Math.min(100, (((v ?? lo) - lo) / span) * 100))}%`
+  const band = (a: number | null, b: number | null) => ({ left: at(a), right: `calc(100% - ${at(b)})` })
+  return (
+    <div className={styles.mc}>
+      <div className={styles.mcTrack}>
+        {mc.ci90 && (
+          <span className={styles.mcBand90} style={band(mc.ci90.lower, mc.ci90.upper)}
+            title={`90% of modelled outcomes: ${fmtZar(mc.ci90.lower)} – ${fmtZar(mc.ci90.upper)}`} />
+        )}
+        {mc.ci50 && (
+          <span className={styles.mcBand50} style={band(mc.ci50.lower, mc.ci50.upper)}
+            title={`50% of modelled outcomes: ${fmtZar(mc.ci50.lower)} – ${fmtZar(mc.ci50.upper)}`} />
+        )}
+        {mc.mean != null && <span className={styles.mcMean} style={{ left: at(mc.mean) }} title={`Mean ${fmtZar(mc.mean)}`} />}
+        <span className={styles.mcMedian} style={{ left: at(mc.p50) }} title={`Median (most likely) ${fmtZar(mc.p50)}`} />
+      </div>
+      <div className={styles.mcScale}>
+        <span><b>{fmtZar(mc.p5)}</b><i>P5 · low</i></span>
+        <span className={styles.mcScaleMid}><b>{fmtZar(mc.p50)}</b><i>Median</i></span>
+        <span className={styles.mcScaleMid}><b>{fmtZar(mc.p95)}</b><i>P95 · severe</i></span>
+        <span className={styles.mcScaleEnd}><b>{fmtZar(mc.p99_6)}</b><i>1-in-250</i></span>
+      </div>
+      <div className={styles.mcLegend}>
+        <span><i className={styles.lg50} />Central 50%</span>
+        <span><i className={styles.lg90} />Central 90%</span>
+        <span><i className={styles.lgMed} />Median{mc.iterations ? ` · ${fmtNum(mc.iterations)} simulations` : ''}</span>
+      </div>
+    </div>
+  )
+}
 
 export default function FinancialExposure({ r }: { r: Results }) {
   const fin = getFinancialSummary(r)
@@ -48,23 +90,29 @@ export default function FinancialExposure({ r }: { r: Results }) {
           </dl>
         </div>
 
-        {/* Middle — modelled loss range (honest; no fabricated distribution) */}
+        {/* Middle — Monte Carlo modelled-loss distribution (probability interval).
+            Falls back to a simple min/likely/max range on older scans that
+            carry no Monte Carlo block. */}
         <div className={styles.dist}>
           <div className={styles.distHead}>Modelled annual-loss range</div>
-          <div className={styles.rangeChart}>
-            <div className={styles.rangeBar}>
-              <span className={styles.rangeFill} style={{ left: pct(fin.loss.min), right: `calc(100% - ${pct(fin.loss.max)})` }} />
-              <span className={styles.rangeMarker} style={{ left: pct(current) }} title="Expected (most likely)" />
+          {fin.monteCarlo.available ? (
+            <McDistribution mc={fin.monteCarlo} />
+          ) : (
+            <div className={styles.rangeChart}>
+              <div className={styles.rangeBar}>
+                <span className={styles.rangeFill} style={{ left: pct(fin.loss.min), right: `calc(100% - ${pct(fin.loss.max)})` }} />
+                <span className={styles.rangeMarker} style={{ left: pct(current) }} title="Expected (most likely)" />
+              </div>
+              <div className={styles.rangeLabels}>
+                <span><b>{fmtZar(fin.loss.min)}</b><i>Low</i></span>
+                <span className={styles.rangeMid}><b>{fmtZar(current)}</b><i>Expected</i></span>
+                <span className={styles.rangeRight}><b>{fmtZar(fin.loss.max)}</b><i>High</i></span>
+              </div>
             </div>
-            <div className={styles.rangeLabels}>
-              <span><b>{fmtZar(fin.loss.min)}</b><i>Low</i></span>
-              <span className={styles.rangeMid}><b>{fmtZar(current)}</b><i>Expected</i></span>
-              <span className={styles.rangeRight}><b>{fmtZar(fin.loss.max)}</b><i>High</i></span>
-            </div>
-          </div>
+          )}
           <p className={styles.disclaimer}>
-            Range is derived from the assessment's loss model on externally observable exposure and
-            South African industry breach-cost data. Indicative only — not a guarantee of loss.
+            Distribution is derived from the assessment's Monte Carlo loss model on externally observable
+            exposure and South African industry breach-cost data. Indicative only — not a guarantee of loss.
           </p>
         </div>
 
