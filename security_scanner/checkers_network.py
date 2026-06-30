@@ -458,6 +458,54 @@ class VPNRemoteAccessChecker:
 
 
 # ---------------------------------------------------------------------------
+# Saturated-host (tarpit / firewall / load-balancer) detection.
+#
+# An IP that SYN-ACKs ports which are never legitimately open is lying about
+# every port. Treating its "open" ports as real services produces phantom
+# critical findings (Telnet/MySQL/RDP/Mongo/Redis "exposed") — a false-positive
+# engine that mis-prices an underwriting target. Industry external scanners gate
+# on exactly this closed-port-canary signal: probe ports that should be closed;
+# if they answer, discard the host's port results.
+#
+# Shared by the port scanner and the high-risk-protocol checker, cached per IP so
+# each host is canary-probed at most once per scan. Requires >=2 of 3 canaries to
+# answer, so a real host coincidentally running one high-port service is not
+# misflagged.
+# ---------------------------------------------------------------------------
+_TARPIT_CANARY_PORTS = (47001, 51337, 58273)  # high ports virtually never open
+_saturated_host_cache: dict = {}
+
+
+def is_saturated_host(ip: str) -> bool:
+    """True if *ip* answers connect() on closed-port canaries — a tarpit /
+    firewall / load-balancer whose port-scan results are false positives."""
+    if not ip:
+        return False
+    cached = _saturated_host_cache.get(ip)
+    if cached is not None:
+        return cached
+    hits = 0
+    for p in _TARPIT_CANARY_PORTS:
+        s = None
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(2)
+            if s.connect_ex((ip, p)) == 0:
+                hits += 1
+        except Exception:
+            pass
+        finally:
+            try:
+                if s is not None:
+                    s.close()
+            except Exception:
+                pass
+    result = hits >= 2
+    _saturated_host_cache[ip] = result
+    return result
+
+
+# ---------------------------------------------------------------------------
 # 11. DNS & Infrastructure
 # ---------------------------------------------------------------------------
 
@@ -680,6 +728,15 @@ class DNSInfrastructureChecker:
                         open_ports.append(r)
                 except Exception:
                     pass
+        # Saturated-host gate: a tarpit/firewall that SYN-ACKs everything yields
+        # phantom "open" ports. If the IP fails the closed-port-canary test,
+        # discard its port findings entirely — they are not real services.
+        if open_ports and is_saturated_host(ip):
+            return []
+        # Evidence flag: a port with a grabbed banner is service-confirmed; one
+        # without is "open" by TCP connect only (no version evidence).
+        for e in open_ports:
+            e["confirmed"] = bool(e.get("banner"))
         return sorted(open_ports, key=lambda x: x["port"])
 
     def _grab_banner(self, sock, port: int, domain: str) -> str:
@@ -937,6 +994,12 @@ class HighRiskProtocolChecker:
                 except Exception:
                     pass
 
+        # Saturated-host gate (shared, cached with the port scanner): a
+        # tarpit/firewall SYN-ACKs every CRITICAL_SERVICES port, fabricating
+        # Mongo/Redis/MSSQL/Docker "exposures". Discard if the IP fails the
+        # closed-port-canary test.
+        if exposed and is_saturated_host(ip):
+            exposed = []
         result["exposed_services"] = sorted(exposed, key=lambda x: x["port"])
         result["critical_count"] = len(exposed)
 

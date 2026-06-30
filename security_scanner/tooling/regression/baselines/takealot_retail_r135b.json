@@ -36,7 +36,7 @@
     "financial_impact": {
       "annual_revenue_zar": 13500000000,
       "cost_components": {
-        "C1_liability": 0,
+        "C1_liability": 40500000,
         "C2_regulatory_fine": 100000,
         "C4_ransom_payment": 22357913,
         "C5_incident_response": 5000000
@@ -63,19 +63,19 @@
       "estimated_annual_loss": {
         "maximum": 149473155,
         "minimum": 34917370,
-        "most_likely": 65790723
+        "most_likely": 67728866
       },
       "incident_types": {
         "data_extortion": {
           "components": {
-            "C1": 0,
+            "C1": 175256,
             "C2": 433,
             "C3": 522407,
             "C4": 38700,
             "C5": 21637
           },
           "downtime_days": 3,
-          "expected_loss": 583176,
+          "expected_loss": 758433,
           "has_downtime": true,
           "has_exfiltration": true,
           "has_ransom": true,
@@ -96,14 +96,14 @@
         },
         "double_extortion": {
           "components": {
-            "C1": 0,
+            "C1": 1193304,
             "C2": 2946,
             "C3": 17436399,
             "C4": 658760,
             "C5": 147321
           },
           "downtime_days": 25,
-          "expected_loss": 18245427,
+          "expected_loss": 19438731,
           "has_downtime": true,
           "has_exfiltration": true,
           "has_ransom": true,
@@ -112,13 +112,13 @@
         },
         "opportunistic_breach": {
           "components": {
-            "C1": 0,
+            "C1": 131442,
             "C2": 649,
             "C3": 261204,
             "C5": 12982
           },
           "downtime_days": 1,
-          "expected_loss": 274835,
+          "expected_loss": 406277,
           "has_downtime": true,
           "has_exfiltration": true,
           "has_ransom": false,
@@ -141,13 +141,13 @@
         },
         "silent_breach": {
           "components": {
-            "C1": 0,
+            "C1": 438140,
             "C2": 1082,
             "C3": 870679,
             "C5": 32455
           },
           "downtime_days": 2,
-          "expected_loss": 904216,
+          "expected_loss": 1342356,
           "has_downtime": true,
           "has_exfiltration": true,
           "has_ransom": false,
@@ -178,7 +178,7 @@
       },
       "insurance_recommendations": {
         "deductible_pct": 1.4,
-        "expected_annual_loss": 65790723,
+        "expected_annual_loss": 67728866,
         "recommended_coverage": 70000000,
         "suggested_deductible": 963000.0
       },
@@ -326,45 +326,45 @@
         "basis": "severity-PML (single severe event); posture-independent; conditional on a severe breach, not an annual frequency"
       },
       "risk_mitigations": {
-        "current_annual_loss": 65790723,
+        "current_annual_loss": 67728865,
         "findings": [
           {
-            "estimated_annual_savings_zar": 6408098,
+            "estimated_annual_savings_zar": 9116604,
             "finding": "CRITICAL: Sensitive file exposed \u2014 /.git/HEAD (HTTP 403)",
             "recommendation": "Restrict access to exposed sensitive files",
             "scenario_impact": "data_breach",
             "severity": "Critical"
           },
           {
-            "estimated_annual_savings_zar": 6408098,
+            "estimated_annual_savings_zar": 9116604,
             "finding": "1 plaintext password(s) found \u2014 immediate credential stuffing risk",
             "recommendation": "Force password resets for all leaked credentials",
             "scenario_impact": "data_breach",
             "severity": "High"
           },
           {
-            "estimated_annual_savings_zar": 4806074,
+            "estimated_annual_savings_zar": 6837453,
             "finding": "3624 credential record(s) found in Dehashed for this domain (sources: Bureau van Dijk, healthcrum.com (Cit0day), Lumin PDF, Houzz.com, Canva.com) \u2014 notify affected users and enforce password reset",
             "recommendation": "Audit and rotate credentials exposed in data leaks",
             "scenario_impact": "data_breach",
             "severity": "High"
           },
           {
-            "estimated_annual_savings_zar": 1602025,
+            "estimated_annual_savings_zar": 2279151,
             "finding": "Missing security header: X-Content-Type-Options",
             "recommendation": "Implement security headers (HSTS, CSP, X-Frame-Options)",
             "scenario_impact": "data_breach",
             "severity": "Medium"
           },
           {
-            "estimated_annual_savings_zar": 1602025,
+            "estimated_annual_savings_zar": 2279151,
             "finding": "Domain/IP listed on 1 blacklist(s): dbl.spamhaus.org",
             "recommendation": "Resolve DNS blocklist entries",
             "scenario_impact": "data_breach",
             "severity": "Medium"
           }
         ],
-        "mitigated_annual_loss": 44964403,
+        "mitigated_annual_loss": 38099902,
         "remediation_summary": {
           "breach_grade_after": "Strong",
           "breach_grade_before": "Typical",
@@ -374,23 +374,23 @@
           "breach_probability_before_pct": 2.2,
           "catastrophe_cover_zar": 1716308938,
           "catastrophe_note": "The 1-in-250 catastrophe cover requirement is severity-driven and posture-independent - remediation lowers the LIKELIHOOD of loss, not the worst-case severity, so the cover figure is unchanged.",
-          "exposure_reduction_pct": 31.7
+          "exposure_reduction_pct": 43.7
         },
         "summary": {
           "critical": {
             "count": 1,
-            "total_savings_zar": 6408098
+            "total_savings_zar": 9116604
           },
           "high": {
             "count": 2,
-            "total_savings_zar": 11214172
+            "total_savings_zar": 15954057
           },
           "medium": {
             "count": 2,
-            "total_savings_zar": 3204050
+            "total_savings_zar": 4558302
           }
         },
-        "total_potential_savings": 20826320
+        "total_potential_savings": 29628963
       },
       "risk_probability": {
         "_note": "Reporting-only FAIR loss-event-frequency view. Three distinct annual-likelihood concepts with segregated bands. No scoring weight - new view of already-scored signals.",
@@ -492,7 +492,7 @@
         },
         "data_breach": {
           "cost_per_record": 1505,
-          "estimated_loss": 5110,
+          "estimated_loss": 1943252,
           "estimated_records": 450000,
           "monte_carlo": {
             "mean": 3041324,
@@ -520,7 +520,9 @@
             "model_anchor_zar": 35280000,
             "model_validity_ceiling": 250000,
             "rationale": "The financial-impact model anchors the data-breach component on the IBM SA Cost of a Data Breach study, calibrated against industry-typical breach sizes (~25,000-100,000 records per incident). For context, the 'Retail' industry heuristic of ~1 record per R30,000 of revenue implies this organisation likely holds approximately 450,000 sensitive records. The catastrophe modelling is reliable up to approximately 250,000 records for the 'Retail' industry calibration. If the organisation actually holds more than 250,000 sensitive records under POPIA / GDPR / HIPAA / PCI DSS or other applicable regulation, the cat exposure in this report should be treated as a FLOOR estimate only. Common outliers: fintechs, health-tech aggregators, marketing platforms, data brokers, breach-list resellers - small-revenue entities with record holdings 10-1000x the industry average.",
-            "records_divisor_zar": 30000
+            "records_divisor_zar": 30000,
+            "records_is_broker_supplied": false,
+            "records_source": "industry_heuristic"
           },
           "regulatory_fine": 100000
         },
@@ -576,7 +578,7 @@
         },
         "data_breach": {
           "components": "C1 + C2",
-          "estimated_loss": 5110,
+          "estimated_loss": 1943252,
           "ibm_equivalent": "Post-breach response + Notification",
           "label": "Data Breach Exposure",
           "monte_carlo": {
@@ -672,28 +674,28 @@
       "total": {
         "max": 149473155,
         "min": 34917370,
-        "most_likely": 65790723
+        "most_likely": 67728866
       }
     },
     "remediation": {
       "current_financial_impact": {
         "max": 149473155,
         "min": 34917370,
-        "most_likely": 65790723
+        "most_likely": 67728866
       },
       "current_rsi": 0.275,
       "rsi_improvement": 0.19,
       "simulated_financial_impact": {
         "max": 46200793,
         "min": 10792642,
-        "most_likely": 20335314
+        "most_likely": 20934377
       },
       "simulated_rsi": 0.085,
       "step_count": 8,
       "steps": [
         {
           "action": "Force password resets for all leaked credentials and enable MFA. Breached credentials enable credential stuffing and account takeover attacks.",
-          "annual_savings_estimate": 8373365,
+          "annual_savings_estimate": 8620037,
           "category": "dehashed",
           "estimated_cost": "R9,000\u2013R36,000",
           "priority": 2,
@@ -701,7 +703,7 @@
         },
         {
           "action": "Investigate and resolve IP/domain blacklisting \u2014 indicates prior compromise, spam, or malware distribution.",
-          "annual_savings_estimate": 8373365,
+          "annual_savings_estimate": 8620037,
           "category": "dnsbl",
           "estimated_cost": "R9,000\u2013R36,000",
           "priority": 2,
@@ -709,7 +711,7 @@
         },
         {
           "action": "Restrict admin panel access \u2014 implement IP whitelist, VPN-only access, or move to non-standard paths.",
-          "annual_savings_estimate": 3349346,
+          "annual_savings_estimate": 3448015,
           "category": "exposed_admin",
           "estimated_cost": "R3,600\u2013R18,000",
           "priority": 3,
@@ -717,7 +719,7 @@
         },
         {
           "action": "Deploy a CDN for DDoS resilience and improved availability \u2014 single-origin hosting is vulnerable to volumetric attacks.",
-          "annual_savings_estimate": 3349346,
+          "annual_savings_estimate": 3448015,
           "category": "cloud_cdn",
           "estimated_cost": "R0\u2013R9,000/mo",
           "priority": 3,
@@ -725,7 +727,7 @@
         },
         {
           "action": "Audit risky-named subdomains (dev / staging / admin) for restricted access; reclaim or remove any dangling DNS records that point to unclaimed cloud services (subdomain takeover risk).",
-          "annual_savings_estimate": 3349346,
+          "annual_savings_estimate": 3448015,
           "category": "subdomains",
           "estimated_cost": "R3,600\u2013R18,000",
           "priority": 3,
@@ -733,7 +735,7 @@
         },
         {
           "action": "Update privacy policy to cover all POPIA/GDPR required sections \u2014 failure to comply risks regulatory fines up to 2% of annual turnover.",
-          "annual_savings_estimate": 1674673,
+          "annual_savings_estimate": 1724007,
           "category": "privacy_compliance",
           "estimated_cost": "R9,000\u2013R36,000",
           "priority": 3,
@@ -741,7 +743,7 @@
         },
         {
           "action": "Enable DNSSEC to protect against DNS spoofing and cache poisoning attacks.",
-          "annual_savings_estimate": 1674673,
+          "annual_savings_estimate": 1724007,
           "category": "dns_infrastructure",
           "estimated_cost": "R3,600\u2013R9,000",
           "priority": 3,
@@ -749,14 +751,14 @@
         },
         {
           "action": "High Tranco rank attracts more automated attacks \u2014 strengthen WAF + DDoS protection and prioritise prompt patching of public-facing vulnerabilities.",
-          "annual_savings_estimate": 1674673,
+          "annual_savings_estimate": 1724007,
           "category": "web_ranking",
           "estimated_cost": "R0\u2013R9,000/mo",
           "priority": 3,
           "rsi_reduction": 0.01
         }
       ],
-      "total_potential_savings": 31818787
+      "total_potential_savings": 32756140
     },
     "rsi": {
       "annual_revenue": 5000000000.0,

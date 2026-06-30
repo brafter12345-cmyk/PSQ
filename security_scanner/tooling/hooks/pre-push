@@ -28,7 +28,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   esac
 done
 
-echo "[pre-push] fast gates (wiring + dropdown + app hardening)..."
+echo "[pre-push] fast gates (wiring + dropdown + app hardening + adversarial + golden)..."
 cd "$SC"
 "$PY" tooling/verify_supply_chain_financial_wiring.py || {
   echo "[pre-push] BLOCKED: financial wiring gate failed."; exit 1; }
@@ -36,6 +36,16 @@ cd "$SC"
   echo "[pre-push] BLOCKED: sub-industry dropdown gate failed."; exit 1; }
 "$PY" tooling/verify_app_hardening.py || {
   echo "[pre-push] BLOCKED: app hardening gate failed."; exit 1; }
+# Adversarial ground-truth gate: checker output must classify known adversarial
+# inputs (tarpit / CDN / shared-host / real-exposure) correctly. Encodes the
+# analyst judgment a golden-replay/cassette harness can't — runs every push, no
+# human in the loop. Add scenarios here as new checker failure modes are found.
+"$PY" tooling/regression/adversarial_gate.py || {
+  echo "[pre-push] BLOCKED: adversarial ground-truth gate failed (a checker mis-classified an adversarial input)."; exit 1; }
+# Golden scoring-regression: re-scores the real fixtures and fails on any drift.
+# An INTENTIONAL scoring change must be acknowledged via golden.py --capture.
+"$PY" tooling/regression/golden.py --check || {
+  echo "[pre-push] BLOCKED: golden scoring-regression drifted. If intentional, run 'py tooling/regression/golden.py --capture' and commit the baselines."; exit 1; }
 
 if [ "$PUSHING_MASTER" = "1" ]; then
   echo "[pre-push] master push detected -> live smoke test (60-180s, credit-free)..."
