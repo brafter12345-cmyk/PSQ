@@ -1,21 +1,29 @@
 """SCALE-00c golden-output regression harness — scoring / financial layer.
 
 Deterministic and OFFLINE: replays the scoring + financial-impact pipeline
-(`scoring_analytics.py`, via `regen_outputs_from_cache._rescore`, which makes
-no network calls) against frozen scan fixtures and asserts the output is stable
-— byte-for-byte modulo volatile timestamp/duration fields — against a captured
-baseline.
+against frozen scan fixtures and asserts the output is stable — byte-for-byte
+modulo volatile timestamp/duration fields — against a captured baseline.
+`regen_outputs_from_cache._rescore` drives the replay, and as of 2026-07-01 it
+invokes the SAME `scoring_pipeline.apply_risk_score` / `apply_insurance_analytics`
+the live `scanner.scan()` runs (Phase 5 + Phase 6), so this gate now exercises
+the EXACT scoring invocation production uses — no second, drifting copy.
+(Before that, `_rescore` hand-rolled the calculator sequence with different
+arguments, which is how the RSI-revenue bug scored green here while broken live;
+`verify_scoring_pipeline_unified.py` now blocks re-divergence.)
 
 WHAT THIS GATES: refactors to the scoring / financial-impact layer
-(`scoring_analytics.py` and anything feeding `insurance.*`). A change that
-shifts a score, an RSI, a Monte-Carlo percentile, or the result *shape* fails
-the check.
+(`scoring_analytics.py`, `scoring_pipeline.py`, and anything feeding
+`insurance.*`). A change that shifts a score, an RSI, a Monte-Carlo percentile,
+or the result *shape* fails the check.
 
-WHAT THIS DOES NOT YET GATE: the network checkers themselves. Re-running them
-deterministically needs a record/replay cache, which is entangled with WS0's
-single egress seam (you cannot intercept all traffic until it flows through one
-client). That checker-level gate is the next step — see README.md. The
-comparator (`result_diff.py`) is already general enough for it.
+WHAT THIS DOES NOT YET GATE: the network checkers and the `scanner.scan()`
+orchestration around the scoring call (the frozen fixtures ARE the checker
+output — the checkers never re-run here). Replaying those deterministically
+needs a record/replay cache, entangled with WS0's single egress seam (you cannot
+intercept all traffic until it flows through one client). Until then, scan-
+orchestration invariants are held by dedicated guards (e.g.
+`verify_scan_timeout_handling.py`) + the live smoke test, not by this replay.
+The comparator (`result_diff.py`) is already general enough for the checker gate.
 
 Usage (run from the `security_scanner/` directory):
     py tooling/regression/golden.py --capture            # freeze/refresh baselines

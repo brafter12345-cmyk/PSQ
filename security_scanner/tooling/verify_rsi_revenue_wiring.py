@@ -32,22 +32,25 @@ for rev, want in [(2_000_000_000, 0.85), (300_000_000, 0.96), (0, 1.12)]:
     if got != want:
         fails.append(f"band: R{rev:,} -> size_mult {got} (expected {want})")
 
-# (b) Static — the scanner RSI call must NOT pass the vestigial `annual_revenue`,
-#     and must resolve ZAR revenue before scoring RSI.
-src = (ROOT / "scanner.py").read_text(encoding="utf-8")
+# (b) Static — the RSI call site (now the shared scoring_pipeline, exercised by
+#     BOTH the live scan and the golden/regen rescore) must NOT pass the vestigial
+#     `annual_revenue`, and must resolve ZAR revenue before scoring RSI. Checking
+#     the one shared call site covers both callers (see
+#     verify_scoring_pipeline_unified.py, which forbids either from re-inlining it).
+src = (ROOT / "scoring_pipeline.py").read_text(encoding="utf-8")
 m = re.search(r"rsi_calc\.calculate\(([^)]*)\)", src)
 if not m:
-    fails.append("scanner.py: rsi_calc.calculate(...) call not found")
+    fails.append("scoring_pipeline.py: rsi_calc.calculate(...) call not found")
 elif re.search(r"\bannual_revenue\b(?!_zar)", m.group(1)):
-    fails.append(f"scanner.py: RSI call passes vestigial annual_revenue "
+    fails.append(f"scoring_pipeline.py: RSI call passes vestigial annual_revenue "
                  f"({m.group(1).strip()}) — must pass the resolved ZAR revenue (_zar)")
 if "resolve_effective_revenue_zar(annual_revenue_zar)" not in src:
-    fails.append("scanner.py: resolve_effective_revenue_zar(annual_revenue_zar) not found")
+    fails.append("scoring_pipeline.py: resolve_effective_revenue_zar(annual_revenue_zar) not found")
 # It must be resolved BEFORE the RSI call, else _zar is undefined / RSI is stale.
 i_resolve = src.find("_zar = resolve_effective_revenue_zar")
 i_rsi = src.find("rsi_calc.calculate(")
 if i_resolve == -1 or i_rsi == -1 or i_resolve > i_rsi:
-    fails.append("scanner.py: _zar must be resolved BEFORE the RSI call")
+    fails.append("scoring_pipeline.py: _zar must be resolved BEFORE the RSI call")
 
 if fails:
     print("RSI REVENUE WIRING GATE FAILED:")
@@ -55,4 +58,4 @@ if fails:
         print("  -", f)
     sys.exit(1)
 print("RSI revenue wiring gate PASS — RSI scored on resolved ZAR revenue "
-      "(R2bn->0.85, R300M->0.96, R0->1.12; scanner passes _zar)")
+      "(R2bn->0.85, R300M->0.96, R0->1.12; scoring_pipeline passes _zar)")

@@ -74,11 +74,12 @@ def _rescore(results: dict, *, revenue_zar: int, revenue_usd: float,
     code at the time of the scan; any wiring change (new RSI factors,
     catastrophe-tail logic, vulnerability uplift) requires re-running.
     """
-    from scoring_analytics import (
-        RiskScorer, RansomwareIndex, DataBreachIndex,
-        FinancialImpactCalculator, RemediationSimulator,
-    )
-    cats = results.get("categories", {})
+    # Call the SAME scoring/insurance invocation the live scanner runs
+    # (scoring_pipeline) — no second, drifting copy. Previously this function
+    # hand-rolled the calculator sequence with different args (RSI on
+    # `rev_usd or rev_zar`, no regulatory/sub-industry/records/scan-completeness
+    # inputs), which is how the RSI-revenue bug stayed invisible to golden.
+    from scoring_pipeline import apply_risk_score, apply_insurance_analytics
     ctx = results.setdefault("scan_context", {})
     if industry:
         ctx["industry"] = industry
@@ -90,32 +91,18 @@ def _rescore(results: dict, *, revenue_zar: int, revenue_usd: float,
     rev_zar = int(ctx.get("annual_revenue_zar") or 0)
     rev_usd = float(ctx.get("annual_revenue") or 0)
 
-    scorer = RiskScorer()
-    risk_score, risk_level, recs = scorer.calculate(cats, waf_apex_status=None)
-    results["overall_risk_score"] = risk_score
-    results["risk_level"] = risk_level
-    results["recommendations"] = recs
-    cats["_overall_score"] = risk_score
-
-    rsi_calc = RansomwareIndex()
-    rsi = rsi_calc.calculate(cats, industry=industry,
-                              annual_revenue=rev_usd or rev_zar)
-    results.setdefault("insurance", {})["rsi"] = rsi
-
-    fic = FinancialImpactCalculator()
-    fin = fic.calculate(cats, rsi,
-                         annual_revenue=rev_usd,
-                         industry=industry.title(),
-                         annual_revenue_zar=rev_zar)
-    results["insurance"]["financial_impact"] = fin
-
-    dbi_calc = DataBreachIndex()
-    results["insurance"]["dbi"] = dbi_calc.calculate(cats)
-
-    sim = RemediationSimulator()
-    results["insurance"]["remediation"] = sim.calculate(
-        cats, rsi, fin, annual_revenue=rev_zar or rev_usd,
-        industry=industry,
+    # Offline: no live WAF read. Reuse the frozen apex status if the fixture
+    # captured one (a WAF-blocked scan freezes it in _scan_completeness), else
+    # None — same as a clean scan. Keeps the rescore deterministic.
+    waf_apex_status = (results.get("_scan_completeness") or {}).get("waf_status")
+    apply_risk_score(results, waf_apex_status=waf_apex_status)
+    apply_insurance_analytics(
+        results, industry=industry,
+        annual_revenue=rev_usd, annual_revenue_zar=rev_zar,
+        regulatory_flags=ctx.get("regulatory_flags"),
+        sub_industry=ctx.get("sub_industry"),
+        records_override=ctx.get("records_held"),
+        scan_completeness=results.get("_scan_completeness"),
     )
     return results
 

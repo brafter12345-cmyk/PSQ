@@ -168,7 +168,7 @@
           "probability": 0.0059
         }
       },
-      "industry": "Retail",
+      "industry": "retail",
       "insurance_recommendation": {
         "_deprecated": true,
         "_use_instead": "loss_exposure.scenarios",
@@ -519,7 +519,7 @@
             "model_anchor": "IBM SA Cost of a Data Breach 2025",
             "model_anchor_zar": 35280000,
             "model_validity_ceiling": 250000,
-            "rationale": "The financial-impact model anchors the data-breach component on the IBM SA Cost of a Data Breach study, calibrated against industry-typical breach sizes (~25,000-100,000 records per incident). For context, the 'Retail' industry heuristic of ~1 record per R30,000 of revenue implies this organisation likely holds approximately 450,000 sensitive records. The catastrophe modelling is reliable up to approximately 250,000 records for the 'Retail' industry calibration. If the organisation actually holds more than 250,000 sensitive records under POPIA / GDPR / HIPAA / PCI DSS or other applicable regulation, the cat exposure in this report should be treated as a FLOOR estimate only. Common outliers: fintechs, health-tech aggregators, marketing platforms, data brokers, breach-list resellers - small-revenue entities with record holdings 10-1000x the industry average.",
+            "rationale": "The financial-impact model anchors the data-breach component on the IBM SA Cost of a Data Breach study, calibrated against industry-typical breach sizes (~25,000-100,000 records per incident). For context, the 'retail' industry heuristic of ~1 record per R30,000 of revenue implies this organisation likely holds approximately 450,000 sensitive records. The catastrophe modelling is reliable up to approximately 250,000 records for the 'retail' industry calibration. If the organisation actually holds more than 250,000 sensitive records under POPIA / GDPR / HIPAA / PCI DSS or other applicable regulation, the cat exposure in this report should be treated as a FLOOR estimate only. Common outliers: fintechs, health-tech aggregators, marketing platforms, data brokers, breach-list resellers - small-revenue entities with record holdings 10-1000x the industry average.",
             "records_divisor_zar": 30000,
             "records_is_broker_supplied": false,
             "records_source": "industry_heuristic"
@@ -761,7 +761,7 @@
       "total_potential_savings": 32756140
     },
     "rsi": {
-      "annual_revenue": 5000000000.0,
+      "annual_revenue": 13500000000,
       "base_score": 0.27,
       "contributing_factors": [
         {

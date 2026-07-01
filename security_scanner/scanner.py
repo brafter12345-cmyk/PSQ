@@ -13,6 +13,11 @@ from checkers_supply_chain import (
     EmailVendorSurfaceChecker, CMSPluginSBOMChecker, VendorBreachChecker,
 )
 from scoring_analytics import *
+# Phase 5 + Phase 6 scoring/insurance invocation lives in scoring_pipeline so the
+# live scan and the golden/regen rescore share ONE call sequence (no drift — see
+# scoring_pipeline.py). RiskScorer/RansomwareIndex/... stay imported above (via *)
+# for RiskScorer.WEIGHTS and any direct use elsewhere.
+from scoring_pipeline import apply_risk_score, apply_insurance_analytics
 from http_client import HTTP, _apex_of
 import os
 import scanner_db
@@ -1247,20 +1252,14 @@ class SecurityScanner:
         # the blindness). The same status object is reused below for the
         # completeness metadata — one sliding-window read, no double count.
         waf_apex_status = HTTP.waf_status(scan_apex)
-        scorer = RiskScorer()
-        risk_score, risk_level, recommendations = scorer.calculate(
-            cat_results, waf_apex_status=waf_apex_status)
-        results["overall_risk_score"] = risk_score
-        results["risk_level"] = risk_level
-        results["recommendations"] = recommendations
-        # Expose the computed overall risk score to the insurance analytics
-        # (Phase 6). FinancialImpactCalculator._calculate_zar reads
-        # cat_results["_overall_score"] to derive `vulnerability`; without this
-        # write it defaults to 500 and pins vulnerability at 0.5, decoupling
-        # p_breach / Monte-Carlo tails from the actual scan posture. The
-        # regen/verify harnesses inject this key, which previously masked the
-        # production gap.
-        cat_results["_overall_score"] = risk_score
+        # Score via the shared pipeline — the SAME call the golden/regen rescore
+        # uses (scoring_pipeline.apply_risk_score). Writes overall_risk_score /
+        # risk_level / recommendations and the categories["_overall_score"] the
+        # FinancialImpactCalculator reads to derive `vulnerability` (without it the
+        # FIC defaults to 500 and pins vulnerability at 0.5). `scorer` is reused
+        # below for the completeness telemetry and the compliance summary.
+        risk_score, risk_level, recommendations, scorer = apply_risk_score(
+            results, waf_apex_status=waf_apex_status)
         # Propagate scan completeness metadata to top level
         if "_scan_completeness" in cat_results:
             results["_scan_completeness"] = cat_results.pop("_scan_completeness")
@@ -1342,47 +1341,24 @@ class SecurityScanner:
         # --- Phase 6: Insurance Analytics ---
         self._notify(on_progress, "insurance_analytics", "running")
         try:
-            # Resolve the effective revenue via the shared peer_benchmarking
-            # helper so RSI, the financial-impact card, and peer benchmarking all
-            # use the SAME ZAR revenue basis (provided revenue when present, else
-            # the documented R10M default). The size-multiplier bands are in ZAR.
-            from peer_benchmarking import resolve_effective_revenue_zar
-            _zar = resolve_effective_revenue_zar(annual_revenue_zar)
-
-            # RSI — pass the resolved ZAR revenue. Previously this passed the
-            # vestigial `annual_revenue` (0 for form scans, which send only
-            # annual_revenue_zar), which pinned EVERY form scan to the <R10M
-            # "micro" size multiplier (1.12) regardless of real revenue — over-
-            # loading RSI (and premium) for every non-micro client.
-            rsi_calc = RansomwareIndex()
-            rsi_result = rsi_calc.calculate(cat_results, industry, _zar)
-            results["insurance"]["rsi"] = rsi_result
-
-            # Financial Impact — default to ZAR (SA product); R10M default if absent.
-            fin_calc = FinancialImpactCalculator()
-            _reg_flags = getattr(self, '_regulatory_flags', None)
-            _sub_industry = getattr(self, '_sub_industry', None)
-            _records_held = getattr(self, '_records_held', None)
-            fin_result = fin_calc.calculate(
-                cat_results, rsi_result, annual_revenue, industry,
-                annual_revenue_zar=_zar,
-                regulatory_flags=_reg_flags,
-                sub_industry=_sub_industry,
+            # All insurance calculators run through the shared pipeline — the SAME
+            # call the golden/regen rescore uses (scoring_pipeline.
+            # apply_insurance_analytics), so a scoring change cannot pass golden
+            # while breaking the live scan. The pipeline resolves the ZAR revenue
+            # basis (resolve_effective_revenue_zar) and scores RSI + Remediation on
+            # it — the size-multiplier bands are in ZAR and the form sends revenue
+            # only as annual_revenue_zar; the vestigial USD annual_revenue is
+            # forwarded to the FIC, which ignores it when ZAR is present.
+            # regulatory_flags / sub_industry / records_held are set on the scanner
+            # instance by app.py before scan().
+            apply_insurance_analytics(
+                results, industry=industry,
+                annual_revenue=annual_revenue,
+                annual_revenue_zar=annual_revenue_zar,
+                regulatory_flags=getattr(self, '_regulatory_flags', None),
+                sub_industry=getattr(self, '_sub_industry', None),
+                records_override=getattr(self, '_records_held', None),
                 scan_completeness=results.get("_scan_completeness"),
-                records_override=_records_held,
-            )
-            results["insurance"]["financial_impact"] = fin_result
-
-            # DBI
-            dbi_calc = DataBreachIndex()
-            results["insurance"]["dbi"] = dbi_calc.calculate(cat_results)
-
-            # Remediation Simulator
-            sim = RemediationSimulator()
-            results["insurance"]["remediation"] = sim.calculate(
-                cat_results, rsi_result, fin_result,
-                _zar,
-                industry
             )
         except Exception as e:
             results["insurance"]["error"] = str(e)

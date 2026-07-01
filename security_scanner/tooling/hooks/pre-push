@@ -28,7 +28,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   esac
 done
 
-echo "[pre-push] fast gates (wiring + dropdown + app hardening + adversarial + golden)..."
+echo "[pre-push] fast gates (wiring + dropdown + app hardening + adversarial + pipeline-unify + golden)..."
 cd "$SC"
 "$PY" tooling/verify_supply_chain_financial_wiring.py || {
   echo "[pre-push] BLOCKED: financial wiring gate failed."; exit 1; }
@@ -50,6 +50,12 @@ cd "$SC"
 # human in the loop. Add scenarios here as new checker failure modes are found.
 "$PY" tooling/regression/adversarial_gate.py || {
   echo "[pre-push] BLOCKED: adversarial ground-truth gate failed (a checker mis-classified an adversarial input)."; exit 1; }
+# Scoring-pipeline unification: the live scan and the golden/regen rescore must
+# invoke the calculators through the ONE shared scoring_pipeline. The golden gate
+# below only means something if it replays the SAME code the live scan runs — this
+# guard blocks a second, drifting copy (how the RSI-revenue bug hid from golden).
+"$PY" tooling/verify_scoring_pipeline_unified.py || {
+  echo "[pre-push] BLOCKED: scan() and the golden/regen rescore diverged on the scoring invocation (route both through scoring_pipeline)."; exit 1; }
 # Golden scoring-regression: re-scores the real fixtures and fails on any drift.
 # An INTENTIONAL scoring change must be acknowledged via golden.py --capture.
 "$PY" tooling/regression/golden.py --check || {
