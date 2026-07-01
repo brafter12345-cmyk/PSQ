@@ -138,9 +138,51 @@ def _check_classification(failures):
         print(f"  [{'PASS' if ok else 'FAIL'}] classify:{label:<24} -> {got}")
 
 
+# ---- CVE<->software matching ground truth (checker audit, 2026-07-01) ---------
+# (label, port, detected_version, cves_kept?, confidence), driven through the REAL
+# DNSInfrastructureChecker._assess_risk. Port-template CVEs must DROP when the
+# banner names a different product (Pure-FTPd must not carry ProFTPD CVEs; a
+# Postfix host must not carry Exim CVEs), and be KEPT + flagged version-unconfirmed
+# when the software matches or can't be fingerprinted. Also guards the two data
+# errors this audit removed (Sudo CVE-2021-3156 on :25, Postfix CVE-2011-1720 on :110).
+CVE_GATE_SCENARIOS = [
+    ("ftp_pure_ftpd_drops_proftpd", 21,  "Pure-FTPd 1.0.47",     False, "software_mismatch"),
+    ("ftp_proftpd_keeps",           21,  "ProFTPD 1.3.5 Server", True,  "software_match"),
+    ("ftp_no_banner_keeps",         21,  "",                     True,  "port_inferred"),
+    ("ssh_openssh_keeps",           22,  "OpenSSH_8.9p1 Ubuntu", True,  "software_match"),
+    ("ssh_dropbear_drops",          22,  "Dropbear sshd",        False, "software_mismatch"),
+    ("smtp_postfix_drops_exim",     25,  "mail ESMTP Postfix",   False, "software_mismatch"),
+    ("smtp_exim_keeps",             25,  "mail ESMTP Exim 4.94", True,  "software_match"),
+    ("pop3_dovecot_keeps",          110, "Dovecot ready.",       True,  "software_match"),
+]
+
+
+def _check_cve_gating(failures):
+    for label, port, ver, kept, conf in CVE_GATE_SCENARIOS:
+        p = {"port": port, "service": "x", "risk": "high"}
+        if ver:
+            p["detected_version"] = ver
+        cn.DNSInfrastructureChecker()._assess_risk([p])
+        has_cves = bool(p.get("notable_cves"))
+        ok = (has_cves == kept) and (p.get("cve_confidence") == conf)
+        if not ok:
+            failures.append(f"cve_gate[{label}]: kept={has_cves}!={kept} "
+                            f"conf={p.get('cve_confidence')!r}!={conf!r}")
+        print(f"  [{'PASS' if ok else 'FAIL'}] cve_gate:{label:<28} kept={has_cves} conf={p.get('cve_confidence')}")
+    # Data-error guards — the wrong-software/wrong-protocol CVEs must stay removed.
+    PI = cn.DNSInfrastructureChecker.PORT_INTEL
+    for label, port, bad in (("sudo_off_smtp_25", 25, "CVE-2021-3156"),
+                             ("postfix_off_pop3_110", 110, "CVE-2011-1720")):
+        gone = bad not in PI[port]["notable_cves"]
+        if not gone:
+            failures.append(f"cve_gate[{label}]: {bad} still in PORT_INTEL[{port}]")
+        print(f"  [{'PASS' if gone else 'FAIL'}] cve_gate:{label:<28} {bad} removed")
+
+
 def main():
     failures = []
     _check_classification(failures)
+    _check_cve_gating(failures)
     for name, sc in SCENARIOS.items():
         scan, hrp = _run(sc)
         scan_ports = {e["port"] for e in scan}
@@ -166,7 +208,7 @@ def main():
             print("  -", f)
         sys.exit(1)
     print(f"ADVERSARIAL GATE PASS — {len(SCENARIOS)} socket + {len(CLASSIFY_SCENARIOS)} "
-          f"ip-attribution ground-truth scenarios")
+          f"ip-attribution + {len(CVE_GATE_SCENARIOS)} cve-gating ground-truth scenarios")
 
 
 if __name__ == "__main__":

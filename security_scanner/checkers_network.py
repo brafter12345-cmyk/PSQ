@@ -521,75 +521,97 @@ class DNSInfrastructureChecker:
     # particular is recalculated daily). They are narrative enrichment only — the
     # port-tier, not these strings, drives the score — but they must be reviewed
     # by the date above so the underwriting copy does not silently go stale.
+    #
+    # `cve_software` = the software the notable_cves are FOR. The CVEs are
+    # evidence-gated on it in _assess_risk: they only attach when the detected
+    # banner matches (or the software can't be fingerprinted), and are DROPPED
+    # when the banner names a different product (a Pure-FTPd banner must not carry
+    # ProFTPD CVEs). Verified per-CVE against NVD/vendor advisories 2026-07-01.
     PORT_INTEL = {
         21: {
             "risk_level": "CRITICAL RISK",
-            "typical_exploits": "Anonymous login, credential brute-force, cleartext credential theft (CVE-2015-3306, CVE-2019-12815)",
+            "typical_exploits": "Anonymous login, credential brute-force, cleartext credential theft (ProFTPD CVE-2015-3306, CVE-2019-12815)",
             "vuln_metrics": "CVSS 9.8 | EPSS 85% | CISA KEV",
             "notable_cves": ["CVE-2015-3306", "CVE-2019-12815", "CVE-2010-4221"],
+            "cve_software": "proftpd",
             "insurance_risk": "Data exfiltration via unencrypted file transfer; ransomware initial access vector",
         },
         22: {
             "risk_level": "HIGH RISK",
-            "typical_exploits": "Brute-force attacks, key-based auth bypass (CVE-2024-6387 regreSSHion, CVE-2023-48795 Terrapin)",
+            "typical_exploits": "Brute-force attacks, key-based auth bypass (OpenSSH CVE-2024-6387 regreSSHion, CVE-2023-48795 Terrapin)",
             "vuln_metrics": "CVSS 8.1 | EPSS 35%",
             "notable_cves": ["CVE-2024-6387", "CVE-2023-48795", "CVE-2016-20012"],
+            "cve_software": "openssh",
             "insurance_risk": "Remote command execution if compromised; privilege escalation",
         },
         23: {
             "risk_level": "CRITICAL RISK",
-            "typical_exploits": "Cleartext credential theft, session hijacking, no encryption",
+            "typical_exploits": "Cleartext credential theft, session hijacking, no encryption (telnetd CVE-2020-10188)",
             "vuln_metrics": "CVSS 9.8 | EPSS 90%",
             "notable_cves": ["CVE-2020-10188", "CVE-2011-4862"],
+            "cve_software": "telnet",
             "insurance_risk": "Full credential interception; trivially exploitable remote access",
         },
         25: {
             "risk_level": "MEDIUM RISK",
-            "typical_exploits": "Open relay abuse, email spoofing, spam distribution",
+            # Was [CVE-2021-3156, CVE-2020-28018]; CVE-2021-3156 is a Sudo local-
+            # privesc CVE with NO relation to SMTP (data error) — removed. The
+            # remaining CVE is Exim-specific, so it gates on an Exim banner.
+            "typical_exploits": "Open relay abuse, email spoofing, spam distribution; Exim RCE (CVE-2020-28018) on unpatched Exim",
             "vuln_metrics": "CVSS 5.3 | EPSS 10%",
-            "notable_cves": ["CVE-2021-3156", "CVE-2020-28018"],
+            "notable_cves": ["CVE-2020-28018"],
+            "cve_software": "exim",
             "insurance_risk": "Email-based attacks; domain reputation damage if abused as open relay",
         },
         110: {
             "risk_level": "HIGH RISK",
-            "typical_exploits": "Cleartext credential theft, brute-force, buffer overflow attacks",
+            # Was [CVE-2011-1720], which is a Postfix (SMTP) CVE — wrong protocol
+            # AND wrong software for POP3. POP3 is served by Dovecot/Courier;
+            # replaced with a Dovecot POP3/IMAP CVE, gated on a Dovecot banner.
+            "typical_exploits": "Cleartext credential theft, brute-force (Dovecot CVE-2019-11500)",
             "vuln_metrics": "CVSS 7.5 | EPSS 15%",
-            "notable_cves": ["CVE-2011-1720"],
+            "notable_cves": ["CVE-2019-11500"],
+            "cve_software": "dovecot",
             "insurance_risk": "Email account takeover via credential interception",
         },
         143: {
             "risk_level": "HIGH RISK",
-            "typical_exploits": "Cleartext credential interception, brute-force, injection attacks",
+            "typical_exploits": "Cleartext credential interception, brute-force (Dovecot CVE-2021-33515, CVE-2019-11500)",
             "vuln_metrics": "CVSS 7.5 | EPSS 12%",
             "notable_cves": ["CVE-2021-33515", "CVE-2019-11500"],
+            "cve_software": "dovecot",
             "insurance_risk": "Email account compromise leading to BEC or data theft",
         },
         3306: {
             "risk_level": "CRITICAL RISK",
-            "typical_exploits": "Authentication bypass (CVE-2012-2122), SQL injection, credential brute-force, data dumping",
+            "typical_exploits": "Authentication bypass (MySQL CVE-2012-2122), SQL injection, credential brute-force, data dumping",
             "vuln_metrics": "CVSS 9.8 | EPSS 92% | CISA KEV",
             "notable_cves": ["CVE-2012-2122", "CVE-2016-6662", "CVE-2020-14812"],
+            "cve_software": "mysql",
             "insurance_risk": "Direct database access enables mass data theft; ransomware encryption of data",
         },
         3389: {
             "risk_level": "CRITICAL RISK",
-            "typical_exploits": "BlueKeep (CVE-2019-0708), credential brute-force, NLA bypass, session hijacking",
+            "typical_exploits": "BlueKeep (RDP CVE-2019-0708), credential brute-force, NLA bypass, session hijacking",
             "vuln_metrics": "CVSS 9.8 | EPSS 97% | CISA KEV",
             "notable_cves": ["CVE-2019-0708", "CVE-2019-1181", "CVE-2019-1182"],
+            "cve_software": "rdp",
             "insurance_risk": "Primary ransomware initial access vector; full system compromise",
         },
         5432: {
             "risk_level": "CRITICAL RISK",
-            "typical_exploits": "Credential brute-force, privilege escalation (CVE-2023-5868), SQL injection chaining",
+            "typical_exploits": "Credential brute-force, privilege escalation (PostgreSQL CVE-2023-5868), SQL injection chaining",
             "vuln_metrics": "CVSS 8.8 | EPSS 40%",
             "notable_cves": ["CVE-2023-5868", "CVE-2019-9193", "CVE-2023-39417"],
+            "cve_software": "postgresql",
             "insurance_risk": "Direct access to structured business data; credential reuse attacks",
         },
         5900: {
             "risk_level": "CRITICAL RISK",
-            "typical_exploits": "Authentication bypass, unencrypted session hijacking, brute-force",
+            "typical_exploits": "Authentication bypass, unencrypted session hijacking, brute-force (VNC CVE-2006-2369, CVE-2019-15681)",
             "vuln_metrics": "CVSS 9.8 | EPSS 60%",
             "notable_cves": ["CVE-2006-2369", "CVE-2019-15681"],
+            "cve_software": "vnc",
             "insurance_risk": "Full desktop control without encryption; trivial lateral movement",
         },
         8080: {
@@ -597,8 +619,22 @@ class DNSInfrastructureChecker:
             "typical_exploits": "Default admin consoles, proxy abuse, application-level attacks",
             "vuln_metrics": "CVSS 5.0 | EPSS 8%",
             "notable_cves": [],
+            "cve_software": None,
             "insurance_risk": "Exposed management interface; potential application compromise",
         },
+    }
+
+    # Known software products per protocol (lower-case substrings), used to
+    # detect when a detected banner names a DIFFERENT product than the port's
+    # cve_software — in which case the template CVEs are for the wrong software
+    # and are dropped. Only protocols whose banner carries a product NAME are
+    # listed (telnet/RDP/Postgres/VNC expose no product name -> port-inferred).
+    _PROTO_PRODUCTS = {
+        21:  ("proftpd", "pure-ftpd", "pureftpd", "vsftpd", "filezilla", "wu-ftpd", "serv-u", "bftpd", "microsoft ftp"),
+        22:  ("openssh", "dropbear", "libssh", "mocana", "romsshell", "cisco"),
+        25:  ("exim", "postfix", "sendmail", "exchange", "qmail", "opensmtpd", "microsoft esmtp"),
+        110: ("dovecot", "courier", "cyrus", "qpopper", "zimbra"),
+        143: ("dovecot", "courier", "cyrus", "zimbra"),
     }
 
     def check(self, domain: str, ip: str = None) -> dict:
@@ -802,6 +838,13 @@ class DNSInfrastructureChecker:
             pass
         return info
 
+    def _cve_software_conflict(self, detected: str, port: int, cve_sw: str) -> bool:
+        """True iff the banner (`detected`, lower-case) names a KNOWN product for
+        this protocol that is DIFFERENT from `cve_sw` — i.e. the port-template
+        CVEs are for the wrong software and must be dropped."""
+        return any(prod != cve_sw and prod in detected
+                   for prod in self._PROTO_PRODUCTS.get(port, ()))
+
     def _assess_risk(self, open_ports: list, zone_transfer: dict = None) -> tuple:
         issues, score = [], 0
         for p in open_ports:
@@ -811,8 +854,32 @@ class DNSInfrastructureChecker:
                 p["risk_level"] = intel["risk_level"]
                 p["typical_exploits"] = intel["typical_exploits"]
                 p["vuln_metrics"] = intel["vuln_metrics"]
-                p["notable_cves"] = intel["notable_cves"]
                 p["insurance_risk"] = intel["insurance_risk"]
+                # Evidence-gate the port-template CVEs on the DETECTED software:
+                # only assert software-specific CVEs the banner corroborates, and
+                # DROP them when the banner names a different product (a Pure-FTPd
+                # host must not carry ProFTPD CVEs). cve_confidence records the
+                # basis so the render can flag version-unconfirmed findings.
+                cves = intel.get("notable_cves") or []
+                cve_sw = intel.get("cve_software")
+                detected = (p.get("detected_version") or "").lower()
+                if not cves:
+                    p["notable_cves"] = []
+                elif not detected:
+                    p["notable_cves"] = cves            # no banner -> inferred from port
+                    p["cve_confidence"] = "port_inferred"
+                elif cve_sw and cve_sw in detected:
+                    p["notable_cves"] = cves            # banner confirms software, version not pinned
+                    p["cve_confidence"] = "software_match"
+                elif cve_sw and self._cve_software_conflict(detected, p["port"], cve_sw):
+                    p["notable_cves"] = []              # banner names a DIFFERENT product
+                    p["cve_confidence"] = "software_mismatch"
+                    p["cve_suppressed"] = list(cves)
+                    p["cve_note"] = (f"template CVEs are for {cve_sw}; detected "
+                                     f"{p.get('detected_version')!r} — suppressed as wrong software")
+                else:
+                    p["notable_cves"] = cves            # banner present, product unrecognised -> keep, flag
+                    p["cve_confidence"] = "potential"
 
             if p["risk"] == "high":
                 desc = intel["insurance_risk"] if intel else ""
@@ -976,6 +1043,10 @@ class HighRiskProtocolChecker:
                     intel = self.SERVICE_INTEL.get(port)
                     if intel:
                         svc.update(intel)
+                        # This checker grabs no banner, so the service and its
+                        # CVEs are inferred from the port only — flag unconfirmed.
+                        if svc.get("notable_cves"):
+                            svc["cve_confidence"] = "port_inferred"
                     return svc
             except Exception:
                 pass
