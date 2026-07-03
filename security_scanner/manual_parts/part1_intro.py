@@ -246,9 +246,9 @@ def _build_section_1(doc):
     _h("add_body")(doc,
         "The Phishield Cyber Risk Scanner is an external, passive security evaluation tool "
         "designed specifically for cyber insurance underwriting. It examines the publicly "
-        "observable digital infrastructure of an organisation -- DNS records, SSL certificates, "
+        "observable digital infrastructure of an organisation, DNS records, SSL certificates, "
         "HTTP headers, open ports, email authentication, credential leaks, dark-web exposure, "
-        "and reputation data -- without ever sending a single intrusive packet to the target."
+        "and reputation data, without ever sending a single intrusive packet to the target."
     )
 
     _h("add_body")(doc,
@@ -257,18 +257,18 @@ def _build_section_1(doc):
     )
 
     _h("add_bullet")(doc,
-        "Risk Assessment -- Produce a quantitative risk profile of a prospective policyholder "
+        "Risk Assessment: Produce a quantitative risk profile of a prospective policyholder "
         "before the policy is bound, giving underwriters an objective, data-driven view of the "
         "organisation's external security posture."
     )
     _h("add_bullet")(doc,
-        "Premium Calibration -- Feed the scanner's Ransomware Susceptibility Index (RSI), FAIR-model "
+        "Premium Calibration: Feed the scanner's Ransomware Susceptibility Index (RSI), FAIR-model "
         "financial impact estimates, and Data Breach Index (DBI) into the premium "
         "calculation workflow so that pricing reflects actual technical risk rather than "
         "self-reported questionnaire answers alone."
     )
     _h("add_bullet")(doc,
-        "Broker Reporting -- Generate a professional PDF report that brokers can present to "
+        "Broker Reporting: Generate a professional PDF report that brokers can present to "
         "clients, explaining findings in plain language alongside actionable recommendations "
         "that can improve the client's risk profile and, in turn, their premium."
     )
@@ -340,7 +340,7 @@ def _build_section_1(doc):
         "When you submit a domain for scanning, the scanner executes a multi-phase pipeline:"
     )
 
-    _h("add_bold_body")(doc, "Phase 1 -- IP Discovery. ",
+    _h("add_bold_body")(doc, "Phase 1: IP Discovery. ",
         "The scanner resolves the domain's DNS A records to obtain all public IP addresses "
         "associated with the domain. If additional client-supplied IP addresses are provided "
         "(for example, known mail server IPs or secondary data-centre addresses), these are "
@@ -348,7 +348,7 @@ def _build_section_1(doc):
         "domain name itself or the discovered IP addresses."
     )
 
-    _h("add_bold_body")(doc, "Phase 2a -- Lightweight Domain Checkers (Concurrent). ",
+    _h("add_bold_body")(doc, "Phase 2a: Lightweight Domain Checkers (Concurrent). ",
         "Approximately 20 checkers run simultaneously against the domain. These include "
         "email authentication (SPF, DKIM, DMARC), HTTP header analysis, WAF detection, "
         "technology stack fingerprinting, breach database lookups, credential leak checks, "
@@ -357,7 +357,7 @@ def _build_section_1(doc):
         "under control."
     )
 
-    _h("add_bold_body")(doc, "Phase 2b -- Heavy Checkers (Sequential). ",
+    _h("add_bold_body")(doc, "Phase 2b: Heavy Checkers (Sequential). ",
         "A small number of resource-intensive checkers run one at a time after the concurrent "
         "batch completes. These include the SSL/TLS deep analysis (which spawns a subprocess "
         "to evaluate cipher suites, certificate chains, and protocol support) and subdomain "
@@ -366,7 +366,7 @@ def _build_section_1(doc):
         "resource-constrained hosting environments."
     )
 
-    _h("add_bold_body")(doc, "Phase 3 -- IP-Level Checkers. ",
+    _h("add_bold_body")(doc, "Phase 3: IP-Level Checkers. ",
         "For each discovered IP address, the scanner runs a set of IP-specific checkers: "
         "DNS infrastructure and open port scanning, high-risk protocol detection (RDP, "
         "Telnet, FTP, SMB), Shodan vulnerability lookups, and DNSBL blacklist checks. "
@@ -374,7 +374,7 @@ def _build_section_1(doc):
         "per-IP detail for the technical report."
     )
 
-    _h("add_bold_body")(doc, "Phase 4 -- OSV Enrichment. ",
+    _h("add_bold_body")(doc, "Phase 4: OSV Enrichment. ",
         "Any technologies or software versions detected during earlier phases are cross-"
         "referenced against the OSV.dev vulnerability database (which includes the National "
         "Vulnerability Database / NVD). This enrichment step attaches known CVEs to detected "
@@ -382,14 +382,14 @@ def _build_section_1(doc):
         "rather than generic warnings."
     )
 
-    _h("add_bold_body")(doc, "Phase 5 -- Scoring. ",
+    _h("add_bold_body")(doc, "Phase 5: Scoring. ",
         "Each checker produces a normalised score. These are combined using category-level "
         "weighting to produce an overall risk score from 0 (critical risk) to 100 (excellent "
         "posture). The risk level is then classified as Critical, High, Medium, Low, or "
         "Excellent based on defined thresholds."
     )
 
-    _h("add_bold_body")(doc, "Phase 6 -- Insurance Analytics. ",
+    _h("add_bold_body")(doc, "Phase 6: Insurance Analytics. ",
         "The scanner calculates three insurance-specific metrics: the Ransomware Susceptibility Index "
         "(RSI), which adjusts the technical score for industry risk and organisational size; "
         "FAIR-model financial impact estimates using Monte Carlo simulation with 10,000 "
@@ -466,16 +466,16 @@ def _build_section_1(doc):
         "findings:"
     )
 
-    _h("add_bullet")(doc, "Shodan -- Internet-wide port and service scanning data, vulnerability lookups")
-    _h("add_bullet")(doc, "Have I Been Pwned (HIBP) -- Breach database for domain-level email exposure")
-    _h("add_bullet")(doc, "Dehashed -- Credential leak database with password hash and plaintext detection")
-    _h("add_bullet")(doc, "VirusTotal -- Malware, phishing, and reputation intelligence")
-    _h("add_bullet")(doc, "SecurityTrails -- Historical DNS records, domain ownership changes")
-    _h("add_bullet")(doc, "IntelX (Intelligence X) -- Dark-web and paste-site exposure monitoring")
-    _h("add_bullet")(doc, "OSV.dev / NVD -- Open-source vulnerability database for CVE enrichment")
-    _h("add_bullet")(doc, "HudsonRock -- Infostealer malware credential compromise data")
-    _h("add_bullet")(doc, "Certificate Transparency Logs -- Subdomain enumeration via issued certificates")
-    _h("add_bullet")(doc, "Multiple DNSBL providers -- IP and domain blacklist status checks")
+    _h("add_bullet")(doc, "Shodan: Internet-wide port and service scanning data, vulnerability lookups")
+    _h("add_bullet")(doc, "Have I Been Pwned (HIBP): Breach database for domain-level email exposure")
+    _h("add_bullet")(doc, "Dehashed: Credential leak database with password hash and plaintext detection")
+    _h("add_bullet")(doc, "VirusTotal: Malware, phishing, and reputation intelligence")
+    _h("add_bullet")(doc, "SecurityTrails: Historical DNS records, domain ownership changes")
+    _h("add_bullet")(doc, "IntelX (Intelligence X): Dark-web and paste-site exposure monitoring")
+    _h("add_bullet")(doc, "OSV.dev / NVD: Open-source vulnerability database for CVE enrichment")
+    _h("add_bullet")(doc, "HudsonRock: Infostealer malware credential compromise data")
+    _h("add_bullet")(doc, "Certificate Transparency Logs: Subdomain enumeration via issued certificates")
+    _h("add_bullet")(doc, "Multiple DNSBL providers: IP and domain blacklist status checks")
 
     _h("add_body")(doc,
         "The scanner produces both an interactive web-based results dashboard and a "
@@ -616,7 +616,7 @@ def _build_section_2(doc):
         "following:"
     )
 
-    _h("add_bullet")(doc, "Google Chrome (version 90 or later) -- recommended")
+    _h("add_bullet")(doc, "Google Chrome (version 90 or later), recommended")
     _h("add_bullet")(doc, "Microsoft Edge (version 90 or later)")
     _h("add_bullet")(doc, "Mozilla Firefox (version 88 or later)")
     _h("add_bullet")(doc, "Apple Safari (version 14 or later)")
@@ -800,15 +800,15 @@ def _build_section_2(doc):
     )
 
     _h("add_bullet")(doc,
-        "Running -- A spinning indicator shows that the checker is currently executing. "
+        "Running: A spinning indicator shows that the checker is currently executing. "
         "Multiple checkers run concurrently during Phase 2a."
     )
     _h("add_bullet")(doc,
-        "Done -- A green tick indicates successful completion. The checker's score or "
+        "Done: A green tick indicates successful completion. The checker's score or "
         "grade appears next to its name."
     )
     _h("add_bullet")(doc,
-        "Error -- A red cross indicates that the checker encountered an error, typically "
+        "Error: A red cross indicates that the checker encountered an error, typically "
         "a timeout or API failure. The affected data will be missing from the results."
     )
 

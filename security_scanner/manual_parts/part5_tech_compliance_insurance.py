@@ -1,5 +1,5 @@
 """
-Phishield Cyber Risk Scanner — User Manual
+Phishield Cyber Risk Scanner: User Manual
 Sections 4.7, 4.8, and 5: Technology & Governance, Compliance Framework Mapping,
 and Insurance Analytics (Deep Dive).
 
@@ -43,7 +43,7 @@ def build(doc):
 
     add_body(doc,
         "The scanner maintains a curated end-of-life (EOL) software signature "
-        "table — refreshed against endoflife.date — that is checked against "
+        "table, refreshed against endoflife.date, that is checked against "
         "every detected component. It spans the server-side and runtime stacks "
         "most commonly exposed in response headers: PHP, Node.js, Python, "
         "OpenSSL, Apache httpd, nginx, Microsoft IIS, Apache Tomcat/Coyote, and "
@@ -64,7 +64,7 @@ def build(doc):
 
     add_warning(doc,
         "End-of-life software is permanently unpatched. Unlike a missing patch "
-        "on supported software, there is no fix coming — the vendor has stopped "
+        "on supported software, there is no fix coming, the vendor has stopped "
         "releasing security updates. Attackers specifically target EOL software "
         "because exploitation is guaranteed to succeed indefinitely. A single "
         "EOL component can undermine every other security control."
@@ -96,7 +96,7 @@ def build(doc):
         "The WHOIS checker queries domain registration data to extract the "
         "registrar, creation date, expiry date, domain age, and whether WHOIS "
         "privacy protection is enabled. This information serves as a business "
-        "maturity proxy — older domains generally belong to more established "
+        "maturity proxy, older domains generally belong to more established "
         "organisations, while very young domains are statistically more likely "
         "to be associated with fraud, phishing, or recently created shell "
         "companies."
@@ -104,19 +104,19 @@ def build(doc):
 
     add_bold_body(doc, "Key signals: ", "")
     add_bullet(doc,
-        "Domain age under 1 year — flagged as a risk factor. New domains lack "
+        "Domain age under 1 year, flagged as a risk factor. New domains lack "
         "reputation history and are disproportionately used in scam operations."
     )
     add_bullet(doc,
-        "Domain age over 5 years — positive trust signal. Long-standing domains "
+        "Domain age over 5 years, positive trust signal. Long-standing domains "
         "indicate business continuity and established operations."
     )
     add_bullet(doc,
-        "Domain expiry within 90 days — warning flag. A domain that is about to "
+        "Domain expiry within 90 days, warning flag. A domain that is about to "
         "expire may indicate neglected infrastructure or a business in decline."
     )
     add_bullet(doc,
-        "WHOIS privacy enabled — neutral for most organisations. However, for "
+        "WHOIS privacy enabled, neutral for most organisations. However, for "
         "businesses that are legally required to publish contact details (e.g. "
         "financial services providers), hidden WHOIS data may raise regulatory "
         "questions."
@@ -124,7 +124,7 @@ def build(doc):
 
     add_note(doc,
         "Domain age is one input into the overall risk model. A young domain "
-        "does not automatically mean the organisation is untrustworthy — it "
+        "does not automatically mean the organisation is untrustworthy, it "
         "simply increases the weight given to other risk indicators."
     )
 
@@ -141,23 +141,23 @@ def build(doc):
 
     add_bold_body(doc, "What the scanner looks for: ", "")
     add_bullet(doc,
-        "Associated domains — other domains that share the same IP address, "
+        "Associated domains, other domains that share the same IP address, "
         "name server, or MX record. A high associated domain count (50+) "
         "indicates shared hosting, which means the domain shares an IP with "
         "many unrelated websites. Shared hosting increases risk because a "
         "compromise on any co-hosted site can affect neighbours."
     )
     add_bullet(doc,
-        "Historical DNS changes — frequent changes to A records or NS records "
+        "Historical DNS changes, frequent changes to A records or NS records "
         "may indicate infrastructure instability or a recent migration."
     )
     add_bullet(doc,
-        "MX record analysis — identifies the email provider (Google Workspace, "
+        "MX record analysis, identifies the email provider (Google Workspace, "
         "Microsoft 365, self-hosted). Self-hosted mail servers require more "
         "operational security than managed providers."
     )
     add_bullet(doc,
-        "NS record analysis — identifies DNS hosting provider. Single NS "
+        "NS record analysis, identifies DNS hosting provider. Single NS "
         "provider without redundancy is a resilience concern."
     )
 
@@ -188,23 +188,23 @@ def build(doc):
 
     add_bold_body(doc, "Sections checked: ", "")
     add_bullet(doc,
-        "Data collection — Does the policy describe what personal information "
+        "Data collection: Does the policy describe what personal information "
         "is collected and the lawful basis for processing?"
     )
     add_bullet(doc,
-        "Data retention — Does the policy state how long data is kept and the "
+        "Data retention: Does the policy state how long data is kept and the "
         "criteria used to determine retention periods?"
     )
     add_bullet(doc,
-        "Data subject rights — Does the policy inform individuals of their "
+        "Data subject rights: Does the policy inform individuals of their "
         "rights to access, correct, and delete their personal information?"
     )
     add_bullet(doc,
-        "Information officer — Does the policy name or reference an information "
+        "Information officer: Does the policy name or reference an information "
         "officer or data protection officer, as required by POPIA Section 55?"
     )
     add_bullet(doc,
-        "Cross-border transfers — Does the policy address whether personal "
+        "Cross-border transfers: Does the policy address whether personal "
         "information is transferred outside South Africa, and the safeguards "
         "applied?"
     )
@@ -220,7 +220,7 @@ def build(doc):
         "Under POPIA, processing personal information without adequate "
         "transparency (including a compliant privacy policy) can result in "
         "fines of up to R10 million or imprisonment. This is not a theoretical "
-        "risk — the South African Information Regulator has begun issuing "
+        "risk, the South African Information Regulator has begun issuing "
         "enforcement notices. A missing or incomplete privacy policy is a "
         "compliance gap that should be addressed immediately."
     )
@@ -240,7 +240,7 @@ def build(doc):
     )
 
     add_bullet(doc,
-        "security.txt — The scanner checks for a machine-readable security "
+        "security.txt: The scanner checks for a machine-readable security "
         "contact file at /.well-known/security.txt, as defined by RFC 9116. "
         "This file tells security researchers how to report vulnerabilities "
         "responsibly. Its presence indicates the organisation has a Vulnerability "
@@ -248,12 +248,12 @@ def build(doc):
         "practices."
     )
     add_bullet(doc,
-        "PGP key — If security.txt references a PGP encryption key, it shows "
+        "PGP key: If security.txt references a PGP encryption key, it shows "
         "the organisation can receive encrypted vulnerability reports, adding "
         "another layer of operational maturity."
     )
     add_bullet(doc,
-        "robots.txt — While primarily an SEO file, robots.txt can reveal "
+        "robots.txt: While primarily an SEO file, robots.txt can reveal "
         "hidden directories or admin paths through its Disallow rules. The "
         "scanner checks whether it exists and whether it inadvertently exposes "
         "sensitive paths."
@@ -335,44 +335,44 @@ def build(doc):
 
     add_bold_body(doc, "Controls mapped from the scan: ", "")
     add_bullet(doc,
-        "S19a — Encryption in Transit: TLS configuration and certificate "
+        "S19a, Encryption in Transit: TLS configuration and certificate "
         "validity (from the SSL checker). POPIA Section 19 requires appropriate "
         "technical measures to secure personal information."
     )
     add_bullet(doc,
-        "S19b — Security Headers: HTTP security headers that prevent XSS, "
+        "S19b, Security Headers: HTTP security headers that prevent XSS, "
         "clickjacking, and MIME-type attacks."
     )
     add_bullet(doc,
-        "S19c — Web Application Security: Secure website configuration and "
+        "S19c, Web Application Security: Secure website configuration and "
         "WAF protection."
     )
     add_bullet(doc,
-        "S19d — Network Access Control: Restriction of remote access services "
+        "S19d, Network Access Control: Restriction of remote access services "
         "(RDP, VPN) and closure of high-risk network ports."
     )
     add_bullet(doc,
-        "S19e — Email Security: SPF, DMARC, and DKIM configuration to prevent "
+        "S19e, Email Security: SPF, DMARC, and DKIM configuration to prevent "
         "phishing and email impersonation."
     )
     add_bullet(doc,
-        "S20a — Privacy Policy: Published privacy policy covering all POPIA-"
+        "S20a, Privacy Policy: Published privacy policy covering all POPIA-"
         "required sections."
     )
     add_bullet(doc,
-        "S20b — Data Minimisation: No unnecessary exposure of sensitive files "
+        "S20b, Data Minimisation: No unnecessary exposure of sensitive files "
         "or admin interfaces."
     )
     add_bullet(doc,
-        "S21a — Software Currency: All software components actively maintained "
+        "S21a, Software Currency: All software components actively maintained "
         "with no end-of-life versions."
     )
     add_bullet(doc,
-        "S22a — Breach History: Historical data breach exposure and notification "
+        "S22a, Breach History: Historical data breach exposure and notification "
         "readiness."
     )
     add_bullet(doc,
-        "S22b — Credential Exposure: Leaked credentials in public breach "
+        "S22b, Credential Exposure: Leaked credentials in public breach "
         "databases (Dehashed)."
     )
 
@@ -388,43 +388,43 @@ def build(doc):
 
     add_bold_body(doc, "Controls mapped from the scan: ", "")
     add_bullet(doc,
-        "Req 2a — Default Credentials: Checks for exposed admin panels that "
+        "Req 2a, Default Credentials: Checks for exposed admin panels that "
         "may use default or guessable credentials."
     )
     add_bullet(doc,
-        "Req 2b — System Hardening: Security headers and information disclosure "
+        "Req 2b, System Hardening: Security headers and information disclosure "
         "controls."
     )
     add_bullet(doc,
-        "Req 2c — Security Policies: Presence of documented security policies "
+        "Req 2c, Security Policies: Presence of documented security policies "
         "(security.txt)."
     )
     add_bullet(doc,
-        "Req 4a — TLS Configuration: Strong TLS encryption for cardholder data "
+        "Req 4a, TLS Configuration: Strong TLS encryption for cardholder data "
         "transmission."
     )
     add_bullet(doc,
-        "Req 4b — HTTPS Enforcement: All endpoints handling sensitive data "
+        "Req 4b, HTTPS Enforcement: All endpoints handling sensitive data "
         "served exclusively over HTTPS."
     )
     add_bullet(doc,
-        "Req 6a — Patch Management: Software versions current with no known "
+        "Req 6a, Patch Management: Software versions current with no known "
         "vulnerabilities."
     )
     add_bullet(doc,
-        "Req 6b — Secure Coding: Secure application headers and web application "
+        "Req 6b, Secure Coding: Secure application headers and web application "
         "protection."
     )
     add_bullet(doc,
-        "Req 8a — Payment Security: PCI-compliant payment processing (third-"
+        "Req 8a, Payment Security: PCI-compliant payment processing (third-"
         "party vs. self-hosted)."
     )
     add_bullet(doc,
-        "Req 11a — Vulnerability Scanning: External vulnerability scan results "
+        "Req 11a, Vulnerability Scanning: External vulnerability scan results "
         "from Shodan CVE analysis."
     )
     add_bullet(doc,
-        "Req 11b — Threat Monitoring: VirusTotal reputation and DNSBL "
+        "Req 11b, Threat Monitoring: VirusTotal reputation and DNSBL "
         "blacklist monitoring."
     )
 
@@ -441,36 +441,36 @@ def build(doc):
 
     add_bold_body(doc, "Controls mapped from the scan: ", "")
     add_bullet(doc,
-        "A.8a — Asset Inventory: Technology stack detection and external IP "
+        "A.8a, Asset Inventory: Technology stack detection and external IP "
         "enumeration."
     )
     add_bullet(doc,
-        "A.8b — Attack Surface: Subdomain discovery and attack surface mapping."
+        "A.8b, Attack Surface: Subdomain discovery and attack surface mapping."
     )
     add_bullet(doc,
-        "A.12a — Network Security: Open port analysis, DNS infrastructure, and "
+        "A.12a, Network Security: Open port analysis, DNS infrastructure, and "
         "service hardening."
     )
     add_bullet(doc,
-        "A.12b — Remote Access: RDP, VPN, and remote access protocol security."
+        "A.12b, Remote Access: RDP, VPN, and remote access protocol security."
     )
     add_bullet(doc,
-        "A.12c — Malware and Reputation: DNSBL blacklisting and VirusTotal "
+        "A.12c, Malware and Reputation: DNSBL blacklisting and VirusTotal "
         "malware detection."
     )
     add_bullet(doc,
-        "A.12d — DDoS Resilience: WAF detection and CDN/cloud infrastructure."
+        "A.12d, DDoS Resilience: WAF detection and CDN/cloud infrastructure."
     )
     add_bullet(doc,
-        "A.14a — Encryption Standards: SSL/TLS configuration and certificate "
+        "A.14a, Encryption Standards: SSL/TLS configuration and certificate "
         "management."
     )
     add_bullet(doc,
-        "A.14b — Application Security: HTTP security headers and web "
+        "A.14b, Application Security: HTTP security headers and web "
         "application hardening."
     )
     add_bullet(doc,
-        "A.14c — Payment and Data Handling: Secure payment processing and "
+        "A.14c, Payment and Data Handling: Secure payment processing and "
         "information disclosure controls."
     )
 
@@ -480,33 +480,33 @@ def build(doc):
     add_body(doc,
         "NIST CSF 2.0 is the United States' voluntary cybersecurity framework, "
         "widely adopted globally. Version 2.0 (released February 2024) added a "
-        "sixth function — Govern — to the original five. The framework organises "
+        "sixth function, Govern, to the original five. The framework organises "
         "cybersecurity activities into six core functions: Govern, Identify, "
         "Protect, Detect, Respond, and Recover."
     )
 
     add_bold_body(doc, "14 sub-controls mapped from the scan: ", "")
-    add_bullet(doc, "GOVERN — GV.1 Security Policy: Documented cybersecurity governance (security.txt).")
-    add_bullet(doc, "GOVERN — GV.2 Privacy Governance: Privacy policy and data protection compliance.")
-    add_bullet(doc, "IDENTIFY — ID.1 Asset Discovery: Technology stack and external IP inventory.")
-    add_bullet(doc, "IDENTIFY — ID.2 Attack Surface Mapping: Subdomain discovery and information disclosure.")
-    add_bullet(doc, "PROTECT — PR.1 Encryption and TLS: Data-in-transit protection.")
-    add_bullet(doc, "PROTECT — PR.2 Security Headers and Hardening: HTTP hardening and web application security.")
-    add_bullet(doc, "PROTECT — PR.3 Perimeter Defence: WAF, firewall rules, and remote access controls.")
-    add_bullet(doc, "PROTECT — PR.4 Email Authentication: SPF, DMARC, DKIM, and MTA-STS.")
-    add_bullet(doc, "DETECT — DE.1 Vulnerability Detection: Shodan CVE analysis and version-based vulnerability scanning.")
-    add_bullet(doc, "DETECT — DE.2 Threat Intelligence: VirusTotal, DNSBL, and exposed admin detection.")
-    add_bullet(doc, "RESPOND — RS.1 Breach Response: Historical breach exposure and credential leak monitoring.")
-    add_bullet(doc, "RESPOND — RS.2 Security Disclosure: Published vulnerability disclosure policy.")
-    add_bullet(doc, "RECOVER — RC.1 Infrastructure Resilience: DNS redundancy and CDN availability.")
-    add_bullet(doc, "RECOVER — RC.2 Communication Recovery: Email infrastructure resilience.")
+    add_bullet(doc, "GOVERN, GV.1 Security Policy: Documented cybersecurity governance (security.txt).")
+    add_bullet(doc, "GOVERN, GV.2 Privacy Governance: Privacy policy and data protection compliance.")
+    add_bullet(doc, "IDENTIFY, ID.1 Asset Discovery: Technology stack and external IP inventory.")
+    add_bullet(doc, "IDENTIFY, ID.2 Attack Surface Mapping: Subdomain discovery and information disclosure.")
+    add_bullet(doc, "PROTECT, PR.1 Encryption and TLS: Data-in-transit protection.")
+    add_bullet(doc, "PROTECT, PR.2 Security Headers and Hardening: HTTP hardening and web application security.")
+    add_bullet(doc, "PROTECT, PR.3 Perimeter Defence: WAF, firewall rules, and remote access controls.")
+    add_bullet(doc, "PROTECT, PR.4 Email Authentication: SPF, DMARC, DKIM, and MTA-STS.")
+    add_bullet(doc, "DETECT, DE.1 Vulnerability Detection: Shodan CVE analysis and version-based vulnerability scanning.")
+    add_bullet(doc, "DETECT, DE.2 Threat Intelligence: VirusTotal, DNSBL, and exposed admin detection.")
+    add_bullet(doc, "RESPOND, RS.1 Breach Response: Historical breach exposure and credential leak monitoring.")
+    add_bullet(doc, "RESPOND, RS.2 Security Disclosure: Published vulnerability disclosure policy.")
+    add_bullet(doc, "RECOVER, RC.1 Infrastructure Resilience: DNS redundancy and CDN availability.")
+    add_bullet(doc, "RECOVER, RC.2 Communication Recovery: Email infrastructure resilience.")
 
     # ---- How Compliance Scoring Works ----
     add_h2(doc, "How Compliance Scoring Works")
 
     add_body(doc,
         "The scanner uses a hybrid scoring approach for compliance assessment. "
-        "Each sub-control (e.g. 'S19a — Encryption in Transit') receives a "
+        "Each sub-control (e.g. 'S19a: Encryption in Transit') receives a "
         "score of 0 to 100 derived from the checker or checkers that feed into "
         "it. If a sub-control is fed by multiple checkers, the scores are "
         "averaged. Each sub-control also carries a weight (typically 0.6 to 1.2) "
@@ -516,17 +516,17 @@ def build(doc):
     )
 
     add_bold_body(doc, "Status badges: ", "")
-    add_bullet(doc, "PASS (score 70 or above) — The control meets the expected standard based on external evidence.")
-    add_bullet(doc, "PARTIAL (score 40 to 69) — The control is partially implemented but has gaps.")
-    add_bullet(doc, "FAIL (score below 40) — The control is absent or critically deficient.")
-    add_bullet(doc, "NO_DATA — The checker(s) feeding this control did not return data (e.g. paid API not configured, checker timed out). The control is excluded from the weighted average so it does not unfairly penalise the score.")
+    add_bullet(doc, "PASS (score 70 or above): The control meets the expected standard based on external evidence.")
+    add_bullet(doc, "PARTIAL (score 40 to 69): The control is partially implemented but has gaps.")
+    add_bullet(doc, "FAIL (score below 40): The control is absent or critically deficient.")
+    add_bullet(doc, "NO_DATA: The checker(s) feeding this control did not return data (e.g. paid API not configured, checker timed out). The control is excluded from the weighted average so it does not unfairly penalise the score.")
 
     add_body(doc,
         "Because this is an external-only assessment (no internal network "
         "access, no agent installed, no interviews), the scanner typically "
         "covers 60 to 80 percent of each framework's controls. Controls that "
-        "require internal assessment — such as access management policies, "
-        "backup procedures, or physical security — cannot be evaluated "
+        "require internal assessment, such as access management policies, "
+        "backup procedures, or physical security, cannot be evaluated "
         "externally and are marked as NO_DATA."
     )
 
@@ -534,7 +534,7 @@ def build(doc):
         "The compliance percentages in this report are estimates based on "
         "externally observable evidence. They are not a substitute for a "
         "formal compliance audit. A PASS status on an external scan does not "
-        "guarantee full compliance with the framework — internal controls must "
+        "guarantee full compliance with the framework, internal controls must "
         "also be assessed. Use these results as a starting point and gap "
         "analysis tool, not as a certification claim."
     )
@@ -563,7 +563,7 @@ def build(doc):
     add_body(doc,
         "These analytics are designed to be used by insurance brokers, "
         "underwriters, and risk managers. They convert technical scan data "
-        "into the language of insurance — probability, loss magnitude, "
+        "into the language of insurance, probability, loss magnitude, "
         "confidence intervals, and risk reduction ROI."
     )
 
@@ -588,7 +588,7 @@ def build(doc):
 
     add_h2(doc, "RSI Contributing Factors")
 
-    add_bold_body(doc, "Priority 1 — Critical signals (strongest ransomware indicators): ", "")
+    add_bold_body(doc, "Priority 1, Critical signals (strongest ransomware indicators): ", "")
     add_bullet(doc,
         "RDP exposed (port 3389): +0.25. This is the single largest contributor "
         "because RDP is the number one ransomware entry vector globally. "
@@ -602,11 +602,11 @@ def build(doc):
     add_bullet(doc,
         "CISA KEV CVEs (Known Exploited Vulnerabilities): +0.08 per KEV CVE, "
         "capped at +0.20. These are vulnerabilities that CISA has confirmed "
-        "are actively being exploited in the wild — they are not theoretical "
+        "are actively being exploited in the wild, they are not theoretical "
         "risks."
     )
 
-    add_bold_body(doc, "Priority 2 — High-impact signals: ", "")
+    add_bold_body(doc, "Priority 2, High-impact signals: ", "")
     add_bullet(doc,
         "High-EPSS CVEs (exploit probability above 50%): +0.04 each, capped "
         "at +0.12. EPSS (Exploit Prediction Scoring System) predicts the "
@@ -627,7 +627,7 @@ def build(doc):
         "credentials and infrastructure details."
     )
 
-    add_bold_body(doc, "Priority 3 — Contributing factors (hygiene indicators): ", "")
+    add_bold_body(doc, "Priority 3, Contributing factors (hygiene indicators): ", "")
     add_bullet(doc,
         "Credential leaks (from Dehashed): Scaled by volume. Over 100 leaks: "
         "+0.06. Between 10 and 100: +0.04. Under 10: +0.02. Leaked "
@@ -657,7 +657,7 @@ def build(doc):
         "To prevent score inflation from stacking many moderate findings, "
         "the RSI applies a diminishing returns function above 0.50. Below "
         "0.50, the score is linear (each factor adds its full value). Above "
-        "0.50, each additional increment contributes progressively less — the "
+        "0.50, each additional increment contributes progressively less, the "
         "score approaches 1.0 asymptotically but never reaches it from "
         "moderate findings alone. This means an RSI above 0.75 requires "
         "genuinely critical issues (exposed RDP, KEV CVEs, active compromise), "
@@ -689,7 +689,7 @@ def build(doc):
     add_note(doc,
         "The RSI measures susceptibility to ransomware attack, not the "
         "probability of one occurring. An RSI of 0.60 does not mean there "
-        "is a 60% chance of ransomware — it means the external attack surface "
+        "is a 60% chance of ransomware, it means the external attack surface "
         "has 60% of the observable characteristics that ransomware operators "
         "look for when selecting targets."
     )
@@ -702,7 +702,7 @@ def build(doc):
     add_body(doc,
         "The Data Breach Index is a 0 to 100 score that measures historical "
         "breach exposure and resilience. Unlike the RSI (where higher is "
-        "worse), a higher DBI score is better — it indicates lower historical "
+        "worse), a higher DBI score is better, it indicates lower historical "
         "exposure and a more favourable breach profile. The DBI uses data from "
         "Have I Been Pwned (HIBP) breach records and Dehashed credential leak "
         "databases."
@@ -719,7 +719,7 @@ def build(doc):
 
     add_bold_body(doc, "2. Recency (maximum 20 points): ",
         "Measures how recently the most recent breach occurred. A breach "
-        "within the last year scores 0 points — this is a current, active "
+        "within the last year scores 0 points, this is a current, active "
         "risk. A breach between one and three years ago scores 10 points. "
         "No breach in the last three years (or no breaches at all) scores "
         "the full 20 points. Recent breaches weigh more heavily because the "
@@ -729,7 +729,7 @@ def build(doc):
     add_bold_body(doc, "3. Data Severity (maximum 15 points): ",
         "Evaluates what types of data were exposed. If breaches included "
         "passwords, credit card numbers, bank account numbers, social "
-        "security numbers, or financial data, the score is 0 points — these "
+        "security numbers, or financial data, the score is 0 points, these "
         "are the most damaging data classes. If only email addresses were "
         "exposed, the score is 10 points. No data exposed at all scores "
         "the full 15 points."
@@ -760,7 +760,7 @@ def build(doc):
     add_bullet(doc, "Critical: 0-19. Extensive breach exposure with active credential leaks.")
 
     add_tip(doc,
-        "A low DBI score does not mean a breach is inevitable — it means the "
+        "A low DBI score does not mean a breach is inevitable, it means the "
         "organisation's historical exposure is high, which increases the "
         "probability of credential reuse attacks, phishing using leaked data, "
         "and repeat incidents. The most effective remediation is a forced "
@@ -801,7 +801,7 @@ def build(doc):
         "(R49.22 million, ransom-inclusive) and scaled by two factors:"
     )
     add_bullet(doc,
-        "Revenue scaling with graduated elasticity — smaller organisations "
+        "Revenue scaling with graduated elasticity, smaller organisations "
         "experience proportionally higher costs relative to revenue, while "
         "larger organisations benefit from economies of scale in incident "
         "response. The elasticity curve ensures that a R10 million-revenue "
@@ -809,7 +809,7 @@ def build(doc):
         "enterprise."
     )
     add_bullet(doc,
-        "Industry multiplier with graduated severity — high-risk industries "
+        "Industry multiplier with graduated severity, high-risk industries "
         "(financial services, healthcare, legal) receive a graduated uplift "
         "reflecting their higher regulatory exposure, data sensitivity, and "
         "historical claims frequency."
@@ -893,12 +893,12 @@ def build(doc):
         "under-counted short, sharp outages."
     )
     add_bullet(doc,
-        "C4: Ransom/extortion — set at 10.40% of total breach magnitude, "
+        "C4: Ransom/extortion, set at 10.40% of total breach magnitude, "
         "proportional to the IBM SA data decomposition. This component is "
         "only activated for ransomware-family incidents."
     )
     add_bullet(doc,
-        "C5: Incident response — forensics, containment, eradication, and "
+        "C5: Incident response, forensics, containment, eradication, and "
         "recovery costs. Tiered by organisation size: smaller companies face "
         "relatively higher IR costs (fewer internal resources), while larger "
         "companies benefit from retained IR relationships and internal SOC "
@@ -1076,34 +1076,34 @@ def build(doc):
         "posture-independent:"
     )
     add_bullet(doc,
-        "Most Likely (mode) — the peak of the loss distribution; the single "
+        "Most Likely (mode), the peak of the loss distribution; the single "
         "most probable annual loss outcome."
     )
     add_bullet(doc,
-        "Median (P50) — half of all simulated outcomes fall below this figure. "
+        "Median (P50), half of all simulated outcomes fall below this figure. "
         "Reasonable anchor for premium-rating calculations."
     )
     add_bullet(doc,
-        "Severe event (P99 severity) — the severity of a single severe event at "
+        "Severe event (P99 severity), the severity of a single severe event at "
         "the 99th percentile of the severity distribution, conditional on a "
         "severe event occurring. A cover-sizing figure (how large a severe loss "
         "could be), NOT an annual frequency. Standard reinsurance / underwriting "
         "convention; reported under the 1-in-100 cover tier."
     )
     add_bullet(doc,
-        "Extreme event (P99.5 severity) — the next severity tier, aligned with "
+        "Extreme event (P99.5 severity), the next severity tier, aligned with "
         "the FSCA SAM (Solvency Assessment and Management) regime's catastrophe "
         "benchmark; reported under the 1-in-200 cover tier."
     )
     add_bullet(doc,
-        "Catastrophic event (P99.6 severity) — the extreme severity tier and the "
+        "Catastrophic event (P99.6 severity), the extreme severity tier and the "
         "standard SAM / reinsurance catastrophe benchmark (reported as 1-in-250), "
         "GPD-fitted from the right tail of the severity distribution."
     )
     add_note(doc,
         "Headline consistency: wherever a single 'Estimated Annual Loss' figure "
         "is shown (the broker-summary tile, the executive deck headline, and the "
-        "Attacker's-View data-impact line), it is the Median (P50) — the same "
+        "Attacker's-View data-impact line), it is the Median (P50), the same "
         "value as the Median row above. It is NOT the probability-weighted mean "
         "(expected annual loss / ALE), which for a right-skewed loss "
         "distribution sits below the median and would otherwise disagree with "
@@ -1684,7 +1684,7 @@ def build(doc):
         "inferred from the FS / Legal Services / Real Estate sub-"
         "industry mapping (per FIC Act Schedule 1). B2C and PCI are "
         "inferred from consumer-facing sub-industry labels plus a broad "
-        "commerce-signal pass over the homepage — payment-gateway names "
+        "commerce-signal pass over the homepage, payment-gateway names "
         "(incl. SA-local gateways), card-input field markers, storefront / "
         "checkout UI text, structured-data product markers, and e-commerce "
         "platform fingerprints (an e-commerce platform implies card "
@@ -1864,7 +1864,7 @@ def build(doc):
         "The breach cost anchor (R49.22 million) and component proportions "
         "are derived from IBM 2025 SA-specific data. The ransomware recovery "
         "time and vector weights use Sophos SA 2025 survey data. These are "
-        "calibrated averages — actual costs will vary based on data "
+        "calibrated averages, actual costs will vary based on data "
         "sensitivity, regulatory jurisdiction, organisation size, and "
         "incident response readiness."
     )
@@ -1887,19 +1887,19 @@ def build(doc):
     add_h2(doc, "Priority Levels")
 
     add_bullet(doc,
-        "P1 (Critical) — RSI reduction of 0.10 or more per step. These are "
+        "P1 (Critical): RSI reduction of 0.10 or more per step. These are "
         "the findings that contribute the most to ransomware susceptibility. "
         "Examples: blocking exposed RDP, firewalling exposed databases, "
         "patching CISA KEV CVEs. Address within 14 days."
     )
     add_bullet(doc,
-        "P2 (High) — RSI reduction of 0.05 to 0.09 per step. Significant "
+        "P2 (High): RSI reduction of 0.05 to 0.09 per step. Significant "
         "security improvements that should be addressed within 30 days. "
         "Examples: deploying a WAF, implementing DMARC, resetting leaked "
         "credentials."
     )
     add_bullet(doc,
-        "P3 (Medium) — RSI reduction below 0.05 per step. Hygiene "
+        "P3 (Medium): RSI reduction below 0.05 per step. Hygiene "
         "improvements to address within 90 days. Examples: updating EOL "
         "software, creating a security.txt file, resolving DNSBL blacklisting."
     )
@@ -1910,7 +1910,7 @@ def build(doc):
         "Each remediation step includes an indicative cost range in South "
         "African Rand (ZAR). These are based on typical SA market rates for "
         "the type of work involved and are intended as a conversation starter "
-        "for budgeting discussions — they are not project quotes. Actual costs "
+        "for budgeting discussions, they are not project quotes. Actual costs "
         "will depend on the complexity of the environment, the service "
         "provider chosen, and whether in-house resources are available."
     )
@@ -1944,7 +1944,7 @@ def build(doc):
     )
 
     add_body(doc,
-        "The 0.70 factor is a conservatism adjustment — it acknowledges that "
+        "The 0.70 factor is a conservatism adjustment, it acknowledges that "
         "not all of the modelled financial benefit will materialise perfectly "
         "in practice. This prevents over-promising on savings."
     )
@@ -1964,7 +1964,7 @@ def build(doc):
         "The total potential savings figure represents the aggregate annual "
         "financial benefit of completing all remediation steps. This figure "
         "is particularly valuable for justifying cybersecurity budgets to "
-        "executive management and boards — it translates security improvements "
+        "executive management and boards, it translates security improvements "
         "into a return-on-investment narrative."
     )
 

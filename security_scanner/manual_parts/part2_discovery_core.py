@@ -1,5 +1,5 @@
 """
-Phishield Cyber Risk Scanner User Manual — Sections 4.1–4.2
+Phishield Cyber Risk Scanner User Manual: Sections 4.1–4.2
 Discovery and Core Security checkers.
 
 Requires helpers: add_h1, add_h2, add_body, add_bold_body, add_bullet,
@@ -51,10 +51,10 @@ def build(doc):
     )
 
     add_body(doc, "Scoring breakdown:")
-    add_bullet(doc, "Rank 1 -- 1 000:  Score 100.  Among the most visited sites on the internet.")
-    add_bullet(doc, "Rank 1 001 -- 10 000:  Score 90.  High-traffic, well-known domain.")
-    add_bullet(doc, "Rank 10 001 -- 100 000:  Score 70.  Moderate traffic, established online presence.")
-    add_bullet(doc, "Rank 100 001 -- 1 000 000:  Score 50.  Lower traffic but still in the top million.")
+    add_bullet(doc, "Rank 1 to 1 000:  Score 100.  Among the most visited sites on the internet.")
+    add_bullet(doc, "Rank 1 001 to 10 000:  Score 90.  High-traffic, well-known domain.")
+    add_bullet(doc, "Rank 10 001 to 100 000:  Score 70.  Moderate traffic, established online presence.")
+    add_bullet(doc, "Rank 100 001 to 1 000 000:  Score 50.  Lower traffic but still in the top million.")
     add_bullet(doc, "Unranked (not in list):  Score 30.  Domain does not appear in the top one million.")
 
     add_bold_body(
@@ -223,38 +223,38 @@ def build(doc):
     add_body(doc, "Grade interpretation:")
     add_bullet(
         doc,
-        "Grade A+ (score 95--100):  Excellent. Modern TLS only, strong ciphers, "
+        "Grade A+ (score 95 to 100):  Excellent. Modern TLS only, strong ciphers, "
         "valid certificate with adequate key size, HSTS enabled, OCSP stapling "
         "active, valid chain, and restrictive CAA records. This is the gold "
         "standard."
     )
     add_bullet(
         doc,
-        "Grade A (score 85--94):  Very good. One or two minor items may be "
+        "Grade A (score 85 to 94):  Very good. One or two minor items may be "
         "missing (for example, OCSP stapling or CAA records) but overall "
         "configuration is strong."
     )
     add_bullet(
         doc,
-        "Grade B (score 70--84):  Acceptable. The certificate is valid and "
+        "Grade B (score 70 to 84):  Acceptable. The certificate is valid and "
         "modern TLS is supported, but there may be a deprecated TLS version "
         "still enabled or HSTS may be missing. Remediation is recommended."
     )
     add_bullet(
         doc,
-        "Grade C (score 55--69):  Weak. Multiple issues are present. Commonly "
+        "Grade C (score 55 to 69):  Weak. Multiple issues are present. Commonly "
         "this means legacy TLS versions are enabled alongside weak ciphers or a "
         "certificate approaching expiry. Remediation should be prioritised."
     )
     add_bullet(
         doc,
-        "Grade D (score 40--54):  Poor. Serious configuration weaknesses are "
+        "Grade D (score 40 to 54):  Poor. Serious configuration weaknesses are "
         "present. This may include an expiring certificate combined with "
         "deprecated protocols and missing HSTS."
     )
     add_bullet(
         doc,
-        "Grade F (score 0--39):  Critical. The certificate may be expired or "
+        "Grade F (score 0 to 39):  Critical. The certificate may be expired or "
         "invalid, extremely insecure protocols may be enabled, or the chain of "
         "trust is broken. Immediate remediation is required."
     )
@@ -328,7 +328,7 @@ def build(doc):
         "The scanner requests the domain's home page over HTTPS and inspects the "
         "HTTP response headers for six security-critical headers. Each header "
         "carries a weighted score that reflects its relative importance. The "
-        "overall score is expressed as a percentage (0--100%) of the maximum "
+        "overall score is expressed as a percentage (0 to 100%) of the maximum "
         "achievable weight."
     )
 
@@ -336,7 +336,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        "Strict-Transport-Security (HSTS) -- weight 20:  ",
+        "Strict-Transport-Security (HSTS), weight 20:  ",
         "Instructs the browser to only communicate over HTTPS for a specified "
         "duration. This prevents protocol-downgrade attacks and cookie hijacking. "
         "It is the highest-weighted header because without it, even a site with a "
@@ -345,7 +345,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        "X-Frame-Options -- weight 15:  ",
+        "X-Frame-Options, weight 15:  ",
         "Controls whether the page can be embedded in an iframe on another site. "
         "Without this header (or an equivalent CSP frame-ancestors directive), the "
         "site is vulnerable to clickjacking attacks, where an attacker overlays "
@@ -354,7 +354,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        "X-Content-Type-Options -- weight 15:  ",
+        "X-Content-Type-Options, weight 15:  ",
         "When set to 'nosniff', this header prevents browsers from guessing "
         "(MIME-sniffing) the content type of a response. Without it, an attacker "
         "can upload a file that the browser incorrectly interprets as executable "
@@ -363,7 +363,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        "Content-Security-Policy (CSP) -- weight 10 (presence) + 10 (quality):  ",
+        "Content-Security-Policy (CSP), weight 10 (presence) + 10 (quality):  ",
         "CSP is the most powerful browser-side defence against cross-site "
         "scripting (XSS) and data injection attacks. It specifies exactly which "
         "sources are allowed to load scripts, styles, images, fonts, and other "
@@ -374,7 +374,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        "Referrer-Policy -- weight 15:  ",
+        "Referrer-Policy, weight 15:  ",
         "Controls how much referrer information the browser sends when navigating "
         "away from the page. Without a restrictive policy, sensitive URL "
         "parameters (such as session tokens or search queries) may leak to "
@@ -383,7 +383,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        "Permissions-Policy -- weight 15:  ",
+        "Permissions-Policy, weight 15:  ",
         "Allows the site to disable browser features it does not use, such as "
         "the camera, microphone, geolocation, or payment API. This limits the "
         "damage an attacker can do even if they inject malicious script into the "
@@ -403,7 +403,7 @@ def build(doc):
     add_body(
         doc,
         "When a Content-Security-Policy header is present, the scanner performs "
-        "an additional quality analysis that produces a separate 0--100 score. "
+        "an additional quality analysis that produces a separate 0 to 100 score. "
         "This analysis was introduced in Phase 3 to address a common problem: "
         "many sites deploy a CSP header that technically exists but is configured "
         "so permissively that it provides little real protection."
@@ -420,25 +420,25 @@ def build(doc):
     )
     add_bullet(
         doc,
-        "'unsafe-inline' -- Allows inline scripts and event handlers. This "
+        "'unsafe-inline': Allows inline scripts and event handlers. This "
         "effectively defeats XSS protection, because an attacker who can inject "
         "HTML can also inject inline script tags."
     )
     add_bullet(
         doc,
-        "'unsafe-eval' -- Allows the use of eval(), new Function(), and similar "
+        "'unsafe-eval': Allows the use of eval(), new Function(), and similar "
         "dynamic code execution methods. Attackers frequently exploit these "
         "functions to execute injected payloads."
     )
     add_bullet(
         doc,
-        "Wildcard (*) in script-src -- Permits scripts from any domain. An "
+        "Wildcard (*) in script-src: Permits scripts from any domain. An "
         "attacker can host a malicious script on any server and it will be "
         "allowed by the policy."
     )
     add_bullet(
         doc,
-        "data: URIs in script-src -- Allows scripts to be loaded from data: "
+        "data: URIs in script-src, Allows scripts to be loaded from data: "
         "URIs, which can be used to encode and execute malicious JavaScript "
         "without an external server."
     )
@@ -451,28 +451,28 @@ def build(doc):
     )
     add_bullet(
         doc,
-        "default-src -- The fallback directive. If this is missing and a "
+        "default-src: The fallback directive. If this is missing and a "
         "specific directive is also missing, the browser applies no restriction "
         "for that resource type."
     )
     add_bullet(
         doc,
-        "script-src -- Controls where JavaScript can be loaded from. This is the "
+        "script-src: Controls where JavaScript can be loaded from. This is the "
         "most important directive for preventing XSS."
     )
     add_bullet(
         doc,
-        "frame-ancestors -- Controls which sites can embed this page in a frame. "
+        "frame-ancestors: Controls which sites can embed this page in a frame. "
         "This is the modern replacement for X-Frame-Options."
     )
     add_bullet(
         doc,
-        "object-src -- Controls where plugins (Flash, Java applets) can be "
+        "object-src: Controls where plugins (Flash, Java applets) can be "
         "loaded from. Setting this to 'none' blocks legacy plugin-based attacks."
     )
     add_bullet(
         doc,
-        "base-uri -- Controls the URL that can be used in the <base> element. "
+        "base-uri: Controls the URL that can be used in the <base> element. "
         "Without this, an attacker can change the base URL to hijack relative "
         "resource paths."
     )
@@ -495,8 +495,8 @@ def build(doc):
     add_body(
         doc,
         "The CSP quality score feeds into the overall HTTP Security Headers "
-        "percentage. Specifically, the quality score (0--100) is divided by 10 "
-        "to produce a 0--10 point bonus that is added to the earned header "
+        "percentage. Specifically, the quality score (0 to 100) is divided by 10 "
+        "to produce a 0 to 10 point bonus that is added to the earned header "
         "weights. This means a perfect CSP contributes up to 20 points in total "
         "(10 for presence, 10 for quality) out of the overall 100-point budget."
     )
@@ -546,9 +546,9 @@ def build(doc):
     add_note(
         doc,
         "Blocked or unreachable responses: if the final response to the "
-        "scanner is not a success (2xx) status — for example, a WAF or CDN "
+        "scanner is not a success (2xx) status, for example, a WAF or CDN "
         "returns a 403 or 503 challenge/block page to the scanner's user "
-        "agent — the headers on that block page do not represent the site's "
+        "agent, the headers on that block page do not represent the site's "
         "real configuration. In that case the check reports 'could not "
         "assess (blocked/unreachable)' and emits no header score, and "
         "scoring and remediation fall back to neutral, rather than recording "
@@ -567,25 +567,25 @@ def build(doc):
         "or DDoS protection service is in place. Detection is based strictly on "
         "transport-layer evidence: HTTP response headers unique to the WAF "
         "vendor, cookies set by the WAF, and the Server header. Vendor strings "
-        "appearing in the page body are deliberately NOT used as a signal — a "
+        "appearing in the page body are deliberately NOT used as a signal, a "
         "page that merely mentions a vendor's name (for example in marketing "
         "copy) must not be reported as protected by that vendor's WAF."
     )
 
     add_body(doc, "The scanner recognises the following WAF and protection services:")
-    add_bullet(doc, "Cloudflare -- Detected via cf-ray header, cf-cache-status header, and related cookies.")
-    add_bullet(doc, "AWS WAF / CloudFront -- Detected via x-amz-cf-id header, x-amzn-requestid header, and AWS load-balancer cookies.")
-    add_bullet(doc, "Imperva / Incapsula -- Detected via x-iinfo header, x-cdn header, and incapsula session cookies.")
-    add_bullet(doc, "Akamai -- Detected via x-akamai-transformed header and Akamai bot-management cookies.")
-    add_bullet(doc, "Sucuri -- Detected via x-sucuri-id and x-sucuri-cache headers.")
+    add_bullet(doc, "Cloudflare: Detected via cf-ray header, cf-cache-status header, and related cookies.")
+    add_bullet(doc, "AWS WAF / CloudFront: Detected via x-amz-cf-id header, x-amzn-requestid header, and AWS load-balancer cookies.")
+    add_bullet(doc, "Imperva / Incapsula: Detected via x-iinfo header, x-cdn header, and incapsula session cookies.")
+    add_bullet(doc, "Akamai: Detected via x-akamai-transformed header and Akamai bot-management cookies.")
+    add_bullet(doc, "Sucuri: Detected via x-sucuri-id and x-sucuri-cache headers.")
     add_bullet(
         doc,
-        "F5 BIG-IP ASM -- Detected only via genuine F5 markers: the "
+        "F5 BIG-IP ASM, Detected only via genuine F5 markers: the "
         "x-wa-info header, BIG-IP / TS01 / F5 session cookies, or a "
         "Server: BIG-IP header. The ubiquitous x-frame-options header is "
         "NOT treated as an F5 signal, as almost any hardened site sets it."
     )
-    add_bullet(doc, "Barracuda -- Detected via barracuda session cookies.")
+    add_bullet(doc, "Barracuda: Detected via barracuda session cookies.")
 
     add_bold_body(
         doc,

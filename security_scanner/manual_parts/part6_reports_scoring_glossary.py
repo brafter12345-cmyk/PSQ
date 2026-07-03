@@ -84,14 +84,14 @@ def build(doc):
         doc,
         "A four-phase narrative that walks the reader through how an "
         "attacker would exploit the findings discovered during the scan. "
-        "The phases are: (1) Reconnaissance -- what an attacker can learn "
+        "The phases are: (1) Reconnaissance, what an attacker can learn "
         "from publicly available information about the target, "
-        "(2) Weaponisation -- how discovered vulnerabilities and leaked "
+        "(2) Weaponisation, how discovered vulnerabilities and leaked "
         "credentials could be combined into an attack toolkit, "
-        "(3) Delivery & Exploitation -- the most likely attack vectors "
+        "(3) Delivery & Exploitation, the most likely attack vectors "
         "such as phishing with leaked credentials, exploiting unpatched "
         "services, or abusing misconfigured email authentication, and "
-        "(4) Impact -- the realistic business consequences including "
+        "(4) Impact, the realistic business consequences including "
         "data exfiltration, ransomware deployment, business email "
         "compromise, and financial loss. Each phase references specific "
         "findings from the scan to ground the narrative in evidence.",
@@ -183,35 +183,35 @@ def build(doc):
     add_bold_body(doc, "Contents:", "")
     add_bullet(
         doc,
-        "Cover Page -- branded cover with target domain, scan date, "
+        "Cover Page, branded cover with target domain, scan date, "
         "and overall risk score gauge.",
     )
     add_bullet(
         doc,
-        "Executive Summary -- high-level risk posture with key metrics "
+        "Executive Summary, high-level risk posture with key metrics "
         "(overall score, critical issues, breach count, credential "
         "exposure, estimated financial impact range).",
     )
     add_bullet(
         doc,
-        "Vulnerability Posture -- simplified severity breakdown focusing "
+        "Vulnerability Posture, simplified severity breakdown focusing "
         "on critical and high-severity findings only, with plain-language "
         "explanations.",
     )
     add_bullet(
         doc,
-        "Attacker's View -- abbreviated kill chain narrative highlighting "
+        "Attacker's View, abbreviated kill chain narrative highlighting "
         "the most impactful attack paths.",
     )
     add_bullet(
         doc,
-        "Financial Impact Summary -- RSI score, DBI score, and hybrid-model "
+        "Financial Impact Summary, RSI score, DBI score, and hybrid-model "
         "estimated loss range presented in a broker-friendly format with "
         "clear rand-value ranges.",
     )
     add_bullet(
         doc,
-        "'Why This Matters' Section -- a persuasive closing section with "
+        "'Why This Matters' Section, a persuasive closing section with "
         "a call to action explaining why the client should engage further, "
         "including statistics on breach likelihood, average breach costs, "
         "and the value of proactive remediation.",
@@ -236,17 +236,17 @@ def build(doc):
     )
     add_bullet(
         doc,
-        "Green circle -- No issues found or the configuration meets "
+        "Green circle: No issues found or the configuration meets "
         "best-practice standards. No action required.",
     )
     add_bullet(
         doc,
-        "Amber circle -- Minor issues or partial implementation detected. "
+        "Amber circle: Minor issues or partial implementation detected. "
         "Improvement is recommended but the risk is moderate.",
     )
     add_bullet(
         doc,
-        "Red circle -- Significant issues found that pose a material risk. "
+        "Red circle: Significant issues found that pose a material risk. "
         "Immediate remediation is strongly recommended.",
     )
 
@@ -258,33 +258,33 @@ def build(doc):
     )
     add_bullet(
         doc,
-        "Title Bar -- contains the traffic-light indicator, the checker "
+        "Title Bar, contains the traffic-light indicator, the checker "
         "name, and a one-line summary of the finding (e.g., 'SPF record "
         "is valid but could be stricter').",
     )
     add_bullet(
         doc,
-        "Data Table -- key-value rows showing the raw findings. For "
+        "Data Table, key-value rows showing the raw findings. For "
         "example, an SSL checker card might show rows for certificate "
         "issuer, expiry date, protocol versions supported, and cipher "
         "suite strength.",
     )
     add_bullet(
         doc,
-        "Issues / Fallback Message -- if issues were found, they are "
+        "Issues / Fallback Message, if issues were found, they are "
         "listed here with severity indicators. If no issues were found, "
         "a positive confirmation message is displayed instead (e.g., "
         "'No issues detected. Configuration meets recommended standards.').",
     )
     add_bullet(
         doc,
-        "'What This Means' Narrative -- a plain-language paragraph "
+        "'What This Means' Narrative, a plain-language paragraph "
         "explaining the significance of the findings for a non-technical "
         "reader. This section answers the question: 'Why should I care?'",
     )
     add_bullet(
         doc,
-        "'Recommended Actions' -- numbered steps the organisation should "
+        "'Recommended Actions', numbered steps the organisation should "
         "take to address any issues found. Actions are ordered by priority "
         "(highest impact first). Each action is written as a concrete, "
         "actionable instruction rather than a vague suggestion.",
@@ -322,30 +322,30 @@ def build(doc):
         "infostealer infections (Hudson Rock, with infection dates), and "
         "dark-web / forum circulation (IntelX or replacement). Because this "
         "is sensitive personal information, it is disclosed in TIERS by "
-        "audience, and the complete unmasked detail — including the actual "
-        "passwords — is delivered only on request, with the client's signed "
+        "audience, and the complete unmasked detail, including the actual "
+        "passwords, is delivered only on request, with the client's signed "
         "consent, as an encrypted file. This exposure is already circulating "
         "in the public / criminal domain; the scanner re-surfaces it solely so "
         "the organisation can remediate (force resets, enforce MFA).",
     )
 
     add_bold_body(doc, "Tiered disclosure: ", "what each output shows.")
-    add_bullet(doc, "Executive Deck — counts only (number of exposed accounts, infected devices, services). No identifiers.")
-    add_bullet(doc, "Broker Summary — 2-3 partially-masked example accounts / services plus summarised counts. No passwords.")
-    add_bullet(doc, "Full Technical Report — enumerated, partially-masked accounts, a per-service summary, infection dates, and stealer families. No passwords.")
-    add_bullet(doc, "Encrypted Credential Export (on request) — the complete list INCLUDING actual passwords, delivered as an encrypted file after signed client consent. Never stored on the scanner; generated on demand.")
+    add_bullet(doc, "Executive Deck: counts only (number of exposed accounts, infected devices, services). No identifiers.")
+    add_bullet(doc, "Broker Summary: 2-3 partially-masked example accounts / services plus summarised counts. No passwords.")
+    add_bullet(doc, "Full Technical Report: enumerated, partially-masked accounts, a per-service summary, infection dates, and stealer families. No passwords.")
+    add_bullet(doc, "Encrypted Credential Export (on request): the complete list INCLUDING actual passwords, delivered as an encrypted file after signed client consent. Never stored on the scanner; generated on demand.")
 
     add_body(
         doc,
         "Masking uses a partial reveal (first two plus last character of the "
         "local part, e.g. 'jo***n@example.com') so the organisation can "
-        "recognise its own accounts — demonstrating the findings are real — "
+        "recognise its own accounts, demonstrating the findings are real, "
         "while an outsider cannot reconstruct them.",
     )
 
     add_bold_body(
         doc,
-        "Export file format — date-clustered, with a confidence column: ",
+        "Export file format, date-clustered, with a confidence column: ",
         "The encrypted CSV is sorted newest-first and carries the same recency "
         "clustering the dashboard shows, so the client can act on the freshest "
         "circulation first. Columns: record_type, source, date, recency_band, "
@@ -360,7 +360,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        "The confidence column — and why it governs breach-probability decisions: ",
+        "The confidence column, and why it governs breach-probability decisions: ",
         "Not every hit is a stolen credential, and the confidence column makes "
         "that explicit. HIGH = a secret was actually captured (a plaintext "
         "password, or an Autofill / Passwords / credit-card store in a stealer "
@@ -370,8 +370,8 @@ def build(doc):
         "sites. The distinction is decisive for underwriting: a LOW-confidence "
         "match is a MONITORING signal, not evidence of compromise, and should "
         "NOT on its own be read as raising the breach probability. To act on a "
-        "low-confidence hit — or to justify any uplift to the probability of "
-        "breach / RSI — request a content-fetch of the specific named dump to "
+        "low-confidence hit, or to justify any uplift to the probability of "
+        "breach / RSI, request a content-fetch of the specific named dump to "
         "confirm whether a phishield credential (not just a visited URL) was "
         "actually exposed.",
     )
@@ -382,31 +382,31 @@ def build(doc):
         "that are ALL low-confidence (aggregated indexes plus a single browser-"
         "History entry), while its only high-confidence rows are years-old "
         "password records from a re-circulated combo list. The honest reading "
-        "is 'recently CIRCULATING, but no fresh high-confidence theft' — the "
+        "is 'recently CIRCULATING, but no fresh high-confidence theft', the "
         "catastrophe model is unaffected, but the probability-of-breach input "
         "should not be inflated by the low-confidence freshness alone.",
     )
 
     add_bold_body(doc, "Operator workflow (broker / scanner user): ", "")
-    add_bullet(doc, "1. Obtain the client's SIGNED CONSENT form and upload it — this is the authorisation gate and the FAIS / POPIA audit trail.")
-    add_bullet(doc, "2. Obtain the client's age PUBLIC key (the client generates it — see below). A public key is safe to share openly.")
+    add_bullet(doc, "1. Obtain the client's SIGNED CONSENT form and upload it, this is the authorisation gate and the FAIS / POPIA audit trail.")
+    add_bullet(doc, "2. Obtain the client's age PUBLIC key (the client generates it, see below). A public key is safe to share openly.")
     add_bullet(doc, "3. Trigger the export. The scanner re-queries DeHashed at that moment, builds the CSV, and encrypts it to the client's public key with age. No passwords are written to the scanner database.")
     add_bullet(doc, "4. Share the one-time, expiring download link with the client. The encrypted file is deleted after download or expiry.")
     add_bullet(doc, "5. Fallback if the client cannot use age keys: the scanner produces an AES-256 password-protected file; send the passphrase via a SEPARATE secure channel (never the same channel as the link).")
 
-    add_bold_body(doc, "Client guide — one-time setup (age, recommended): ", "")
+    add_bold_body(doc, "Client guide, one-time setup (age, recommended): ", "")
     add_bullet(doc, "Install age (a small, free, cross-platform tool: github.com/FiloSottile/age).")
     add_bullet(doc, "Generate a keypair: run 'age-keygen -o key.txt'. This prints your PUBLIC key (starts with 'age1...') and writes your PRIVATE key to key.txt.")
-    add_bullet(doc, "Send ONLY the public key (the 'age1...' line) to your broker. Keep key.txt (the private key) secret and backed up — without it the file cannot be opened.")
+    add_bullet(doc, "Send ONLY the public key (the 'age1...' line) to your broker. Keep key.txt (the private key) secret and backed up, without it the file cannot be opened.")
 
-    add_bold_body(doc, "Client guide — retrieve & decrypt: ", "")
+    add_bold_body(doc, "Client guide, retrieve & decrypt: ", "")
     add_bullet(doc, "Open the one-time link within its expiry window and download the '.age' file.")
     add_bullet(doc, "Decrypt: 'age -d -i key.txt -o credentials.csv credentials.csv.age'. The result is the plain CSV.")
     add_bullet(doc, "AES fallback: receive the passphrase from your broker via a separate channel, then open the file with 7-Zip (AES-256) or 'openssl enc -d -aes-256-cbc -in file.enc -out credentials.csv'.")
 
     add_warning(
         doc,
-        "The encrypted export contains live passwords — treat it like any "
+        "The encrypted export contains live passwords, treat it like any "
         "breach dump. Decrypt only on a secure workstation, action the password "
         "resets and MFA enrolment, then securely delete the file. The scanner "
         "itself never stores passwords, and none of the rendered reports (deck, "
@@ -416,7 +416,7 @@ def build(doc):
     add_note(
         doc,
         "Why public-key (age) over a shared password: with age, only the "
-        "client's private key — which never leaves them — can decrypt the "
+        "client's private key, which never leaves them, can decrypt the "
         "file, so there is no secret to intercept in transit. A shared AES "
         "passphrase is offered only as a fallback and must travel on a channel "
         "separate from the file.",
@@ -551,14 +551,14 @@ def build(doc):
     )
     add_bullet(
         doc,
-        "Genuine failure (error or timeout) -- the checker attempted to "
+        "Genuine failure (error or timeout), the checker attempted to "
         "run but could not complete. These are flagged with a warning "
         "indicator in the report, the checker's weight is redistributed, "
         "and a WARNING recommendation is injected advising a re-scan.",
     )
     add_bullet(
         doc,
-        "Intentionally skipped (no_api_key or disabled) -- the checker "
+        "Intentionally skipped (no_api_key or disabled), the checker "
         "was not configured to run (e.g., the Dehashed API key was not "
         "provided, or IntelX was toggled off). These are excluded from "
         "the assessable checker count entirely and do not generate a "
@@ -622,7 +622,7 @@ def build(doc):
         doc,
         "A completeness of 100% means every configured checker ran "
         "successfully. If completeness drops below 80%, consider "
-        "re-scanning after a short delay -- transient API issues or "
+        "re-scanning after a short delay, transient API issues or "
         "rate limiting may have resolved.",
     )
 
@@ -638,14 +638,14 @@ def build(doc):
 
     add_bullet(
         doc,
-        "Scan completeness is below 100% -- one or more checkers failed, "
+        "Scan completeness is below 100%, one or more checkers failed, "
         "meaning the score is based on incomplete data. The missing "
         "checkers may have detected additional risks or confirmed that "
         "certain controls are in place.",
     )
     add_bullet(
         doc,
-        "HTTPS was unreachable during the scan -- several checkers "
+        "HTTPS was unreachable during the scan, several checkers "
         "(HTTP headers, WAF detection, tech stack fingerprinting, "
         "privacy policy analysis, admin panel discovery) depend on "
         "being able to fetch the target's website over HTTPS. If the "
@@ -655,7 +655,7 @@ def build(doc):
     )
     add_bullet(
         doc,
-        "Significant time has passed since the last scan -- because "
+        "Significant time has passed since the last scan, because "
         "results reflect a point-in-time snapshot, scores can become "
         "stale as the target's infrastructure changes, new "
         "vulnerabilities are disclosed, or new breaches are reported. "
@@ -663,7 +663,7 @@ def build(doc):
     )
     add_bullet(
         doc,
-        "Remediation has been applied -- after the target organisation "
+        "Remediation has been applied, after the target organisation "
         "addresses findings from a previous scan, a fresh scan should "
         "be performed to verify that remediation was effective and to "
         "update the score accordingly.",
@@ -673,7 +673,7 @@ def build(doc):
         doc,
         "The score is a risk indicator, not an absolute measure of "
         "security. A low score does not guarantee the absence of "
-        "vulnerabilities -- it indicates that no significant external "
+        "vulnerabilities, it indicates that no significant external "
         "risks were detected by the checks performed.",
     )
 
@@ -785,7 +785,7 @@ def build(doc):
         "affecting the target domain, including breach dates, the types "
         "of data exposed (emails, passwords, financial data, personal "
         "information), and the number of affected accounts. Does not "
-        "return actual breach data -- only metadata about the breaches.",
+        "return actual breach data, only metadata about the breaches.",
     )
     add_bullet(doc, "Toggle: Always on")
 
@@ -836,7 +836,7 @@ def build(doc):
     add_note(
         doc,
         "API keys are configured in the scanner's environment file. "
-        "Toggling a paid API off does not affect the scan -- the "
+        "Toggling a paid API off does not affect the scan, the "
         "checker is simply skipped and its weight is redistributed "
         "across the remaining checkers (see Section 7.2).",
     )
@@ -1530,7 +1530,7 @@ def build(doc):
     # ------------------------------------------------------------------ #
     add_h1(doc, "11. Version History")
 
-    add_bold_body(doc, "v1.0 -- April 2026", "Initial Release")
+    add_bold_body(doc, "v1.0: April 2026", "Initial Release")
     add_body(
         doc,
         "First public release of the Phishield Cyber Risk Scanner User "

@@ -55,7 +55,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        ".env (Environment Variables) \u2014 Critical: ",
+        ".env (Environment Variables), Critical: ",
         "This file typically stores database passwords, API keys, mail server "
         "credentials, and third-party service tokens. If exposed, an attacker "
         "gains immediate access to every connected system. This is one of the "
@@ -64,7 +64,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        ".git/HEAD and .git/config (Source Code Metadata) \u2014 Critical: ",
+        ".git/HEAD and .git/config (Source Code Metadata), Critical: ",
         "These files are part of the Git version-control system. When the .git "
         "directory is accessible, an attacker can reconstruct your entire source "
         "code repository, including historical commits that may contain passwords, "
@@ -73,7 +73,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        "wp-config.php.bak (WordPress Configuration Backup) \u2014 Critical: ",
+        "wp-config.php.bak (WordPress Configuration Backup), Critical: ",
         "WordPress stores its database host, username, password, and secret keys "
         "in wp-config.php. Backup copies (with .bak, .old, or ~ suffixes) are "
         "served as plain text by most web servers, revealing every credential "
@@ -82,7 +82,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        ".htpasswd (Apache Password File) \u2014 Critical: ",
+        ".htpasswd (Apache Password File), Critical: ",
         "Contains hashed usernames and passwords used by the Apache web server "
         "for basic authentication. The hashes can be cracked offline in minutes "
         "with modern tools, giving an attacker valid login credentials."
@@ -90,7 +90,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        "backup.sql / dump.sql / db.sql (Database Dumps) \u2014 Critical: ",
+        "backup.sql / dump.sql / db.sql (Database Dumps), Critical: ",
         "SQL dump files contain a complete copy of your database, including "
         "customer records, email addresses, hashed (or sometimes plaintext) "
         "passwords, financial data, and any other information stored in your "
@@ -99,7 +99,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        "phpinfo.php (PHP Information Page) \u2014 Medium: ",
+        "phpinfo.php (PHP Information Page), Medium: ",
         "Displays the full PHP configuration of the server, including file paths, "
         "loaded modules, environment variables, and sometimes database connection "
         "strings. Attackers use this information to tailor exploits to your exact "
@@ -108,7 +108,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        "server-status (Apache Status Page) \u2014 Medium: ",
+        "server-status (Apache Status Page), Medium: ",
         "Exposes real-time information about every active connection to the web "
         "server, including client IP addresses, requested URLs, and virtual host "
         "names. This is useful reconnaissance for planning further attacks."
@@ -116,7 +116,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        ".DS_Store (macOS Directory Metadata) \u2014 Medium: ",
+        ".DS_Store (macOS Directory Metadata), Medium: ",
         "Created automatically by macOS Finder, this file lists every file and "
         "folder in the directory. Attackers parse it to discover hidden files, "
         "admin panels, or backup directories that are not linked from the website."
@@ -124,7 +124,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        "web.config (IIS Configuration) \u2014 Medium: ",
+        "web.config (IIS Configuration), Medium: ",
         "The configuration file for Microsoft IIS web servers. May contain "
         "connection strings, authentication settings, URL rewrite rules, and "
         "custom error pages that reveal internal architecture."
@@ -132,7 +132,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        "Debug Endpoints \u2014 Medium: ",
+        "Debug Endpoints, Medium: ",
         "Development and debugging endpoints (such as /debug, /trace, or "
         "framework-specific diagnostic pages) expose internal application state, "
         "stack traces, and configuration details that are invaluable to an attacker."
@@ -140,7 +140,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        "Spring Boot Actuator Endpoints \u2014 Critical: ",
+        "Spring Boot Actuator Endpoints, Critical: ",
         "Java Spring Boot applications expose management endpoints (such as "
         "/actuator/env, /actuator/configprops, and /actuator/heapdump) that can "
         "reveal environment variables, configuration properties, and even a full "
@@ -274,7 +274,7 @@ def build(doc):
         doc,
         "The scanner checks up to 40 common DKIM selector names to locate "
         "your published key. A selector is only counted as a real DKIM "
-        "record when its TXT value actually contains a DKIM key — that is, "
+        "record when its TXT value actually contains a DKIM key, that is, "
         "a v=DKIM1 tag or a p= public-key tag. A selector name that merely "
         "resolves (for example, because the domain uses a DNS wildcard) but "
         "carries no key is ignored, so a wildcard cannot inflate the DKIM "
@@ -293,17 +293,17 @@ def build(doc):
 
     add_bullet(
         doc,
-        "none \u2014 Monitor only. Failing messages are still delivered. "
+        "none: Monitor only. Failing messages are still delivered. "
         "This is a starting point for collecting data but provides no protection."
     )
     add_bullet(
         doc,
-        "quarantine \u2014 Failing messages are sent to the recipient\u2019s spam or "
+        "quarantine: Failing messages are sent to the recipient\u2019s spam or "
         "junk folder. Provides moderate protection."
     )
     add_bullet(
         doc,
-        "reject \u2014 Failing messages are blocked entirely. This is the "
+        "reject: Failing messages are blocked entirely. This is the "
         "strongest setting and the recommended target for all organisations."
     )
 
@@ -444,7 +444,7 @@ def build(doc):
     # TLS-RPT
     add_bold_body(
         doc,
-        "TLS-RPT (SMTP TLS Reporting \u2014 RFC 8460): ",
+        "TLS-RPT (SMTP TLS Reporting, RFC 8460): ",
         "TLS-RPT is a DNS TXT record that tells sending mail servers where to "
         "deliver reports about TLS connection failures when delivering email to "
         "your domain. If a sending server cannot establish an encrypted connection "
@@ -547,7 +547,7 @@ def build(doc):
         "addresses, checking for commonly targeted services. Each discovered open "
         "port is classified into one of three risk tiers. When a domain resolves "
         "to (or has) more than one IP address, each exposed port is attributed in "
-        "the report to the specific IP it was actually found on \u2014 so, for "
+        "the report to the specific IP it was actually found on, so, for "
         "example, an open FTP port on a real origin server is shown against that "
         "origin's address rather than against the CDN edge address the domain "
         "name points to."
@@ -631,7 +631,7 @@ def build(doc):
     # Zone Transfer (AXFR) - Phase 3
     add_bold_body(
         doc,
-        "Zone Transfer (AXFR) \u2014 Phase 3: ",
+        "Zone Transfer (AXFR), Phase 3: ",
         "The scanner tests each of your domain\u2019s authoritative name servers for "
         "DNS zone transfer vulnerability. A zone transfer (AXFR) is a mechanism "
         "designed to replicate DNS records between authorised name servers. If a "
@@ -722,46 +722,46 @@ def build(doc):
 
     add_bullet(
         doc,
-        "MongoDB (port 27017) \u2014 NoSQL databases are frequently deployed without "
+        "MongoDB (port 27017): NoSQL databases are frequently deployed without "
         "authentication. Tens of thousands of exposed MongoDB instances have been "
         "ransomed after attackers deleted the data and demanded payment for its "
         "return."
     )
     add_bullet(
         doc,
-        "Redis (port 6379) \u2014 An in-memory data store often used for caching and "
+        "Redis (port 6379): An in-memory data store often used for caching and "
         "session management. Default Redis installations have no authentication, "
         "and an exposed instance can be exploited for remote code execution via "
         "crafted commands."
     )
     add_bullet(
         doc,
-        "Elasticsearch (port 9200) \u2014 A search and analytics engine that often "
+        "Elasticsearch (port 9200): A search and analytics engine that often "
         "contains indexed copies of sensitive business data. Exposed Elasticsearch "
         "clusters are a leading cause of large-scale data leaks."
     )
     add_bullet(
         doc,
-        "PostgreSQL (port 5432) \u2014 A relational database that, if internet-facing, "
+        "PostgreSQL (port 5432): A relational database that, if internet-facing, "
         "is subject to brute-force password attacks and exploitation of known "
         "vulnerabilities."
     )
     add_bullet(
         doc,
-        "Microsoft SQL Server (port 1433) \u2014 MSSQL exposed to the internet is a "
+        "Microsoft SQL Server (port 1433): MSSQL exposed to the internet is a "
         "common target for credential stuffing and exploitation. The xp_cmdshell "
         "stored procedure can be abused for direct operating system command "
         "execution."
     )
     add_bullet(
         doc,
-        "CouchDB (port 5984) \u2014 A document-oriented database that exposes an "
+        "CouchDB (port 5984): A document-oriented database that exposes an "
         "HTTP API. Default configurations may allow unauthenticated read and "
         "write access to all databases."
     )
     add_bullet(
         doc,
-        "MySQL (port 3306) \u2014 One of the most widely used databases. Exposed "
+        "MySQL (port 3306): One of the most widely used databases. Exposed "
         "MySQL servers are continuously targeted by automated brute-force tools "
         "attempting common usernames and passwords."
     )
@@ -836,24 +836,24 @@ def build(doc):
 
     add_bullet(
         doc,
-        "DDoS Mitigation \u2014 The CDN absorbs volumetric attacks that would "
+        "DDoS Mitigation: The CDN absorbs volumetric attacks that would "
         "overwhelm your origin server, maintaining availability during an attack."
     )
     add_bullet(
         doc,
-        "Origin Masking \u2014 The CDN hides your actual server IP address, making "
+        "Origin Masking: The CDN hides your actual server IP address, making "
         "it significantly harder for attackers to target your infrastructure "
         "directly."
     )
     add_bullet(
         doc,
-        "Web Application Firewall (WAF) \u2014 Many CDN providers include a WAF that "
+        "Web Application Firewall (WAF): Many CDN providers include a WAF that "
         "filters common web attacks (SQL injection, cross-site scripting) before "
         "they reach your application."
     )
     add_bullet(
         doc,
-        "Performance \u2014 Content is served from edge locations geographically "
+        "Performance: Content is served from edge locations geographically "
         "close to the user, reducing latency and improving page load times."
     )
 
@@ -910,7 +910,7 @@ def build(doc):
         "RDP Exposure (Port 3389): ",
         "The Remote Desktop Protocol is the single most exploited initial access "
         "vector for ransomware. The scanner checks whether port 3389 is open on "
-        "every discovered IP address — not only the IP your domain name "
+        "every discovered IP address, not only the IP your domain name "
         "resolves to, but also subdomain IPs and any verified origin servers "
         "found behind a CDN (see Origin IP Discovery below). If RDP is open on "
         "any of these, the headline ‘RDP Exposed’ finding is raised and the "
@@ -945,7 +945,7 @@ def build(doc):
         "GlobalProtect, Cisco AnyConnect, SonicWall, and WireGuard. To avoid "
         "false positives, a vendor is only matched when a genuine vendor "
         "marker is returned over an HTTP 200 response that also passes a "
-        "body-sanity check — a loose substring appearing in any response "
+        "body-sanity check, a loose substring appearing in any response "
         "(such as a CDN challenge page or single-page-app shell) is not "
         "sufficient. This gate is applied uniformly to all of the supported "
         "gateways, including Microsoft RDS Web, which additionally requires "
@@ -1028,7 +1028,7 @@ def build(doc):
         doc,
         "When a domain sits behind a CDN or WAF such as Cloudflare, it resolves "
         "only to the provider’s edge IP addresses. The organisation’s real "
-        "server — the ‘origin’ — is hidden. This is good for DDoS protection, "
+        "server, the ‘origin’, is hidden. This is good for DDoS protection, "
         "but it also means a scan of the domain name alone never sees services "
         "running directly on the origin (RDP, databases, admin panels), because "
         "those ports are closed on the CDN edge. Attackers routinely locate the "
@@ -1039,12 +1039,12 @@ def build(doc):
         doc,
         "How the scanner finds the origin: ",
         "Candidate origin IPs are gathered from historical DNS records (via "
-        "SecurityTrails — the pre-CDN origin is usually still in the history). "
+        "SecurityTrails, the pre-CDN origin is usually still in the history). "
         "Each candidate is then automatically verified: the scanner opens a TLS "
         "connection to the candidate IP presenting the target domain name and "
         "checks that the certificate it serves actually covers that domain. Only "
         "IPs that pass this certificate match are treated as confirmed origins "
-        "and added to the scan — so an exposed service on the real server "
+        "and added to the scan, so an exposed service on the real server "
         "surfaces in the report even though the domain is CDN-fronted."
     )
 
@@ -1054,7 +1054,7 @@ def build(doc):
         "Confirmed origins are labelled ‘verified’ and are scanned in full. IPs "
         "that appear in historical DNS but do not currently serve the domain’s "
         "certificate are listed as ‘candidate (unverified)’ and are deliberately "
-        "NOT scanned — they may since have been reassigned to an unrelated third "
+        "NOT scanned, they may since have been reassigned to an unrelated third "
         "party, and scanning them would be both inaccurate and inappropriate. "
         "Both lists appear in the report’s Origin IP Discovery card for "
         "transparency."
@@ -1064,7 +1064,7 @@ def build(doc):
         doc,
         "This check is fully automated and requires no broker or analyst "
         "confirmation. The certificate match is the proof of ownership, so the "
-        "scanner can act on a discovered origin on its own — while still never "
+        "scanner can act on a discovered origin on its own, while still never "
         "actively scanning an IP it cannot tie back to the target domain."
     )
 

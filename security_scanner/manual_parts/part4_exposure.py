@@ -1,5 +1,5 @@
 """
-Section 4.6 — Exposure & Reputation
+Section 4.6: Exposure & Reputation
 Phishield Cyber Risk Scanner User Manual
 
 Covers all 18 sub-checkers in the Exposure & Reputation category:
@@ -30,7 +30,7 @@ from manual_helpers import (
 
 
 def build(doc):
-    """Add Section 4.6 — Exposure & Reputation to the document."""
+    """Add Section 4.6: Exposure & Reputation to the document."""
 
     # ── Section heading ──────────────────────────────────────────────────
     add_h1(doc, "4.6  Exposure & Reputation")
@@ -53,7 +53,7 @@ def build(doc):
         "but if employee credentials are circulating on dark-web markets or "
         "the domain's IP is blacklisted for spam, the residual risk is "
         "material. Exposure findings often correlate directly with the "
-        "likelihood of a future claim — particularly credential-stuffing "
+        "likelihood of a future claim, particularly credential-stuffing "
         "attacks, business-email compromise, and ransomware intrusions."
     )
 
@@ -103,7 +103,7 @@ def build(doc):
         "rotated, attackers can use credential-stuffing tools to gain access "
         "to corporate systems. Breaches that include passwords, security "
         "questions, or phone numbers are especially dangerous because they "
-        "enable multi-vector attacks — password reuse, SIM-swapping, and "
+        "enable multi-vector attacks, password reuse, SIM-swapping, and "
         "social-engineering of help desks."
     )
 
@@ -113,7 +113,7 @@ def build(doc):
         "The score starts at 100 and is reduced based on the number of "
         "breaches found. A single breach results in a moderate penalty; "
         "multiple breaches with password exposure result in steeper "
-        "deductions. The recency of breaches is also considered — a breach "
+        "deductions. The recency of breaches is also considered, a breach "
         "from 2024 is weighted more heavily than one from 2015 because "
         "credentials are more likely to still be valid."
     )
@@ -121,19 +121,19 @@ def build(doc):
     add_body(doc, "Common findings include:")
     add_bullet(
         doc,
-        "Domain found in 3 known data breach(es) — this is a typical "
+        "Domain found in 3 known data breach(es), this is a typical "
         "result for established businesses. The breach names, dates, and "
         "exposed data types are listed in the report."
     )
     add_bullet(
         doc,
         "Data classes exposed: Email addresses, Passwords, Names, Phone "
-        "numbers — the more sensitive data classes present, the higher the "
+        "numbers, the more sensitive data classes present, the higher the "
         "risk to the organisation."
     )
     add_bullet(
         doc,
-        "Most recent breach: 2024-01-15 — recent breaches are flagged "
+        "Most recent breach: 2024-01-15, recent breaches are flagged "
         "prominently because the exposed credentials may still be in active "
         "use."
     )
@@ -142,7 +142,7 @@ def build(doc):
         doc,
         "HIBP only reports breaches where the domain's email addresses "
         "appeared. It does not indicate whether specific individuals' "
-        "passwords were exposed — that detail comes from the Dehashed "
+        "passwords were exposed, that detail comes from the Dehashed "
         "checker (Section 4.6.6). HIBP provides the breadth view; Dehashed "
         "provides the depth."
     )
@@ -181,9 +181,9 @@ def build(doc):
         "resolution is not by itself treated as a listing: the scanner "
         "validates each reply against the list's documented return codes "
         "and only counts a genuine listing code (typically 127.0.0.2 and "
-        "above). Error, blocked, and refused replies — Spamhaus open-"
+        "above). Error, blocked, and refused replies, Spamhaus open-"
         "resolver / rate-limit codes in the 127.255.255.x range and the "
-        "URIBL 127.0.0.1 query-refused code — are explicitly rejected, so "
+        "URIBL 127.0.0.1 query-refused code, are explicitly rejected, so "
         "an infrastructure response is never mistaken for a blacklisting."
     )
 
@@ -193,7 +193,7 @@ def build(doc):
         "A blacklisted IP or domain signals a history of compromise or "
         "abuse. Even if the current owner is legitimate, a listing on "
         "Spamhaus or Barracuda means the infrastructure has been used to "
-        "send spam or distribute malware — either by the current tenant or "
+        "send spam or distribute malware, either by the current tenant or "
         "a previous one. Blacklisting also destroys email deliverability, "
         "which can be a business-continuity issue for companies that rely "
         "on email for client communication."
@@ -212,19 +212,19 @@ def build(doc):
     add_body(doc, "Common findings include:")
     add_bullet(
         doc,
-        "Domain/IP listed on 1 blacklist(s): zen.spamhaus.org — this is "
+        "Domain/IP listed on 1 blacklist(s): zen.spamhaus.org, this is "
         "the most common single listing and indicates the IP has been "
         "flagged for spam or malware activity."
     )
     add_bullet(
         doc,
-        "Listed on dnsbl-1.uceprotect.net — UCEProtect listings often "
+        "Listed on dnsbl-1.uceprotect.net: UCEProtect listings often "
         "indicate the IP sits on a range with a poor sending reputation or "
         "has been an open relay."
     )
     add_bullet(
         doc,
-        "No listings found — this is the desired result and confirms the "
+        "No listings found, this is the desired result and confirms the "
         "domain's infrastructure has a clean reputation."
     )
 
@@ -241,7 +241,7 @@ def build(doc):
         "Shared-hosting environments can produce false positives: another "
         "tenant on the same IP may have caused the listing. The scanner "
         "reports the finding regardless because the risk to the client is "
-        "real — they share the reputational damage."
+        "real, they share the reputational damage."
     )
 
     # ══════════════════════════════════════════════════════════════════════
@@ -269,7 +269,7 @@ def build(doc):
         "HTTPS GET requests are sent to each path with a four-second timeout "
         "and redirects disabled. Up to 15 paths are probed concurrently using "
         "a thread pool. Only an HTTP 200 response that also passes a body-"
-        "sanity check counts as an exposure — confirming the path is directly "
+        "sanity check counts as an exposure, confirming the path is directly "
         "accessible and is serving real content rather than a generic landing "
         "or error page. HTTP 401 and 403 responses are treated as PROTECTED "
         "(access-controlled) and are NOT counted as findings: a server that "
@@ -305,23 +305,23 @@ def build(doc):
     add_body(doc, "Common findings include:")
     add_bullet(
         doc,
-        "/.env — HTTP 200 (CRITICAL): The environment file is publicly "
+        "/.env, HTTP 200 (CRITICAL): The environment file is publicly "
         "readable. This typically exposes database host, username, password, "
         "API keys, and application secrets."
     )
     add_bullet(
         doc,
-        "/wp-admin — HTTP 200: The WordPress administration panel is "
+        "/wp-admin, HTTP 200: The WordPress administration panel is "
         "accessible from the public internet without IP restriction."
     )
     add_bullet(
         doc,
-        "/server-status — HTTP 200 (MEDIUM): Apache mod_status is enabled, "
+        "/server-status, HTTP 200 (MEDIUM): Apache mod_status is enabled, "
         "leaking active connections, client IPs, and request URLs."
     )
     add_bullet(
         doc,
-        "/.git/HEAD — HTTP 200 (CRITICAL): The Git repository metadata is "
+        "/.git/HEAD, HTTP 200 (CRITICAL): The Git repository metadata is "
         "publicly readable, allowing an attacker to reconstruct the source "
         "tree. A path that instead returns 401/403 is reported as protected "
         "and does not appear as a finding."
@@ -330,8 +330,8 @@ def build(doc):
     add_warning(
         doc,
         "An exposed .env file is one of the most critical findings the "
-        "scanner can produce. It should be treated as an active compromise "
-        "— all secrets in that file must be rotated immediately."
+        "scanner can produce. It should be treated as an active compromise: "
+        "all secrets in that file must be rotated immediately."
     )
 
     add_tip(
@@ -391,7 +391,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        "Phase 3 — Subdomain Takeover Detection: ",
+        "Phase 3, Subdomain Takeover Detection: ",
         "For every discovered subdomain, the scanner checks the CNAME "
         "record to determine whether it points to a third-party cloud "
         "service. If the CNAME target matches one of 28 known takeover "
@@ -399,7 +399,7 @@ def build(doc):
         "Blob, Azure Traffic Manager, Netlify, Vercel, Shopify, Ghost, "
         "Surge, Bitbucket, WordPress.com, Pantheon, Unbounce, Zendesk, "
         "Fastly, Fly.io, Render, and others), the scanner checks whether "
-        "the target is dangling — meaning the CNAME points to a service "
+        "the target is dangling, meaning the CNAME points to a service "
         "endpoint that no longer exists. A dangling CNAME is confirmed by "
         "either NXDOMAIN resolution or an HTTP response matching the "
         "service's known 'not configured' fingerprint (e.g., 'There isn't "
@@ -414,7 +414,7 @@ def build(doc):
         "Forgotten subdomains are one of the most common entry points in "
         "real-world breaches. A staging server with default credentials, a "
         "dev environment with debug mode enabled, or a decommissioned app "
-        "with unpatched vulnerabilities — all are discovered by attackers "
+        "with unpatched vulnerabilities, all are discovered by attackers "
         "using the same techniques this scanner employs. Subdomain takeover "
         "is particularly dangerous because it allows an attacker to host "
         "phishing pages on a legitimate subdomain (e.g., "
@@ -428,7 +428,7 @@ def build(doc):
         "The subdomain checker carries a 2% weight in the overall score. "
         "Risky subdomains (containing keywords like dev, staging, admin, "
         "backup) each incur a penalty. Confirmed subdomain takeover "
-        "vulnerabilities carry the heaviest penalty — a single takeover-"
+        "vulnerabilities carry the heaviest penalty, a single takeover-"
         "vulnerable subdomain can significantly reduce the score because "
         "it represents an immediately exploitable issue."
     )
@@ -442,12 +442,12 @@ def build(doc):
     add_bullet(
         doc,
         "SUBDOMAIN TAKEOVER: old-blog.example.com CNAME points to "
-        "example.github.io — endpoint unclaimed. An attacker can register "
+        "example.github.io, endpoint unclaimed. An attacker can register "
         "this GitHub Pages repository and serve content on the subdomain."
     )
     add_bullet(
         doc,
-        "vpn.example.com, owa.example.com — internal service subdomains "
+        "vpn.example.com, owa.example.com, internal service subdomains "
         "are publicly resolvable, revealing the organisation's internal "
         "infrastructure topology."
     )
@@ -455,8 +455,8 @@ def build(doc):
     add_warning(
         doc,
         "Subdomain takeover vulnerabilities should be treated as CRITICAL. "
-        "The remediation is simple — remove the dangling CNAME record from "
-        "DNS — but the risk of phishing or malware hosting is immediate."
+        "The remediation is simple, remove the dangling CNAME record from "
+        "DNS, but the risk of phishing or malware hosting is immediate."
     )
 
     add_tip(
@@ -509,7 +509,7 @@ def build(doc):
         "Why it matters for insurance: ",
         "Unpatched vulnerabilities with public exploits are the single "
         "most common initial access vector in ransomware attacks. A CVE "
-        "that is listed in CISA KEV is not a theoretical risk — it is "
+        "that is listed in CISA KEV is not a theoretical risk, it is "
         "being actively exploited by threat actors right now. EPSS scores "
         "above 0.5 (50% exploitation probability in 30 days) demand "
         "immediate attention. For underwriters, this checker provides the "
@@ -524,7 +524,7 @@ def build(doc):
         "discovered CVEs. Critical CVEs (CVSS 9.0+) carry the heaviest "
         "penalty, especially when combined with CISA KEV status or a "
         "weaponized exploit. High CVEs (CVSS 7.0-8.9) carry moderate "
-        "penalties. The EPSS probability acts as a multiplier — a medium-"
+        "penalties. The EPSS probability acts as a multiplier, a medium-"
         "severity CVE with 80% EPSS is scored more harshly than a high-"
         "severity CVE with 1% EPSS. The Shodan checker is one of the "
         "highest-weighted components in the overall score calculation."
@@ -552,8 +552,8 @@ def build(doc):
     )
     add_bullet(
         doc,
-        "CVE-2024-XXXXX — CVSS 9.8 (CRITICAL) — CISA KEV: Yes — EPSS: "
-        "94.2% — Exploit: weaponized. This is the worst-case scenario: a "
+        "CVE-2024-XXXXX, CVSS 9.8 (CRITICAL), CISA KEV: Yes, EPSS: "
+        "94.2%, Exploit: weaponized. This is the worst-case scenario: a "
         "critical vulnerability with a public weaponized exploit that is "
         "known to be actively exploited."
     )
@@ -573,7 +573,7 @@ def build(doc):
     add_warning(
         doc,
         "Any CVE with CISA KEV status should be treated as requiring "
-        "immediate patching. These are not theoretical vulnerabilities — "
+        "immediate patching. These are not theoretical vulnerabilities, "
         "they are confirmed to be in active exploitation by ransomware "
         "groups, nation-state actors, or criminal organisations."
     )
@@ -614,7 +614,7 @@ def build(doc):
         "Dehashed is a paid, credit-based API that searches aggregated "
         "credential leak databases for entries associated with the target "
         "domain. Unlike HIBP (which reports breaches at the domain level), "
-        "Dehashed returns individual credential records — including email "
+        "Dehashed returns individual credential records, including email "
         "addresses, passwords (plaintext or hashed), usernames, names, and "
         "IP addresses. This checker is toggleable in the scanner UI because "
         "it consumes API credits."
@@ -633,7 +633,7 @@ def build(doc):
 
     add_bold_body(
         doc,
-        "Phase 3 — Credential Type Parsing: ",
+        "Phase 3, Credential Type Parsing: ",
         "For every record that contains a password or hashed_password field, "
         "the scanner classifies the credential type. Plaintext passwords "
         "are identified when the password field contains a readable string "
@@ -643,8 +643,8 @@ def build(doc):
         "prefix), scrypt ($s0$ prefix), SHA-512 (128 hex characters), "
         "SHA-256 (64 hex characters), SHA-1 (40 hex characters), and "
         "MD5/NTLM (32 hex characters). Hash types are further classified "
-        "as weak (MD5, SHA-1, NTLM — easily cracked) or strong (bcrypt, "
-        "argon2, scrypt, SHA-256, SHA-512 — computationally expensive to "
+        "as weak (MD5, SHA-1, NTLM, easily cracked) or strong (bcrypt, "
+        "argon2, scrypt, SHA-256, SHA-512, computationally expensive to "
         "crack). The scanner also splits findings into corporate email "
         "addresses (matching the target domain) versus personal email "
         "addresses (Gmail, Yahoo, etc.)."
@@ -676,13 +676,13 @@ def build(doc):
     add_bullet(
         doc,
         "Corporate vs personal split: 18 corporate emails "
-        "(@example.com), 5 personal emails (Gmail, Yahoo) — corporate "
+        "(@example.com), 5 personal emails (Gmail, Yahoo), corporate "
         "addresses represent direct risk to the organisation."
     )
     add_bullet(
         doc,
         "Breach sources: Collection #1, LinkedIn 2012, Adobe, Exploit.in, "
-        "Anti Public Combo List — multiple sources increase the likelihood "
+        "Anti Public Combo List, multiple sources increase the likelihood "
         "that credentials overlap with active accounts."
     )
 
@@ -712,7 +712,7 @@ def build(doc):
         "What it checks: ",
         "Hudson Rock's free OSINT API checks whether employee devices "
         "associated with the domain are CURRENTLY infected with infostealer "
-        "malware — specifically Raccoon Stealer, RedLine Stealer, Vidar, "
+        "malware, specifically Raccoon Stealer, RedLine Stealer, Vidar, "
         "and similar credential-harvesting trojans. This is not historical "
         "data: it reflects active, ongoing compromise."
     )
@@ -735,7 +735,7 @@ def build(doc):
         "An active infostealer infection is the single most critical "
         "credential finding the scanner can produce. Unlike a historical "
         "breach where passwords may have been rotated, an infostealer is "
-        "exfiltrating credentials in real time — every new password the "
+        "exfiltrating credentials in real time, every new password the "
         "user sets is immediately captured. Infostealers harvest saved "
         "browser passwords, session cookies (enabling session hijacking "
         "that bypasses MFA), autofill data, crypto wallets, and VPN "
@@ -757,23 +757,23 @@ def build(doc):
     add_body(doc, "Common findings include:")
     add_bullet(
         doc,
-        "CRITICAL: 2 employee device(s) infected with infostealer malware "
-        "— credentials are actively being sold on dark web markets. "
+        "CRITICAL: 2 employee device(s) infected with infostealer malware; "
+        "credentials are actively being sold on dark web markets. "
         "Immediate incident response required."
     )
     add_bullet(
         doc,
-        "3 user account(s) compromised via infostealer — force password "
+        "3 user account(s) compromised via infostealer, force password "
         "resets and enable MFA for affected accounts."
     )
     add_bullet(
         doc,
-        "5 third-party exposure(s) detected — review supply chain partners "
+        "5 third-party exposure(s) detected, review supply chain partners "
         "and shared credential access."
     )
     add_bullet(
         doc,
-        "No infostealer infections detected — this is the desired result "
+        "No infostealer infections detected, this is the desired result "
         "and indicates no currently active credential theft."
     )
 
@@ -789,7 +789,7 @@ def build(doc):
     add_tip(
         doc,
         "Hudson Rock data is real-time. If a rescan shows the same finding "
-        "weeks later, it means the infection has not been remediated — "
+        "weeks later, it means the infection has not been remediated, "
         "escalate the urgency."
     )
 
@@ -830,7 +830,7 @@ def build(doc):
         "Why it matters for insurance: ",
         "Dark web mentions indicate that the domain's data, credentials, "
         "or infrastructure is being discussed or traded in criminal "
-        "communities. This is a leading indicator of imminent attack — "
+        "communities. This is a leading indicator of imminent attack, "
         "if credentials appear on a dark web marketplace, credential-"
         "stuffing attacks typically follow within days. Paste site mentions "
         "may indicate data dumps where exfiltrated information has been "
@@ -851,17 +851,17 @@ def build(doc):
     add_body(doc, "Common findings include:")
     add_bullet(
         doc,
-        "3 dark web mention(s) found — credentials or data may be "
+        "3 dark web mention(s) found, credentials or data may be "
         "actively traded on criminal forums."
     )
     add_bullet(
         doc,
-        "8 paste site mention(s) — data has been shared on public paste "
+        "8 paste site mention(s), data has been shared on public paste "
         "sites (Pastebin, etc.)."
     )
     add_bullet(
         doc,
-        "12 reference(s) found in dark web and leak databases — the "
+        "12 reference(s) found in dark web and leak databases, the "
         "domain appears in multiple breach compilations."
     )
     add_bullet(
@@ -875,7 +875,7 @@ def build(doc):
         doc,
         "IntelX uses the free tier by default (40 results per search, "
         "approximately 500 credits per day). The results represent a "
-        "sample of available intelligence — commercial IntelX subscriptions "
+        "sample of available intelligence, commercial IntelX subscriptions "
         "would return more comprehensive results."
     )
 
@@ -896,8 +896,8 @@ def build(doc):
         doc,
         "What it checks: ",
         "The Credential Risk Assessment is an aggregate classifier that "
-        "combines data from all four credential intelligence sources — "
-        "Dehashed, HIBP, Hudson Rock, and IntelX — to produce a single "
+        "combines data from all four credential intelligence sources, "
+        "Dehashed, HIBP, Hudson Rock, and IntelX, to produce a single "
         "risk classification: CRITICAL, HIGH, MEDIUM, or LOW. It is not "
         "a separate API call but rather a synthesis layer that interprets "
         "the combined findings."
@@ -930,9 +930,9 @@ def build(doc):
         doc,
         "Counting password-bearing records: ",
         "Where the assessment reports an exposed-credential count, it counts "
-        "the records (mailboxes) that actually carry a password — the "
+        "the records (mailboxes) that actually carry a password, the "
         "plaintext- and hashed-password subset from the Dehashed credential "
-        "breakdown — rather than treating a single 'passwords present' "
+        "breakdown, rather than treating a single 'passwords present' "
         "indicator as if it were a count. The figure is therefore phrased so "
         "the reader can see both the total exposure and how much of it is "
         "directly loginable (for example, one mailbox carrying a password "
@@ -944,17 +944,17 @@ def build(doc):
     add_bold_body(
         doc,
         "Risk levels and their meanings: ",
-        "CRITICAL — Active infostealer infection detected or credentials "
+        "CRITICAL: Active infostealer infection detected or credentials "
         "being actively traded on the dark web. Immediate incident "
         "response required: isolate devices, force all password resets, "
         "enable MFA, engage forensics. "
-        "HIGH — Recent breach (2023+) with password exposure, or dark web "
+        "HIGH: Recent breach (2023+) with password exposure, or dark web "
         "mentions detected. Force password resets for identified accounts, "
         "enable MFA, implement continuous monitoring. "
-        "MEDIUM — Historical credential exposure without active compromise "
+        "MEDIUM: Historical credential exposure without active compromise "
         "indicators. Review affected accounts, enforce MFA, monitor for "
         "credential-stuffing attempts. "
-        "LOW — No active compromise or significant credential exposure "
+        "LOW: No active compromise or significant credential exposure "
         "detected."
     )
 
@@ -986,9 +986,9 @@ def build(doc):
     )
     add_bullet(
         doc,
-        "A list of risk factors — human-readable explanations of why the "
+        "A list of risk factors, human-readable explanations of why the "
         "risk level was assigned (e.g., 'ACTIVE INFOSTEALER: 2 employee "
-        "device(s) currently infected — credentials are being exfiltrated "
+        "device(s) currently infected, credentials are being exfiltrated "
         "in real-time')."
     )
     add_bullet(
@@ -1038,11 +1038,11 @@ def build(doc):
         "endpoint with the API key in the header. The response includes "
         "last_analysis_stats (counts of malicious, suspicious, harmless, "
         "and undetected verdicts), total_votes (community malicious vs "
-        "harmless votes), categories (how vendors classify the domain — "
+        "harmless votes), categories (how vendors classify the domain, "
         "e.g., 'business', 'phishing', 'malware'), popularity_ranks "
         "(Alexa, Cisco Umbrella), and last_analysis_results (per-engine "
-        "verdict details). The scanner extracts flagging engines — any "
-        "engine that returned 'malicious' or 'suspicious' — and lists "
+        "verdict details). The scanner extracts flagging engines, any "
+        "engine that returned 'malicious' or 'suspicious', and lists "
         "them by name with their specific verdict."
     )
 
@@ -1056,7 +1056,7 @@ def build(doc):
         "activity. Even a single malicious flag from a reputable engine is "
         "cause for investigation. Category classifications like 'phishing' "
         "or 'malware' from vendors indicate the domain has been "
-        "actively blacklisted by endpoint security products — meaning "
+        "actively blacklisted by endpoint security products, meaning "
         "employees at other companies may be blocked from visiting the "
         "domain entirely."
     )
@@ -1068,7 +1068,7 @@ def build(doc):
         "is a significant finding; multiple malicious flags indicate "
         "confirmed malicious activity. Suspicious flags carry lighter "
         "penalties. The scanner also checks category classifications for "
-        "keywords like 'malware', 'phishing', 'spam', and 'scam' — "
+        "keywords like 'malware', 'phishing', 'spam', and 'scam', "
         "these carry additional penalties. The VirusTotal weight in the "
         "overall score is 5%. The free API tier allows 4 requests per "
         "minute and 500 per day."
@@ -1077,19 +1077,19 @@ def build(doc):
     add_body(doc, "Common findings include:")
     add_bullet(
         doc,
-        "CRITICAL: 3 security engine(s) flagged this domain as MALICIOUS "
-        "— the flagging engines are listed by name (e.g., Fortinet, "
+        "CRITICAL: 3 security engine(s) flagged this domain as MALICIOUS; "
+        "the flagging engines are listed by name (e.g., Fortinet, "
         "Kaspersky, ESET) with their specific verdicts."
     )
     add_bullet(
         doc,
-        "1 security engine(s) flagged this domain as suspicious — a "
+        "1 security engine(s) flagged this domain as suspicious, a "
         "single suspicious flag may be a false positive but warrants "
         "investigation."
     )
     add_bullet(
         doc,
-        "Categories: Fortinet classifies the domain as 'phishing' — "
+        "Categories: Fortinet classifies the domain as 'phishing', "
         "this means Fortinet endpoint products will block access to the "
         "domain for their customers."
     )
@@ -1100,7 +1100,7 @@ def build(doc):
     )
     add_bullet(
         doc,
-        "0 malicious, 0 suspicious, 68 harmless, 4 undetected — a clean "
+        "0 malicious, 0 suspicious, 68 harmless, 4 undetected, a clean "
         "result indicating no security engines have flagged the domain."
     )
 
@@ -1138,7 +1138,7 @@ def build(doc):
         "adjacent-keyboard typos (fat-finger errors), TLD variants (e.g., "
         ".com to .net, .co, .io, .co.za), dot insertion, and hyphen "
         "insertion. It also generates a bounded set of IDN / homoglyph "
-        "candidates — internationalised-domain lookalikes that substitute "
+        "candidates, internationalised-domain lookalikes that substitute "
         "Unicode characters resembling Latin letters (e.g. a Cyrillic 'а' "
         "for an ASCII 'a') and are registered in their punycode (xn--) "
         "form. These are the hardest lookalikes for a human to spot in an "
@@ -1162,7 +1162,7 @@ def build(doc):
         "checked across 17 common "
         "TLDs including .com, .net, .org, .co, .dev, .online, .io, .info, "
         ".co.za, and .africa. Each generated permutation is checked via "
-        "DNS resolution — if it resolves, the domain is registered and "
+        "DNS resolution, if it resolves, the domain is registered and "
         "active. Resolved domains are further checked for SSL certificates, "
         "which indicate the lookalike is actively being used (possibly for "
         "phishing with a convincing HTTPS connection). Each permutation "
@@ -1204,13 +1204,13 @@ def build(doc):
     )
     add_bullet(
         doc,
-        "3 of 7 lookalike domains have active SSL certificates — these "
+        "3 of 7 lookalike domains have active SSL certificates, these "
         "are the highest-risk variants as they can serve convincing HTTPS "
         "phishing pages."
     )
     add_bullet(
         doc,
-        "No lookalike domains resolving — this is uncommon for popular "
+        "No lookalike domains resolving, this is uncommon for popular "
         "domains but indicates low typosquatting risk."
     )
 
@@ -1224,7 +1224,7 @@ def build(doc):
 
     add_note(
         doc,
-        "Not every resolved lookalike domain is malicious — some may be "
+        "Not every resolved lookalike domain is malicious, some may be "
         "legitimately owned by other businesses or parked by domain "
         "speculators. The scanner flags them as potential risks for "
         "investigation, not confirmed threats."
@@ -1233,7 +1233,7 @@ def build(doc):
     add_warning(
         doc,
         "Lookalike domains with SSL certificates that were recently issued "
-        "(within the last 30 days) are the most suspicious — they suggest "
+        "(within the last 30 days) are the most suspicious, they suggest "
         "someone is actively setting up infrastructure for an attack."
     )
 
@@ -1286,7 +1286,7 @@ def build(doc):
         "Why it matters for insurance: ",
         "Under aggregator-liability theory a breach at a declared "
         "supplier can be imputed back to the insured. The Lloyd's "
-        "Talbot mrcourier case is the canonical precedent — Talbot's "
+        "Talbot mrcourier case is the canonical precedent: Talbot's "
         "insured was held liable for downstream losses originating at "
         "an undeclared supplier. Surfacing declared siblings during "
         "underwriting lets the broker price the civil-liability "
@@ -1310,7 +1310,7 @@ def build(doc):
         doc,
         "v1.0 is broker-declared only. v1.1 (deferred) adds "
         "auto-discovery via cert SAN, WHOIS registrant match, and "
-        "analytics-ID correlation — the broker confirms auto-detected "
+        "analytics-ID correlation, the broker confirms auto-detected "
         "siblings via the same pre-flight UI used for regulatory flags."
     )
 
@@ -1350,7 +1350,7 @@ def build(doc):
         "Exposed lockfiles eliminate the reconnaissance step from a "
         "ransomware-via-vulnerable-dependency attack. The attacker "
         "downloads package-lock.json, feeds it to OSV.dev, and "
-        "receives a working list of CVEs with public exploits — no "
+        "receives a working list of CVEs with public exploits, no "
         "scanning, no fingerprinting required. Patchstack 2024 data "
         "shows 11.6% of WordPress plugin CVEs are actively exploited; "
         "the same pattern applies to npm/Composer/PyPI."
@@ -1400,7 +1400,7 @@ def build(doc):
         doc,
         "Why it matters for insurance: ",
         "Every external script runs with the same privileges as the "
-        "insured's own code — it can read forms, intercept payment "
+        "insured's own code, it can read forms, intercept payment "
         "fields, and exfiltrate data. SRI hashes pin each script to a "
         "known good version, so an upstream CDN hijack (Magecart 2018, "
         "polyfill.io 2024) cannot silently replace the script. "
@@ -1445,7 +1445,7 @@ def build(doc):
         "(Mailchimp 2022/2023, Constant Contact 2021, Microsoft "
         "Storm-0558 2023) becomes a phishing path directly into the "
         "insured's customer base. The risk is dramatically larger "
-        "when DMARC policy is 'none' or absent — CISA BOD 18-01 "
+        "when DMARC policy is 'none' or absent: CISA BOD 18-01 "
         "cohort data shows DMARC p=reject reduces phishing inbox "
         "success from 69% to 14% (~80% relative reduction)."
     )
@@ -1462,7 +1462,7 @@ def build(doc):
     add_note(
         doc,
         "A vendor of 'unknown' (not on the classification list) is "
-        "still counted but separately flagged — broker should review "
+        "still counted but separately flagged, broker should review "
         "whether the unknown include is legitimate or a stale "
         "configuration artefact."
     )
@@ -1470,7 +1470,7 @@ def build(doc):
     # ══════════════════════════════════════════════════════════════════════
     # 4.6.16  CMS Plugin Surface (S-10)
     # ══════════════════════════════════════════════════════════════════════
-    add_h2(doc, "4.6.16  CMS Plugin Surface — WordPress (S-10)")
+    add_h2(doc, "4.6.16  CMS Plugin Surface: WordPress (S-10)")
 
     add_bold_body(
         doc,
@@ -1499,7 +1499,7 @@ def build(doc):
         "ransomware entry vector per the Sophos State of Ransomware "
         "SA 2024 report (69% of SA orgs hit, malicious email + "
         "exploitation as top root causes). Readable version strings "
-        "are directly CVE-chainable — the attacker reads the version "
+        "are directly CVE-chainable, the attacker reads the version "
         "from readme.txt and goes straight to the CVE database."
     )
 
@@ -1540,7 +1540,7 @@ def build(doc):
         "(critical/high/medium/low), and exposure_class (e.g. "
         "session_tokens, customer_email_lists, mailbox_content). "
         "Each match's penalty decays linearly with age over a "
-        "5-year lookback window — full SEVERITY_PENALTY at age=0, "
+        "5-year lookback window, full SEVERITY_PENALTY at age=0, "
         "zero at LOOKBACK_DAYS. Five years is empirically supported "
         "because customer-key rotation post-disclosure is typically "
         "incomplete years after the incident (Ponemon Third-Party "
@@ -1552,7 +1552,7 @@ def build(doc):
         "Why it matters for insurance: ",
         "This is the strongest broker-narrative signal in the "
         "supply-chain layer: 'your supplier was breached N months "
-        "ago — have credentials been rotated?'. Case anchors include "
+        "ago, have credentials been rotated?'. Case anchors include "
         "MOVEit Cl0p 2023 (2,700+ orgs / USD 12-15B aggregate "
         "economic impact via ONE vendor breach), Polyfill.io 2024 "
         "(100,000+ sites compromised), Storm-0558 (25 orgs incl. US "
@@ -1570,7 +1570,7 @@ def build(doc):
         "up to +0.04 to the vulnerability uplift in the financial "
         "model. The catastrophe-tail percentiles (P75-P99.6) move "
         "naturally through the Monte Carlo as the vulnerability uplift "
-        "shifts the entire distribution rightward — no separate "
+        "shifts the entire distribution rightward, no separate "
         "tail-widening is applied on top (an earlier iteration did "
         "exactly that and was removed during the 2026-05-27 design "
         "review to avoid double-counting the same signal)."
@@ -1579,7 +1579,7 @@ def build(doc):
     add_warning(
         doc,
         "Editorial discipline: vendor_breaches.json follows the same "
-        "rules as darkweb_providers.py — only CONFIRMED public-record "
+        "rules as darkweb_providers.py, only CONFIRMED public-record "
         "incidents are added, each with a citable source field. The "
         "broker can defend each row in a FAIS audit."
     )
@@ -1615,7 +1615,7 @@ def build(doc):
         "credential signals already gathered elsewhere in the scan into a "
         "single rotate-now verdict: (1) the breached-credential corpus from "
         "Dehashed (4.6.6); (2) the recency of that exposure, dated from "
-        "IntelX, HIBP-enriched breach dates, and — most reliably — the "
+        "IntelX, HIBP-enriched breach dates, and, most reliably, the "
         "infostealer infection date; (3) active theft from Hudson Rock "
         "infostealer infections (4.6.7); and (4) active circulation / "
         "trading from IntelX leak, paste, and dark-web mentions (4.6.8). "
@@ -1640,12 +1640,12 @@ def build(doc):
 
     add_bold_body(
         doc,
-        "Active vs re-circulated — the date-anchor discipline: ",
+        "Active vs re-circulated, the date-anchor discipline: ",
         "Aggregator / combo-list sources (e.g. ALIEN TXTBASE) are flagged "
         "as re-packaged historical data: a recent OBSERVED date on a combo "
         "list is re-circulation, not fresh theft, and on its own does not "
         "qualify as 'genuinely recent'. Only the infostealer infection "
-        "date — a point-in-time malware capture — is treated as a reliable "
+        "date, a point-in-time malware capture, is treated as a reliable "
         "freshness anchor. This prevents a recycled compilation from "
         "inflating the verdict to CRITICAL."
     )
@@ -1654,7 +1654,7 @@ def build(doc):
         doc,
         "Password-bearing records are counted, not assumed: ",
         "The card reports the breached-record total AND, separately, how "
-        "many of those records actually carry a password — e.g. "
+        "many of those records actually carry a password, e.g. "
         "'13 leaked credential records (2 with passwords)'. Only the "
         "plaintext- and hashed-password subset (from Dehashed's credential "
         "breakdown) is counted as 'with passwords'; the remaining records "
@@ -1668,7 +1668,7 @@ def build(doc):
         doc,
         "Why it matters for insurance: ",
         "This card answers the single question an underwriter cares about "
-        "for credentials — 'is someone able to log in right now?' — by "
+        "for credentials, 'is someone able to log in right now?', by "
         "separating live, date-proven exposure from old or recycled data. "
         "A HIGH or CRITICAL verdict justifies a forced-reset + MFA "
         "remediation condition before binding; a MEDIUM/LOW verdict on "
@@ -1744,9 +1744,9 @@ def build(doc):
         "Scoring: ",
         "REPORTING-ONLY. The cross-correlation deliberately does NOT "
         "carry its own scoring weight, RSI factor, or financial-impact "
-        "uplift. The underlying signals it joins — Hudson Rock "
+        "uplift. The underlying signals it joins, Hudson Rock "
         "infostealer harvest (via credential_risk), S-4 SPF vendor "
-        "surface, S-5 known-breach matches — each already contribute "
+        "surface, S-5 known-breach matches, each already contribute "
         "to RSI and financial impact through their own channels. "
         "Adding a separate weight here would double-count the same "
         "data without empirical justification (no public evidence "
@@ -1755,14 +1755,14 @@ def build(doc):
         "value is QUALITATIVE: tell the broker which specific "
         "vendors to rotate at, with confidence backed by three "
         "independent sources. Credential rotation is cheap (R0–R3,600 "
-        "per vendor) — the value is in the specificity of the "
+        "per vendor), the value is in the specificity of the "
         "rotate-list, not in a phantom RSI reduction."
     )
 
     add_note(
         doc,
         "Surface coverage: this finding is explicitly rendered in "
-        "ALL six broker-facing surfaces — HTML cat-card (Exposure & "
+        "ALL six broker-facing surfaces: HTML cat-card (Exposure & "
         "Reputation), top recommendations block (auto via "
         "RECOMMENDATIONS), PDF body cat_third_party_correlation, PDF "
         "Broker Summary spotlight row, PDF Executive Deck Slide 4 "
@@ -1777,7 +1777,7 @@ def build(doc):
         "Soft-correlation caveat: the free Hudson Rock endpoint "
         "returns aggregate counts only, not per-vendor names. The "
         "'suspected vendors' list is therefore the intersection of "
-        "S-4 detected vendors and S-5 breach database — it identifies "
+        "S-4 detected vendors and S-5 breach database, it identifies "
         "the highest-probability candidates, NOT a confirmed mapping. "
         "Brokers should treat the rotate-list as priority targets, not "
         "as definitive attribution. A v1.2 enhancement to fetch per-"
@@ -1786,13 +1786,13 @@ def build(doc):
     )
 
     # ── Section summary ──────────────────────────────────────────────────
-    add_h2(doc, "4.6.20  Section Summary — Interpreting Exposure Results")
+    add_h2(doc, "4.6.20  Section Summary: Interpreting Exposure Results")
 
     add_body(
         doc,
         "The seventeen checkers in this section work together to provide "
-        "a 360-degree view of a domain's exposure and reputation profile "
-        "— including the six supply-chain signals (4.6.12-17) that close "
+        "a 360-degree view of a domain's exposure and reputation profile, "
+        "including the six supply-chain signals (4.6.12-17) that close "
         "the historical gap between observed posture and supplier-chain "
         "risk. When interpreting results, consider the following priority "
         "framework:"
