@@ -2,7 +2,7 @@ const fs = require("fs");
 const {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
   Header, Footer, AlignmentType, HeadingLevel, BorderStyle, WidthType,
-  ShadingType, PageNumber, PageBreak, LevelFormat
+  ShadingType, PageNumber, PageBreak, LevelFormat, TableLayoutType
 } = require("docx");
 
 const NAVY = "1B3A5C";
@@ -58,7 +58,7 @@ function buildTable(headers, colWidths, rows) {
       )
     })
   );
-  return new Table({ width: { size: CONTENT_W, type: WidthType.DXA }, columnWidths: colWidths, rows: [headerRow, ...dataRows] });
+  return new Table({ width: { size: CONTENT_W, type: WidthType.DXA }, columnWidths: colWidths, layout: TableLayoutType.FIXED, rows: [headerRow, ...dataRows] });
 }
 
 // --- Change Log (v9 -> v10) ---

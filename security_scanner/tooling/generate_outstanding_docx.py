@@ -110,6 +110,18 @@ def _add_heading(doc, text, level):
         p.paragraph_format.space_after = Pt(2)
 
 
+def _set_fixed_layout(table):
+    """Force w:tblLayout type=fixed so Word honours the column widths instead
+    of growing wide columns past the right margin (autofit caused a right-side
+    cut-off on tables with long tokens)."""
+    tblPr = table._tbl.tblPr
+    for existing in tblPr.findall(qn('w:tblLayout')):
+        tblPr.remove(existing)
+    layout = OxmlElement('w:tblLayout')
+    layout.set(qn('w:type'), 'fixed')
+    tblPr.append(layout)
+
+
 def _add_table(doc, rows):
     """Add a markdown-style table. `rows` is a list of row-cells; first
     row is treated as header."""
@@ -118,7 +130,16 @@ def _add_table(doc, rows):
     n_cols = len(rows[0])
     table = doc.add_table(rows=len(rows), cols=n_cols)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.autofit = True
+    # Fixed layout + explicit even column widths: keeps the table within the
+    # page's content area so a long token cannot push a column off the right
+    # edge. python-docx needs the width set on every cell for fixed layout.
+    table.autofit = False
+    _set_fixed_layout(table)
+    sec = doc.sections[0]
+    col_w = int((sec.page_width - sec.left_margin - sec.right_margin) / n_cols)
+    for col in table.columns:
+        for cell in col.cells:
+            cell.width = col_w
     for r_idx, row in enumerate(rows):
         for c_idx, cell_text in enumerate(row[:n_cols]):
             cell = table.rows[r_idx].cells[c_idx]
