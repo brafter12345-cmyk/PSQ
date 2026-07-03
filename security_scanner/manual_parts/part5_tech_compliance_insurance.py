@@ -998,8 +998,7 @@ def build(doc):
         "they concentrate more probability around the most likely value "
         "while still allowing for tail events. The 50,000 iteration count "
         "gives stable tail estimation at the longest return period (P99.6, "
-        "~200 tail samples) without breaching the Render free-tier memory "
-        "limit."
+        "~200 tail samples) while keeping memory use modest."
     )
 
     add_body(doc,

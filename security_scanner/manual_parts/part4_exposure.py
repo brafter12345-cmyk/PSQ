@@ -350,38 +350,43 @@ def build(doc):
         doc,
         "What it checks: ",
         "The scanner discovers subdomains through two methods. Certificate "
-        "Transparency (CT) log scanning via crt.sh is the PRIMARY source — "
-        "it reveals every subdomain that has ever had a public certificate "
-        "issued. DNS brute-force resolution of 50+ common prefixes (www, "
-        "mail, vpn, dev, staging, test, admin, api, beta, backup, jenkins, "
-        "gitlab, jira, grafana, kibana, phpmyadmin, cpanel, owa, exchange, "
-        "and many more) is the secondary source, used to catch subdomains "
-        "that have no certificate. Discovered subdomains are classified as "
-        "'risky' when a risk keyword (dev, staging, admin, backup, etc.) "
-        "appears as a distinct label — the apex itself and the ordinary "
-        "www host are excluded from the risky count."
+        "Transparency (CT) log scanning is the PRIMARY source: it reveals "
+        "every subdomain that has ever had a public certificate issued. The "
+        "scanner queries TWO independent CT-log providers, crt.sh and "
+        "certspotter, in parallel and merges (unions) their results, so a "
+        "slow or failed response from one provider does not lose coverage. "
+        "DNS brute-force resolution of 50+ common prefixes (www, mail, vpn, "
+        "dev, staging, test, admin, api, beta, backup, jenkins, gitlab, "
+        "jira, grafana, kibana, phpmyadmin, cpanel, owa, exchange, and many "
+        "more) is the secondary source, used to catch subdomains that have "
+        "no certificate. Discovered subdomains are classified as 'risky' "
+        "when a risk keyword (dev, staging, admin, backup, and similar) "
+        "appears as a distinct label; the apex itself and the ordinary www "
+        "host are excluded from the risky count."
     )
 
     add_bold_body(
         doc,
         "How it works: ",
-        "First, a query to crt.sh retrieves all certificates ever issued "
-        "for the domain and its subdomains from public Certificate "
-        "Transparency logs (the query is retried once before giving up). "
-        "This reveals subdomains the organisation may have forgotten "
-        "about — old staging servers, decommissioned APIs, and test "
-        "environments. The report only narrates results as discovered "
-        "'via Certificate Transparency' when this crt.sh query actually "
-        "succeeded; if CT is unavailable the card does not claim a CT "
-        "source. Second, the scanner resolves each of the 50+ brute-force "
-        "prefixes via DNS. Before doing so it runs a wildcard-DNS guard: "
-        "two random non-existent labels are resolved, and if they answer "
-        "(meaning *.domain is a catch-all wildcard) brute-force discovery "
-        "is suppressed, because every guessed prefix would otherwise "
-        "appear to resolve and fabricate subdomains that do not exist. "
-        "Each genuinely discovered subdomain is tagged with risk keywords "
-        "(dev, staging, test, admin, backup, database, internal, vpn, "
-        "etc.)."
+        "First, the scanner queries both CT-log providers (crt.sh and "
+        "certspotter) in parallel and unions the subdomains they return. "
+        "Certificate Transparency reveals subdomains the organisation may "
+        "have forgotten about, such as old staging servers, decommissioned "
+        "APIs, and test environments. Querying two providers matters because "
+        "crt.sh in particular is prone to timeouts and rate-limiting under "
+        "load; when it fails, certspotter still supplies CT coverage, so "
+        "enumeration does not silently collapse to the brute-force list "
+        "alone. If BOTH CT providers are unreachable on a given scan, the "
+        "card is flagged low-coverage: the report states plainly that the "
+        "external attack surface is likely under-reported, and that a fall "
+        "in subdomain count versus a prior scan should be read as missing "
+        "data rather than as the organisation having removed subdomains. "
+        "Second, the scanner resolves each of the 50+ brute-force prefixes "
+        "via DNS. Before doing so it runs a wildcard-DNS guard: two random "
+        "non-existent labels are resolved, and if they answer (meaning "
+        "*.domain is a catch-all wildcard) brute-force discovery is "
+        "suppressed, because every guessed prefix would otherwise appear to "
+        "resolve and fabricate subdomains that do not exist."
     )
 
     add_bold_body(
@@ -523,6 +528,20 @@ def build(doc):
         "severity CVE with 80% EPSS is scored more harshly than a high-"
         "severity CVE with 1% EPSS. The Shodan checker is one of the "
         "highest-weighted components in the overall score calculation."
+    )
+
+    add_note(
+        doc,
+        "Version-confirmation gating. Where a CVE is inferred from an open "
+        "port or a service template rather than from a confirmed software "
+        "version, the scanner marks it as version-unconfirmed and the report "
+        "presents it as a potential, unconfirmed finding. When a detected "
+        "service banner names a different product than a templated CVE "
+        "assumes (for example a Pure-FTPd banner on a port whose template "
+        "lists ProFTPD vulnerabilities), that CVE is dropped rather than "
+        "shown. The CISA KEV 'actively exploited' badge is displayed only "
+        "for CVEs that survive this gating, so a well-defended host is not "
+        "tagged with exploited-CVE warnings it does not actually carry."
     )
 
     add_body(doc, "Common findings include:")

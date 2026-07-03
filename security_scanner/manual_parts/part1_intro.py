@@ -213,7 +213,7 @@ def _build_toc(doc):
         ("  9.1", "Environment Variables"),
         ("  9.2", "API Keys"),
         ("  9.3", "Database"),
-        ("  9.4", "Deployment on Render"),
+        ("  9.4", "Deployment (Google Cloud VM)"),
         ("10", "Troubleshooting"),
         ("  10.1", "Common Issues"),
         ("  10.2", "Timeout Errors"),
@@ -311,7 +311,7 @@ def _build_section_1(doc):
     )
     _h("add_bold_body")(doc, "Technical Staff ",
         "responsible for deploying, configuring, or maintaining the scanner. The manual covers "
-        "environment variables, API key management, deployment on Render, the REST API, and "
+        "environment variables, API key management, deployment on the Google Cloud VM, the REST API, and "
         "troubleshooting guidance. Technical staff should read the full manual, paying "
         "particular attention to the Configuration & Deployment and API Reference sections."
     )
@@ -586,20 +586,23 @@ def _build_section_2(doc):
     )
 
     _h("add_bold_body")(doc, "Production Instance: ",
-        "https://phishield-scanner.onrender.com. This is the hosted version used by "
-        "underwriters and brokers for day-to-day scanning. It is deployed on Render and "
-        "is accessible from any internet-connected device."
+        "https://veilguard.phishield.com/scanner/. This is the hosted version used by "
+        "underwriters and brokers for day-to-day scanning. It runs on a dedicated Google "
+        "Cloud VM with a persistent Postgres database, and is accessible from any "
+        "internet-connected device. An earlier free-tier deployment at "
+        "phishield-scanner.onrender.com is legacy and is being retired."
     )
 
     _h("add_note")(doc,
-        "The production instance may take 30-60 seconds to respond on the first request "
-        "if it has been idle, because the Render free tier spins down inactive services. "
-        "Subsequent requests will respond immediately."
+        "The production instance runs continuously as a managed service on the Google "
+        "Cloud VM, so it does not spin down and there is no first-request delay. Scan "
+        "results are held in a persistent Postgres database and survive redeployments "
+        "(the earlier Render free tier used an ephemeral disk that wiped stored scans on "
+        "each deploy)."
     )
 
     _h("add_tip")(doc,
-        "Bookmark the production URL for quick access. If you experience slow loading, "
-        "simply wait for the initial spin-up to complete and then refresh the page."
+        "Bookmark the production URL for quick access."
     )
 
     doc.add_paragraph()
