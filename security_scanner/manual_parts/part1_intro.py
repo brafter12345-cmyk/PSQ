@@ -589,8 +589,7 @@ def _build_section_2(doc):
         "https://veilguard.phishield.com/scanner/. This is the hosted version used by "
         "underwriters and brokers for day-to-day scanning. It runs on a dedicated Google "
         "Cloud VM with a persistent Postgres database, and is accessible from any "
-        "internet-connected device. An earlier free-tier deployment at "
-        "phishield-scanner.onrender.com is legacy and is being retired."
+        "internet-connected device."
     )
 
     _h("add_note")(doc,

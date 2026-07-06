@@ -1537,6 +1537,7 @@ def build(doc):
         "delivered since the v1.0 initial release. The changes are listed below "
         "with the date each landed.",
     )
+    add_bullet(doc, "2026-07-06: Retired the legacy Render free-tier deployment; the Google Cloud VM is now the sole production instance. The scanner's public self-identification (User-Agent and scanner-info page) was updated to the VM and its single static outbound IP.")
     add_bullet(doc, "2026-07-03: Reconciled the manual against current scanner behaviour: dual-source Certificate Transparency subdomain enumeration (crt.sh and certspotter, with a low-coverage flag), CVE version-gating disclosure (CVEs shown as 'potential, unconfirmed' where the exact software version is not fingerprinted), and the production endpoint moved to the Google Cloud VM at veilguard.phishield.com/scanner. Includes a document-wide readability and punctuation pass.")
     add_bullet(doc, "2026-06-08: Catastrophe-model mid-market calibration: a revenue-band taper and a POPIA/ECTA-scoped regulatory fine floor, with cyber-band, SPF/DMARC and availability frequency and severity refinements.")
     add_bullet(doc, "2026-06-05: Catastrophe-model redesign and FAIR reporting-card pass, with email-security accuracy improvements.")

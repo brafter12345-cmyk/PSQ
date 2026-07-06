@@ -1,16 +1,9 @@
+# NOTE: the phishield-scanner service was RETIRED (2026-07-06). Production now
+# runs on the Google Cloud VM (veilguard.phishield.com/scanner), tarball-deployed
+# via security_scanner/deploy/deploy_vm.sh. Its Render service block was removed
+# from this blueprint; suspend/delete the phishield-scanner service in the Render
+# dashboard to complete decommission.
 services:
-  - type: web
-    name: phishield-scanner
-    runtime: python
-    buildCommand: pip install -r security_scanner/requirements.txt && curl -sSL https://github.com/FiloSottile/age/releases/download/v1.2.1/age-v1.2.1-linux-amd64.tar.gz | tar -xz -C /tmp && mkdir -p security_scanner/bin && cp /tmp/age/age security_scanner/bin/age && chmod +x security_scanner/bin/age
-    startCommand: cd security_scanner && gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 600
-    envVars:
-      - key: PYTHON_VERSION
-        value: "3.12"
-      - key: PORT
-        value: "10000"
-    plan: free
-
   - type: web
     name: life-planner
     runtime: static

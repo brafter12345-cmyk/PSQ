@@ -40,12 +40,12 @@
 
 <table>
   <tr><th>Setting</th><th>Value</th></tr>
-  <tr><td>User-Agent</td><td><code>Phishield-Scanner/1.0 (+https://phishield.com/scanner-info)</code></td></tr>
+  <tr><td>User-Agent</td><td><code>Phishield-Scanner/1.0 (+https://veilguard.phishield.com/scanner/scanner-info)</code></td></tr>
   <tr><td>Steady-state request rate</td><td>Approximately 2 requests / second per target apex</td></tr>
   <tr><td>Burst capacity</td><td>5 concurrent in-flight requests (token-bucket model)</td></tr>
   <tr><td>Typical full-scan duration</td><td>8 - 12 minutes per target domain</td></tr>
   <tr><td>Typical total requests per scan</td><td>100 - 200 (HEAD-first; GET only on path hits)</td></tr>
-  <tr><td>Source network</td><td>Render.com hosted infrastructure (dynamic egress IP on free tier; static range on paid plans)</td></tr>
+  <tr><td>Source network</td><td>Google Cloud (GCP) VM in africa-south1 (Johannesburg), single static outbound IP <code>34.35.151.242</code></td></tr>
 </table>
 
 <h2>What the scanner accesses</h2>
@@ -70,9 +70,9 @@
 <h2>How to verify a request is from this scanner</h2>
 
 <ol>
-  <li>Check the request's User-Agent header — legitimate scanner traffic always includes <code>Phishield-Scanner/1.0 (+https://phishield.com/scanner-info)</code>.</li>
+  <li>Check the request's User-Agent header — legitimate scanner traffic always includes <code>Phishield-Scanner/1.0 (+https://veilguard.phishield.com/scanner/scanner-info)</code>.</li>
   <li>Visit the URL embedded in the User-Agent (this page). If you reached it, the scanner identity is verified.</li>
-  <li>Check that the source IP is within Render.com's public egress range. (Render documents these at <a href="https://render.com/docs/static-outbound-ip-addresses">render.com/docs/static-outbound-ip-addresses</a>.)</li>
+  <li>Check that the source IP is <code>34.35.151.242</code>, the scanner's single static outbound address.</li>
   <li>For doubt or escalation, contact the email below — we will confirm whether a specific scan timestamp corresponds to a paid Phishield assessment of your organisation.</li>
 </ol>
 
@@ -82,7 +82,7 @@
 
 <pre>Allow requests where:
   User-Agent matches "^Phishield-Scanner/" AND
-  Source IP is within Render.com's documented egress range
+  Source IP is 34.35.151.242 (the scanner's static outbound address)
 Rate limit:
   Cap at 5 requests / second / scanner identity</pre>
 
@@ -101,7 +101,7 @@ Rate limit:
   <tr><td>Web</td><td><a href="https://phishield.com/">phishield.com</a></td></tr>
 </table>
 
-<p class="meta" style="margin-top:40px;border-top:1px solid #cbd5e1;padding-top:12px;">Page last updated 2026-05-18. The request profile and contact details on this page are authoritative.</p>
+<p class="meta" style="margin-top:40px;border-top:1px solid #cbd5e1;padding-top:12px;">Page last updated 2026-07-06. The request profile and contact details on this page are authoritative.</p>
 
 </body>
 </html>

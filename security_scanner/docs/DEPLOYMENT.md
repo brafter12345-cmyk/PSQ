@@ -260,11 +260,14 @@ When you point a real domain (or subdomain) at the VM later:
   lets progress/job state survive across workers), then bump `--workers`.
 - **Object store**: PDF pool is local on disk; wire an S3 bucket (`boto3`, config-gated) if
   you want durable/off-box PDFs.
-- **Paid provider keys**: `VIRUSTOTAL`/`SECURITYTRAILS`/`SHODAN` keys are live in `.env`;
-  `HIBP`/`IntelX` absent, `DEHASHED` key currently returns an error (verify/rotate). All
-  provider keys are optional — the scanner runs without them at reduced coverage.
-- **Decommission Render**: `render.yaml` at the repo root is the old free-tier deploy; retire
-  it once this VM deploy is blessed.
+- **Paid provider keys**: `VIRUSTOTAL`/`SECURITYTRAILS`/`SHODAN`/`INTELX`/`DEHASHED` keys are
+  live in `.env` (DEHASHED key corrected 2026-07-06, active; IntelX active 50/50); `HIBP`
+  absent. All provider keys are optional; the scanner runs without them at reduced coverage.
+- **Render retired (2026-07-06)**: the `phishield-scanner` service block was removed from
+  `render.yaml`, and the scanner's self-identification (User-Agent + `scanner-info` page) now
+  points at the VM (`veilguard.phishield.com/scanner`, static outbound IP `34.35.151.242`).
+  Suspend then delete the `phishield-scanner` service in the Render dashboard to finish
+  decommission.
 - **Monitoring**: app exposes Prometheus metrics at `/scanner/metrics`; not scraped yet.
 
 ---
