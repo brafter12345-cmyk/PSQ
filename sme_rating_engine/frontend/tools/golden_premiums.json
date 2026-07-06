@@ -1,0 +1,306 @@
+{
+  "generatedBy": "tools/parity.mjs",
+  "note": "Ground-truth outputs from the LEGACY engine; parity proves the new ESM engine matches.",
+  "premiums": [
+    {
+      "label": "micro R1M plain band0",
+      "output": {
+        "annual": 6264,
+        "monthly": 522,
+        "annualExFP": 4164,
+        "basePremium": 4164,
+        "fpCost": 2100,
+        "modifier": 1,
+        "uwLoading": 0,
+        "postureDisc": 0,
+        "discretionaryDisc": 0,
+        "isMicro": true,
+        "breakdown": [
+          {
+            "step": 1,
+            "desc": "Micro SME base premium",
+            "value": 4164
+          },
+          {
+            "step": 2,
+            "desc": "Industry modifier (1.00x)",
+            "value": 4164
+          },
+          {
+            "step": 4,
+            "desc": "Funds Protect cost",
+            "value": 2100
+          },
+          {
+            "step": 5,
+            "desc": "Total before discounts",
+            "value": 6264
+          }
+        ]
+      }
+    },
+    {
+      "label": "micro R5M soft-tech band2",
+      "output": {
+        "annual": 13820,
+        "monthly": 1152,
+        "annualExFP": 10676,
+        "basePremium": 7908,
+        "fpCost": 3144,
+        "modifier": 1.35,
+        "uwLoading": 0,
+        "postureDisc": 0,
+        "discretionaryDisc": 0,
+        "isMicro": true,
+        "breakdown": [
+          {
+            "step": 1,
+            "desc": "Micro SME base premium",
+            "value": 7908
+          },
+          {
+            "step": 2,
+            "desc": "Industry modifier (1.35x)",
+            "value": 10675.800000000001
+          },
+          {
+            "step": 4,
+            "desc": "Funds Protect cost",
+            "value": 3144
+          },
+          {
+            "step": 5,
+            "desc": "Total before discounts",
+            "value": 13819.800000000001
+          }
+        ]
+      }
+    },
+    {
+      "label": "std R10M finance band4",
+      "output": {
+        "annual": 47664,
+        "monthly": 3973,
+        "annualExFP": 38556,
+        "basePremium": 28350,
+        "fpCost": 9108,
+        "modifier": 1.36,
+        "uwLoading": 0,
+        "postureDisc": 0,
+        "discretionaryDisc": 0,
+        "isMicro": false,
+        "breakdown": [
+          {
+            "step": 1,
+            "desc": "Formula: (0.00016176 x R 87 500 001) + R 14 196",
+            "value": 28350.00016176
+          },
+          {
+            "step": 2,
+            "desc": "Industry modifier (1.36x)",
+            "value": 38556.0002199936
+          },
+          {
+            "step": 4,
+            "desc": "Funds Protect cost",
+            "value": 9108
+          },
+          {
+            "step": 5,
+            "desc": "Total before discounts",
+            "value": 47664.0002199936
+          }
+        ]
+      }
+    },
+    {
+      "label": "std R15M plain band6 +15% load",
+      "output": {
+        "annual": 61662,
+        "monthly": 5139,
+        "annualExFP": 45906,
+        "basePremium": 39918,
+        "fpCost": 15756,
+        "modifier": 1,
+        "uwLoading": 0.15,
+        "postureDisc": 0,
+        "discretionaryDisc": 0,
+        "isMicro": false,
+        "breakdown": [
+          {
+            "step": 1,
+            "desc": "Formula: (0.000114 x R 175 000 001) + R 19 968",
+            "value": 39918.000114
+          },
+          {
+            "step": 2,
+            "desc": "Industry modifier (1.00x)",
+            "value": 39918.000114
+          },
+          {
+            "step": 3,
+            "desc": "UW loading (+15%)",
+            "value": 45905.7001311
+          },
+          {
+            "step": 4,
+            "desc": "Funds Protect cost",
+            "value": 15756
+          },
+          {
+            "step": 5,
+            "desc": "Total before discounts",
+            "value": 61661.7001311
+          }
+        ]
+      }
+    },
+    {
+      "label": "std R2.5M soft band1 FP tier2 -10% posture",
+      "output": {
+        "annual": 14047,
+        "monthly": 1171,
+        "annualExFP": 8767,
+        "basePremium": 5904,
+        "fpCost": 4800,
+        "modifier": 1.35,
+        "uwLoading": 0,
+        "postureDisc": -0.1,
+        "discretionaryDisc": 0,
+        "isMicro": true,
+        "breakdown": [
+          {
+            "step": 1,
+            "desc": "Micro SME base premium",
+            "value": 5904
+          },
+          {
+            "step": 2,
+            "desc": "Industry modifier (1.35x)",
+            "value": 7970.400000000001
+          },
+          {
+            "step": 4,
+            "desc": "Funds Protect cost",
+            "value": 4800
+          },
+          {
+            "step": 5,
+            "desc": "Total before discounts",
+            "value": 12770.400000000001
+          },
+          {
+            "step": 6,
+            "desc": "Adjustments (posture loading 10%, discretionary discount 0%)",
+            "value": 14047.440000000002
+          }
+        ]
+      }
+    },
+    {
+      "label": "std R7.5M plain band3 15% posture 20% disc",
+      "output": {
+        "annual": 18107,
+        "monthly": 1509,
+        "annualExFP": 14843,
+        "basePremium": 21828,
+        "fpCost": 4800,
+        "modifier": 1,
+        "uwLoading": 0,
+        "postureDisc": 0.15,
+        "discretionaryDisc": 0.2,
+        "isMicro": false,
+        "breakdown": [
+          {
+            "step": 1,
+            "desc": "Formula: (0.000288 x R 62 500 001) + R 3 828",
+            "value": 21828.000288
+          },
+          {
+            "step": 2,
+            "desc": "Industry modifier (1.00x)",
+            "value": 21828.000288
+          },
+          {
+            "step": 4,
+            "desc": "Funds Protect cost",
+            "value": 4800
+          },
+          {
+            "step": 5,
+            "desc": "Total before discounts",
+            "value": 26628.000288
+          },
+          {
+            "step": 6,
+            "desc": "Adjustments (posture discount 15%, discretionary discount 20%)",
+            "value": 18107.04019584
+          }
+        ]
+      }
+    }
+  ],
+  "underwriting": [
+    {
+      "label": "all yes",
+      "output": {
+        "outcome": "standard",
+        "loadingPct": 0,
+        "noCount": 0,
+        "q1Conditions": [],
+        "fpConditions": [],
+        "allConditions": []
+      }
+    },
+    {
+      "label": "decline (q1-1 no)",
+      "output": {
+        "outcome": "decline",
+        "loadingPct": 0,
+        "noCount": 0,
+        "q1Conditions": [],
+        "fpConditions": [],
+        "allConditions": []
+      }
+    },
+    {
+      "label": "3 nos -> 5% loading",
+      "output": {
+        "outcome": "loading",
+        "loadingPct": 0.05,
+        "noCount": 3,
+        "q1Conditions": [],
+        "fpConditions": [],
+        "allConditions": []
+      }
+    },
+    {
+      "label": "refer prior claim",
+      "output": {
+        "outcome": "refer",
+        "loadingPct": 0,
+        "noCount": 0,
+        "q1Conditions": [],
+        "fpConditions": [],
+        "allConditions": []
+      }
+    },
+    {
+      "label": "fp conditions",
+      "output": {
+        "outcome": "standard",
+        "loadingPct": 0,
+        "noCount": 0,
+        "q1Conditions": [],
+        "fpConditions": [
+          "The Insured must have or implement documented procedures for the vetting of all new vendors, customers, and payees before processing any payments or financial transactions.",
+          "The Insured must utilise account verification services offered by their bank or a third-party provider to confirm the legitimacy of beneficiary accounts before processing payments."
+        ],
+        "allConditions": [
+          "The Insured must have or implement documented procedures for the vetting of all new vendors, customers, and payees before processing any payments or financial transactions.",
+          "The Insured must utilise account verification services offered by their bank or a third-party provider to confirm the legitimacy of beneficiary accounts before processing payments."
+        ]
+      }
+    }
+  ]
+}

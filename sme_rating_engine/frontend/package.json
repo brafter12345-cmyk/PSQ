@@ -1,0 +1,23 @@
+{
+  "name": "sme-rating-engine-frontend",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "description": "Phishield SME Rating Engine — React frontend (VM build). Rating data + engine are extracted verbatim from the legacy vanilla app and locked by a parity gate.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "gen:data": "node tools/gen_rating_data.mjs",
+    "parity": "node tools/parity.mjs"
+  },
+  "dependencies": {
+    "jspdf": "^2.5.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.7"
+  }
+}
