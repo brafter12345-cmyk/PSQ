@@ -1,9 +1,9 @@
 import { useMemo, useReducer } from 'react';
 import { initialState, reducer } from './state.js';
-import { INDUSTRIES, COVER_AVAILABILITY, REVENUE_BANDS } from './rating-data.js';
+import { INDUSTRIES, REVENUE_BANDS } from './rating-data.js';
 import {
   calcActualTurnover, findRevenueBand, evaluateUnderwriting, calculatePremium,
-  getItooBenchmark, getRecommendedCovers,
+  buildCoverRecommendations,
 } from './rating-engine.js';
 import { parseCurrency } from './lib/format.js';
 import Step1Client from './steps/Step1Client.jsx';
@@ -41,42 +41,53 @@ function computeDerived(state) {
 
   const hasCompany = state.companyName.trim().length > 0;
   const q1GateAnswered = state.uwAnswers['q1-1'] !== undefined && state.uwAnswers['q1-2'] !== undefined;
+  const renewalPremiumNum = parseCurrency(state.renewalPremium);
+  const renewalFPNum = parseCurrency(state.renewalFPLimit);
   let renewalOk = true;
   if (state.quoteType === 'renewal') {
-    renewalOk = state.renewalCoverIndex >= 0 && parseCurrency(state.renewalPremium) > 0 && parseCurrency(state.renewalFPLimit) > 0;
+    renewalOk = state.renewalCoverIndex >= 0 && renewalPremiumNum > 0 && renewalFPNum > 0;
   }
   const canNext1 = !blocked && hasCompany && state.industryIndex >= 0 && actualTurnover > 0 && q1GateAnswered && renewalOk;
 
-  // Discounts entered as percent strings ("15", "-10") -> fractions for the engine.
-  const postureFrac = (parseFloat(state.postureDiscount) || 0) / 100;
-  const discFrac = (parseFloat(state.discretionaryDiscount) || 0) / 100;
-  const combinedDiscountPct = Math.round((postureFrac + discFrac) * 100);
-
-  const engineState = {
+  // Engine base (no per-option overrides) shared by recommendations + per-option calcs.
+  const engineBase = {
     revenueBandIndex, industryIndex: state.industryIndex, actualTurnover,
-    uwLoadingPct: uw.loadingPct, fpSelections: state.fpSelections,
-    postureDiscount: postureFrac, discretionaryDiscount: discFrac,
+    uwLoadingPct: uw.loadingPct, fpSelections: {}, postureDiscount: 0, discretionaryDiscount: 0,
   };
-  const selectedCalc = state.selectedCoverIndex >= 0 && revenueBandIndex >= 0
-    ? calculatePremium(state.selectedCoverIndex, engineState, {}) : null;
-  const selectedItoo = getItooBenchmark(actualTurnover, state.selectedCoverIndex);
-  const recommendedCovers = getRecommendedCovers(revenueBandIndex);
+  const reco = buildCoverRecommendations({
+    ...engineBase, quoteType: state.quoteType,
+    renewalCoverIndex: state.renewalCoverIndex, renewalPremium: renewalPremiumNum, renewalFPLimit: renewalFPNum,
+  });
 
-  // Ticker: selected-cover monthly once chosen, else first recommended cover.
+  // Per-option premiums (each option: own FP + own discounts as percent strings).
+  const optionCalcs = {};
+  for (const o of state.quoteOptions) {
+    if (revenueBandIndex < 0) continue;
+    const calc = calculatePremium(o.coverIndex, engineBase, {
+      fpIndex: o.fpIndex,
+      postureDiscount: (parseFloat(o.posturePct) || 0) / 100,
+      discretionaryDiscount: (parseFloat(o.discretionaryPct) || 0) / 100,
+    });
+    if (calc) optionCalcs[o.id] = calc;
+  }
+  const isMulti = state.quoteOptions.length >= 2;
+
+  // Ticker: first option's monthly (+count), else a recommended-cover preview.
   let ticker = null;
-  if (selectedCalc) ticker = selectedCalc.monthly;
-  else if (revenueBandIndex >= 0 && industry && !blocked && q1GateAnswered) {
-    const avail = COVER_AVAILABILITY[revenueBandIndex] || [];
-    let ci = avail.findIndex((a) => a === 'recommended');
-    if (ci < 0) ci = 2;
-    const calc = calculatePremium(ci, { ...engineState, postureDiscount: 0, discretionaryDiscount: 0 }, {});
+  let tickerCount = 0;
+  const firstOpt = state.quoteOptions[0];
+  if (firstOpt && optionCalcs[firstOpt.id]) {
+    ticker = optionCalcs[firstOpt.id].monthly;
+    tickerCount = state.quoteOptions.length;
+  } else if (revenueBandIndex >= 0 && industry && !blocked && q1GateAnswered && reco.recommended.length) {
+    const calc = calculatePremium(reco.recommended[0], engineBase, {});
     if (calc) ticker = calc.monthly;
   }
 
   return {
     prev, current, actualTurnover, over200, revenueBandIndex, bandLabel, industry, uw,
-    blocked, blockReason, canNext1, ticker, engineState, selectedCalc, selectedItoo,
-    recommendedCovers, postureFrac, discFrac, combinedDiscountPct,
+    blocked, blockReason, canNext1, ticker, tickerCount, engineBase, reco, optionCalcs, isMulti,
+    renewalPremiumNum, renewalFPNum,
   };
 }
 
@@ -88,6 +99,7 @@ export default function App() {
   const goToStep = (n) => {
     if (n < 1 || n > 5) return;
     if (n > state.currentStep && derived.blocked) return;
+    if (n >= 3 && state.quoteOptions.length === 0) return; // need a cover selected
     patch({ currentStep: n });
   };
 
@@ -134,7 +146,10 @@ export default function App() {
 
         <div className="quote-ticker" id="quoteTicker">
           <div className="ticker-label">Estimated Monthly</div>
-          <div className="ticker-amount">{derived.ticker != null ? 'R' + derived.ticker.toLocaleString('en-ZA') : '--'}</div>
+          <div className="ticker-amount">
+            {derived.ticker != null ? 'R' + derived.ticker.toLocaleString('en-ZA') : '--'}
+            {derived.tickerCount >= 2 && <span className="ticker-options-count"> {derived.tickerCount} options</span>}
+          </div>
         </div>
 
         {state.currentStep === 1 && <Step1Client {...stepProps} onNext={() => goToStep(2)} />}

@@ -92,22 +92,28 @@ for (const s of scenarios) {
   const revenueBandIndex = E.findRevenueBand(actualTurnover);
   const fpOver = fpOver250(s.coverIndex, s.fpIndex);
   const uw = E.evaluateUnderwriting(s.answers, { quoteType: s.quoteType, priorClaim: s.priorClaim, fpOver250k: fpOver });
-  const ref = `CPB-QA-${s.name}`;
   const fpSel = { [s.coverIndex]: s.fpIndex };
+  const fpLabelFull = D.getAvailableFPOptions(D.COVER_LIMITS[s.coverIndex].key)[s.fpIndex].label;
+  const optLabelFull = D.COVER_LIMITS[s.coverIndex].label + ' / FP ' + fpLabelFull;
+  const fpLabel = fpLabelFull.replace(/[\s,]/g, '');
+  const coverLabel = D.COVER_LIMITS[s.coverIndex].label.replace(/[\s,]/g, '');
+  const baseRef = `CPB-QA-${s.name}`;
+  const optRef = `${baseRef}-${coverLabel}-FP${fpLabel}`;
+  const option = { coverIndex: s.coverIndex, fpIndex: s.fpIndex, postureDiscount: s.posture, discretionaryDiscount: s.discretionary };
 
-  // NEW pdf
+  // NEW pdf (per-option path)
   const myState = {
-    companyName: s.company, industryIndex: s.industryIndex, selectedCoverIndex: s.coverIndex,
-    quoteType: s.quoteType, websiteAddress: s.website, competitorName: s.competitorName,
-    competitorPremium: String(s.competitorPremium || ''), competitorHasFP: s.competitorHasFP,
+    companyName: s.company, industryIndex: s.industryIndex, quoteType: s.quoteType, websiteAddress: s.website,
+    competitorName: s.competitorName, competitorHasFP: s.competitorHasFP,
+    competitorRows: s.competitorPremium > 0 ? [{ coverIndex: s.coverIndex, competitorPremium: String(s.competitorPremium) }] : [],
     uwAnswers: s.answers, uwEndpointVendor: s.endpointVendor, uwPriorInsurer: '', uwPriorInceptionDate: '',
-    priorClaim: s.priorClaim, endorsements: s.endorsements, renewalPremium: '', renewalFPLimit: '', fpSelections: fpSel,
+    priorClaim: s.priorClaim, endorsements: s.endorsements, renewalPremium: '', renewalFPLimit: '',
   };
   const myDerived = {
     actualTurnover, revenueBandIndex, uw,
-    engineState: { revenueBandIndex, industryIndex: s.industryIndex, actualTurnover, uwLoadingPct: uw.loadingPct, fpSelections: fpSel, postureDiscount: s.posture, discretionaryDiscount: s.discretionary },
+    engineBase: { revenueBandIndex, industryIndex: s.industryIndex, actualTurnover, uwLoadingPct: uw.loadingPct, fpSelections: {}, postureDiscount: 0, discretionaryDiscount: 0 },
   };
-  const { doc: newDoc } = P.buildQuotePdf({ state: myState, derived: myDerived, quoteRef: ref });
+  const { doc: newDoc } = P.buildQuotePdf({ state: myState, derived: myDerived, quoteRef: optRef, option });
   writeFileSync(resolve(OUT, `new_${s.name}.pdf`), Buffer.from(newDoc.output('arraybuffer')));
 
   // LEGACY pdf
@@ -122,11 +128,11 @@ for (const s of scenarios) {
     renewalFPLimit: 0, renewalPremium: 0, renewalCoverIndex: -1, renewalPremiumDropTriggered: false, renewalBandChanged: false, renewalCorporateEscalation: false, renewalRecommendedCoverIndex: -1, renewalPremiumDropPct: 0,
     quoteOptions: [], activeOptionTab: null, selectedCovers: [s.coverIndex], recommendedCovers: [s.coverIndex],
     competitorRows: s.competitorPremium > 0 ? [{ requestedCoverIndex: s.coverIndex, competitorPremium: s.competitorPremium }] : [],
-    competitorHasFP: s.competitorHasFP, calculations: {}, quoteRef: ref, baseRef: ref,
+    competitorHasFP: s.competitorHasFP, calculations: {}, quoteRef: baseRef, baseRef,
     fpSelections: fpSel, postureDiscount: s.posture, discretionaryDiscount: s.discretionary,
   });
   CAPTURED = null;
-  LGEN(); // no optionOverride -> uses selectedCovers
+  LGEN({ coverIndex: s.coverIndex, fpIndex: s.fpIndex, postureDiscount: s.posture, discretionaryDiscount: s.discretionary, label: optLabelFull });
   if (!CAPTURED) { console.error(`FAIL: legacy generatePDF did not produce a doc for ${s.name}`); process.exit(2); }
   writeFileSync(resolve(OUT, `legacy_${s.name}.pdf`), Buffer.from(CAPTURED.output('arraybuffer')));
   console.log(`wrote new_${s.name}.pdf + legacy_${s.name}.pdf`);

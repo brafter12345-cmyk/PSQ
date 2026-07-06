@@ -1,6 +1,6 @@
 // Central wizard state — mirrors the fields of the legacy vanilla `state`
-// object. Derived values (actualTurnover, revenueBandIndex, UW outcome, blocker,
-// premiums) are computed from these via the parity-locked engine, not stored raw.
+// object. Derived values (turnover, band, UW outcome, blocker, premiums,
+// recommendations) are computed through the parity-locked engine, not stored.
 export const initialState = {
   currentStep: 1,
 
@@ -24,20 +24,18 @@ export const initialState = {
   renewalPremium: '',
   renewalFPLimit: '',
 
-  // Step 2 — coverage (single primary cover; multi-cover comparison is a follow-up)
-  selectedCoverIndex: -1,
-  fpSelections: {},     // { coverIndex: fpIndex } (index into getAvailableFPOptions)
+  // Step 2 — coverage (multi-cover quote options)
+  quoteOptions: [],     // [{ id, coverIndex, fpIndex, postureDiscount, discretionaryDiscount, manualOverride }]
+  activeOptionTab: null,
   showCustomCover: false,
 
   // Step 3 — competitor comparison
   competitorName: '',
   competitorHasFP: false,
-  competitorPremium: '',   // competitor premium for the selected cover
+  competitorRows: [],   // [{ coverIndex, competitorPremium }] per requested cover
 
-  // Step 4 — adjustments (percent strings, e.g. "15" or "-10")
-  postureDiscount: '',
-  discretionaryDiscount: '',
-  manualOverride: '',
+  // Step 4 — adjustments
+  applyDiscountsToAll: false,
   endorsements: '',
   compareTarget: 'itoo',
 
@@ -52,8 +50,13 @@ export function reducer(state, action) {
       return { ...state, ...action.patch };
     case 'setUwAnswer':
       return { ...state, uwAnswers: { ...state.uwAnswers, [action.key]: action.value } };
-    case 'setFp':
-      return { ...state, fpSelections: { ...state.fpSelections, [action.coverIndex]: action.fpIndex } };
+    case 'setOptions':
+      return { ...state, quoteOptions: action.options };
+    case 'patchOption': {
+      const quoteOptions = state.quoteOptions.map((o) =>
+        o.id === action.id ? { ...o, ...action.patch } : o);
+      return { ...state, quoteOptions };
+    }
     case 'reset':
       return { ...initialState };
     default:

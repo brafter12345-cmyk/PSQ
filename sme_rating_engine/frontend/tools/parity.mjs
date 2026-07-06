@@ -70,7 +70,9 @@ const ratingSrc = readFileSync(resolve(LEGACY_DIR, 'sme-rating.js'), 'utf8');
 const shim = `
 globalThis.__ENGINE__ = { state, calculatePremium, evaluateUW,
   calcActualTurnover, findRevenueBand, checkMicroSME, getIndustryModifier,
-  getEffectiveBandIndex, getItooBenchmark, getRecommendedCovers, fpIndexForLimit };
+  getEffectiveBandIndex, getItooBenchmark, getRecommendedCovers, fpIndexForLimit,
+  findTargetCoverForRetention, findHighestAvailableCover, findNextAvailableCoverAbove,
+  findNextAvailableCoverBelow, renderRecommendations };
 globalThis.__DATA__ = { MARKET_CONDITION, MARKET_CONDITION_YEAR, MARKET_CONDITION_LABEL,
   REVENUE_BANDS, COVER_LIMITS, SME_PREMIUMS, PREMIUM_FORMULAS, MICRO_PREMIUMS,
   BASE_FP_BY_COVER, FP_COSTS, INDUSTRY_MODIFIERS, FINANCE_SUB_INDUSTRIES,
@@ -249,6 +251,82 @@ for (const priorClaim of BI) for (const fpOver250k of BI) for (const quoteType o
 }
 console.log(`    ${uwChecked} underwriting evaluations compared`);
 if (uwFirst) console.error('    first UW mismatch: ' + JSON.stringify(uwFirst).slice(0, 500));
+
+// ---------------------------------------------------------------------------
+// 5b. Renewal-ladder helpers + cover-recommendation flags parity
+// ---------------------------------------------------------------------------
+console.log('[5] recommendation + renewal-ladder parity');
+let recoChecked = 0;
+let recoFirst = null;
+// (a) directional helpers across all bands + start indices
+for (let band = -1; band <= 7; band++) {
+  S.revenueBandIndex = band;
+  const st = { revenueBandIndex: band };
+  if (!eq(L.findHighestAvailableCover(), N.findHighestAvailableCover(st))) { recoFirst = recoFirst || { fn: 'findHighest', band }; fail(`findHighestAvailableCover(band=${band})`); }
+  recoChecked++;
+  for (let s = -1; s <= 6; s++) {
+    if (!eq(L.findNextAvailableCoverAbove(s), N.findNextAvailableCoverAbove(st, s))) { recoFirst = recoFirst || { fn: 'above', band, s }; fail(`findNextAvailableCoverAbove(band=${band},s=${s})`); }
+    if (!eq(L.findNextAvailableCoverBelow(s), N.findNextAvailableCoverBelow(st, s))) { recoFirst = recoFirst || { fn: 'below', band, s }; fail(`findNextAvailableCoverBelow(band=${band},s=${s})`); }
+    recoChecked += 2;
+  }
+}
+// (b) findTargetCoverForRetention across scenarios (needs full calc inputs)
+for (const band of [0, 1, 3, 6]) {
+  for (const ind of [plainIdx, softIdx, finIdx]) {
+    const full = { revenueBandIndex: band, industryIndex: ind, actualTurnover: bandTurnover(band), uwLoadingPct: 0, fpSelections: {}, postureDiscount: 0, discretionaryDiscount: 0 };
+    Object.assign(S, full);
+    for (const start of [0, 2, 4]) {
+      for (const tp of [5000, 20000, 60000, 200000]) {
+        for (const fp of [150000, 250000, 1000000]) {
+          if (!eq(L.findTargetCoverForRetention(start, tp, fp), N.findTargetCoverForRetention(full, start, tp, fp))) { recoFirst = recoFirst || { fn: 'target', band, ind, start, tp, fp }; fail(`findTargetCoverForRetention(band=${band},start=${start},tp=${tp},fp=${fp})`); }
+          recoChecked++;
+        }
+      }
+    }
+  }
+}
+// (c) buildCoverRecommendations renewal flags vs legacy renderRecommendations state flags
+function legacyReco(sc) {
+  Object.assign(S, {
+    revenueBandIndex: sc.band, industryIndex: sc.ind, actualTurnover: bandTurnover(sc.band), uwLoadingPct: sc.load || 0,
+    quoteType: sc.quoteType, renewalCoverIndex: sc.renewalCoverIndex ?? -1, renewalPremium: sc.renewalPremium || 0, renewalFPLimit: sc.renewalFPLimit || 0,
+    fpSelections: {}, postureDiscount: 0, discretionaryDiscount: 0,
+    quoteOptions: [], selectedCovers: [], recommendedCovers: [], activeOptionTab: null,
+    renewalPremiumDropTriggered: false, renewalPremiumDropPct: 0, renewalCorporateEscalation: false, renewalRecommendedCoverIndex: -1, renewalBandChanged: false,
+  });
+  L.renderRecommendations();
+  return {
+    dropTriggered: S.renewalPremiumDropTriggered, dropPct: S.renewalPremiumDropPct,
+    corporateEscalation: S.renewalCorporateEscalation, recommendedCoverIndex: S.renewalRecommendedCoverIndex, bandChanged: S.renewalBandChanged,
+  };
+}
+const recoScenarios = [
+  { band: 1, ind: plainIdx, quoteType: 'new' },
+  { band: 4, ind: softIdx, quoteType: 'competing' },
+  // renewals: low existing premium (not triggered -> softening upgrades)
+  { band: 1, ind: plainIdx, quoteType: 'renewal', renewalCoverIndex: 2, renewalPremium: 8000, renewalFPLimit: 250000 },
+  { band: 2, ind: finIdx, quoteType: 'renewal', renewalCoverIndex: 1, renewalPremium: 9000, renewalFPLimit: 200000 },
+  // renewals: high existing premium (drop triggered / retention target)
+  { band: 1, ind: plainIdx, quoteType: 'renewal', renewalCoverIndex: 2, renewalPremium: 40000, renewalFPLimit: 250000 },
+  { band: 3, ind: softIdx, quoteType: 'renewal', renewalCoverIndex: 2, renewalPremium: 60000, renewalFPLimit: 500000 },
+  // renewals: very high existing (corporate escalation)
+  { band: 1, ind: plainIdx, quoteType: 'renewal', renewalCoverIndex: 2, renewalPremium: 250000, renewalFPLimit: 250000 },
+  { band: 6, ind: finIdx, quoteType: 'renewal', renewalCoverIndex: 5, renewalPremium: 500000, renewalFPLimit: 1500000 },
+  // renewals: band-changed (existing cover not in recommended set)
+  { band: 6, ind: plainIdx, quoteType: 'renewal', renewalCoverIndex: 0, renewalPremium: 30000, renewalFPLimit: 150000 },
+  { band: 0, ind: plainIdx, quoteType: 'renewal', renewalCoverIndex: 5, renewalPremium: 40000, renewalFPLimit: 1500000 },
+  // renewals with UW loading
+  { band: 3, ind: softIdx, quoteType: 'renewal', renewalCoverIndex: 3, renewalPremium: 45000, renewalFPLimit: 500000, load: 0.15 },
+];
+for (const sc of recoScenarios) {
+  const lo = legacyReco(sc);
+  const myState = { revenueBandIndex: sc.band, industryIndex: sc.ind, actualTurnover: bandTurnover(sc.band), uwLoadingPct: sc.load || 0, quoteType: sc.quoteType, renewalCoverIndex: sc.renewalCoverIndex ?? -1, renewalPremium: sc.renewalPremium || 0, renewalFPLimit: sc.renewalFPLimit || 0, fpSelections: {}, postureDiscount: 0, discretionaryDiscount: 0 };
+  const no = N.buildCoverRecommendations(myState).renewal;
+  recoChecked++;
+  if (!eq(lo, no)) { recoFirst = recoFirst || { sc, lo, no }; fail('buildCoverRecommendations.renewal'); }
+}
+console.log(`    ${recoChecked} recommendation/renewal evaluations compared`);
+if (recoFirst) console.error('    first reco mismatch: ' + JSON.stringify(recoFirst).slice(0, 500));
 
 // ---------------------------------------------------------------------------
 // 6. Golden snapshot (curated, human-readable) — outputs are ground truth (legacy)

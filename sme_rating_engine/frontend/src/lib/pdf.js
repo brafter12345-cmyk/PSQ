@@ -1,16 +1,17 @@
 import { jsPDF } from 'jspdf';
 import { formatR, calculatePremium, getItooBenchmark } from '../rating-engine.js';
 import {
-  INDUSTRIES, REVENUE_BANDS, COVER_LIMITS, MARKET_CONDITION_LABEL,
+  INDUSTRIES, REVENUE_BANDS, COVER_LIMITS, MARKET_CONDITION_LABEL, getAvailableFPOptions,
 } from '../rating-data.js';
 import { parseCurrency } from './format.js';
 
 // Client quote PDF — layout ported VERBATIM from the legacy vanilla
 // `generatePDF` (sme-rating.js). Coordinates, colours, fonts, boxes, and text
 // are byte-for-byte the same; only the data source is adapted (the legacy global
-// `state` -> this app's state + engine-derived values) and the loop is scoped to
-// the single selected cover. Returns { doc, filename }.
-export function buildQuotePdf({ state, derived, quoteRef }) {
+// `state` -> this app's state + engine-derived values). `option` is one quote
+// option ({ coverIndex, fpIndex, postureDiscount, discretionaryDiscount } — the
+// legacy optionOverride path, one cover per PDF). Returns { doc, filename }.
+export function buildQuotePdf({ state, derived, quoteRef, option }) {
   const doc = new jsPDF('p', 'mm', 'a4');
   const pageW = 210;
   const margin = 18;
@@ -189,17 +190,23 @@ export function buildQuotePdf({ state, derived, quoteRef }) {
     addSpacer(3);
   }
 
-  // ── Per Cover Limit Breakdowns (single selected cover) ──
-  const pdfCovers = state.selectedCoverIndex >= 0
-    ? [{ coverIndex: state.selectedCoverIndex, opt: null }]
-    : [];
+  // ── Per Cover Limit Breakdown (one option per PDF — legacy optionOverride path) ──
+  const pdfCovers = option ? [option] : [];
 
-  pdfCovers.forEach(({ coverIndex: ci }) => {
-    const calc = calculatePremium(ci, derived.engineState, {});
+  pdfCovers.forEach((opt) => {
+    const ci = opt.coverIndex;
+    const calc = calculatePremium(ci, derived.engineBase, {
+      fpIndex: opt.fpIndex,
+      postureDiscount: opt.postureDiscount || 0,
+      discretionaryDiscount: opt.discretionaryDiscount || 0,
+    });
     if (!calc) return;
 
     checkPage(60);
-    const sectionLabel = COVER_LIMITS[ci].label;
+    // Legacy optionOverride path uses the option label: "R5M / FP R250k".
+    const availFPsec = getAvailableFPOptions(COVER_LIMITS[ci].key);
+    const fpLblSec = (opt.fpIndex >= 0 && opt.fpIndex < availFPsec.length) ? availFPsec[opt.fpIndex].label : 'Base FP';
+    const sectionLabel = COVER_LIMITS[ci].label + ' / FP ' + fpLblSec;
     addSection('COVER LIMIT: ' + sectionLabel + (calc.isMicro ? '  (Micro SME)' : ''));
 
     // Audit trail as table
@@ -279,8 +286,9 @@ export function buildQuotePdf({ state, derived, quoteRef }) {
 
     // Comparison row
     const pdfBenchmark = getBenchmark(ci);
-    const compPrem = parseCurrency(state.competitorPremium);
-    const compRow = (compPrem > 0 && ci === state.selectedCoverIndex) ? { competitorPremium: compPrem } : null;
+    const compRowData = state.competitorRows.find((r) => r.coverIndex === ci);
+    const compPrem = compRowData ? parseCurrency(compRowData.competitorPremium) : 0;
+    const compRow = compPrem > 0 ? { competitorPremium: compPrem } : null;
     if (pdfBenchmark || (compRow && compRow.competitorPremium > 0)) {
       checkPage(10);
       doc.setFontSize(7); doc.setFont('helvetica', 'normal'); doc.setTextColor(100, 100, 100);
@@ -310,9 +318,15 @@ export function buildQuotePdf({ state, derived, quoteRef }) {
   y += 4;
   doc.text('Phishield SME Rating Engine © 2026. Not for distribution.', margin, y);
 
-  // Filename (legacy: companySlug_coverLabels.pdf)
+  // Filename (legacy optionOverride: companySlug_Cover_FPxxx.pdf)
   const companySlug = (state.companyName || 'quote').replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_');
-  const coverLabels = pdfCovers.map(({ coverIndex: ci2 }) => COVER_LIMITS[ci2].label).join('_');
+  let coverLabels = 'quote';
+  if (option) {
+    const cl = COVER_LIMITS[option.coverIndex].label.replace(/[\s,]/g, '');
+    const afp = getAvailableFPOptions(COVER_LIMITS[option.coverIndex].key);
+    const fpL = (option.fpIndex >= 0 && option.fpIndex < afp.length) ? afp[option.fpIndex].label.replace(/[\s,]/g, '') : 'BaseFP';
+    coverLabels = cl + '_FP' + fpL;
+  }
   const filename = companySlug + '_' + coverLabels + '.pdf';
   return { doc, filename };
 }

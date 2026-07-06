@@ -30,6 +30,7 @@ import {
   INDUSTRY_MODIFIERS,
   ITOO_BENCHMARKS,
   UNDERWRITING_LOADINGS,
+  MARKET_CONDITION,
   getAvailableFPOptions,
   getBaseFPCost,
 } from './rating-data.js';
@@ -281,6 +282,151 @@ export function fpIndexForLimit(coverKey, limitRand) {
   // Find the lowest available FP >= limitRand (so we don't drop FP below existing)
   const upIdx = availFP.findIndex(fp => fp.limit >= limitRand);
   return upIdx >= 0 ? upIdx : 0;
+}
+
+/* ===== Renewal-ladder helpers (verbatim; `state` supplies revenueBandIndex + calc inputs) ===== */
+export function findTargetCoverForRetention(state, startIdx, targetPremium, fpLimitRand) {
+  if (state.revenueBandIndex < 0) return -1;
+  const row = COVER_AVAILABILITY[state.revenueBandIndex];
+  if (!row) return -1;
+  for (let i = startIdx; i < COVER_LIMITS.length; i++) {
+    if (!row[i]) continue;
+    const key = COVER_LIMITS[i].key;
+    const fpIdx = fpIndexForLimit(key, fpLimitRand);
+    const calc = calculatePremium(i, state, { fpIndex: fpIdx });
+    if (calc && calc.annual >= targetPremium) return i;
+  }
+  return -1;
+}
+
+export function findHighestAvailableCover(state) {
+  if (state.revenueBandIndex < 0) return -1;
+  const row = COVER_AVAILABILITY[state.revenueBandIndex];
+  if (!row) return -1;
+  for (let i = COVER_LIMITS.length - 1; i >= 0; i--) {
+    if (row[i]) return i;
+  }
+  return -1;
+}
+
+export function findNextAvailableCoverAbove(state, startIdx) {
+  if (state.revenueBandIndex < 0) return -1;
+  const row = COVER_AVAILABILITY[state.revenueBandIndex];
+  if (!row) return -1;
+  for (let i = startIdx + 1; i < COVER_LIMITS.length; i++) {
+    if (row[i]) return i;
+  }
+  return -1;
+}
+
+export function findNextAvailableCoverBelow(state, startIdx) {
+  if (state.revenueBandIndex < 0) return -1;
+  const row = COVER_AVAILABILITY[state.revenueBandIndex];
+  if (!row) return -1;
+  for (let i = startIdx - 1; i >= 0; i--) {
+    if (row[i]) return i;
+  }
+  return -1;
+}
+
+/* ===== Cover recommendation + renewal-ladder card specs (pure) =====
+ * Mirrors the flag/cardSpec computation of the legacy renderRecommendations
+ * (DOM removed). `state` needs: revenueBandIndex, industryIndex, actualTurnover,
+ * uwLoadingPct, quoteType, renewalCoverIndex, renewalPremium (number),
+ * renewalFPLimit (number), fpSelections, postureDiscount, discretionaryDiscount.
+ * Returns { cardSpecs:[{coverIndex, role}], recommended:[idx], renewal:{...} }.
+ */
+export function buildCoverRecommendations(state) {
+  const bandIndex = state.revenueBandIndex;
+  const renewal = { dropTriggered: false, dropPct: 0, corporateEscalation: false, recommendedCoverIndex: -1, bandChanged: false };
+  if (bandIndex < 0) return { cardSpecs: [], recommended: [], renewal };
+
+  const recommended = getRecommendedCovers(bandIndex);
+  const cardSpecs = [];
+  const isRenewalWithData = (
+    state.quoteType === 'renewal'
+    && state.renewalCoverIndex >= 0
+    && state.renewalPremium > 0
+    && state.renewalFPLimit > 0
+  );
+
+  if (isRenewalWithData) {
+    renewal.bandChanged = !recommended.includes(state.renewalCoverIndex);
+    const existingKey = COVER_LIMITS[state.renewalCoverIndex].key;
+    const existingFpIdx = fpIndexForLimit(existingKey, state.renewalFPLimit);
+    const atSameCoverCalc = calculatePremium(state.renewalCoverIndex, state, { fpIndex: existingFpIdx });
+    const triggerThreshold = 0.80;
+    const retentionTarget = 0.90;
+
+    if (atSameCoverCalc && atSameCoverCalc.annual < triggerThreshold * state.renewalPremium) {
+      renewal.dropTriggered = true;
+      renewal.dropPct = 1 - (atSameCoverCalc.annual / state.renewalPremium);
+      const targetPremium = retentionTarget * state.renewalPremium;
+      let target = findTargetCoverForRetention(state, state.renewalCoverIndex, targetPremium, state.renewalFPLimit);
+      if (target < 0) {
+        renewal.corporateEscalation = true;
+        target = findHighestAvailableCover(state);
+      }
+      renewal.recommendedCoverIndex = target;
+      cardSpecs.push({ coverIndex: state.renewalCoverIndex, role: 'reference' });
+      if (target >= 0 && target !== state.renewalCoverIndex) {
+        const intermediateCovers = [];
+        const row = COVER_AVAILABILITY[bandIndex] || [];
+        for (let i = state.renewalCoverIndex + 1; i < target; i++) {
+          if (row[i]) intermediateCovers.push(i);
+        }
+        if (intermediateCovers.length > 0) {
+          intermediateCovers.forEach(ci => cardSpecs.push({ coverIndex: ci, role: 'alternative-intermediate' }));
+          cardSpecs.push({ coverIndex: target, role: 'recommended-target' });
+        } else {
+          cardSpecs.push({ coverIndex: target, role: 'recommended-target' });
+          const alt = findNextAvailableCoverAbove(state, target);
+          if (alt >= 0) cardSpecs.push({ coverIndex: alt, role: 'alternative-higher' });
+        }
+      } else if (target === state.renewalCoverIndex) {
+        cardSpecs[0].role = 'current';
+      }
+    } else {
+      cardSpecs.push({ coverIndex: state.renewalCoverIndex, role: 'current' });
+      if (MARKET_CONDITION === 'softening') {
+        let added = 0;
+        for (let i = state.renewalCoverIndex + 1; i < COVER_LIMITS.length && added < 2; i++) {
+          const avail = COVER_AVAILABILITY[bandIndex] ? COVER_AVAILABILITY[bandIndex][i] : null;
+          if (avail) { cardSpecs.push({ coverIndex: i, role: 'upgrade' }); added++; }
+        }
+      } else if (MARKET_CONDITION === 'stable') {
+        const lower = findNextAvailableCoverBelow(state, state.renewalCoverIndex);
+        if (lower >= 0) cardSpecs.unshift({ coverIndex: lower, role: 'alternative-lower' });
+        const higher = findNextAvailableCoverAbove(state, state.renewalCoverIndex);
+        if (higher >= 0) cardSpecs.push({ coverIndex: higher, role: 'alternative-higher' });
+      } else if (MARKET_CONDITION === 'hardening') {
+        const lower = findNextAvailableCoverBelow(state, state.renewalCoverIndex);
+        if (lower >= 0) cardSpecs.unshift({ coverIndex: lower, role: 'downgrade' });
+      }
+    }
+  } else {
+    recommended.forEach(ci => cardSpecs.push({ coverIndex: ci, role: 'recommended' }));
+  }
+
+  return { cardSpecs, recommended, renewal };
+}
+
+/* ===== Card styling for a recommendation role (verbatim) ===== */
+export function getCardStyling(role, isAlsoRecommended) {
+  switch (role) {
+    case 'recommended':        return { badgeText: 'Recommended',          badgeClass: 'rec',         cardClass: 'recommended role-recommended' };
+    case 'current':            return { badgeText: isAlsoRecommended ? 'Current Cover • Recommended' : 'Current Cover', badgeClass: 'current', cardClass: 'recommended role-current' };
+    case 'reference':          return { badgeText: 'Reference — Not Recommended', badgeClass: 'reference', cardClass: 'role-reference' };
+    case 'recommended-target': return { badgeText: 'Recommended',          badgeClass: 'rec',         cardClass: 'recommended role-target' };
+    case 'upgrade':            return { badgeText: 'Upgrade Option',       badgeClass: 'upgrade',     cardClass: 'upgrade role-upgrade' };
+    case 'downgrade':          return { badgeText: 'Downgrade Option',     badgeClass: 'downgrade',   cardClass: 'role-downgrade' };
+    case 'alternative':
+    case 'alternative-lower':
+    case 'alternative-higher':
+    case 'alternative-intermediate':
+                               return { badgeText: 'Alternative',          badgeClass: 'alternative', cardClass: 'role-alternative' };
+    default:                   return { badgeText: '',                     badgeClass: '',            cardClass: '' };
+  }
 }
 
 /* ===== Underwriting Assessment (pure) =====

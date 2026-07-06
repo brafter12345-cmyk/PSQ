@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { INDUSTRIES, COVER_LIMITS, getAvailableFPOptions } from '../rating-data.js';
-import { formatR } from '../rating-engine.js';
+import { formatR, getItooBenchmark } from '../rating-engine.js';
 import { parseCurrency } from '../lib/format.js';
+import { optionLabel } from '../lib/options.js';
 import { buildQuotePdf, pdfBase64 } from '../lib/pdf.js';
 import { saveQuote } from '../lib/api.js';
 
@@ -12,20 +13,43 @@ function genQuoteRef() {
   return `CPB-${ymd}-${seq}`;
 }
 
+// A quote option -> the shape lib/pdf.js expects (fraction discounts).
+function pdfOption(o) {
+  return {
+    coverIndex: o.coverIndex, fpIndex: o.fpIndex,
+    postureDiscount: (parseFloat(o.posturePct) || 0) / 100,
+    discretionaryDiscount: (parseFloat(o.discretionaryPct) || 0) / 100,
+  };
+}
+
+// Per-option quote ref (legacy getOptionQuoteRef): baseRef-{Cover}-FP{fp}.
+function optionRef(baseRef, o) {
+  const cl = COVER_LIMITS[o.coverIndex].label.replace(/[\s,]/g, '');
+  const afp = getAvailableFPOptions(COVER_LIMITS[o.coverIndex].key);
+  const fpL = (o.fpIndex >= 0 && o.fpIndex < afp.length) ? afp[o.fpIndex].label.replace(/[\s,]/g, '') : 'BaseFP';
+  return `${baseRef}-${cl}-FP${fpL}`;
+}
+
 export default function Step5Summary({ state, patch, derived, goToStep }) {
   const quoteRef = useMemo(() => state.quoteRef || genQuoteRef(), [state.quoteRef]);
-  const [saveStatus, setSaveStatus] = useState(null); // null | 'saving' | 'saved' | 'error'
-  const calc = derived.selectedCalc;
-  const cover = state.selectedCoverIndex >= 0 ? COVER_LIMITS[state.selectedCoverIndex] : null;
+  const [saveStatus, setSaveStatus] = useState(null);
+  const options = state.quoteOptions;
   const industry = state.industryIndex >= 0 ? INDUSTRIES[state.industryIndex] : null;
-  const fpIdx = cover ? (state.fpSelections[state.selectedCoverIndex] ?? 0) : 0;
-  const fpOpt = cover ? getAvailableFPOptions(cover.key)[fpIdx] : null;
   const conditions = derived.uw.allConditions || [];
 
-  function buildPayload(withPdf) {
+  function downloadPdf(o) {
+    const { doc, filename } = buildQuotePdf({ state, derived, quoteRef: optionRef(quoteRef, o), option: pdfOption(o) });
+    doc.save(filename);
+  }
+  function downloadAll() {
+    options.forEach((o, i) => setTimeout(() => downloadPdf(o), i * 400));
+  }
+
+  function buildPayload() {
+    const first = options[0];
     let pdfB64 = null;
-    if (withPdf) {
-      const { doc } = buildQuotePdf({ state, derived, quoteRef });
+    if (first) {
+      const { doc } = buildQuotePdf({ state, derived, quoteRef: optionRef(quoteRef, first), option: pdfOption(first) });
       pdfB64 = pdfBase64(doc);
     }
     return {
@@ -36,55 +60,38 @@ export default function Step5Summary({ state, patch, derived, goToStep }) {
       quoteType: state.quoteType, marketCondition: 'Softening market for 2026',
       priorClaim: state.priorClaim, uwAnswers: state.uwAnswers, uwOutcome: derived.uw.outcome,
       uwLoadingPct: derived.uw.loadingPct, uwConditions: conditions, endorsements: state.endorsements,
-      coverSelections: cover && calc ? [{ coverIndex: state.selectedCoverIndex, coverLabel: cover.label, fpLabel: fpOpt ? fpOpt.label : '', ...calc }] : [],
-      postureDiscount: derived.postureFrac, discretionaryDiscount: derived.discFrac,
-      competitorName: state.competitorName, competitorData: parseCurrency(state.competitorPremium) > 0 ? [{ premium: parseCurrency(state.competitorPremium), hasFP: state.competitorHasFP }] : [],
+      coverSelections: options.map((o) => {
+        const calc = derived.optionCalcs[o.id] || {};
+        const fp = getAvailableFPOptions(COVER_LIMITS[o.coverIndex].key)[o.fpIndex];
+        return { coverIndex: o.coverIndex, coverLabel: COVER_LIMITS[o.coverIndex].label, fpLabel: fp ? fp.label : '', ...calc };
+      }),
+      postureDiscount: options[0] ? (parseFloat(options[0].posturePct) || 0) / 100 : 0,
+      discretionaryDiscount: options[0] ? (parseFloat(options[0].discretionaryPct) || 0) / 100 : 0,
+      competitorName: state.competitorName, competitorData: state.competitorRows,
       renewalCoverLimit: state.renewalCoverIndex >= 0 ? COVER_LIMITS[state.renewalCoverIndex].label : '',
-      renewalPremium: parseCurrency(state.renewalPremium), coverLabel: cover ? cover.label : 'quote',
+      renewalPremium: derived.renewalPremiumNum, coverLabel: first ? COVER_LIMITS[first.coverIndex].label : 'quote',
       createdBy: state.createdBy || '', pdfBase64: pdfB64,
     };
   }
-
-  function downloadPdf() {
-    const { doc, filename } = buildQuotePdf({ state, derived, quoteRef });
-    doc.save(filename);
-  }
-
   async function saveNow() {
     setSaveStatus('saving');
-    try {
-      await saveQuote(buildPayload(true));
-      if (!state.quoteRef) patch({ quoteRef });
-      setSaveStatus('saved');
-    } catch (e) {
-      setSaveStatus('error');
-    }
+    try { await saveQuote(buildPayload()); if (!state.quoteRef) patch({ quoteRef }); setSaveStatus('saved'); }
+    catch { setSaveStatus('error'); }
   }
-
   function copyClipboard() {
-    const lines = [
-      `Phishield SME Cyber Quote — ${quoteRef}`,
-      `Company: ${state.companyName}`,
-      `Industry: ${industry ? industry.sub : '—'}`,
-      `Turnover: ${formatR(derived.actualTurnover)} (${derived.bandLabel})`,
-      cover ? `Cover: ${cover.label}` : '',
-      fpOpt ? `Funds Protect: ${fpOpt.label}` : '',
-      calc ? `Annual (incl FP): ${formatR(calc.annual)}` : '',
-      calc ? `Annual (ex FP): ${formatR(calc.annualExFP)}` : '',
-      calc ? `Monthly: ${formatR(calc.monthly)}` : '',
-      `UW: ${derived.uw.outcome}`,
-    ].filter(Boolean);
+    const lines = [`Phishield SME Cyber Quote — ${quoteRef}`, `Company: ${state.companyName}`,
+      `Industry: ${industry ? industry.sub : '—'}`, `Turnover: ${formatR(derived.actualTurnover)} (${derived.bandLabel})`, `UW: ${derived.uw.outcome}`, ''];
+    options.forEach((o) => {
+      const c = derived.optionCalcs[o.id]; if (!c) return;
+      lines.push(`${optionLabel(o.coverIndex, o.fpIndex)}: R${c.annual.toLocaleString('en-ZA')}/yr · R${c.monthly.toLocaleString('en-ZA')}/mo`);
+    });
     navigator.clipboard?.writeText(lines.join('\n'));
   }
 
   return (
     <section className="step-panel active" id="step-5">
       <div className="glass-card">
-        <div className="step-header">
-          <h2>Quote Summary</h2>
-          <p>Review the full quote breakdown before exporting.</p>
-        </div>
-
+        <div className="step-header"><h2>Quote Summary</h2><p>Review the full quote breakdown before exporting.</p></div>
         <div className="quote-ref">{quoteRef}</div>
 
         <div className="summary-section">
@@ -114,61 +121,67 @@ export default function Step5Summary({ state, patch, derived, goToStep }) {
             <span>Prior claim flagged. Additional underwriting review applied.</span>
           </div>
         )}
-
         {conditions.length > 0 && (
-          <div className="summary-section">
-            <h3>Conditions of Cover</h3>
-            <ul className="summary-endorsements">{conditions.map((c, i) => <li key={i}>{c}</li>)}</ul>
-          </div>
+          <div className="summary-section"><h3>Conditions of Cover</h3>
+            <ul className="summary-endorsements">{conditions.map((c, i) => <li key={i}>{c}</li>)}</ul></div>
         )}
-
         {state.endorsements.trim() && (
-          <div className="summary-section">
-            <h3>Endorsements / Notes</h3>
-            <div className="summary-endorsements">{state.endorsements}</div>
-          </div>
+          <div className="summary-section"><h3>Endorsements / Notes</h3><div className="summary-endorsements">{state.endorsements}</div></div>
         )}
 
-        {/* Breakdown */}
+        {/* Per-option breakdown cards */}
         <div className="quote-breakdowns">
-          {calc && cover ? (
-            <div className="quote-breakdown-card">
-              <h4>Cover Limit: {cover.label}{fpOpt ? ` · FP ${fpOpt.label}` : ''}</h4>
-              <table className="audit-trail">
-                <thead><tr><th>Step</th><th>Description</th><th>Value</th></tr></thead>
-                <tbody>
-                  {calc.breakdown.map((b, i) => (
+          {options.length === 0 && <p className="field-hint">No cover selected — go back to Step 2.</p>}
+          {options.map((o) => {
+            const calc = derived.optionCalcs[o.id];
+            if (!calc) return null;
+            const fp = getAvailableFPOptions(COVER_LIMITS[o.coverIndex].key)[o.fpIndex];
+            const bench = getItooBenchmark(derived.actualTurnover, o.coverIndex);
+            return (
+              <div className="quote-breakdown-card" key={o.id}>
+                <h4>Cover Limit: {COVER_LIMITS[o.coverIndex].label}{fp ? ` · FP ${fp.label}` : ''}{calc.isMicro ? ' · Micro SME' : ''}</h4>
+                <table className="audit-trail">
+                  <thead><tr><th>Step</th><th>Description</th><th>Value</th></tr></thead>
+                  <tbody>{calc.breakdown.map((b, i) => (
                     <tr key={i}><td>{b.step}</td><td>{b.desc}</td><td>{formatR(b.value)}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="breakdown-finals">
-                <div className="breakdown-final-item"><span>With FP</span><strong>{formatR(calc.annual)}</strong></div>
-                <div className="breakdown-final-item"><span>Excl FP</span><strong>{formatR(calc.annualExFP)}</strong></div>
-                <div className="breakdown-final-item"><span>Monthly</span><strong>{formatR(calc.monthly)}</strong></div>
-              </div>
-              {derived.selectedItoo && (
-                <div className="breakdown-comparison">
-                  <span>Industry: {formatR(derived.selectedItoo.premium)}</span>
-                  <span>Delta: {calc.annual - derived.selectedItoo.premium <= 0 ? '' : '+'}{formatR(calc.annual - derived.selectedItoo.premium)}</span>
+                  ))}</tbody>
+                </table>
+                <div className="breakdown-finals">
+                  <div className="breakdown-final-item"><span>With FP</span><strong>{formatR(calc.annual)}</strong></div>
+                  <div className="breakdown-final-item"><span>Excl FP</span><strong>{formatR(calc.annualExFP)}</strong></div>
+                  <div className="breakdown-final-item"><span>Monthly</span><strong>{formatR(calc.monthly)}</strong></div>
                 </div>
-              )}
-              {parseCurrency(state.manualOverride) > 0 && (
-                <div className="breakdown-comparison"><span>Manual override: {formatR(parseCurrency(state.manualOverride))}</span></div>
-              )}
-            </div>
-          ) : <p className="field-hint">No cover selected — go back to Step 2.</p>}
+                {bench && (
+                  <div className="breakdown-comparison">
+                    <span>Industry: {formatR(bench.premium)}</span>
+                    <span>Delta: {calc.annual - bench.premium <= 0 ? '' : '+'}{formatR(calc.annual - bench.premium)}</span>
+                  </div>
+                )}
+                {parseCurrency(o.manualOverride) > 0 && (
+                  <div className="breakdown-comparison"><span>Manual override: {formatR(parseCurrency(o.manualOverride))}</span></div>
+                )}
+                {options.length >= 2 && (
+                  <div className="btn-row" style={{ marginTop: 8 }}>
+                    <button type="button" className="btn btn-ghost" onClick={() => downloadPdf(o)}>Download this PDF</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
-        <div className="btn-row">
-          <button type="button" className="btn btn-ghost" onClick={() => goToStep(4)}>Back</button>
-        </div>
+        <div className="btn-row"><button type="button" className="btn btn-ghost" onClick={() => goToStep(4)}>Back</button></div>
 
         <div className="btn-row">
           <button type="button" className="btn btn-primary btn-print" onClick={() => window.print()}>Print Quote</button>
           <button type="button" className="btn btn-ghost btn-clipboard" onClick={copyClipboard}>Copy to Clipboard</button>
-          <button type="button" className="btn btn-primary btn-download-pdf" disabled={!calc} onClick={downloadPdf}>Download PDF</button>
-          <button type="button" className="btn btn-primary" disabled={!calc || saveStatus === 'saving'} onClick={saveNow}>
+          {options.length <= 1 && (
+            <button type="button" className="btn btn-primary btn-download-pdf" disabled={!options[0]} onClick={() => downloadPdf(options[0])}>Download PDF</button>
+          )}
+          {options.length >= 2 && (
+            <button type="button" className="btn btn-download-all" onClick={downloadAll}>Download All PDFs</button>
+          )}
+          <button type="button" className="btn btn-primary" disabled={!options[0] || saveStatus === 'saving'} onClick={saveNow}>
             {saveStatus === 'saved' ? 'SAVED ✓' : saveStatus === 'saving' ? 'Saving…' : saveStatus === 'error' ? 'Save failed — retry' : 'Save Quote'}
           </button>
         </div>
