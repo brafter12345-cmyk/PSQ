@@ -1,0 +1,10 @@
+{
+  "name": "corporate-rating-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Phishield Corporate cyber rating engine — web UI (ports the Corporate rating spreadsheet).",
+  "scripts": {
+    "test": "node test-engine.js"
+  }
+}

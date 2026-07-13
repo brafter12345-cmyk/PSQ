@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Phishield Corporate Rating Engine</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="corporate-rating.css"/>
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="logo-area">
+        <div class="shield-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <div>
+          <h1><span class="brand-accent">Phishield</span> Corporate Rating Engine</h1>
+          <p class="header-tagline">Cyber Protect — Corporate (Risk Rated) · Internal underwriting tool</p>
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:14px">
+        <nav class="header-nav">
+          <a href="index.html" class="active">Rating Engine</a>
+          <a href="assessment.html">Assessment Ingestion</a>
+        </nav>
+        <span class="header-badge">Specialized Underwriting</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="main-container">
+    <!-- ===== PROGRESS ===== -->
+    <div class="progress-wrapper">
+      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-steps">
+        <button class="progress-step active" id="pStep1" data-step="1"><span class="ps-dot"><span class="ps-num">1</span></span><span class="ps-label">Client &amp; Cover</span></button>
+        <button class="progress-step" id="pStep2" data-step="2"><span class="ps-dot"><span class="ps-num">2</span></span><span class="ps-label">Cyber Maturity</span></button>
+        <button class="progress-step" id="pStep3" data-step="3"><span class="ps-dot"><span class="ps-num">3</span></span><span class="ps-label">Benefits &amp; FP</span></button>
+        <button class="progress-step" id="pStep4" data-step="4"><span class="ps-dot"><span class="ps-num">4</span></span><span class="ps-label">Quote</span></button>
+      </div>
+    </div>
+
+    <!-- ===== TICKER ===== -->
+    <div class="quote-ticker" id="quoteTicker">
+      <div><div class="ticker-label">Annual (incl. VAT)</div><div class="ticker-amount" id="tickerAnnual">--</div></div>
+      <div class="ticker-sep"></div>
+      <div><div class="ticker-label">Monthly</div><div class="ticker-amount" id="tickerMonthly">--</div></div>
+    </div>
+
+    <!-- ============================================================= -->
+    <!-- STEP 1 — CLIENT & COVER -->
+    <!-- ============================================================= -->
+    <section class="step-panel active" id="step-1" data-step="1">
+      <div class="glass-card">
+        <div class="step-header">
+          <h2>Client &amp; Cover</h2>
+          <p>Capture the insured, their turnover band, the cover amount and the deductible.</p>
+        </div>
+
+        <div class="form-group">
+          <label class="field-label">Quote Type</label>
+          <div class="pill-group" id="quote-type">
+            <div class="pill selected" data-qt="new">New Business</div>
+            <div class="pill" data-qt="renewal">Renewal</div>
+            <div class="pill" data-qt="competing">Competing Quote</div>
+          </div>
+          <div class="field-hint" id="market-badge" style="display:none"></div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="field-label" for="company-name">Company Name</label>
+            <input class="form-input" id="company-name" type="text" placeholder="e.g. Acme Holdings (Pty) Ltd"/>
+          </div>
+          <div class="form-group">
+            <label class="field-label" for="company-website">Company Website <span class="field-hint" style="display:inline">(optional)</span></label>
+            <input class="form-input" id="company-website" type="text" placeholder="e.g. acme.co.za"/>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="field-label" for="industry-search">Industry / Sub-industry</label>
+          <div class="searchable-select" id="industry-wrapper">
+            <input type="text" class="form-input" id="industry-search" placeholder="Search industry (e.g. Manufacturing, Banking, Retail)…" autocomplete="off"/>
+            <div class="searchable-select-arrow">&#9662;</div>
+            <div class="searchable-dropdown" id="industry-dropdown"></div>
+          </div>
+          <input type="hidden" id="industry-select" value=""/>
+          <div class="field-hint" id="industry-hint">Drives the industry risk &amp; business-interruption modifiers.</div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="field-label" for="turnover">Annual Turnover (R)</label>
+            <div class="input-prefix"><span class="pfx">R</span><input class="form-input" id="turnover" type="text" inputmode="numeric" placeholder="e.g. 1,200,000,000"/></div>
+            <div class="field-hint" id="turnover-hint">Specialised band — typically &gt; R250M. SME cross-over cases handled case-by-case.</div>
+          </div>
+          <div class="form-group">
+            <label class="field-label" for="cover">Cover Amount</label>
+            <select class="form-select" id="cover"></select>
+          </div>
+        </div>
+
+        <div class="form-grid-3">
+          <div class="form-group">
+            <label class="field-label" for="excess-type">Excess Basis</label>
+            <select class="form-select" id="excess-type"><option value="Per Event">Per Event</option></select>
+          </div>
+          <div class="form-group">
+            <label class="field-label" for="excess">Excess (Deductible)</label>
+            <select class="form-select" id="excess"></select>
+          </div>
+          <div class="form-group">
+            <label class="field-label" for="vat">VAT</label>
+            <select class="form-select" id="vat"></select>
+          </div>
+        </div>
+
+        <div id="renewal-section" style="display:none">
+          <div class="section-title">Renewal — Existing Policy</div>
+          <div class="form-grid-3">
+            <div class="form-group">
+              <label class="field-label" for="renewal-cover">Existing Cover Limit</label>
+              <select class="form-select" id="renewal-cover"></select>
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="renewal-premium">Existing Annual Premium (R)</label>
+              <div class="input-prefix"><span class="pfx">R</span><input class="form-input" id="renewal-premium" type="text" inputmode="numeric" placeholder="e.g. 420,000"/></div>
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="renewal-fp">Existing FP Sub-limit (R)</label>
+              <div class="input-prefix"><span class="pfx">R</span><input class="form-input" id="renewal-fp" type="text" inputmode="numeric" placeholder="e.g. 2,000,000"/></div>
+            </div>
+          </div>
+        </div>
+
+        <div id="competing-section" style="display:none">
+          <div class="section-title">Competing Quote — Competitor</div>
+          <div class="form-grid-3">
+            <div class="form-group">
+              <label class="field-label" for="competitor-name">Competitor</label>
+              <input class="form-input" id="competitor-name" type="text" placeholder="e.g. iTOO, Bryte"/>
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="competitor-premium">Competitor Annual Premium (R)</label>
+              <div class="input-prefix"><span class="pfx">R</span><input class="form-input" id="competitor-premium" type="text" inputmode="numeric" placeholder="e.g. 480,000"/></div>
+            </div>
+            <div class="form-group">
+              <label class="field-label" for="competitor-limit">Competitor Cover Limit (R, optional)</label>
+              <div class="input-prefix"><span class="pfx">R</span><input class="form-input" id="competitor-limit" type="text" inputmode="numeric" placeholder="optional"/></div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="field-label">Does the competitor premium include Funds Protect?</label>
+            <div class="pill-group" id="competitor-fp">
+              <div class="pill selected" data-cfp="no">No — compare ex-FP</div>
+              <div class="pill" data-cfp="yes">Yes — compare incl. FP</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="banner warn" id="excess-warning" style="display:none">
+          <span class="b-icon">&#9888;</span>
+          <span>The deductible exceeds 50% of the cover amount — this may result in partial self-insurance. Reduce the excess or increase cover.</span>
+        </div>
+
+        <div class="btn-row">
+          <span></span>
+          <button class="btn btn-primary" id="next-1">Continue &rarr;</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================= -->
+    <!-- STEP 2 — CYBER MATURITY -->
+    <!-- ============================================================= -->
+    <section class="step-panel" id="step-2" data-step="2">
+      <div class="glass-card">
+        <div class="step-header">
+          <h2>Cyber Maturity</h2>
+          <p>Select the assessed cybersecurity maturity band. This sets the maturity multiplier applied to the premium.</p>
+        </div>
+
+        <div class="banner info">
+          <span class="b-icon">&#9432;</span>
+          <span>The full 150-question security questionnaire (which computes this score automatically and flags conditions of cover) is planned for v2. For now, select the band the assessment supports — exactly as the spreadsheet's maturity override.</span>
+        </div>
+
+        <div class="maturity-grid" id="maturity-grid"></div>
+
+        <div class="btn-row">
+          <button class="btn btn-ghost" id="back-2">&larr; Back</button>
+          <button class="btn btn-primary" id="next-2" disabled>Continue &rarr;</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================= -->
+    <!-- STEP 3 — BENEFITS & FUNDS PROTECT -->
+    <!-- ============================================================= -->
+    <section class="step-panel" id="step-3" data-step="3">
+      <div class="glass-card">
+        <div class="step-header">
+          <h2>Benefits &amp; Funds Protect</h2>
+          <p>Toggle the insuring clauses, set each sub-limit, and choose Funds Protect &amp; Sophos MDR.</p>
+        </div>
+
+        <div class="section-title">Insuring Clauses</div>
+        <table class="benefits-table">
+          <thead><tr><th>Benefit</th><th style="width:74px">Included</th><th style="width:104px">Ratio</th><th style="width:88px">% (free)</th><th style="width:140px">Sub-limit</th></tr></thead>
+          <tbody id="benefits-body"></tbody>
+        </table>
+        <div class="field-hint">Pick a preset ratio or type any percentage (0–100%) in the free field — the sub-limit recalculates instantly.</div>
+
+        <div class="section-title">Funds Protect</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="field-label">Funds Protect Basis</label>
+            <div class="pill-group" id="fp-mode">
+              <div class="pill selected" data-fp="standard">Standard (10% of cover)</div>
+              <div class="pill" data-fp="adjustable">Adjustable amount</div>
+            </div>
+          </div>
+          <div class="form-group" id="fp-adjustable-group" style="display:none">
+            <label class="field-label" for="fp-adjustable">Adjustable FP Sub-limit (from R500,000)</label>
+            <div class="input-prefix"><span class="pfx">R</span><input class="form-input" id="fp-adjustable" type="text" inputmode="numeric" list="fp-presets" placeholder="e.g. 2,000,000"/></div>
+            <datalist id="fp-presets"></datalist>
+            <div class="field-hint" id="fp-hint"></div>
+          </div>
+        </div>
+        <div class="banner warn" id="fp-warning" style="display:none">
+          <span class="b-icon">&#9888;</span>
+          <span>The selected Funds Protect sub-limit is below 10% of the cover amount. Confirm this is intended for the risk.</span>
+        </div>
+
+        <div class="section-title">Sophos MDR</div>
+        <div class="form-group">
+          <label class="field-label" for="mdr">Managed Detection &amp; Response tier</label>
+          <select class="form-select" id="mdr"></select>
+          <div class="field-hint" id="mdr-discount">No discount applied.</div>
+        </div>
+
+        <div class="section-title">Discretionary Adjustment</div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="field-label" for="discretionary">Discretionary discount / loading (%)</label>
+            <div class="input-prefix"><input class="form-input" id="discretionary" type="number" min="-50" max="50" step="0.5" value="0" style="padding-left:14px"/></div>
+            <div class="field-hint">Positive = discount, negative = loading. Recorded on the quote.</div>
+          </div>
+          <div class="form-group">
+            <label class="field-label">Effect on premium</label>
+            <div class="form-input" id="discretionary-effect" style="background:rgba(255,255,255,0.02);">—</div>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-ghost" id="back-3">&larr; Back</button>
+          <button class="btn btn-primary" id="next-3">See Quote &rarr;</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================= -->
+    <!-- STEP 4 — QUOTE -->
+    <!-- ============================================================= -->
+    <section class="step-panel" id="step-4" data-step="4">
+      <div class="glass-card" id="quote-card">
+        <div class="step-header">
+          <h2>Quote Summary</h2>
+          <p id="quote-ref-line">Reference: <span id="quote-ref">—</span></p>
+        </div>
+
+        <div class="section-title" style="margin-top:0">Quote Options <span class="field-hint" style="display:inline; text-transform:none; letter-spacing:0">— up to 3; click a card to view it, vary the cover &amp; Funds Protect per option</span></div>
+        <div id="options-bar"></div>
+
+        <div id="quote-warning"></div>
+
+        <div class="headline-premium">
+          <div class="hp-label">Final Annual Premium <span id="hp-vat-note" class="hp-vat"></span></div>
+          <div class="hp-amount" id="hp-amount">—</div>
+          <div class="hp-monthly" id="hp-monthly"></div>
+        </div>
+
+        <div class="exrm-box">
+          <div>
+            <div class="kv-label">Premium without RM Fee — capture on admin platform</div>
+            <div class="exrm-amount" id="hp-exrm">—</div>
+            <div class="kv-sub" id="hp-exrm-monthly"></div>
+          </div>
+          <div class="exrm-note">The administration platform adds a 6% RM fee to this input figure, which yields the final premium shown above.</div>
+        </div>
+
+        <div id="benchmark-compare"></div>
+
+        <div class="kv-grid" id="kv-grid"></div>
+
+        <div class="section-title">Premium Build-up</div>
+        <table class="breakdown"><tbody id="breakdown-body"></tbody></table>
+
+        <div class="section-title">Cover Comparison <span class="field-hint" style="display:inline; text-transform:none; letter-spacing:0">— same inputs, every cover limit</span></div>
+        <table class="benefits-table">
+          <thead><tr><th>Cover Limit</th><th>Annual Premium (incl. VAT)</th><th>Monthly</th><th></th></tr></thead>
+          <tbody id="cover-comparison"></tbody>
+        </table>
+
+        <div class="section-title">Insuring Clauses &amp; Sub-limits</div>
+        <table class="benefits-table"><thead><tr><th>Benefit</th><th>Status</th><th>Sub-limit</th></tr></thead><tbody id="summary-benefits"></tbody></table>
+
+        <div class="section-title">Inputs</div>
+        <ul class="recap-list" id="recap-list"></ul>
+
+        <div class="btn-row no-print" style="flex-wrap:wrap">
+          <button class="btn btn-ghost" id="back-4">&larr; Back</button>
+          <div style="display:flex; gap:10px; flex-wrap:wrap">
+            <button class="btn btn-ghost" id="btn-copy">Copy</button>
+            <button class="btn btn-ghost" id="btn-print">Print</button>
+            <button class="btn btn-ghost" id="btn-pdf">Download PDF</button>
+            <button class="btn btn-success" id="btn-save">Save Quote</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="jspdf.min.js"></script>
+  <script src="corporate-data.js"></script>
+  <script src="corporate-engine.js"></script>
+  <script src="corporate-rating.js"></script>
+</body>
+</html>

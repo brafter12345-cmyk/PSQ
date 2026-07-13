@@ -1,0 +1,8 @@
+Flask>=3.0
+flask-cors>=4.0
+gunicorn>=21.0
+# Risk-assessment ingestion (Phase 1 — local text extraction)
+PyMuPDF>=1.24      # native PDF text + page rendering for the vision step
+python-docx>=1.1   # Word forms (paragraphs + tables)
+openpyxl>=3.1      # Excel forms
+# anthropic>=0.40  # Phase 2 — Claude mapping (uncomment when wiring the API)

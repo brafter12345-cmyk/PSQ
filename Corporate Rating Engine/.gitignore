@@ -1,0 +1,12 @@
+# Runtime / generated
+corporate_quotes.db
+corporate_quotes.db-shm
+corporate_quotes.db-wal
+quote_pdfs/
+ingest_uploads/
+__pycache__/
+*.pyc
+node_modules/
+
+# The rating workbook is a local working file (source of truth, not versioned here)
+*.xlsx

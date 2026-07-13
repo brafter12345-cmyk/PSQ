@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Phishield Corporate — Risk Assessment Ingestion</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="corporate-rating.css"/>
+</head>
+<body>
+
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="logo-area">
+        <div class="shield-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <div>
+          <h1><span class="brand-accent">Phishield</span> Risk Assessment Ingestion</h1>
+          <p class="header-tagline">Convert &amp; map any third-party risk-assessment form against our posture requirements</p>
+        </div>
+      </div>
+      <nav class="header-nav">
+        <a href="index.html">Rating Engine</a>
+        <a href="assessment.html" class="active">Assessment Ingestion</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="main-container">
+    <div class="glass-card">
+      <div class="step-header">
+        <h2>Upload a Risk-Assessment Form</h2>
+        <p>Drop a client's existing cyber risk-assessment (any format). We convert it to text on-prem; the mapping step then aligns it to our questionnaire and flags the minimum requirements to rate &amp; quote.</p>
+      </div>
+
+      <div class="dropzone" id="dropzone">
+        <div class="dz-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="width:100%;height:100%"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </div>
+        <div class="dz-title">Drag &amp; drop a form here, or click to browse</div>
+        <div class="dz-sub">PDF, Word, Excel, or an image of a scanned form</div>
+        <div class="dz-formats">.pdf · .docx · .xlsx · .png · .jpg &nbsp;—&nbsp; max 25 MB</div>
+        <input type="file" id="file-input" accept=".pdf,.docx,.xlsx,.xlsm,.txt,.csv,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp" hidden/>
+      </div>
+
+      <div id="ingest-status"></div>
+      <div class="extracted" id="ingest-result"></div>
+      <div id="map-status"></div>
+      <div id="map-result"></div>
+
+      <div class="phase-note">
+        <div class="banner info">
+          <span class="b-icon">&#9432;</span>
+          <span><strong>What happens next (Phase 2):</strong> the extracted text (or scanned pages via Claude vision) is mapped against our 15-section posture model and the ~35 minimum-requirement controls — producing a gap report (what's satisfied, what's missing to rate &amp; quote) that attaches to the quote. Native PDFs, Word and Excel are converted locally on this server; scanned/image forms route to the vision step.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="assessment.js"></script>
+</body>
+</html>
