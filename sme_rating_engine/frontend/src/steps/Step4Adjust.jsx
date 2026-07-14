@@ -1,6 +1,7 @@
 import { COVER_LIMITS } from '../rating-data.js';
 import { calculatePremium, formatR, getItooBenchmark } from '../rating-engine.js';
 import { optionLabel, coverInstanceCount } from '../lib/options.js';
+import CurrencyInput from '../components/CurrencyInput.jsx';
 
 export default function Step4Adjust({ state, patch, dispatch, derived, goToStep }) {
   const options = state.quoteOptions;
@@ -86,8 +87,8 @@ export default function Step4Adjust({ state, patch, dispatch, derived, goToStep 
         {activeOpt && (
           <div className="form-group">
             <label className="field-label" htmlFor="manual-override">Manual Premium Override (R) <span className="field-hint-inline">Optional — {COVER_LIMITS[activeOpt.coverIndex].label}</span></label>
-            <input className="form-input" id="manual-override" type="text" inputMode="numeric" placeholder="Leave blank to use calculated premium"
-              value={activeOpt.manualOverride} onChange={(e) => dispatch({ type: 'patchOption', id: activeOpt.id, patch: { manualOverride: e.target.value } })} />
+            <CurrencyInput className="form-input" id="manual-override" type="text" inputMode="numeric" placeholder="Leave blank to use calculated premium"
+              value={activeOpt.manualOverride} onChange={(v) => dispatch({ type: 'patchOption', id: activeOpt.id, patch: { manualOverride: v } })} />
           </div>
         )}
 

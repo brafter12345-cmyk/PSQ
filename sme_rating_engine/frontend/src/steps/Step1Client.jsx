@@ -4,6 +4,7 @@ import { formatR } from '../rating-engine.js';
 import { parseCurrency } from '../lib/format.js';
 import IndustrySelect from '../components/IndustrySelect.jsx';
 import Toggle, { YesNo } from '../components/Toggle.jsx';
+import CurrencyInput from '../components/CurrencyInput.jsx';
 
 const RENEWAL_COVERS = [
   { i: 0, label: 'R1,000,000', v: 1000000 },
@@ -53,13 +54,13 @@ export default function Step1Client({ state, patch, dispatch, derived, onNext })
         <div className="form-grid">
           <div className="form-group">
             <label className="field-label" htmlFor="turnover-prev">Previous Financial Year Turnover (R)</label>
-            <input className="form-input" id="turnover-prev" type="text" inputMode="numeric" placeholder="e.g. 12,000,000"
-              value={state.turnoverPrev} onChange={(e) => patch({ turnoverPrev: e.target.value })} />
+            <CurrencyInput className="form-input" id="turnover-prev" type="text" inputMode="numeric" placeholder="e.g. 12,000,000"
+              value={state.turnoverPrev} onChange={(v) => patch({ turnoverPrev: v })} />
           </div>
           <div className="form-group">
             <label className="field-label" htmlFor="turnover-current">Current Year Estimated Revenue (R)</label>
-            <input className="form-input" id="turnover-current" type="text" inputMode="numeric" placeholder="e.g. 15,000,000"
-              value={state.turnoverCurrent} onChange={(e) => patch({ turnoverCurrent: e.target.value })} />
+            <CurrencyInput className="form-input" id="turnover-current" type="text" inputMode="numeric" placeholder="e.g. 15,000,000"
+              value={state.turnoverCurrent} onChange={(v) => patch({ turnoverCurrent: v })} />
           </div>
         </div>
 
@@ -245,8 +246,8 @@ export default function Step1Client({ state, patch, dispatch, derived, onNext })
             </div>
             <div className="form-group">
               <label className="field-label" htmlFor="renewal-premium">Current Annual Premium (R)</label>
-              <input className="form-input" id="renewal-premium" type="text" inputMode="numeric" placeholder="e.g. 18,500"
-                value={state.renewalPremium} onChange={(e) => patch({ renewalPremium: e.target.value })} />
+              <CurrencyInput className="form-input" id="renewal-premium" type="text" inputMode="numeric" placeholder="e.g. 18,500"
+                value={state.renewalPremium} onChange={(v) => patch({ renewalPremium: v })} />
             </div>
             <div className="form-group">
               <label className="field-label" htmlFor="renewal-fp-sublimit">Current Funds Protect Sub-limit</label>

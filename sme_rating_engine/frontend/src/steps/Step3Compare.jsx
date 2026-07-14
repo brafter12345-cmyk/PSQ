@@ -2,6 +2,7 @@ import { COVER_LIMITS } from '../rating-data.js';
 import { formatR, getItooBenchmark } from '../rating-engine.js';
 import { parseCurrency } from '../lib/format.js';
 import Toggle from '../components/Toggle.jsx';
+import CurrencyInput from '../components/CurrencyInput.jsx';
 
 export default function Step3Compare({ state, patch, derived, goToStep }) {
   const options = state.quoteOptions;
@@ -42,8 +43,8 @@ export default function Step3Compare({ state, patch, derived, goToStep }) {
           {distinctCovers.map((ci) => (
             <div className="form-group" key={ci} style={{ marginBottom: 12 }}>
               <label className="field-label" htmlFor={'comp-' + ci}>Competitor Premium for {COVER_LIMITS[ci].label} (R)</label>
-              <input className="form-input" id={'comp-' + ci} type="text" inputMode="numeric" placeholder="e.g. 22,000"
-                value={compFor(ci)} onChange={(e) => setComp(ci, e.target.value)} />
+              <CurrencyInput className="form-input" id={'comp-' + ci} type="text" inputMode="numeric" placeholder="e.g. 22,000"
+                value={compFor(ci)} onChange={(v) => setComp(ci, v)} />
             </div>
           ))}
         </div>
