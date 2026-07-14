@@ -17,10 +17,11 @@
   --text-secondary: #a0acc2;
   --text-muted: #67758f;
 
-  /* accent */
-  --accent: #7357f5;
-  --accent-bright: #8c72ff;
-  --accent-soft: rgba(115, 87, 245, 0.12);
+  /* accent — blue, matched to the intake form (templates/index.html):
+     dominant accent #60a5fa, deeper base #3b82f6 (Tailwind blue-400 / blue-500) */
+  --accent: #3b82f6;
+  --accent-bright: #60a5fa;
+  --accent-soft: rgba(96, 165, 250, 0.12);
 
   /* status */
   --positive: #2bd576;

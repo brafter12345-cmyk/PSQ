@@ -6,13 +6,13 @@
 .table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .table thead th {
   position: sticky; top: 0;
-  text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .06em;
+  text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .05em;
   text-transform: uppercase; color: var(--text-muted);
-  padding: 9px 12px; border-bottom: 1px solid var(--border-emphasis);
+  padding: 9px 11px; border-bottom: 1px solid var(--border-emphasis);
   white-space: nowrap; background: var(--panel-bg);
 }
 .table tbody td {
-  padding: 9px 12px; border-bottom: 1px solid var(--border);
+  padding: 9px 11px; border-bottom: 1px solid var(--border);
   color: var(--text-secondary); vertical-align: middle;
 }
 .table tbody tr:hover { background: var(--panel-hover); }

@@ -2,11 +2,11 @@
 .scroll { overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .table thead th {
-  text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .06em;
+  text-align: left; font-size: 10px; font-weight: 700; letter-spacing: .05em;
   text-transform: uppercase; color: var(--text-muted);
-  padding: 9px 12px; border-bottom: 1px solid var(--border-emphasis); white-space: nowrap;
+  padding: 9px 11px; border-bottom: 1px solid var(--border-emphasis); white-space: nowrap;
 }
-.table tbody td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-secondary); }
+.table tbody td { padding: 9px 11px; border-bottom: 1px solid var(--border); color: var(--text-secondary); }
 .table tbody tr:last-child td { border-bottom: none; }
 .table tbody tr:hover { background: var(--panel-hover); }
 
