@@ -35,8 +35,14 @@ export function fmtZar(value: number | null | undefined, opts: { compact?: boole
   if (value == null || Number.isNaN(value)) return '—'
   const compact = opts.compact ?? true
   const abs = Math.abs(value)
-  if (compact && abs >= 1_000_000_000) return `R ${(value / 1_000_000_000).toFixed(1)}bn`
-  if (compact && abs >= 1_000_000) return `R ${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1)}M`
+  // Keep ONE significant decimal across the whole M / bn range so related
+  // figures reconcile on screen: an expected R82.1M less a R29.6M saving reads
+  // as R52.5M (29.6 + 52.5 = 82.1). Rounding each to whole millions instead
+  // (the old ">= R10M → 0dp") showed R82M / R30M / R53M, i.e. 30 + 53 = 83 != 82.
+  // Trailing ".0" is trimmed so round values stay clean (R87M, not R87.0M).
+  const trim1 = (n: number) => n.toFixed(1).replace(/\.0$/, '')
+  if (compact && abs >= 1_000_000_000) return `R ${trim1(value / 1_000_000_000)}bn`
+  if (compact && abs >= 1_000_000) return `R ${trim1(value / 1_000_000)}M`
   if (compact && abs >= 10_000) return `R ${Math.round(value / 1000)}k`
   return `R ${ZAR.format(Math.round(value))}`
 }
