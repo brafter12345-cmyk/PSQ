@@ -860,6 +860,12 @@ class SecurityScanner:
                 "ips_with_cpes": list(ip_cpe_map.keys()),
                 "critical_count": osv_crit,
                 "high_count": osv_high,
+                # DASHBOARD-ONLY: high-risk software fingerprinted but NOT version-
+                # matched to a confirmed CVE. Separate field -> never in vulns /
+                # total_vulns / critical_count / high_count, so it does not affect
+                # the risk score or the PDF (see high_risk_potential_exposures).
+                "potential_exposures": high_risk_potential_exposures(
+                    list(all_cpes), ip_cpe_map, osv_vulns),
                 "issues": osv_issues,
             }
             if osv_vulns:

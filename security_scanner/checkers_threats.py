@@ -1179,6 +1179,81 @@ class OSVChecker:
 
 
 # ---------------------------------------------------------------------------
+# High-risk fingerprinted-software "potential exposures" (dashboard-only)
+# ---------------------------------------------------------------------------
+# Internet-facing software with an active-exploitation RCE history. When it is
+# FINGERPRINTED (a CPE is present) but NOT version-matched to a confirmed CVE
+# (version-less CPE, or no OSV ecosystem — e.g. IIS/Exchange), OSV returns
+# nothing and the target reads as a clean "0". For a breach-relevant surface
+# that is misleading. These records are surfaced as DASHBOARD-ONLY "potential
+# exposures": they are emitted in a SEPARATE `potential_exposures` field and are
+# NEVER added to vulns / total_vulns / critical_count / high_count, so they do
+# NOT affect the risk score or the PDF report. Informational only: "software
+# present, version unconfirmed, historically high-risk — confirm patch level."
+HIGH_RISK_FINGERPRINT_SOFTWARE = [
+    # (cpe-product tokens, label, risk_if_unpatched, note)
+    (("exchange_server",), "Microsoft Exchange Server", "critical",
+     "On-prem Exchange has a history of mass-exploited pre-auth RCEs (ProxyLogon, ProxyShell). Confirm the build number and patch level."),
+    (("internet_information_services", "iis"), "Microsoft IIS", "high",
+     "IIS has had critical RCEs (e.g. CVE-2021-31166, CVE-2022-21907). Confirm the Windows Server patch level."),
+    (("sharepoint",), "Microsoft SharePoint", "critical",
+     "SharePoint has been mass-exploited via pre-auth RCE (ToolShell / CVE-2025-53770). Confirm the version and patch level."),
+    (("confluence",), "Atlassian Confluence", "critical",
+     "Confluence has had pre-auth RCEs (CVE-2022-26134, CVE-2023-22515). Confirm the version."),
+    (("netscaler", "application_delivery_controller"), "Citrix NetScaler / ADC", "critical",
+     "NetScaler/ADC was mass-exploited via CitrixBleed (CVE-2023-4966). Confirm the firmware version."),
+    (("fortios", "fortigate"), "Fortinet FortiGate (FortiOS)", "critical",
+     "FortiOS SSL-VPN has had multiple actively-exploited pre-auth RCEs. Confirm the firmware version."),
+    (("vcenter",), "VMware vCenter", "critical",
+     "vCenter has had unauthenticated RCEs (CVE-2021-21985, CVE-2023-34048). Confirm the build."),
+    (("esxi",), "VMware ESXi", "high",
+     "ESXi has been targeted by ransomware operators via known CVEs. Confirm the build/patch level."),
+    (("big-ip", "big_ip"), "F5 BIG-IP", "critical",
+     "BIG-IP TMUI has had critical pre-auth RCEs (CVE-2020-5902, CVE-2022-1388). Confirm the version."),
+    (("moveit",), "Progress MOVEit Transfer", "critical",
+     "MOVEit Transfer was mass-exploited for data theft (CVE-2023-34362, Cl0p). Confirm the version."),
+    (("pulse_connect", "pulse_secure", "ivanti"), "Ivanti / Pulse Connect Secure", "critical",
+     "Ivanti/Pulse Connect Secure has had actively-exploited pre-auth RCEs. Confirm the version."),
+    (("zimbra",), "Zimbra Collaboration", "high",
+     "Zimbra has had actively-exploited RCEs (CVE-2022-27925 etc.). Confirm the version."),
+]
+
+
+def high_risk_potential_exposures(cpes, ip_cpe_map=None, confirmed_vulns=None):
+    """DASHBOARD-ONLY potential exposures. Returns a list of
+    {software, cpe, ip, risk_if_unpatched, note, version_confirmed: False} for
+    high-risk software that was fingerprinted (CPE present) but NOT version-matched
+    to a confirmed CVE. NEVER counted in vulns/total/critical/high — no score or
+    PDF impact. Software that already produced a confirmed CVE is skipped (no
+    double-report)."""
+    confirmed = " ".join(str(v.get("package", "")).lower()
+                         for v in (confirmed_vulns or []))
+    cpe_ip = {}
+    for ip, cpes_for_ip in (ip_cpe_map or {}).items():
+        for c in (cpes_for_ip or []):
+            cpe_ip.setdefault(c, ip)
+    out, seen = [], set()
+    for cpe in (cpes or []):
+        low = str(cpe).lower()
+        for tokens, label, risk, note in HIGH_RISK_FINGERPRINT_SOFTWARE:
+            if not any(tok in low for tok in tokens):
+                continue
+            if label in seen or any(tok in confirmed for tok in tokens):
+                break  # already reported, or it has a confirmed CVE
+            seen.add(label)
+            out.append({
+                "software": label,
+                "cpe": cpe,
+                "ip": cpe_ip.get(cpe),
+                "risk_if_unpatched": risk,
+                "note": note,
+                "version_confirmed": False,
+            })
+            break
+    return out
+
+
+# ---------------------------------------------------------------------------
 # 21. Dehashed Credential Leak Checker (optional API key)
 # ---------------------------------------------------------------------------
 

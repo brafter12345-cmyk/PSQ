@@ -954,7 +954,7 @@ export function getVulnerabilitySummary(r: Results | null): VulnSummary {
   const maxEpss = mx(ext?.max_epss, listMaxEpss)
   return {
     available: !!(ext || shodan || osv) || list.length > 0,
-    total: Math.max(aggTotal, list.length),
+    total: Math.max(aggTotal, list.filter((v) => v.kind !== 'software').length),
     critical: mx(ext?.critical_count ?? (osv?.critical_count as number) ?? (shodan?.critical_count as number), cnt((v) => v.severity === 'critical')),
     high: mx(ext?.high_count ?? (osv?.high_count as number) ?? (shodan?.high_count as number), cnt((v) => v.severity === 'high')),
     medium: mx(ext?.medium_count ?? (shodan?.medium_count as number), cnt((v) => v.severity === 'medium')),
@@ -1003,6 +1003,11 @@ export interface VulnRecord {
   // records, which ARE version-matched, so `versionConfirmed !== false` = confirmed.
   versionConfirmed?: boolean
   confidence?: string | null
+  /** 'software' = a high-risk product fingerprinted (CPE present) but not
+   *  version-matched to any CVE — a dashboard-only "potential exposure", excluded
+   *  from the confirmed "Total known" count. Absent on real CVE records. */
+  kind?: 'software'
+  riskIfUnpatched?: string | null
 }
 
 export function getVulnerabilityList(r: Results | null): VulnRecord[] {
@@ -1087,6 +1092,29 @@ export function getVulnerabilityList(r: Results | null): VulnRecord[] {
         confidence: svc.confidence,
       })
     }
+  }
+  // High-risk software FINGERPRINTED but not version-matched to any CVE
+  // (osv_vulns.potential_exposures) — DASHBOARD-ONLY "potential exposure" rows.
+  // Not confirmed CVEs: shown as "Potential · unconfirmed" and excluded from the
+  // "Total known" count (see getVulnerabilitySummary).
+  for (const p of (cat(r, 'osv_vulns')?.potential_exposures as Array<Record<string, unknown>> | undefined) ?? []) {
+    const label = str(p.software) ?? 'Unrecognised software'
+    push({
+      id: label,
+      cve: null,
+      pkg: label,
+      version: null,
+      severity: 'unknown',
+      cvss: null,
+      epss: null,
+      kev: false,
+      published: null,
+      source: p.ip ? `fingerprint · ${String(p.ip)}` : 'fingerprint',
+      description: str(p.note),
+      versionConfirmed: false,
+      kind: 'software',
+      riskIfUnpatched: str(p.risk_if_unpatched),
+    })
   }
   // critical/high first, then by cvss desc, unknown sorts to the middle (not last)
   return out.sort((a, b) => severityRank(b.severity) - severityRank(a.severity) || (b.cvss ?? 0) - (a.cvss ?? 0))
