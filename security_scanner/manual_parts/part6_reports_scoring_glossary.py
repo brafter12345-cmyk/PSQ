@@ -388,7 +388,7 @@ def build(doc):
     )
 
     add_bold_body(doc, "Operator workflow (broker / scanner user): ", "")
-    add_bullet(doc, "1. Obtain the client's SIGNED CONSENT form and upload it, this is the authorisation gate and the FAIS / POPIA audit trail.")
+    add_bullet(doc, "1. Confirm the client's SIGNED CONSENT has been obtained, then record the authorisation in the export portal: tick the consent attestation, enter the authorising user, and optionally a consent reference (for example the signed-form ID). This is the authorisation gate and the FAIS / POPIA audit trail: the scanner writes an audit record of who authorised the export, when, for which domain, and whether the one-time link was later collected. Retain the signed consent form itself in your own records.")
     add_bullet(doc, "2. Obtain the client's age PUBLIC key (the client generates it, see below). A public key is safe to share openly.")
     add_bullet(doc, "3. Trigger the export. The scanner re-queries DeHashed at that moment, builds the CSV, and encrypts it to the client's public key with age. No passwords are written to the scanner database.")
     add_bullet(doc, "4. Share the one-time, expiring download link with the client. The encrypted file is deleted after download or expiry.")
@@ -410,7 +410,10 @@ def build(doc):
         "breach dump. Decrypt only on a secure workstation, action the password "
         "resets and MFA enrolment, then securely delete the file. The scanner "
         "itself never stores passwords, and none of the rendered reports (deck, "
-        "broker summary, full report) ever contain passwords.",
+        "broker summary, full report) or the interactive dashboard ever contain "
+        "passwords. Leaked account identifiers are masked at every output "
+        "boundary (the API, the dashboard, and every PDF); only this consented, "
+        "encrypted export carries the unmasked detail.",
     )
 
     add_note(
@@ -1537,6 +1540,7 @@ def build(doc):
         "delivered since the v1.0 initial release. The changes are listed below "
         "with the date each landed.",
     )
+    add_bullet(doc, "2026-07-20: Sensitive-credential handling hardened end to end. Leaked account identifiers are now masked at every serving boundary (the API, the interactive dashboard, and every PDF), not only in the report tiers. The encrypted credential export (Section 6.4) was wired to its authorisation flow: a consent attestation plus the authorising user are required, the file is encrypted to the client's key and delivered strictly as a server-issued one-time link that expires and is deleted on first download, and every authorised export is written to an audit trail.")
     add_bullet(doc, "2026-07-06: Retired the legacy Render free-tier deployment; the Google Cloud VM is now the sole production instance. The scanner's public self-identification (User-Agent and scanner-info page) was updated to the VM and its single static outbound IP.")
     add_bullet(doc, "2026-07-03: Reconciled the manual against current scanner behaviour: dual-source Certificate Transparency subdomain enumeration (crt.sh and certspotter, with a low-coverage flag), CVE version-gating disclosure (CVEs shown as 'potential, unconfirmed' where the exact software version is not fingerprinted), and the production endpoint moved to the Google Cloud VM at veilguard.phishield.com/scanner. Includes a document-wide readability and punctuation pass.")
     add_bullet(doc, "2026-06-08: Catastrophe-model mid-market calibration: a revenue-band taper and a POPIA/ECTA-scoped regulatory fine floor, with cyber-band, SPF/DMARC and availability frequency and severity refinements.")
