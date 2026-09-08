@@ -1906,7 +1906,16 @@ def cat_info_disclosure(d, S):
 def cat_fraudulent_domains(d, S):
     fd     = d.get("fraudulent_domains", {})
     found  = fd.get("resolved_count", 0)
-    col    = C_CRITICAL if found > 3 else (C_RED if found > 0 else C_GREEN)
+    # Colour from the SHARED severity function, not from a second count-based
+    # rule kept here. The card and the dashboard previously graded this category
+    # by different rules: four parked lookalikes rendered CRITICAL red in the
+    # PDF and medium on the dashboard, and one mail-capable domain with no
+    # website rendered high in the PDF and critical in card_severity. Divergence
+    # of exactly that kind is what card_severity was written to remove.
+    from card_severity import category_severity
+    _sev = category_severity("fraudulent_domains", fd)
+    col = {"critical": C_CRITICAL, "high": C_RED, "medium": C_AMBER,
+           "positive": C_GREEN}.get(_sev, C_AMBER)
     rows   = [
         ("Variants checked",  fd.get("total_permutations", 0)),
         ("Lookalikes found",  found),

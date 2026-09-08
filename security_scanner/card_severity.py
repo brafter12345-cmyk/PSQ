@@ -109,15 +109,27 @@ def category_severity(cat_id: str, data: dict):
         # is the classic credential-phishing setup. One that also serves a site
         # is as often an unrelated business with a similar name, so it is graded
         # lower and the card tells the reader to verify before acting.
-        mail_no_site = [d for d in (data.get("fraudulent_domains") or [])
-                        if isinstance(d, dict) and d.get("mail_capable")
-                        and not d.get("serves_content")]
-        mail_capable = data.get("mail_capable_domains") or []
+        # Only ENRICHED entries carry capability. The checker enriches the top
+        # eight by similarity, so entries beyond that have no mail_capable key
+        # at all, and _enrich sets it to None (explicitly "unknown, not no") when
+        # DNS fails. Reading a missing or unknown value as "cannot send mail"
+        # would score an unmeasured domain as safe, which is the same mistake as
+        # reading a failed checker as clean.
+        doms = [x for x in (data.get("fraudulent_domains") or [])
+                if isinstance(x, dict)]
+        measured = [x for x in doms if x.get("mail_capable") is not None]
+        mail_no_site = [x for x in measured
+                        if x.get("mail_capable") and not x.get("serves_content")]
+        mail_capable = [x for x in measured if x.get("mail_capable")]
         if mail_no_site:
             return "critical"
         if mail_capable:
             return "high"
-        return "medium" if (data.get("fraudulent_domains") or []) else "positive"
+        if len(measured) < len(doms):
+            # Something resolved that was never measured for mail capability.
+            # Unknown is not clean.
+            return "medium"
+        return "medium" if doms else "positive"
 
     # --- Application ---------------------------------------------------
     if cat_id == "website_security":

@@ -3028,32 +3028,86 @@ class FraudulentDomainChecker:
                         return True
         return False
 
-    def _ownership_verdict(self, entry: dict, insured: str):
+    @staticmethod
+    def _brand_label(domain: str) -> str:
+        """The registrable brand token, e.g. boston.ac.za -> 'boston'."""
+        d = (domain or "").strip().lower().strip(".")
+        return d.split(".")[0] if d else ""
+
+    @classmethod
+    def _cert_scope_trusted(cls, names, insured: str) -> bool:
+        """Is a candidate-side certificate narrow enough to evidence ownership?
+
+        A certificate that names the insured is only meaningful if it belongs to
+        the insured's estate. Hosting platforms and some CDNs pack many
+        unrelated tenants onto one certificate, and a tenant of such a platform
+        could then present a chain-validated certificate listing the insured and
+        have their hostile domain excluded.
+
+        The discriminator is brand coherence, measured on real data: the client
+        estate certificate seen on boston.co.za carries 51 names, 45 of them
+        (88 per cent) containing the insured's brand token. A shared platform
+        certificate has no such concentration, because its tenants are unrelated
+        to one another. A short certificate is trusted outright, since a handful
+        of names cannot be a multi-tenant pool.
+        """
+        names = {n for n in (names or ()) if n}
+        if not names:
+            return False
+        if len(names) <= 4:
+            return True
+        label = cls._brand_label(insured)
+        if not label:
+            return False
+        related = sum(1 for n in names if label in n)
+        return (related / float(len(names))) >= 0.5
+
+    def _ownership_verdict(self, entry: dict, insured: str,
+                           insured_cert_names=None):
         """Is this candidate an asset the insured demonstrably controls?
 
-        ONE signal, and the only externally observable one the operator of the
-        candidate cannot forge: a CA-issued, chain-validated certificate, valid
-        for the candidate, that also covers the insured domain. Obtaining it
-        requires proving control of the insured name to a certificate authority.
+        TWO signals, in order of how hard they are to forge. Both require a
+        CA-issued, chain-validated certificate; an attacker-writable record such
+        as an A record cannot evidence ownership and is not consulted.
 
-        An address comparison was considered and rejected. A candidate's A
-        record lives in the attacker's own zone, so pointing a lookalike at the
-        insured's web server would have been enough to be reclassified as the
-        insured's own asset and dropped from the report, while the MX record
-        kept phishing untouched. An attacker-writable record cannot evidence
-        ownership.
+        1. INSURED-SIDE, and unforgeable. The insured's own certificate names
+           the candidate. An attacker cannot get a name onto a certificate the
+           insured controls. This direction was missing until now, and its
+           absence made the whole test one-way: scanning boston.ac.za excluded
+           boston.co.za, but scanning boston.co.za reported boston.ac.za as
+           hostile, because only the candidate's certificate was ever read.
+           Per-domain certificates, the common case, produced no exclusion at
+           all in either direction.
+
+        2. CANDIDATE-SIDE, and only when the certificate is narrow enough to be
+           an estate certificate rather than a shared multi-tenant one. See
+           _cert_scope_trusted.
+
+        Returns (reason, names) so the worker never mutates the shared entry
+        dict; the caller writes the result. Workers previously wrote into the
+        same dicts the main thread later enriched, which is a data race once the
+        pool is allowed to outlive the wait.
         """
         dom = (entry.get("domain") or "").strip().lower().strip(".")
         if not dom:
-            return None
+            return None, set()
+
+        if insured_cert_names and self._covers(insured_cert_names, dom):
+            return ("named on the certificate served by %s, which the insured "
+                    "controls" % insured), set()
+
         names = self._validated_cert_names(dom)
         if not names:
-            return None
-        entry["cert_names_sample"] = sorted(names)[:4]
+            return None, set()
         if self._covers(names, insured):
-            return ("presents a CA-issued certificate, valid for this domain, "
-                    "that also covers %s" % insured)
-        return None
+            if self._cert_scope_trusted(names, insured):
+                return ("presents a CA-issued certificate, valid for this "
+                        "domain, that also covers %s (%d name(s) on that "
+                        "certificate)" % (insured, len(names))), names
+            # Names the insured, but on a certificate broad enough to be a
+            # shared platform pool. Recorded, deliberately not acted on.
+            return None, names
+        return None, names
 
     @staticmethod
     def _usable_mx(mx_raw):
@@ -3284,33 +3338,76 @@ class FraudulentDomainChecker:
             _insured = str(domain).strip().lower().strip(".")
             owned, hostile = [], []
             if resolved:
+                # The pass is bounded three ways, because none of them alone
+                # holds. A `with ThreadPoolExecutor(...)` block calls
+                # shutdown(wait=True) on exit, so the budget below bounded only
+                # when results were COLLECTED, not when the call returned:
+                # measured, a 1s timeout still took 4s to leave the block, and
+                # with 60 stalling candidates check() ran 30s against a 3s
+                # budget. A lookalike operator who accepts the connection and
+                # dribbles bytes could therefore hang the scan and, by pushing
+                # the checker past its own timeout, delete the entire category
+                # from the report, including the finding about themselves.
+                _cap = int(_os.environ.get("LOOKALIKE_OWNERSHIP_CAP", "30"))
                 _budget = float(_os.environ.get("LOOKALIKE_OWNERSHIP_BUDGET_S", "20"))
-                _deadline = time.time() + _budget
-                _decided = {}
-                with ThreadPoolExecutor(max_workers=10) as ex3:
-                    _futs = {ex3.submit(self._ownership_verdict, e, _insured): idx
-                             for idx, e in enumerate(resolved)}
+                _probe = resolved[:_cap]          # highest similarity first
+                _skipped = len(resolved) - len(_probe)
+
+                _insured_names = self._validated_cert_names(_insured)
+                if _insured_names:
+                    result["insured_cert_name_count"] = len(_insured_names)
+
+                _decided, _any_names = {}, False
+                ex3 = ThreadPoolExecutor(max_workers=10)
+                try:
+                    _futs = {ex3.submit(self._ownership_verdict, e, _insured,
+                                        _insured_names): idx
+                             for idx, e in enumerate(_probe)}
                     try:
                         for _f in as_completed(_futs, timeout=_budget):
                             try:
-                                _decided[_futs[_f]] = _f.result(timeout=1)
+                                _why, _names = _f.result(timeout=1)
                             except Exception:
-                                _decided[_futs[_f]] = None
-                            if time.time() > _deadline:
-                                break
+                                _why, _names = None, set()
+                            if _names:
+                                _any_names = True
+                            _decided[_futs[_f]] = (_why, _names)
                     except Exception:
-                        pass          # budget expired; undecided stay hostile
-                for idx, _e in enumerate(resolved):
-                    _why = _decided.get(idx)
+                        pass          # budget expired; the rest stay undecided
+                finally:
+                    # Do NOT wait: an unbounded handshake would otherwise hold
+                    # the scan open for as long as the remote host chooses.
+                    ex3.shutdown(wait=False, cancel_futures=True)
+
+                for idx, _e in enumerate(_probe):
+                    _why, _names = _decided.get(idx, (None, set()))
+                    if _names:
+                        _e["cert_names_sample"] = sorted(_names)[:4]
                     if _why:
                         _e["owned_reason"] = _why
                         owned.append(_e)
                     else:
                         hostile.append(_e)
-                _undecided = len(resolved) - len(_decided)
+                hostile.extend(resolved[_cap:])
+
+                _undecided = len(_probe) - len(_decided) + _skipped
                 if _undecided > 0:
-                    # Never let a budget cut read as "these are confirmed hostile".
+                    # Never let a budget or a cap read as "confirmed hostile".
                     result["ownership_undecided"] = _undecided
+                    result["issues"].append(
+                        "%d domain(s) could not be checked for client ownership "
+                        "within the time budget and are listed above as "
+                        "lookalikes; verify before acting on them." % _undecided)
+                if _probe and not _any_names:
+                    # Every probe came back empty. That is indistinguishable
+                    # from "all hostile" in the output unless it is said, and it
+                    # is what a blocked egress, a broken trust store or a
+                    # missing dependency looks like.
+                    result["ownership_signal"] = "unavailable"
+                    result["issues"].append(
+                        "Client-ownership verification produced no result for "
+                        "any candidate, so none could be excluded. Treat the "
+                        "list above as unverified rather than confirmed.")
 
             resolved = hostile
             result["own_assets"] = owned

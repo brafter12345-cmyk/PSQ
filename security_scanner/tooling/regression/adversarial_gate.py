@@ -1308,55 +1308,76 @@ def _check_lookalike_ownership(failures):
     among the client's lookalike threats. The only exclusion was an exact string
     match against the scanned name.
 
-    The scenarios below are adversarial by design. The first implementation of
-    the fix used two signals an attacker controls outright, a self-signed
-    certificate and an A record in the attacker's own zone, either of which let
-    a hostile domain delete itself from the report AND lower the client's risk
-    score. Scenarios 3 to 5 exist so that cannot come back.
+    These scenarios are adversarial by construction. Two earlier attempts at
+    this fix were broken open by review: the first trusted an unvalidated
+    certificate and the candidate's own A record, either of which let a hostile
+    domain delete itself from the report AND lower the client's risk score; the
+    second was guarded only by a text search that `ssl._create_unverified_context()`
+    walked straight past. The probe is therefore tested by BEHAVIOUR here, against
+    a real self-signed TLS server on loopback.
     """
     import importlib
     ct = importlib.import_module("checkers_threats")
     chk = ct.FraudulentDomainChecker()
     INSURED = "boston.ac.za"
 
-    # (label, candidate, names the VALIDATED probe returns, expect_owned, why)
+    # (label, candidate, insured-cert names, candidate-cert names, expect, why)
     SCEN = [
-        ("own_multi_domain_cert", "boston.co.za",
+        ("own_estate_cert", "boston.co.za", set(),
          {"boston.ac.za", "boston.co.za", "bostonbc.co.za"}, True,
-         "CA-issued cert valid for the candidate also covers the insured"),
-        ("unrelated_cert", "boston.org", {"boston.org"}, False,
+         "candidate's CA cert also covers the insured, brand-coherent"),
+        ("insured_side_cert", "boston.ac.za", {"boston.ac.za", "boston.co.za"},
+         set(), True,
+         "the INSURED's own cert names the candidate: unforgeable direction"),
+        ("unrelated_cert", "boston.org", set(), {"boston.org"}, False,
          "valid cert, but it does not cover the insured"),
-        ("no_usable_cert", "b0ston.ac.za", set(), False,
+        ("no_usable_cert", "b0ston.ac.za", set(), set(), False,
          "no chain-validated certificate: no ownership claim"),
-        ("attacker_selfsigned", "b0ston.ac.za", set(), False,
-         "self-signed cert naming the insured must not validate, so no names"),
-        ("wildcard_not_apex", "tenant.provider.co.za", {"*.provider.co.za"}, False,
+        ("shared_multitenant_cert", "attacker.co.za", set(),
+         {"boston.ac.za"} | {"tenant%d.host.com" % i for i in range(40)}, False,
+         "names the insured but on a wide shared pool: not estate evidence"),
+        ("wildcard_not_apex", "tenant.provider.co.za", set(),
+         {"*.provider.co.za"}, False,
          "a wildcard covers one label, never the apex (RFC 6125)"),
     ]
-    for label, cand, cert_names, expect_owned, why in SCEN:
-        entry = {"domain": cand}
+    for label, cand, ins_names, cand_names, expect_owned, why in SCEN:
         insured = "provider.co.za" if label == "wildcard_not_apex" else INSURED
         with mock.patch.object(ct.FraudulentDomainChecker, "_validated_cert_names",
-                               staticmethod(lambda d, timeout=4.0, _c=cert_names: set(_c))):
-            verdict = chk._ownership_verdict(entry, insured)
-        got = verdict is not None
+                               staticmethod(lambda d, timeout=4.0, _c=cand_names: set(_c))):
+            why_txt, _names = chk._ownership_verdict({"domain": cand}, insured,
+                                                     ins_names)
+        got = why_txt is not None
         ok = got == expect_owned
         if not ok:
             failures.append(
                 "lookalike_ownership[%s]: %s was %s, expected %s (%s)"
                 % (label, cand, "excluded as owned" if got else "reported hostile",
                    "excluded" if expect_owned else "reported", why))
-        print("  [%s] lookalike_own:%-22s owned=%-5s %s"
-              % ("PASS" if ok else "FAIL", label, got, why[:42]))
+        print("  [%s] lookalike_own:%-24s owned=%-5s %s"
+              % ("PASS" if ok else "FAIL", label, got, why[:40]))
 
-    # END TO END. The unit above cannot see whether an owned asset still leaks
-    # into the derived lists. It did: mail_capable_domains and the mail-capable
-    # issue lines were computed from the pre-filter slice, so the report named
-    # the client's own domain as a threat while also saying it was excluded.
+    # BEHAVIOURAL PROBE TEST. The scenarios above stub the probe, so they cannot
+    # see the probe itself accepting an attacker's certificate. A text guard was
+    # tried and defeated by ssl._create_unverified_context(). This stands up a
+    # real TLS listener on loopback presenting a self-signed certificate that
+    # names the insured, and asserts the probe reads NOTHING from it.
+    probe_ok, detail = _selfsigned_probe_rejected(ct, INSURED)
+    if not probe_ok:
+        failures.append(
+            "lookalike_ownership[cert_probe]: _validated_cert_names accepted a "
+            "SELF-SIGNED certificate naming the insured (%s). An attacker could "
+            "serve one on a lookalike and have it excluded from the report while "
+            "improving the client's score." % detail)
+    print("  [%s] lookalike_own:cert_probe_behavioural  %s"
+          % ("PASS" if probe_ok else "FAIL", detail))
+
+    # END TO END, including the numbers that move the price. An earlier gate
+    # asserted the wording only, and a mutation that re-counted owned assets
+    # into resolved_count and the penalty passed it untouched.
     OWN, HOSTILE = "own.example.co.za", "h0stile.example.co.za"
 
     def _fake_resolve(self, d):
-        return True if d in (OWN, HOSTILE) else False
+        return d in (OWN, HOSTILE)
 
     def _fake_perms(self, name, tld):
         return [(OWN, "tld-variant", 90), (HOSTILE, "typo", 88)]
@@ -1377,60 +1398,121 @@ def _check_lookalike_ownership(failures):
                            staticmethod(_fake_cert)):
         res = ct.FraudulentDomainChecker().check("example.co.za")
 
+    excluded_line = [i for i in (res.get("issues") or []) if "own assets" in i]
     blob = " ".join(res.get("issues") or []) + " " + \
            " ".join(res.get("mail_capable_domains") or []) + " " + \
            " ".join(d.get("domain", "") for d in res.get("fraudulent_domains") or [])
-    excluded_line = [i for i in (res.get("issues") or []) if "own assets" in i]
     leaked = OWN in blob.replace(" ".join(excluded_line), "")
-    e2e_ok = (res.get("status") == "completed"
-              and res.get("own_assets_excluded") == 1
-              and not leaked
-              and HOSTILE in blob)
+    checks = {
+        "status": res.get("status") == "completed",
+        "excluded_1": res.get("own_assets_excluded") == 1,
+        "no_leak": not leaked,
+        "hostile_kept": HOSTILE in blob,
+        # The commercial half: the client must not be counted or charged for a
+        # domain it owns.
+        "resolved_count_1": res.get("resolved_count") == 1,
+        "score_92": res.get("score") == 92,
+    }
+    e2e_ok = all(checks.values())
     if not e2e_ok:
         failures.append(
-            "lookalike_ownership[end_to_end]: status=%s excluded=%s own-domain-leaked=%s "
-            "hostile-reported=%s. An owned asset must not appear in any derived "
-            "list, and the hostile one must still be reported."
-            % (res.get("status"), res.get("own_assets_excluded"), leaked,
-               HOSTILE in blob))
-    print("  [%s] lookalike_own:end_to_end            excluded=%s leaked=%s hostile_kept=%s"
-          % ("PASS" if e2e_ok else "FAIL", res.get("own_assets_excluded"),
-             leaked, HOSTILE in blob))
+            "lookalike_ownership[end_to_end]: %s. An owned asset must not appear "
+            "in any derived list, must not be counted in resolved_count, and must "
+            "not be charged in the score."
+            % ", ".join("%s=%s" % (k, v) for k, v in checks.items() if not v))
+    print("  [%s] lookalike_own:end_to_end             count=%s score=%s leaked=%s"
+          % ("PASS" if e2e_ok else "FAIL", res.get("resolved_count"),
+             res.get("score"), leaked))
 
-    # SOURCE GUARDS. The scenarios stub the probe, so they cannot see the probe
-    # itself being wrong, and it was: reading getpeercert() under CERT_NONE
-    # returns an empty dict, which silently disabled the whole test, and
-    # disabling verification made the signal forgeable. Comments are stripped
-    # first because an earlier version of this guard matched its own
-    # explanatory comment and reported PASS with the bug present.
-    import re as _re2
     src = open(ct.__file__, encoding="utf-8").read()
-    _fn = _re2.search(r"\n    def _validated_cert_names\(.*?(?=\n    @staticmethod|\n    def )",
-                      src, _re2.S)
-    if not _fn:
-        failures.append("lookalike_ownership[cert_probe]: _validated_cert_names "
-                        "not found; this guard checked nothing")
-        code = ""
-    else:
-        code = "\n".join(l.split("#")[0] for l in _fn.group(0).split("\n"))
-    unverified = "CERT_NONE" in code or "check_hostname = False" in code
-    binary = _re2.search(r"getpeercert\(\s*binary_form\s*=\s*True", code) is not None
-    probe_ok = bool(code) and not unverified and binary
-    if not probe_ok:
-        failures.append(
-            "lookalike_ownership[cert_probe]: the ownership certificate probe must "
-            "validate the chain and hostname (no CERT_NONE, no check_hostname=False) "
-            "and must read the certificate in binary form; got unverified=%s "
-            "binary_form=%s" % (unverified, binary))
-    print("  [%s] lookalike_own:cert_probe_validates  unverified=%s binary_form=%s"
-          % ("PASS" if probe_ok else "FAIL", unverified, binary))
-
     leaked_line = "CRITICAL: {len(resolved)} lookalike domains detected" in src
     if leaked_line:
         failures.append("lookalike_ownership[severity]: the unconditional "
                         "count-driven CRITICAL line is still emitted")
     print("  [%s] lookalike_own:count_severity_removed present=%s"
           % ("FAIL" if leaked_line else "PASS", leaked_line))
+
+
+def _selfsigned_probe_rejected(ct, insured):
+    """Serve a self-signed cert naming ``insured`` on loopback; probe must reject.
+
+    Returns (ok, detail). Offline: nothing leaves the machine.
+    """
+    import datetime as _dt
+    import socket as _sock
+    import ssl as _ssl
+    import tempfile
+    import threading
+    try:
+        from cryptography import x509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.x509.oid import NameOID
+    except Exception as e:
+        return False, "cryptography unavailable, cannot run the probe test (%s)" % e
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, insured)])
+    now = _dt.datetime.now(_dt.timezone.utc)
+    cert = (x509.CertificateBuilder()
+            .subject_name(name).issuer_name(name)
+            .public_key(key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - _dt.timedelta(days=1))
+            .not_valid_after(now + _dt.timedelta(days=30))
+            .add_extension(x509.SubjectAlternativeName(
+                [x509.DNSName(insured), x509.DNSName("localhost")]), critical=False)
+            .sign(key, hashes.SHA256()))
+
+    tmp = tempfile.mkdtemp()
+    cpath, kpath = os.path.join(tmp, "c.pem"), os.path.join(tmp, "k.pem")
+    with open(cpath, "wb") as fh:
+        fh.write(cert.public_bytes(serialization.Encoding.PEM))
+    with open(kpath, "wb") as fh:
+        fh.write(key.private_bytes(serialization.Encoding.PEM,
+                                   serialization.PrivateFormat.TraditionalOpenSSL,
+                                   serialization.NoEncryption()))
+
+    srv = _sock.socket(); srv.setsockopt(_sock.SOL_SOCKET, _sock.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", 0)); srv.listen(1)
+    port = srv.getsockname()[1]
+    ctx = _ssl.SSLContext(_ssl.PROTOCOL_TLS_SERVER)
+    ctx.load_cert_chain(cpath, kpath)
+
+    def serve():
+        try:
+            c, _ = srv.accept()
+            try:
+                ctx.wrap_socket(c, server_side=True).close()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    t = threading.Thread(target=serve, daemon=True); t.start()
+    try:
+        # Probe by name, but reach the loopback listener: patch the connector.
+        real_conn = ct.socket.create_connection
+
+        def fake_conn(addr, timeout=None, *a, **kw):
+            return real_conn(("127.0.0.1", port), timeout=timeout)
+
+        with mock.patch.object(ct.socket, "create_connection", fake_conn):
+            names = ct.FraudulentDomainChecker._validated_cert_names(insured)
+    except Exception as e:
+        names = set()
+        return True, "probe raised rather than trusting (%s)" % type(e).__name__
+    finally:
+        try:
+            srv.close()
+        except Exception:
+            pass
+        t.join(timeout=2)
+
+    if names:
+        return False, "read %d name(s) from a self-signed cert: %s" % (
+            len(names), sorted(names)[:3])
+    return True, "self-signed cert naming the insured yielded no names"
 
 
 def _check_lookalike_posture(failures):
@@ -2622,6 +2704,31 @@ def _check_card_severity_equivalence(failures):
             {"status": "completed", "critical_count": 1, "high_count": 0, "medium_count": 0, "low_count": 0},
         ],
         ("website_security", "cat_website"): [{"status": "completed", "score": v} for v in (100, 60, 20)],
+        # fraudulent_domains was absent from this dict, so the one category the
+        # 2026-09-08 remediation touched had no equivalence coverage at all and
+        # the PDF card graded it by a count rule while card_severity graded it
+        # by capability. Measured divergences before the fix: 4 parked
+        # lookalikes rendered critical in the PDF and medium on the dashboard;
+        # 1 mail-capable domain with no website rendered high and critical.
+        ("fraudulent_domains", "cat_fraudulent_domains"): [
+            {"status": "completed", "resolved_count": 0, "fraudulent_domains": []},
+            {"status": "completed", "resolved_count": 4,
+             "fraudulent_domains": [{"domain": "a%d.test" % i, "similarity": 80,
+                                     "mail_capable": False,
+                                     "serves_content": False} for i in range(4)]},
+            {"status": "completed", "resolved_count": 1,
+             "fraudulent_domains": [{"domain": "m.test", "similarity": 90,
+                                     "mail_capable": True,
+                                     "serves_content": False}]},
+            {"status": "completed", "resolved_count": 1,
+             "fraudulent_domains": [{"domain": "s.test", "similarity": 90,
+                                     "mail_capable": True,
+                                     "serves_content": True}]},
+            # Resolved but never enriched: capability unmeasured, not absent.
+            {"status": "completed", "resolved_count": 2,
+             "fraudulent_domains": [{"domain": "u1.test", "similarity": 70},
+                                    {"domain": "u2.test", "similarity": 70}]},
+        ],
         ("http_headers", "cat_headers"):     [{"status": "completed", "score": v} for v in (100, 60, 20)],
         ("waf", "cat_waf"): [
             {"status": "completed", "detected": True, "waf_name": "Cloudflare"},

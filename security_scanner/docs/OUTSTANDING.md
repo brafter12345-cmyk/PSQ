@@ -605,3 +605,26 @@ embedding in every generated PDF.
 - Closing an item: remove the row (don't strike through — keep the file tight)
 - Major architectural decisions: add a new section if a single line doesn't capture it
 - Periodic review: scan this file before any big planning session or commit
+
+### 5n. Lookalike permutation coverage is thin for South African second-level domains (OBSERVED, 2026-09-08)
+
+Found while verifying the client-ownership fix. `FraudulentDomainChecker.ALT_TLDS`
+carries the generic top-level domains and `.co.za`, but not the other South
+African second-level domains: `.ac.za`, `.org.za`, `.net.za`, `.gov.za`,
+`.web.za`. Scanning `boston.ac.za` therefore generates `boston.co.za` as a
+candidate, while scanning `boston.co.za` never generates `boston.ac.za`.
+
+Consequences, in both directions:
+
+- A genuine typosquat registered under an unlisted South African second-level
+  domain is never probed and never reported.
+- The client-ownership exclusion cannot fire on a domain that was never
+  generated, so the same client scanned from a different apex gets a different
+  answer.
+
+NOT fixed with the ownership work, deliberately: adding second-level domains
+generates more candidates for every South African client, which moves the
+category score and therefore the risk score. That is a scoring change and needs
+its own justification, a golden re-baseline, and a decision on whether the extra
+candidates are counted in the penalty at the same weight. Raise it with the
+calibration owner rather than folding it into a correctness fix.
