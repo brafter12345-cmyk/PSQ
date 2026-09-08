@@ -29,41 +29,35 @@ FIXTURES = os.environ.get("SANDBOX_FIXTURES") or (
     "affectionate-varahamihira-dc4d1a/9966bd2e-be22-4cb7-9555-7ec1d6d5d6f6/"
     "scratchpad/sandbox_fixtures")
 
-# Published edge ranges, used ONLY by the harness to label a fixture as
-# CDN-fronted independently of whatever the scanner currently believes.
-_CDN = {
-    "Cloudflare": ["104.16.0.0/13", "104.24.0.0/14", "172.64.0.0/13",
-                   "162.158.0.0/15", "198.41.128.0/17", "173.245.48.0/20",
-                   "103.21.244.0/22", "141.101.64.0/18", "108.162.192.0/18",
-                   "190.93.240.0/20", "188.114.96.0/20", "197.234.240.0/22"],
-    "Fastly": ["151.101.0.0/16", "199.232.0.0/16"],
-    "AWS CloudFront": ["13.32.0.0/15", "13.224.0.0/14", "52.222.128.0/17",
-                       "54.192.0.0/16", "99.86.0.0/16"],
-    "Akamai": ["23.32.0.0/11", "23.192.0.0/11", "104.64.0.0/10", "2.16.0.0/13"],
-}
-_NETS = [(p, ipaddress.ip_network(c)) for p, cs in _CDN.items() for c in cs]
+# The harness MUST NOT carry its own copy of the edge ranges. It did, and the
+# copy was smaller (4 providers, 23 blocks, no IPv6) than the shipped table
+# (7 providers, 83 blocks). Measuring a reimplementation measures the
+# reimplementation.
+from cdn_ranges import edge_provider as _edge_provider   # noqa: E402
 
 
-def _edge_provider(ip):
-    try:
-        a = ipaddress.ip_address(ip)
-    except ValueError:
-        return None
-    if a.version != 4:
-        return None
-    for prov, net in _NETS:
-        if a in net:
-            return prov
-    return None
+def _apex_ips(cats):
+    """Exactly what CloudCDNChecker iterates: the apex A records.
+
+    checkers_core.CloudCDNChecker.check resolves dns_cache.resolve(domain, "A")
+    into result["ip_addresses"] and scans only that. Anything wider measures an
+    algorithm the scanner does not run.
+    """
+    return list((cats.get("cloud_cdn") or {}).get("ip_addresses") or [])
 
 
-def _resolved_ips(cats):
-    ips = set()
+def _all_resolved_ips(cats):
+    """Apex PLUS subdomain addresses.
+
+    Used only for the INDEPENDENT `cdn_true_edge` label, which answers "is this
+    target CDN-fronted anywhere", deliberately not the same question the checker
+    asks. Keeping the two apart is the point: conflating them made the missed
+    count compare one function against itself and always report zero.
+    """
+    ips = set(_apex_ips(cats))
     for _h, lst in ((cats.get("subdomains") or {}).get("resolved_ips") or {}).items():
         for ip in (lst or []):
             ips.add(ip)
-    for ip in (cats.get("cloud_cdn") or {}).get("ip_addresses") or []:
-        ips.add(ip)
     return ips
 
 
@@ -93,9 +87,13 @@ def measure(fx, simulate_cdn=False):
     cats = results.get("categories", {}) or {}
 
     if simulate_cdn:
+        # Reproduce the SHIPPED block: apex addresses only, real edge table,
+        # sorted first-match. Simulating over a wider address set reported 7 of
+        # 30 detections where production finds 4, and named domains as capped
+        # that production never detects.
         cdn = cats.setdefault("cloud_cdn", {})
         if not cdn.get("provider"):
-            for ip in sorted(_resolved_ips(cats)):
+            for ip in sorted(_apex_ips(cats)):
                 prov = _edge_provider(ip)
                 if prov:
                     cdn.update({"provider": prov, "cdn_detected": True,
@@ -105,13 +103,13 @@ def measure(fx, simulate_cdn=False):
 
     apply_risk_score(results)
 
-    # RiskScorer.calculate writes _scan_completeness into the CATEGORIES dict;
-    # only scanner.py promotes it to the top level during a live scan. An
-    # offline re-score therefore leaves the stored, stale copy sitting at the
-    # top level, so reading it there measures the previous scan rather than this
-    # one. Prefer the freshly computed copy and fall back to the stored one.
-    sc = (cats.get("_scan_completeness")
-          or results.get("_scan_completeness") or {})
+    # RiskScorer writes _scan_completeness into the CATEGORIES dict and only
+    # scanner.py promotes it, enriching it with live-only fields (coverage_pct,
+    # waf_status, per-checker timings). Reading only the fresh copy blinded
+    # coverage_pct on 30 of 30 fixtures; reading only the stored copy measured
+    # the previous scan. Merge: stored as the base, fresh values winning.
+    sc = dict(results.get("_scan_completeness") or {})
+    sc.update(cats.get("_scan_completeness") or {})
     cdn = cats.get("cloud_cdn", {}) or {}
     fd = cats.get("fraudulent_domains", {}) or {}
     od = cats.get("origin_discovery", {}) or {}
@@ -121,7 +119,7 @@ def measure(fx, simulate_cdn=False):
     # provider seen. Iterating a set and keeping the last match made takealot
     # report Cloudflare or Akamai depending on set ordering, which showed up as
     # a spurious change in every diff and would eventually mask a real one.
-    ips = _resolved_ips(cats)
+    ips = _all_resolved_ips(cats)
     true_edge = None
     for ip in sorted(ips):
         p = _edge_provider(ip)
@@ -140,7 +138,9 @@ def measure(fx, simulate_cdn=False):
         "estate_confidence": sc.get("estate_confidence"),
         "cdn_provider": cdn.get("provider"),
         "cdn_detected": bool(cdn.get("cdn_detected")),
-        "cdn_true_edge": true_edge,
+        "cdn_true_edge": true_edge,          # anywhere on the target
+        "cdn_apex_edge": next((_edge_provider(i) for i in sorted(_apex_ips(cats))
+                               if _edge_provider(i)), None),
         "origin_verified": len(od.get("verified") or []),
         "origin_candidates": len(od.get("candidates") or []),
         "lookalike_count": len(looks),
@@ -162,7 +162,10 @@ def run(out_path, simulate_cdn=False):
     print("measured %d fixture(s) -> %s" % (len(rows), out_path))
 
     named = sum(1 for r in rows if r["cdn_provider"])
-    missed = sum(1 for r in rows if not r["cdn_provider"] and r["cdn_true_edge"])
+    # Against the apex label, which is the question the checker asks. Comparing
+    # against the wider label made this identical to the simulation input, so it
+    # was zero by construction and measured nothing.
+    missed = sum(1 for r in rows if not r["cdn_provider"] and r["cdn_apex_edge"])
     print("  CDN named            : %d / %d" % (named, len(rows)))
     print("  CDN present, missed  : %d / %d" % (missed, len(rows)))
     print("  lookalikes reported  : %d / %d"

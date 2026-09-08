@@ -634,3 +634,40 @@ category score and therefore the risk score. That is a scoring change and needs
 its own justification, a golden re-baseline, and a decision on whether the extra
 candidates are counted in the penalty at the same weight. Raise it with the
 calibration owner rather than folding it into a correctness fix.
+
+### 5o. A CDN-fronted www with a non-CDN apex probably exposes the origin (OBSERVED, 2026-09-08)
+
+Found while correcting the measurement for remediation step 3. CloudCDNChecker
+resolves the apex only, so detection answers "is the apex fronted", not "is this
+organisation fronted". Across the 30 retained scans:
+
+- 4 apexes resolve into a published edge range and are now detected.
+- A further 4 (aggregato.co.za, dubetradeport.co.za, excellentmeat.co.za,
+  rbs.co.za) have edge addresses on a SUBDOMAIN, typically www, while the apex
+  resolves elsewhere: aggregato's apex is Xneelo (156.38.174.226) with www on
+  Cloudflare; rbs.co.za's apex is Hetzner/Xneelo; dubetradeport's apex is a
+  Google Cloud load balancer.
+
+The interesting half is not the missed detection. Where www sits behind a CDN
+and the apex does not, **the apex is very likely the origin server**, published
+in DNS, reachable directly, and unprotected by the edge the client is paying
+for. That is the exact exposure origin_discovery exists to find, available for
+free from records the scan already holds, and the scanner currently says nothing
+about it.
+
+TWO SEPARATE PIECES OF WORK, neither folded into step 3:
+
+1. **Detection breadth.** Whether cloud_cdn should consider subdomain addresses.
+   This changes which scans are detected and therefore moves the availability
+   credit and the estate-confidence cap. Scoring change: needs calibration
+   sign-off, a golden re-baseline, and a decision on whether a fronted www with
+   an unfronted apex counts as "protected" at all.
+
+2. **Origin disclosure as a finding.** Emitting "the apex appears to be the
+   origin behind the edge on www" is new signal, not a re-weighting, and is
+   arguably the more valuable of the two. Also needs its own severity decision.
+
+Raise both with the calibration owner. Step 3 deliberately ships apex-only
+detection, matching what the checker has always asked, so that the confidence
+cap can be introduced without simultaneously changing which targets are
+detected.
