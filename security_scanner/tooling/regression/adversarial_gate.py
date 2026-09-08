@@ -1300,6 +1300,90 @@ VERDICT_SCENARIOS = [
 ]
 
 
+def _check_lookalike_ownership(failures):
+    """A domain the insured controls must never be reported as hostile.
+
+    boston.ac.za, 2026-08-14: the checker generated boston.co.za as a
+    tld-variant, found it mail-capable and serving a site, and listed it among
+    the client's lookalike threats. boston.co.za is the client's own website,
+    on the client's own server, under the same certificate. The only exclusion
+    in the checker was an exact string match against the scanned name.
+
+    The fourth scenario is the important one and is easy to get wrong in the
+    opposite direction: two domains sharing a CDN edge address share it with
+    every other tenant of that CDN, so an edge match proves nothing and must
+    NOT clear a genuine lookalike. Offline: DNS and TLS are stubbed.
+    """
+    import importlib
+    ct = importlib.import_module("checkers_threats")
+    chk = ct.FraudulentDomainChecker()
+    INSURED = "boston.ac.za"
+    OWN_DEDICATED = "196.41.30.122"
+    CF_EDGE = "104.26.3.40"
+
+    SCEN = [
+        ("own_cert_match", "boston.co.za", ["203.0.113.9"],
+         {"boston.ac.za", "boston.co.za"}, True,
+         "candidate's certificate covers the insured domain"),
+        ("own_dedicated_ip", "bostonac.co.za", [OWN_DEDICATED], set(), True,
+         "resolves to an address the scan attributes to the insured"),
+        ("hostile_unrelated", "b0ston.ac.za", ["198.51.100.7"], set(), False,
+         "unrelated address and unrelated certificate"),
+        ("shared_cdn_edge_only", "boston-hotels.com", [CF_EDGE], set(), False,
+         "shares only a CDN edge address, which proves nothing"),
+    ]
+    for label, cand, cand_ips, cand_cert, expect_owned, why in SCEN:
+        entry = {"domain": cand, "resolved_ips": list(cand_ips)}
+        with mock.patch.object(ct.FraudulentDomainChecker, "_cert_names",
+                               staticmethod(lambda d, timeout=4.0,
+                                            _c=cand_cert, _cand=cand:
+                                            set(_c) if d == _cand else set())):
+            verdict = chk._ownership_verdict(
+                entry, {OWN_DEDICATED, CF_EDGE}, set(), INSURED)
+        got_owned = verdict is not None
+        ok = got_owned == expect_owned
+        if not ok:
+            failures.append(
+                "lookalike_ownership[%s]: %s was %s, expected %s (%s)"
+                % (label, cand, "excluded as owned" if got_owned else "reported hostile",
+                   "excluded" if expect_owned else "reported", why))
+        print("  [%s] lookalike_own:%-22s owned=%-5s %s"
+              % ("PASS" if ok else "FAIL", label, got_owned, why[:44]))
+
+    # The scenarios above STUB _cert_names, so they cannot see whether the real
+    # probe works. It did not: with verify_mode CERT_NONE, getpeercert() returns
+    # an empty dict, so the certificate signal returned no names at all and the
+    # whole ownership test silently did nothing. The stub hid it; only a live
+    # run against boston.ac.za exposed it. The gate is offline by contract, so
+    # the invariant is asserted at source level instead.
+    src = open(ct.__file__, encoding="utf-8").read()
+    import re as _re2
+    _fn = _re2.search(r"def _cert_names\(.*?(?=\n    def )", src, _re2.S)
+    body = _fn.group(0) if _fn else ""
+    # Strip comments and docstring prose first. The explanation of this very bug
+    # contains the string being searched for, so a naive scan matched the
+    # comment and reported PASS while the call itself was broken. Measured: the
+    # bug was reintroduced deliberately and the check still passed.
+    code = "\n".join(l.split("#")[0] for l in body.split("\n"))
+    uses_none = "CERT_NONE" in code
+    uses_binary = _re2.search(r"getpeercert\(\s*binary_form\s*=\s*True", code) is not None
+    broken = uses_none and not uses_binary
+    if broken:
+        failures.append(
+            "lookalike_ownership[cert_probe]: _cert_names disables verification "
+            "but reads getpeercert() without binary_form=True, which returns an "
+            "empty dict and silently disables the ownership test")
+    print("  [%s] lookalike_own:cert_probe_readable   CERT_NONE=%s binary_form=%s"
+          % ("FAIL" if broken else "PASS", uses_none, uses_binary))
+
+    leaked = "CRITICAL: {len(resolved)} lookalike domains detected" in src
+    if leaked:
+        failures.append("lookalike_ownership[severity]: the unconditional "
+                        "count-driven CRITICAL line is still emitted")
+    print("  [%s] lookalike_own:severity_line_removed  present=%s"
+          % ("FAIL" if leaked else "PASS", leaked))
+
+
 def _check_lookalike_posture(failures):
     import importlib
     F = importlib.import_module("checkers_threats").FraudulentDomainChecker
@@ -3043,6 +3127,7 @@ def main():
     _check_recommendation_priority(failures)
     _check_credential_failclosed(failures)
     _check_provider_budget(failures)
+    _check_lookalike_ownership(failures)
     _check_lookalike_posture(failures)
     _check_table_headers(failures)
     _check_blocked_not_clean(failures)
