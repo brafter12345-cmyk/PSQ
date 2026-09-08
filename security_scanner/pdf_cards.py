@@ -1911,6 +1911,24 @@ def cat_fraudulent_domains(d, S):
         ("Variants checked",  fd.get("total_permutations", 0)),
         ("Lookalikes found",  found),
     ]
+    # An exclusion that improves the client's score must be visible and must
+    # carry its evidence. Naming the domain and the reason is what lets an
+    # underwriter or a reviewer disagree with it; a silent exclusion in an
+    # underwriting artefact is the wrong default.
+    _owned = fd.get("own_assets") or []
+    if _owned:
+        rows.append(("Excluded as client-owned", len(_owned)))
+        for _o in _owned[:4]:
+            rows.append(("  " + str(_o.get("domain", "")),
+                         str(_o.get("owned_reason", "ownership established"))))
+        if len(_owned) > 4:
+            rows.append(("", "and %d further owned domain(s)" % (len(_owned) - 4)))
+    _undec = fd.get("ownership_undecided")
+    if _undec:
+        # A budget cut must never read as "these are confirmed hostile".
+        rows.append(("Ownership not established",
+                     "%d domain(s) could not be checked within the time budget "
+                     "and are reported as lookalikes" % _undec))
     # Order by what each domain can actually DO. A near-typo with working MX and
     # no website can phish today; a parked domain with a null MX cannot email
     # anyone. Similarity alone puts those two side by side and reads as equal.

@@ -527,13 +527,8 @@ class SecurityScanner:
             ("subdomains",  SubdomainChecker().check,        [domain], 150),
         ]
         if include_fraudulent_domains:
-            # discovered_ips at this point is the apex A-records plus any
-            # client-supplied addresses. That is exactly the set an ownership
-            # test should compare against; subdomain addresses are folded in
-            # later and are not needed to recognise a client's own apex.
             heavy_checkers.append(
-                ("fraudulent_domains", FraudulentDomainChecker().check,
-                 [domain, list(discovered_ips)], 60)
+                ("fraudulent_domains", FraudulentDomainChecker().check, [domain], 60)
             )
         # SCN-040 breach-history intelligence. Heavy (it researches the open web:
         # multi-provider search, page reads, synthesis) and metered (Gemini), so it

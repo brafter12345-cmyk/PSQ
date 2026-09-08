@@ -95,6 +95,30 @@ def category_severity(cat_id: str, data: dict):
     if cat_id == "cloud_cdn":
         return None          # informational card, no traffic light in the PDF
 
+    if cat_id == "fraudulent_domains":
+        # Severity from CAPABILITY, not from how many permutations happened to
+        # resolve. Until 2026-09-08 this category had no branch here at all, so
+        # category_severity returned None and the recommendation bander dropped
+        # every lookalike finding into the unknown bucket. That was masked by an
+        # unconditional "CRITICAL: N lookalike domains detected" issue line,
+        # which the bander matched on the word CRITICAL. Removing that line for
+        # being a bare-count trigger removed the only severity channel with it,
+        # so the channel is restored here on the signal that actually matters.
+        #
+        # A lookalike that can send mail as the brand and publishes no website
+        # is the classic credential-phishing setup. One that also serves a site
+        # is as often an unrelated business with a similar name, so it is graded
+        # lower and the card tells the reader to verify before acting.
+        mail_no_site = [d for d in (data.get("fraudulent_domains") or [])
+                        if isinstance(d, dict) and d.get("mail_capable")
+                        and not d.get("serves_content")]
+        mail_capable = data.get("mail_capable_domains") or []
+        if mail_no_site:
+            return "critical"
+        if mail_capable:
+            return "high"
+        return "medium" if (data.get("fraudulent_domains") or []) else "positive"
+
     # --- Application ---------------------------------------------------
     if cat_id == "website_security":
         return _tl(_num(data, "score", 100) >= 80, _num(data, "score", 100) >= 50)

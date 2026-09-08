@@ -2921,112 +2921,13 @@ class FraudulentDomainChecker:
 
         return perms
 
-    def _resolves(self, domain: str) -> "list | None":
-        """Resolve a candidate and KEEP the addresses.
-
-        This used to return a bare True/False and throw the address away, which
-        is the whole reason the checker could report a client's own domain as
-        hostile: the comparison that would have cleared it was computed and
-        discarded. Returns the address list, or None when the name does not
-        resolve. An empty list is impossible; callers test for None.
-        """
+    def _resolves(self, domain: str) -> bool:
+        """Check if domain resolves to an IP address."""
         try:
-            _n, _a, addrs = socket.gethostbyname_ex(domain)
-            return addrs or None
+            socket.gethostbyname(domain)
+            return True
         except (socket.gaierror, socket.timeout, OSError):
-            return None
-
-    @staticmethod
-    def _cert_names(domain: str, timeout: float = 4.0) -> set:
-        """Names on the certificate a host presents for itself (CN plus SANs).
-
-        A certificate covering both the candidate and the insured domain is the
-        strongest externally observable evidence of common control: it means
-        whoever holds the private key was able to prove control of both names to
-        a certificate authority. Returns an empty set when nothing can be read,
-        so an unreachable host never produces an ownership claim either way.
-        """
-        import ssl
-        names = set()
-        # Verification is deliberately off: a lookalike often presents an
-        # invalid or self-signed certificate, and the names on it are still
-        # evidence. But with CERT_NONE, Python's getpeercert() returns an EMPTY
-        # DICT rather than the parsed certificate, so the certificate has to be
-        # taken in binary form and parsed. Measured 2026-09-08 against
-        # boston.ac.za: getpeercert() -> {}, getpeercert(binary_form=True) ->
-        # 897 bytes. Reading the parsed form silently returned no names at all,
-        # which disabled this entire signal without failing.
-        try:
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            with socket.create_connection((domain, 443), timeout=timeout) as raw:
-                with ctx.wrap_socket(raw, server_hostname=domain) as tls:
-                    der = tls.getpeercert(binary_form=True)
-        except Exception:
-            return names
-        if not der:
-            return names
-        try:
-            from cryptography import x509
-            from cryptography.x509.oid import ExtensionOID, NameOID
-            cert = x509.load_der_x509_certificate(der)
-            for attr in cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME):
-                if attr.value:
-                    names.add(str(attr.value).lower().lstrip("*.").strip("."))
-            try:
-                san = cert.extensions.get_extension_for_oid(
-                    ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
-                for v in san.value.get_values_for_type(x509.DNSName):
-                    if v:
-                        names.add(str(v).lower().lstrip("*.").strip("."))
-            except x509.ExtensionNotFound:
-                pass
-        except Exception:
-            return names
-        return {n for n in names if n}
-
-    def _ownership_verdict(self, entry: dict, own_ips: set, own_names: set,
-                           insured: str) -> "str | None":
-        """Decide whether a candidate is in fact an asset the insured controls.
-
-        Two independent signals, and one deliberate veto.
-
-        CERTIFICATE. If the candidate presents a certificate that covers the
-        insured domain, or the insured's own certificate covers the candidate,
-        the same party proved control of both names to a certificate authority.
-
-        DEDICATED ADDRESS. If the candidate resolves to an address the scan
-        already attributes to the insured, that is common hosting.
-
-        THE VETO: an address inside a published CDN edge range establishes
-        nothing. Millions of unrelated tenants share those addresses, so an edge
-        match must never be read as common ownership. This is why the shared
-        cdn_ranges table is a prerequisite for this check rather than a later
-        piece of work.
-        """
-        from cdn_ranges import is_edge_ip
-
-        dom = (entry.get("domain") or "").lower().strip(".")
-        cand_ips = set(entry.get("resolved_ips") or [])
-
-        cand_names = self._cert_names(dom) if dom else set()
-        if cand_names:
-            entry["cert_names_sample"] = sorted(cand_names)[:4]
-        if insured in cand_names:
-            return "certificate covers %s" % insured
-        if dom in own_names:
-            return "the certificate for %s covers this domain" % insured
-
-        dedicated = {ip for ip in (cand_ips & own_ips) if not is_edge_ip(ip)}
-        if dedicated:
-            return "resolves to the insured's own address %s" % sorted(dedicated)[0]
-
-        shared_edge = {ip for ip in (cand_ips & own_ips) if is_edge_ip(ip)}
-        if shared_edge:
-            # Recorded, never acted on: this is the inference being refused.
-            entry["shared_edge_only"] = sorted(shared_edge)[:2]
-        return None
+            return False
 
     # --- posture enrichment (SCN-042) ----------------------------------------
     # "4 lookalikes resolve" is not actionable. What decides whether a
@@ -3040,6 +2941,119 @@ class FraudulentDomainChecker:
     _PARKING_NS = ("afternic", "sedoparking", "sedo.com", "dan.com", "bodis",
                    "parkingcrew", "above.com", "undeveloped", "hugedomains",
                    "namecheapparking", "parklogic")
+
+    # --- ownership: is a candidate in fact the insured's own domain? ---------
+    # boston.ac.za, 2026-08-14: the checker generated boston.co.za as a
+    # tld-variant, found it mail-capable and serving a site, and listed it among
+    # the client's lookalike threats. boston.co.za is the client's own website.
+    # The only exclusion in the checker was an exact string match against the
+    # scanned name.
+
+    @staticmethod
+    def _validated_cert_names(domain: str, timeout: float = 4.0) -> set:
+        """Names on a certificate a public CA issued for this host.
+
+        VALIDATION IS THE POINT. Reading the certificate with verification
+        disabled makes the ownership test trivially forgeable: an attacker
+        registers a lookalike, serves a self-signed certificate carrying the
+        insured's name, and the scanner reclassifies the attacker's domain as
+        the insured's own asset, removes it from the report and improves the
+        risk score. One openssl command, no cost, and cheaper for the attacker
+        than not doing it.
+
+        The default context is used unmodified, so the chain must validate to a
+        public root AND match the candidate hostname. A certificate covering the
+        insured domain then means a certificate authority verified control of
+        the insured name, which the operator of a lookalike cannot obtain.
+        Requiring the hostname to match closes the SNI fall-through case, where
+        a shared host answers for a name it does not serve and hands back some
+        other tenant's certificate.
+
+        Returns an empty set on any failure, so an unreachable, expired or
+        untrusted host never produces an ownership claim.
+        """
+        import ssl
+        try:
+            ctx = ssl.create_default_context()      # verify + check_hostname ON
+            with socket.create_connection((domain, 443), timeout=timeout) as raw:
+                with ctx.wrap_socket(raw, server_hostname=domain) as tls:
+                    der = tls.getpeercert(binary_form=True)
+        except Exception:
+            return set()
+        if not der:
+            return set()
+        names = set()
+        try:
+            from cryptography import x509
+            from cryptography.x509.oid import ExtensionOID, NameOID
+            cert = x509.load_der_x509_certificate(der)
+            for attr in cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME):
+                if attr.value:
+                    names.add(str(attr.value).strip().lower().strip("."))
+            try:
+                san = cert.extensions.get_extension_for_oid(
+                    ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+                for v in san.value.get_values_for_type(x509.DNSName):
+                    if v:
+                        names.add(str(v).strip().lower().strip("."))
+            except x509.ExtensionNotFound:
+                pass
+        except Exception:
+            return set()
+        return {n for n in names if n}
+
+    @staticmethod
+    def _covers(names, target: str) -> bool:
+        """Does a certificate name set cover ``target`` under RFC 6125?
+
+        A wildcard matches exactly one label and never the apex: ``*.example.com``
+        covers ``www.example.com`` but not ``example.com``. Comparing a stripped
+        wildcard against the apex would make every tenant of a shared host look
+        like the insured whenever the insured is the hosting provider, which is
+        a normal client type in this book.
+        """
+        target = (target or "").strip().lower().strip(".")
+        if not target:
+            return False
+        for n in (names or ()):
+            n = (n or "").strip().lower().strip(".")
+            if not n:
+                continue
+            if n == target:
+                return True
+            if n.startswith("*."):
+                base = n[2:]
+                if base and "." in base and target.endswith("." + base):
+                    if target[:-(len(base) + 1)].count(".") == 0:
+                        return True
+        return False
+
+    def _ownership_verdict(self, entry: dict, insured: str):
+        """Is this candidate an asset the insured demonstrably controls?
+
+        ONE signal, and the only externally observable one the operator of the
+        candidate cannot forge: a CA-issued, chain-validated certificate, valid
+        for the candidate, that also covers the insured domain. Obtaining it
+        requires proving control of the insured name to a certificate authority.
+
+        An address comparison was considered and rejected. A candidate's A
+        record lives in the attacker's own zone, so pointing a lookalike at the
+        insured's web server would have been enough to be reclassified as the
+        insured's own asset and dropped from the report, while the MX record
+        kept phishing untouched. An attacker-writable record cannot evidence
+        ownership.
+        """
+        dom = (entry.get("domain") or "").strip().lower().strip(".")
+        if not dom:
+            return None
+        names = self._validated_cert_names(dom)
+        if not names:
+            return None
+        entry["cert_names_sample"] = sorted(names)[:4]
+        if self._covers(names, insured):
+            return ("presents a CA-issued certificate, valid for this domain, "
+                    "that also covers %s" % insured)
+        return None
 
     @staticmethod
     def _usable_mx(mx_raw):
@@ -3172,11 +3186,7 @@ class FraudulentDomainChecker:
         return ("low" if sim < 85 else "medium",
                 "Resolves but shows no mail or content capability. Monitor.")
 
-    def check(self, domain: str, own_ips: list = None) -> dict:
-        """``own_ips`` are addresses the scan already attributes to the insured.
-        Supplied by the scanner; when absent the ownership test falls back to
-        the certificate signal alone, which still catches the boston.co.za case.
-        """
+    def check(self, domain: str) -> dict:
         result = {
             "status": "completed",
             "total_permutations": 0,
@@ -3245,19 +3255,66 @@ class FraudulentDomainChecker:
                 for future in as_completed(futures, timeout=30):
                     perm = futures[future]
                     try:
-                        addrs = future.result(timeout=5)
-                        if addrs:
+                        if future.result(timeout=5):
                             resolved.append({
                                 "domain": perm[0],
                                 "technique": perm[1],
                                 "similarity": perm[2],
-                                "resolved_ips": addrs,
                             })
                     except Exception:
                         pass
 
             # Sort by similarity descending
             resolved.sort(key=lambda x: x["similarity"], reverse=True)
+
+            # OWNERSHIP PASS, before every cap and before enrichment.
+            #
+            # Over the WHOLE resolved set, not the display slice: a client with
+            # a common brand word can have more than twenty resolving variants,
+            # and that is exactly the population this bug came from, so testing
+            # only the top twenty would leave it unfixed for the clients who
+            # have it.
+            #
+            # Probes are pooled and the pass carries its own wall-clock budget.
+            # Serially, one four-second handshake per candidate would overrun
+            # the sixty-second budget this checker is given, and a hostile host
+            # can hold a connection open on purpose. A candidate not decided
+            # within the budget is treated as NOT owned, which reports it as a
+            # lookalike: the conservative direction and the prior behaviour.
+            _insured = str(domain).strip().lower().strip(".")
+            owned, hostile = [], []
+            if resolved:
+                _budget = float(_os.environ.get("LOOKALIKE_OWNERSHIP_BUDGET_S", "20"))
+                _deadline = time.time() + _budget
+                _decided = {}
+                with ThreadPoolExecutor(max_workers=10) as ex3:
+                    _futs = {ex3.submit(self._ownership_verdict, e, _insured): idx
+                             for idx, e in enumerate(resolved)}
+                    try:
+                        for _f in as_completed(_futs, timeout=_budget):
+                            try:
+                                _decided[_futs[_f]] = _f.result(timeout=1)
+                            except Exception:
+                                _decided[_futs[_f]] = None
+                            if time.time() > _deadline:
+                                break
+                    except Exception:
+                        pass          # budget expired; undecided stay hostile
+                for idx, _e in enumerate(resolved):
+                    _why = _decided.get(idx)
+                    if _why:
+                        _e["owned_reason"] = _why
+                        owned.append(_e)
+                    else:
+                        hostile.append(_e)
+                _undecided = len(resolved) - len(_decided)
+                if _undecided > 0:
+                    # Never let a budget cut read as "these are confirmed hostile".
+                    result["ownership_undecided"] = _undecided
+
+            resolved = hostile
+            result["own_assets"] = owned
+            result["own_assets_excluded"] = len(owned)
             result["resolved_count"] = len(resolved)
             shown = resolved[:20]  # cap display at 20
 
@@ -3274,31 +3331,6 @@ class FraudulentDomainChecker:
                 if len(shown) > ENRICH_CAP:
                     # Never let a silent cap read as "the rest are fine".
                     result["enrichment_capped"] = len(shown) - ENRICH_CAP
-
-            # Ownership pass. A candidate the insured controls is not a threat to
-            # the insured, and advising a client to report its own site to a
-            # registrar is the single most discrediting thing this checker can
-            # print. Owned assets leave the hostile list entirely: they are
-            # reported separately and are excluded from the score below.
-            _insured = str(domain).lower().strip(".")
-            _own_ips = {str(i) for i in (own_ips or [])}
-            _own_names = self._cert_names(_insured)
-            if _own_names:
-                result["insured_cert_names"] = sorted(_own_names)[:6]
-            hostile, owned = [], []
-            for _e in shown:
-                _why = self._ownership_verdict(_e, _own_ips, _own_names, _insured)
-                if _why:
-                    _e["owned_reason"] = _why
-                    owned.append(_e)
-                else:
-                    hostile.append(_e)
-            resolved = [r for r in resolved
-                        if r.get("domain") not in {o.get("domain") for o in owned}]
-            result["own_assets"] = owned
-            result["own_assets_excluded"] = len(owned)
-            shown = hostile
-            result["resolved_count"] = len(resolved)
             result["fraudulent_domains"] = shown
 
             # Mail-capable lookalikes are the ones that can actually phish, so
@@ -3336,13 +3368,13 @@ class FraudulentDomainChecker:
                     "name is not impersonation, and several of these turn out to be "
                     "unrelated businesses.")
 
-            # REMOVED, 2026-09-08: an unconditional "CRITICAL: N lookalike
-            # domains detected" fired purely because the resolved count exceeded
-            # five, with no reference to whether any candidate was hostile. It
-            # sat directly beneath the hedged lines above and contradicted them,
-            # and on boston.ac.za it counted the client's own site toward the
-            # total. Severity now comes from capability (mail-capable, serving
-            # content), which the branches above already state.
+            # REMOVED 2026-09-08: an unconditional "CRITICAL: N lookalike
+            # domains detected" fired purely on the resolved count, with no
+            # reference to whether any candidate was hostile. It sat directly
+            # beneath the hedged lines above and contradicted them, and on
+            # boston.ac.za it counted the client's own site toward the total.
+            # Severity comes from capability instead, which the mail-capable
+            # branches above already state and which card_severity now bands.
             if len(resolved) > 2:
                 result["issues"].append(
                     f"{len(resolved)} lookalike domains detected — "
@@ -3355,15 +3387,16 @@ class FraudulentDomainChecker:
                 )
 
             if result["own_assets_excluded"]:
-                _names = ", ".join(o.get("domain", "") for o in result["own_assets"][:4])
+                _names = ", ".join(o.get("domain", "")
+                                   for o in result["own_assets"][:4])
                 result["issues"].append(
-                    "%d domain(s) matching the search pattern are the insured's own "
-                    "assets and are excluded from the findings above: %s. Verified by "
-                    "certificate or by a dedicated address shared with the insured, "
-                    "never by a shared CDN edge address."
-                    % (result["own_assets_excluded"], _names))
+                    "%d domain(s) matching the search pattern are the insured's "
+                    "own assets and are excluded from the findings above: %s. "
+                    "Established by a CA-issued certificate valid for the domain "
+                    "that also covers %s."
+                    % (result["own_assets_excluded"], _names, domain))
 
-            # Score: penalize per resolved lookalike. `resolved` now excludes the
+            # Score: penalize per resolved lookalike. `resolved` excludes the
             # insured's own assets, so a client is no longer charged for owning
             # more than one domain.
             penalty = min(100, len(resolved) * 8)

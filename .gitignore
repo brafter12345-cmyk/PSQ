@@ -57,3 +57,6 @@ security_scanner/scans/_dehashed_cache/
 # address lands in the repo -- it did, in 61bcf37.
 security_scanner/scans/_egress_ip.json
 security_scanner/scans/_dehashed_probe.json
+
+# Sandbox-only runtime state, never committed
+security_scanner/sandbox_scans.db

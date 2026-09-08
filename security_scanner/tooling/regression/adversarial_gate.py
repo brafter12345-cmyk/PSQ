@@ -1301,87 +1301,136 @@ VERDICT_SCENARIOS = [
 
 
 def _check_lookalike_ownership(failures):
-    """A domain the insured controls must never be reported as hostile.
+    """A domain the insured controls must never be reported as hostile, and a
+    hostile domain must never be able to exclude ITSELF.
 
-    boston.ac.za, 2026-08-14: the checker generated boston.co.za as a
-    tld-variant, found it mail-capable and serving a site, and listed it among
-    the client's lookalike threats. boston.co.za is the client's own website,
-    on the client's own server, under the same certificate. The only exclusion
-    in the checker was an exact string match against the scanned name.
+    boston.ac.za, 2026-08-14: boston.co.za, the client's own website, was listed
+    among the client's lookalike threats. The only exclusion was an exact string
+    match against the scanned name.
 
-    The fourth scenario is the important one and is easy to get wrong in the
-    opposite direction: two domains sharing a CDN edge address share it with
-    every other tenant of that CDN, so an edge match proves nothing and must
-    NOT clear a genuine lookalike. Offline: DNS and TLS are stubbed.
+    The scenarios below are adversarial by design. The first implementation of
+    the fix used two signals an attacker controls outright, a self-signed
+    certificate and an A record in the attacker's own zone, either of which let
+    a hostile domain delete itself from the report AND lower the client's risk
+    score. Scenarios 3 to 5 exist so that cannot come back.
     """
     import importlib
     ct = importlib.import_module("checkers_threats")
     chk = ct.FraudulentDomainChecker()
     INSURED = "boston.ac.za"
-    OWN_DEDICATED = "196.41.30.122"
-    CF_EDGE = "104.26.3.40"
 
+    # (label, candidate, names the VALIDATED probe returns, expect_owned, why)
     SCEN = [
-        ("own_cert_match", "boston.co.za", ["203.0.113.9"],
-         {"boston.ac.za", "boston.co.za"}, True,
-         "candidate's certificate covers the insured domain"),
-        ("own_dedicated_ip", "bostonac.co.za", [OWN_DEDICATED], set(), True,
-         "resolves to an address the scan attributes to the insured"),
-        ("hostile_unrelated", "b0ston.ac.za", ["198.51.100.7"], set(), False,
-         "unrelated address and unrelated certificate"),
-        ("shared_cdn_edge_only", "boston-hotels.com", [CF_EDGE], set(), False,
-         "shares only a CDN edge address, which proves nothing"),
+        ("own_multi_domain_cert", "boston.co.za",
+         {"boston.ac.za", "boston.co.za", "bostonbc.co.za"}, True,
+         "CA-issued cert valid for the candidate also covers the insured"),
+        ("unrelated_cert", "boston.org", {"boston.org"}, False,
+         "valid cert, but it does not cover the insured"),
+        ("no_usable_cert", "b0ston.ac.za", set(), False,
+         "no chain-validated certificate: no ownership claim"),
+        ("attacker_selfsigned", "b0ston.ac.za", set(), False,
+         "self-signed cert naming the insured must not validate, so no names"),
+        ("wildcard_not_apex", "tenant.provider.co.za", {"*.provider.co.za"}, False,
+         "a wildcard covers one label, never the apex (RFC 6125)"),
     ]
-    for label, cand, cand_ips, cand_cert, expect_owned, why in SCEN:
-        entry = {"domain": cand, "resolved_ips": list(cand_ips)}
-        with mock.patch.object(ct.FraudulentDomainChecker, "_cert_names",
-                               staticmethod(lambda d, timeout=4.0,
-                                            _c=cand_cert, _cand=cand:
-                                            set(_c) if d == _cand else set())):
-            verdict = chk._ownership_verdict(
-                entry, {OWN_DEDICATED, CF_EDGE}, set(), INSURED)
-        got_owned = verdict is not None
-        ok = got_owned == expect_owned
+    for label, cand, cert_names, expect_owned, why in SCEN:
+        entry = {"domain": cand}
+        insured = "provider.co.za" if label == "wildcard_not_apex" else INSURED
+        with mock.patch.object(ct.FraudulentDomainChecker, "_validated_cert_names",
+                               staticmethod(lambda d, timeout=4.0, _c=cert_names: set(_c))):
+            verdict = chk._ownership_verdict(entry, insured)
+        got = verdict is not None
+        ok = got == expect_owned
         if not ok:
             failures.append(
                 "lookalike_ownership[%s]: %s was %s, expected %s (%s)"
-                % (label, cand, "excluded as owned" if got_owned else "reported hostile",
+                % (label, cand, "excluded as owned" if got else "reported hostile",
                    "excluded" if expect_owned else "reported", why))
         print("  [%s] lookalike_own:%-22s owned=%-5s %s"
-              % ("PASS" if ok else "FAIL", label, got_owned, why[:44]))
+              % ("PASS" if ok else "FAIL", label, got, why[:42]))
 
-    # The scenarios above STUB _cert_names, so they cannot see whether the real
-    # probe works. It did not: with verify_mode CERT_NONE, getpeercert() returns
-    # an empty dict, so the certificate signal returned no names at all and the
-    # whole ownership test silently did nothing. The stub hid it; only a live
-    # run against boston.ac.za exposed it. The gate is offline by contract, so
-    # the invariant is asserted at source level instead.
-    src = open(ct.__file__, encoding="utf-8").read()
-    import re as _re2
-    _fn = _re2.search(r"def _cert_names\(.*?(?=\n    def )", src, _re2.S)
-    body = _fn.group(0) if _fn else ""
-    # Strip comments and docstring prose first. The explanation of this very bug
-    # contains the string being searched for, so a naive scan matched the
-    # comment and reported PASS while the call itself was broken. Measured: the
-    # bug was reintroduced deliberately and the check still passed.
-    code = "\n".join(l.split("#")[0] for l in body.split("\n"))
-    uses_none = "CERT_NONE" in code
-    uses_binary = _re2.search(r"getpeercert\(\s*binary_form\s*=\s*True", code) is not None
-    broken = uses_none and not uses_binary
-    if broken:
+    # END TO END. The unit above cannot see whether an owned asset still leaks
+    # into the derived lists. It did: mail_capable_domains and the mail-capable
+    # issue lines were computed from the pre-filter slice, so the report named
+    # the client's own domain as a threat while also saying it was excluded.
+    OWN, HOSTILE = "own.example.co.za", "h0stile.example.co.za"
+
+    def _fake_resolve(self, d):
+        return True if d in (OWN, HOSTILE) else False
+
+    def _fake_perms(self, name, tld):
+        return [(OWN, "tld-variant", 90), (HOSTILE, "typo", 88)]
+
+    def _fake_enrich(self, entry):
+        entry.update({"mail_capable": True, "serves_content": True,
+                      "mx_hosts": ["mx.test"], "risk": "high",
+                      "recommendation": "test"})
+        return entry
+
+    def _fake_cert(d, timeout=4.0):
+        return {"example.co.za", OWN} if d == OWN else set()
+
+    with mock.patch.object(ct.FraudulentDomainChecker, "_resolves", _fake_resolve), \
+         mock.patch.object(ct.FraudulentDomainChecker, "_generate_permutations", _fake_perms), \
+         mock.patch.object(ct.FraudulentDomainChecker, "_enrich", _fake_enrich), \
+         mock.patch.object(ct.FraudulentDomainChecker, "_validated_cert_names",
+                           staticmethod(_fake_cert)):
+        res = ct.FraudulentDomainChecker().check("example.co.za")
+
+    blob = " ".join(res.get("issues") or []) + " " + \
+           " ".join(res.get("mail_capable_domains") or []) + " " + \
+           " ".join(d.get("domain", "") for d in res.get("fraudulent_domains") or [])
+    excluded_line = [i for i in (res.get("issues") or []) if "own assets" in i]
+    leaked = OWN in blob.replace(" ".join(excluded_line), "")
+    e2e_ok = (res.get("status") == "completed"
+              and res.get("own_assets_excluded") == 1
+              and not leaked
+              and HOSTILE in blob)
+    if not e2e_ok:
         failures.append(
-            "lookalike_ownership[cert_probe]: _cert_names disables verification "
-            "but reads getpeercert() without binary_form=True, which returns an "
-            "empty dict and silently disables the ownership test")
-    print("  [%s] lookalike_own:cert_probe_readable   CERT_NONE=%s binary_form=%s"
-          % ("FAIL" if broken else "PASS", uses_none, uses_binary))
+            "lookalike_ownership[end_to_end]: status=%s excluded=%s own-domain-leaked=%s "
+            "hostile-reported=%s. An owned asset must not appear in any derived "
+            "list, and the hostile one must still be reported."
+            % (res.get("status"), res.get("own_assets_excluded"), leaked,
+               HOSTILE in blob))
+    print("  [%s] lookalike_own:end_to_end            excluded=%s leaked=%s hostile_kept=%s"
+          % ("PASS" if e2e_ok else "FAIL", res.get("own_assets_excluded"),
+             leaked, HOSTILE in blob))
 
-    leaked = "CRITICAL: {len(resolved)} lookalike domains detected" in src
-    if leaked:
+    # SOURCE GUARDS. The scenarios stub the probe, so they cannot see the probe
+    # itself being wrong, and it was: reading getpeercert() under CERT_NONE
+    # returns an empty dict, which silently disabled the whole test, and
+    # disabling verification made the signal forgeable. Comments are stripped
+    # first because an earlier version of this guard matched its own
+    # explanatory comment and reported PASS with the bug present.
+    import re as _re2
+    src = open(ct.__file__, encoding="utf-8").read()
+    _fn = _re2.search(r"\n    def _validated_cert_names\(.*?(?=\n    @staticmethod|\n    def )",
+                      src, _re2.S)
+    if not _fn:
+        failures.append("lookalike_ownership[cert_probe]: _validated_cert_names "
+                        "not found; this guard checked nothing")
+        code = ""
+    else:
+        code = "\n".join(l.split("#")[0] for l in _fn.group(0).split("\n"))
+    unverified = "CERT_NONE" in code or "check_hostname = False" in code
+    binary = _re2.search(r"getpeercert\(\s*binary_form\s*=\s*True", code) is not None
+    probe_ok = bool(code) and not unverified and binary
+    if not probe_ok:
+        failures.append(
+            "lookalike_ownership[cert_probe]: the ownership certificate probe must "
+            "validate the chain and hostname (no CERT_NONE, no check_hostname=False) "
+            "and must read the certificate in binary form; got unverified=%s "
+            "binary_form=%s" % (unverified, binary))
+    print("  [%s] lookalike_own:cert_probe_validates  unverified=%s binary_form=%s"
+          % ("PASS" if probe_ok else "FAIL", unverified, binary))
+
+    leaked_line = "CRITICAL: {len(resolved)} lookalike domains detected" in src
+    if leaked_line:
         failures.append("lookalike_ownership[severity]: the unconditional "
                         "count-driven CRITICAL line is still emitted")
-    print("  [%s] lookalike_own:severity_line_removed  present=%s"
-          % ("FAIL" if leaked else "PASS", leaked))
+    print("  [%s] lookalike_own:count_severity_removed present=%s"
+          % ("FAIL" if leaked_line else "PASS", leaked_line))
 
 
 def _check_lookalike_posture(failures):

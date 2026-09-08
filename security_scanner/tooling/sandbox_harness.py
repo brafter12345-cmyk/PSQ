@@ -91,10 +91,17 @@ def measure(fx):
     od = cats.get("origin_discovery", {}) or {}
     ins = results.get("insurance", {}) or {}
 
+    # Deterministic: iterate the addresses in sorted order and keep the FIRST
+    # provider seen. Iterating a set and keeping the last match made takealot
+    # report Cloudflare or Akamai depending on set ordering, which showed up as
+    # a spurious change in every diff and would eventually mask a real one.
     ips = _resolved_ips(cats)
     true_edge = None
-    for ip in ips:
-        true_edge = _edge_provider(ip) or true_edge
+    for ip in sorted(ips):
+        p = _edge_provider(ip)
+        if p:
+            true_edge = p
+            break
 
     looks = fd.get("fraudulent_domains") or []
     return {
