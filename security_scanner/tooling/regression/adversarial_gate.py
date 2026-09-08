@@ -1300,6 +1300,99 @@ VERDICT_SCENARIOS = [
 ]
 
 
+def _check_cdn_edge_detection(failures):
+    """A content delivery network edge must be recognised from its ADDRESS, and
+    an edge-only assessment must never claim full confidence.
+
+    Detection walked the CNAME chain only. A domain fronted at its apex cannot
+    carry a CNAME, so providers answer with address records directly and the
+    walk finds nothing. Measured over 58 production scans: a provider was named
+    0 times, and 14 scans resolved into a published edge range. boston.ac.za
+    returned 97/1000 Low at 100 per cent completeness with no failed checkers,
+    having assessed Cloudflare.
+
+    THE TWO HALVES ARE ONE CHANGE. Detection alone is a DISCOUNT: the
+    availability term adds 0.035 when no network is detected, so every scan has
+    been carrying that penalty. Measured on the boston.ac.za fixture, detection
+    alone moves P(interruption) 0.065 -> 0.030 and drops R20,376 from the
+    modelled loss on that incident, while the scanner still cannot see the
+    origin. The scenarios below therefore assert BOTH, and a change that ships
+    detection without the confidence cap fails here.
+    """
+    import importlib
+    cr = importlib.import_module("cdn_ranges")
+    cc = importlib.import_module("checkers_core")
+
+    EDGE = [("Cloudflare", "104.26.3.40"), ("Cloudflare", "172.67.71.95"),
+            ("Akamai", "23.45.67.89"), ("Fastly", "151.101.1.1"),
+            ("AWS CloudFront", "13.32.1.1")]
+    for want, ip in EDGE:
+        got = cr.edge_provider(ip)
+        ok = got == want
+        if not ok:
+            failures.append("cdn_edge[range]: %s should resolve to %s, got %s"
+                            % (ip, want, got))
+        print("  [%s] cdn_edge:range %-16s -> %s" % ("PASS" if ok else "FAIL", ip, got))
+
+    for ip in ("196.41.30.122", "8.8.8.8", "10.0.0.1", "not-an-ip"):
+        got = cr.edge_provider(ip)
+        ok = got is None
+        if not ok:
+            failures.append("cdn_edge[range]: %s must NOT be an edge, got %s" % (ip, got))
+        print("  [%s] cdn_edge:not_edge %-14s -> %s" % ("PASS" if ok else "FAIL", ip, got))
+
+    # Detection fires on an apex that answers with address records only.
+    with mock.patch.object(cc, "DNS_AVAILABLE", True), \
+         mock.patch.object(cc.dns_cache, "resolve",
+                           lambda d, t: ["104.26.3.40"] if t == "A" else []), \
+         mock.patch.object(cc.dns.resolver, "resolve",
+                           side_effect=Exception("no CNAME at an apex")):
+        res = cc.CloudCDNChecker().check("edge-fronted.test")
+    ok = res.get("provider") == "Cloudflare" and res.get("detected_by") == "edge_range"
+    if not ok:
+        failures.append("cdn_edge[apex]: an apex answering with edge address records "
+                        "must be detected; got provider=%s detected_by=%s"
+                        % (res.get("provider"), res.get("detected_by")))
+    print("  [%s] cdn_edge:apex_no_cname        provider=%s by=%s"
+          % ("PASS" if ok else "FAIL", res.get("provider"), res.get("detected_by")))
+
+    # Confidence cap. Same checker set, same completeness; the ONLY difference
+    # is whether an origin was verified behind the detected edge.
+    from scoring_analytics import RiskScorer
+    def _conf(cdn_detected, verified):
+        cats = {
+            "ssl": {"status": "completed", "grade": "A", "score": 95},
+            "http_headers": {"status": "completed", "score": 90},
+            "exposed_admin": {"status": "completed", "panels": []},
+            "shodan_vulns": {"status": "completed", "critical_count": 0,
+                             "high_count": 0, "medium_count": 0},
+            "cloud_cdn": {"status": "completed", "cdn_detected": cdn_detected,
+                          "provider": "Cloudflare" if cdn_detected else None},
+            "origin_discovery": {"status": "completed",
+                                 "verified": ["1.2.3.4"] if verified else []},
+        }
+        RiskScorer().calculate(cats)
+        sc = cats.get("_scan_completeness") or {}
+        return sc.get("confidence_level"), sc.get("estate_confidence")
+
+    CASES = [
+        ("no_cdn",              False, False, "full",    "assessed"),
+        ("cdn_origin_verified", True,  True,  "full",    "assessed"),
+        ("cdn_edge_only",       True,  False, "partial", "origin_not_reached"),
+    ]
+    for label, det, ver, want_conf, want_estate in CASES:
+        conf, estate = _conf(det, ver)
+        ok = conf == want_conf and estate == want_estate
+        if not ok:
+            failures.append(
+                "cdn_edge[confidence:%s]: got confidence=%s estate=%s, expected "
+                "%s/%s. An edge-only assessment must not claim full confidence: "
+                "every checker ran, but none of them measured the client."
+                % (label, conf, estate, want_conf, want_estate))
+        print("  [%s] cdn_edge:confidence %-20s %s / %s"
+              % ("PASS" if ok else "FAIL", label, conf, estate))
+
+
 def _check_lookalike_ownership(failures):
     """A domain the insured controls must never be reported as hostile, and a
     hostile domain must never be able to exclude ITSELF.
@@ -3283,6 +3376,7 @@ def main():
     _check_recommendation_priority(failures)
     _check_credential_failclosed(failures)
     _check_provider_budget(failures)
+    _check_cdn_edge_detection(failures)
     _check_lookalike_ownership(failures)
     _check_lookalike_posture(failures)
     _check_table_headers(failures)

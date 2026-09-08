@@ -1175,12 +1175,38 @@ class RiskScorer:
         total_weight = sum(self.WEIGHTS.values()) or 1
         excluded_fraction = round(excluded_weight / total_weight, 3)
         must_have_missing = sorted(set(self.MUST_HAVE_CHECKERS) & excluded)
+        # ESTATE CONFIDENCE. Completeness answers "did the checkers run"; it says
+        # nothing about WHOSE assets they ran against. boston.ac.za, 2026-08-14,
+        # returned 97/1000 Low at 100% completeness with no failed checkers,
+        # having assessed Cloudflare's edge: every must-have checker (ssl,
+        # http_headers, exposed_admin, shodan_vulns) ran, passed, and measured
+        # the provider rather than the client.
+        #
+        # This condition ships in the same change as address-range CDN detection
+        # and is not separable from it. Detection on its own is a DISCOUNT: the
+        # p_interruption term adds 0.035 when no CDN is detected, so every scan
+        # in the history has been carrying that penalty, and correcting
+        # detection would remove it from the CDN-fronted clients while the
+        # scanner still cannot see their origin. Shipping the cap alongside is
+        # what keeps the net effect honest.
+        _cdn = (results.get("cloud_cdn") or {}) if isinstance(results, dict) else {}
+        _origin = (results.get("origin_discovery") or {}) if isinstance(results, dict) else {}
+        _edge_only = bool(_cdn.get("cdn_detected")) and not (_origin.get("verified") or [])
+        estate_confidence = "origin_not_reached" if _edge_only else "assessed"
+
         if excluded_fraction >= self.COVERAGE_FLOOR or must_have_missing:
             confidence = "low_confidence"
         elif failed_checkers:
             confidence = "partial"
         else:
             confidence = "full"
+
+        # An edge-only assessment can never claim full confidence, however many
+        # checkers completed. It is capped rather than downgraded to
+        # low_confidence: the checkers genuinely ran and their findings about
+        # the edge are real, but they are not findings about the client.
+        if _edge_only and confidence == "full":
+            confidence = "partial"
         scan_completeness = {
             "total_checkers": len(self.WEIGHTS),
             "assessable_checkers": assessable,
@@ -1192,6 +1218,14 @@ class RiskScorer:
             "excluded_weight_fraction": excluded_fraction,
             "must_have_missing": must_have_missing,
             "confidence_level": confidence,
+            "estate_confidence": estate_confidence,
+            "estate_note": (
+                "" if not _edge_only else
+                "The assessed addresses belong to a content delivery network "
+                "edge and no origin server was verified behind it. Findings "
+                "describe the provider's infrastructure, not the client's own, "
+                "and an absence of findings here is not evidence about the "
+                "client's estate."),
             "score_qualified": confidence != "full",
             "disclaimer": (
                 "" if confidence == "full" else

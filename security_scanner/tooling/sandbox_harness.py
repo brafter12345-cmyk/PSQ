@@ -77,15 +77,41 @@ def load_fixtures():
     return out
 
 
-def measure(fx):
-    """Re-score a frozen scan and record every signal the remediation touches."""
+def measure(fx, simulate_cdn=False):
+    """Re-score a frozen scan and record every signal the remediation touches.
+
+    ``simulate_cdn`` reconstructs what address-range detection would have found,
+    using the addresses the scan actually recorded. The fixtures are frozen
+    results, so re-scoring alone can never show a checker-level fix: cloud_cdn
+    was written as null at scan time and stays null. Applying the published edge
+    ranges to the SAME stored addresses reproduces what the corrected checker
+    would emit for that scan, which is what makes the score movement measurable
+    without re-scanning anything or spending a credit.
+    """
     from scoring_pipeline import apply_risk_score
     results = json.loads(json.dumps(fx["results"]))   # never mutate the fixture
     cats = results.get("categories", {}) or {}
 
+    if simulate_cdn:
+        cdn = cats.setdefault("cloud_cdn", {})
+        if not cdn.get("provider"):
+            for ip in sorted(_resolved_ips(cats)):
+                prov = _edge_provider(ip)
+                if prov:
+                    cdn.update({"provider": prov, "cdn_detected": True,
+                                "hosting_type": "cloud/cdn",
+                                "detected_by": "edge_range", "edge_ip": ip})
+                    break
+
     apply_risk_score(results)
 
-    sc = results.get("_scan_completeness", {}) or {}
+    # RiskScorer.calculate writes _scan_completeness into the CATEGORIES dict;
+    # only scanner.py promotes it to the top level during a live scan. An
+    # offline re-score therefore leaves the stored, stale copy sitting at the
+    # top level, so reading it there measures the previous scan rather than this
+    # one. Prefer the freshly computed copy and fall back to the stored one.
+    sc = (cats.get("_scan_completeness")
+          or results.get("_scan_completeness") or {})
     cdn = cats.get("cloud_cdn", {}) or {}
     fd = cats.get("fraudulent_domains", {}) or {}
     od = cats.get("origin_discovery", {}) or {}
@@ -127,9 +153,9 @@ def measure(fx):
     }
 
 
-def run(out_path):
+def run(out_path, simulate_cdn=False):
     fixtures = load_fixtures()
-    rows = [measure(fx) for fx in fixtures]
+    rows = [measure(fx, simulate_cdn=simulate_cdn) for fx in fixtures]
     payload = {"fixture_count": len(rows), "rows": {r["domain"]: r for r in rows}}
     with open(out_path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh, indent=1, default=str, sort_keys=True)
@@ -193,11 +219,14 @@ def diff(a_path, b_path):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--out")
+    ap.add_argument("--simulate-cdn", action="store_true",
+                    help="reconstruct address-range CDN detection from the "
+                         "addresses each frozen scan recorded")
     ap.add_argument("--diff", nargs=2, metavar=("BEFORE", "AFTER"))
     args = ap.parse_args()
     if args.diff:
         diff(*args.diff)
     elif args.out:
-        run(args.out)
+        run(args.out, simulate_cdn=args.simulate_cdn)
     else:
         ap.error("give --out or --diff")
