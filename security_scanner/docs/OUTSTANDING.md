@@ -608,6 +608,12 @@ embedding in every generated PDF.
 
 ### 5n. Lookalike permutation coverage is thin for South African second-level domains (OBSERVED, 2026-09-08)
 
+**QUEUED: owner-flagged 2026-09-08 for after the six remediation steps.** Not a 
+blocker for any of them. First action is measurement rather than a code change: 
+run the expanded second-level-domain list across the retained scans and report how 
+many new candidates appear and how far category and overall scores move, so the 
+calibration decision is taken on numbers rather than on expectation.
+
 Found while verifying the client-ownership fix. `FraudulentDomainChecker.ALT_TLDS`
 carries the generic top-level domains and `.co.za`, but not the other South
 African second-level domains: `.ac.za`, `.org.za`, `.net.za`, `.gov.za`,
