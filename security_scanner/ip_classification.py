@@ -25,14 +25,34 @@ POLICY (broker-confirmed 2026-06-30): attribute on WHO OPERATES THE HOST.
     - PRIVATE (RFC1918) -> never scanned; an info-disclosure finding (public DNS
       exposing internal infrastructure).
 
-Signals, strongest first: reverse-DNS suffix (PTR is set by the IP owner), HTTP
-Server banner, Shodan org/isp. Default is OWNED — a host is only re-homed to
+Signals, strongest first: provider-published first-party SERVICE address ranges
+(saas_ranges.py), reverse-DNS suffix (PTR is set by the IP owner), HTTP Server
+banner, Shodan org/isp. Default is OWNED — a host is only re-homed to
 third-party on a POSITIVE vendor signal, so the insured's own infra (including
 no-PTR hosts) is never silently dropped from coverage.
+
+WHAT THE ORG SIGNAL CANNOT DO (2026-09-09). Shodan's org names who holds the
+ALLOCATION, and the hyperscalers that dominate it sell the managed service and
+the customer VM out of one name. "Microsoft Corporation" is returned by both an
+Exchange Online front end and an Azure VM the client runs, so org can never
+separate them and must never decide this on its own. It previously did, in the
+insured's disfavour, returning the positive claim "cloud IaaS
+(insured-operated)". Measured on 30 retained scans, acting on org alone would
+have demoted 37 addresses including our own GCE host behind veilguard.phishield.
+com and client-run Azure hosts behind portal.nexgro.co.za and ifrs9.bdo.co.za —
+deleting real exposure. The provider's own published split of its address space
+is the same fact at a resolution that does separate them, which is why step 1b
+exists and why steps 4 and 5 now assert nothing.
 
 review-by: 2026-12-30  (provider tables are point-in-time; re-confirm)
 """
 import ipaddress
+
+# Imported directly, not behind a try/except. A silent fallback here would turn
+# a broken import into a silent regression: every Exchange Online endpoint would
+# quietly go back to being attributed to the insured, and the gate's own
+# rule-off mutation would become indistinguishable from an accident.
+from saas_ranges import service_provider as _service_provider
 
 # Buckets. OWNED is the only scannable / own-attributed bucket.
 OWNED = "owned"
@@ -115,6 +135,29 @@ def classify_ip(ip, reverse_dns=None, org=None, banner=None,
     if obj.is_private or obj.is_loopback or obj.is_link_local or obj.is_reserved or obj.is_multicast:
         return (PRIVATE, "internal")
 
+    # 1b. PROVIDER-PUBLISHED FIRST-PARTY SERVICE RANGES (2026-09-09).
+    #     Measured across 30 retained scans: 174 of 307 addresses classified as
+    #     the insured's own were Microsoft 365 service endpoints, reached because
+    #     subdomain enumeration resolves autodiscover / mail / mta-sts names and
+    #     nothing below could tell them from the client's own infrastructure.
+    #
+    #     THIS MUST RUN BEFORE EVERY OTHER SIGNAL, and specifically before the
+    #     org rule at step 5. Exchange Online and a customer-run Azure VM both
+    #     report org "Microsoft Corporation", so _IAAS_ORG short-circuits to
+    #     OWNED and ANY rule placed after it is dead code for exactly the hosts
+    #     this fixes. It also needs no argument beyond the address, which is why
+    #     it is the only new rule that can fire at the pre-scan call site, where
+    #     the caller has resolved nothing but PTR.
+    #
+    #     Address membership is the only signal in this whole chain that the
+    #     party being judged cannot author: a customer cannot arrange for their
+    #     VM to be allocated out of the Exchange Online service block. It is also
+    #     the only one that works on IPv6 and when PTR and Shodan org are both
+    #     absent, which is the state of most affected addresses.
+    _service = _service_provider(ip)
+    if _service:
+        return (SAAS, _service)
+
     rdns = (reverse_dns or "").strip().rstrip(".").lower()
     orgl = (org or "").strip().lower()
     bannerl = (banner or "").strip().lower()
@@ -144,18 +187,31 @@ def classify_ip(ip, reverse_dns=None, org=None, banner=None,
         _sample = sorted(default_cert_names)[0] if default_cert_names else "?"
         return (SAAS, "shared/managed hosting (default cert %s)" % _sample)
 
-    # 4. INSURED-operated IaaS VMs by reverse-DNS -> OWNED (scanned).
+    # 4. Address sits in a cloud provider's space by reverse-DNS -> OWNED, i.e.
+    #    still scanned, but WITHOUT claiming the insured operates it. The old
+    #    label here read "cloud IaaS (insured-operated)", which is a positive
+    #    assertion the signal cannot support: a provider-authored PTR suffix says
+    #    who the PROVIDER is, never who runs the workload. That false claim is
+    #    what a broker read next to a college's name beside an Exchange Online
+    #    endpoint. The bucket is deliberately unchanged, so coverage is identical
+    #    and nothing moves between scanned and unscanned.
     if rdns:
         for suf in _IAAS_RDNS:
             if _suffix_match(rdns, suf):
-                return (OWNED, "cloud IaaS (insured-operated)")
+                return (OWNED, "cloud IaaS (operator unconfirmed)")
 
     # 5. Shodan org/isp: VENDOR SaaS/CDN first, then IaaS providers (OWNED).
     for kw, (bucket, label) in _VENDOR_ORG:
         if kw in orgl:
             return (bucket, label)
+    # Same de-assertion as step 4, and for a stronger reason: a netblock
+    # registrant string is the WEAKEST possible evidence of who operates a host,
+    # because the hyperscalers that dominate it sell the managed service and the
+    # customer VM out of the same name. Kept as a branch rather than deleted so
+    # the org signal stays visible in the ledger; the bucket it yields is now
+    # identical to the default two lines below, which is what makes this inert.
     if any(kw in orgl for kw in _IAAS_ORG):
-        return (OWNED, "cloud IaaS (insured-operated)")
+        return (OWNED, "cloud provider netblock (operator unconfirmed)")
 
     # 5. no vendor signal -> OWNED (conservatively scanned; coverage preserved).
     return (OWNED, "")

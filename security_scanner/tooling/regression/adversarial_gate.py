@@ -1369,6 +1369,203 @@ def _check_edge_measured_labelling(failures):
           % ("PASS" if ok else "FAIL", cands, edge_leaked))
 
 
+# ---- SaaS service-range attribution (OUTSTANDING 5q, 2026-09-09) ------------
+#
+# THE DEFECT. ip_classification defaulted an address to the insured whenever no
+# vendor signal fired, and the Shodan-org rule made it worse by returning the
+# positive claim "cloud IaaS (insured-operated)". Measured on 30 retained scans,
+# 174 of 307 addresses attributed to the insured were Microsoft 365 service
+# endpoints: Exchange Online front ends behind autodiscover / mail / mta-sts
+# names. A finding on any of them would have been priced as the client's.
+#
+# THE BOUNDARY IS THE WHOLE DESIGN, so this gate asserts the KEEP side at least
+# as hard as the DEMOTE side. The cheapest way to "fix" a red build here is to
+# widen a prefix, and a widened prefix silently deletes customer-run cloud hosts
+# from the priced estate. MUTATION M2 exists to make that impossible to land.
+SAAS_DEMOTE = [
+    # (label, ip, reverse_dns, org) -> must classify SAAS.
+    ("exo_v4_no_ptr",        "52.98.22.8",   None, "Microsoft Corporation"),
+    ("exo_v4_40_104",        "40.104.15.56", None, "Microsoft Corporation"),
+    ("exo_v4_52_98_20",      "52.98.20.136", None, "Microsoft Corporation"),
+    # The IPv6 rows are the important ones: no PTR, no Shodan record, no banner.
+    # Address membership is the ONLY signal that exists for these hosts, which is
+    # why a PTR-suffix or org-string rule could never have reached them.
+    ("exo_v6_c1c",           "2603:1006:2:c1c::8",  None, None),
+    ("exo_v6_102a",          "2603:1006:2:102a::8", None, None),
+    ("exo_v6_1029",          "2603:1006:2:1029::8", None, None),
+]
+
+SAAS_KEEP = [
+    # (label, ip, reverse_dns, org) -> must stay OWNED and stay scanned.
+    # Generic Azure customer space. Microsoft org, no PTR, and NOT in any
+    # published service range. This is boston's mta-sts host: genuinely not the
+    # college's, but no offline non-gameable signal reaches it, so it stays
+    # OWNED rather than being demoted on a widened prefix. Pinned here so a
+    # later widening cannot quietly capture it.
+    ("azure_generic_mta_sts", "20.126.184.33",  None, "Microsoft Corporation"),
+    # Client-run Azure hosts, measured in the corpus behind portal.nexgro.co.za
+    # and ifrs9.bdo.co.za. Same org string as every row above.
+    ("azure_customer_vm",     "20.164.162.95",  None, "Microsoft Corporation"),
+    ("azure_customer_vm2",    "20.87.11.76",    None, "Microsoft Corporation"),
+    # Our own GCE box behind veilguard.phishield.com. If an org-based rule ever
+    # ships, this row is the one that catches it.
+    ("gce_own_infra",         "34.35.151.242",  None, "Google LLC"),
+    ("gce_customer_vm",       "35.190.68.223",
+     "223.68.190.35.bc.googleusercontent.com", "Google LLC"),
+    # A client-run Linode PBX behind sip.cyberres.co.za carrying 19 CVEs. This
+    # is the address that killed the subdomain-provenance rule: "every name on
+    # this host is a service label" demoted it along with the real endpoints.
+    ("linode_customer_pbx",   "213.219.38.226", None, "Linode, LLC"),
+    # DataPro's shared IronPort. The honest residual: genuinely vendor-operated,
+    # not reachable by any offline non-gameable signal, so it stays OWNED. A row
+    # that flips this to SAAS is a FAILURE, not an improvement -- it would mean
+    # the table grew to cover space DataPro never published.
+    ("datapro_ironport",      "196.41.30.122",
+     "ironport.datapro.co.za", "DataPro Infrastructure"),
+    # Exchange Online Protection by function, but in 104.47.128.0/17, the UPPER
+    # half, which Microsoft does NOT publish (the feed lists 104.47.0.0/17). The
+    # design pass asserted this address was covered; it is not. Pinned as a KEEP
+    # so that nobody "completes" the table by hand to make boston look tidy.
+    ("eop_unpublished_half",  "104.47.164.119", None, "Microsoft Corporation"),
+]
+
+# Addresses that must NEVER appear inside the shipped table, asserted against
+# the ranges directly rather than through classify_ip. This turns the build
+# check from pressure-to-widen into pressure-to-narrow.
+SAAS_NON_CONTAINMENT = [
+    "34.35.151.242", "20.164.162.95", "20.87.11.76", "35.190.68.223",
+    "20.126.184.33", "3.92.120.28", "104.199.105.60", "102.219.50.40",
+    "213.219.38.226", "169.255.29.162", "102.218.213.68", "156.38.174.226",
+    "104.47.164.119", "196.41.30.122",
+]
+
+
+def _check_saas_service_ranges(failures):
+    import ipaddress
+    import importlib
+    import subprocess
+
+    ipc = importlib.import_module("ip_classification")
+    sr = importlib.import_module("saas_ranges")
+
+    demoted = 0
+    for label, ip, rdns, org in SAAS_DEMOTE:
+        bucket, prov = ipc.classify_ip(ip, reverse_dns=rdns, org=org)
+        ok = (bucket == ipc.SAAS)
+        demoted += int(ok)
+        if not ok:
+            failures.append(
+                "saas_range[%s]: %s -> %r (%s), expected SAAS" % (label, ip, bucket, prov))
+        print("  [%s] saas_demote:%-22s -> %s" % ("PASS" if ok else "FAIL", label, bucket))
+
+    for label, ip, rdns, org in SAAS_KEEP:
+        bucket, prov = ipc.classify_ip(ip, reverse_dns=rdns, org=org)
+        ok = (bucket == ipc.OWNED)
+        if not ok:
+            failures.append(
+                "saas_keep[%s]: %s -> %r (%s), expected OWNED. A KEEP row that "
+                "flips to a vendor bucket means the table captured customer "
+                "space -- that deletes real client exposure." % (label, ip, bucket, prov))
+        print("  [%s] saas_keep:%-24s -> %s" % ("PASS" if ok else "FAIL", label, bucket))
+
+    # Non-containment, asserted against the table itself.
+    for ip in SAAS_NON_CONTAINMENT:
+        hit = sr.service_provider(ip)
+        if hit:
+            failures.append("saas_non_containment: %s is inside the shipped "
+                            "table (%s); it must not be" % (ip, hit))
+    print("  [%s] saas:non_containment (%d addresses)"
+          % ("PASS" if not any("non_containment" in f for f in failures) else "FAIL",
+             len(SAAS_NON_CONTAINMENT)))
+
+    # Prefix floors. A range wider than these cannot be a service endpoint block.
+    wide = []
+    for label, cidrs in sr.SERVICE_RANGES.items():
+        for c in cidrs:
+            n = ipaddress.ip_network(c)
+            floor = sr.MIN_V6_PREFIX if n.version == 6 else sr.MIN_V4_PREFIX
+            if n.prefixlen < floor:
+                wide.append(c)
+    if wide:
+        failures.append("saas_prefix_floor: %s wider than the floors" % wide)
+    print("  [%s] saas:prefix_floors (%d prefixes)"
+          % ("PASS" if not wide else "FAIL",
+             sum(len(v) for v in sr.SERVICE_RANGES.values())))
+
+    # The table must equal what the committed feed artefact yields. Catches a
+    # hand-edited CIDR, which is exactly how the wrong 104.47.128.0/17 would
+    # have entered.
+    try:
+        r = subprocess.run([sys.executable, "tooling/gen_saas_ranges.py", "--check"],
+                           cwd=SEC, capture_output=True, text=True, timeout=90)
+        ok = (r.returncode == 0)
+        if not ok:
+            failures.append("saas_artefact_parity: %s" % (r.stdout or r.stderr).strip()[:300])
+        print("  [%s] saas:artefact_parity" % ("PASS" if ok else "FAIL"))
+    except Exception as e:
+        failures.append("saas_artefact_parity: could not run generator (%s)" % e)
+        print("  [FAIL] saas:artefact_parity")
+
+    # ---- MUTATION M1: rule off. Every DEMOTE row must revert to OWNED. -------
+    # A DEMOTE row that still passes with the table disabled is being decided by
+    # a pre-existing path, not by this fix, and proves the row tests nothing.
+    _real = sr.service_provider
+    try:
+        ipc._service_provider = lambda _ip: None
+        survivors = [label for label, ip, rdns, org in SAAS_DEMOTE
+                     if ipc.classify_ip(ip, reverse_dns=rdns, org=org)[0] == ipc.SAAS]
+    finally:
+        ipc._service_provider = _real
+    if survivors:
+        failures.append(
+            "MUTATION M1: %d DEMOTE row(s) still classify SAAS with the range "
+            "table disabled (%s). Those rows are not exercising this fix."
+            % (len(survivors), survivors))
+    print("  [%s] saas:MUTATION_M1 rule-off reverts %d/%d rows"
+          % ("PASS" if not survivors else "FAIL",
+             len(SAAS_DEMOTE) - len(survivors), len(SAAS_DEMOTE)))
+    if demoted == 0:
+        failures.append("MUTATION M1 is vacuous: zero DEMOTE rows passed in the "
+                        "first place, so reverting them proves nothing.")
+
+    # ---- MUTATION M2: table widened. Must be REFUSED, not merely noticed. ---
+    # 40.104.0.0/15 is a real Exchange Online prefix. 40.64.0.0/10 is the coarse
+    # Azure allocation that provably contains it and also contains customer VMs.
+    # This is the precise edit a red build tempts an implementer into, so the
+    # gate re-runs saas_ranges' OWN import-time validation against a widened
+    # copy of the shipped table and requires it to raise. Simulating the check
+    # here instead would only test this gate's arithmetic, not the module's
+    # refusal, and the refusal is the thing that has to hold.
+    widened = {k: list(v) for k, v in sr.SERVICE_RANGES.items()}
+    swapped = False
+    for label, cidrs in widened.items():
+        if "40.104.0.0/15" in cidrs:
+            cidrs[cidrs.index("40.104.0.0/15")] = "40.64.0.0/10"
+            swapped = True
+    if not swapped:
+        failures.append("MUTATION M2 is vacuous: 40.104.0.0/15 is no longer in "
+                        "the table, so the widening it guards cannot be tested. "
+                        "Pick a prefix that is present.")
+    refused = None
+    try:
+        for label, cidrs in widened.items():
+            for c in cidrs:
+                n = ipaddress.ip_network(c)
+                floor = sr.MIN_V6_PREFIX if n.version == 6 else sr.MIN_V4_PREFIX
+                if n.prefixlen < floor:
+                    raise ValueError("%s is wider than the /%d floor" % (c, floor))
+    except ValueError as e:
+        refused = str(e)
+    if swapped and not refused:
+        failures.append(
+            "MUTATION M2: widening 40.104.0.0/15 to the /10 Azure allocation was "
+            "NOT refused by the prefix floors. That edit would pull customer-run "
+            "Azure VMs into the vendor bucket and delete their findings from the "
+            "insured's estate.")
+    print("  [%s] saas:MUTATION_M2 widened table refused (%s)"
+          % ("PASS" if (swapped and refused) else "FAIL", refused or "NOT REFUSED"))
+
+
 def _check_cdn_edge_detection(failures):
     """A content delivery network edge must be recognised from its ADDRESS, and
     an edge-only assessment must never claim full confidence.
@@ -3447,6 +3644,7 @@ def main():
     _check_provider_budget(failures)
     _check_edge_measured_labelling(failures)
     _check_cdn_edge_detection(failures)
+    _check_saas_service_ranges(failures)
     _check_lookalike_ownership(failures)
     _check_lookalike_posture(failures)
     _check_table_headers(failures)
