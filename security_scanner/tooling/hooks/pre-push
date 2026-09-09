@@ -38,6 +38,10 @@ cd "$SC"
   echo "[pre-push] BLOCKED: app hardening gate failed."; exit 1; }
 "$PY" tooling/verify_rsi_revenue_wiring.py || {
   echo "[pre-push] BLOCKED: RSI is not scored on the resolved ZAR revenue (size-multiplier band bug)."; exit 1; }
+"$PY" tooling/regression/verify_estate_wiring.py || {
+  echo "[pre-push] BLOCKED: an ExternalIPAggregator.aggregate call omits vendor_ips, so the estate split is discarded and clients' reported footprints shrink."; exit 1; }
+"$PY" tooling/gen_saas_ranges.py --check || {
+  echo "[pre-push] BLOCKED: saas_ranges.py does not match the committed Microsoft feed artefact."; exit 1; }
 # scan() phase-timeout handlers must catch concurrent.futures.TimeoutError
 # (FuturesTimeoutError), not the builtin — on production Python 3.10 those are
 # distinct classes, so a bare `except TimeoutError` crashes the whole scan when a

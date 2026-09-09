@@ -890,6 +890,18 @@ class SecurityScanner:
         results["ip_attribution"] = ip_attribution
         results["third_party_hosting"] = third_party_hosting
 
+        # Bound ONCE, here, because external_ips is re-aggregated twice further
+        # down (after OSV enrichment, and again in the unconditional "ensure
+        # re-aggregation always runs" block). Both of those originally omitted
+        # vendor_ips, so the last one silently reset vendor_ip_count to 0 and
+        # estate_total_ips to the post-attribution own count on EVERY scan: the
+        # estate split was computed correctly and then thrown away a few hundred
+        # lines later. Measured, 19 of 30 estates shrank and 5 lost a
+        # Reconnaissance severity step. Every call site must pass this, and
+        # tooling/regression/verify_estate_wiring.py fails the build if one does
+        # not.
+        _vendor_ips = [e.get("ip") for e in third_party_hosting]
+
         # --- Phase 4: Aggregate IP-level results ---
         results["categories"] = cat_results
         results["categories"]["per_ip"] = per_ip_results
@@ -928,7 +940,7 @@ class SecurityScanner:
         self._notify(on_progress, "external_ips", "running")
         results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
             scan_ips, per_ip_results, ip_sources=ip_sources,
-            vendor_ips=[e.get("ip") for e in third_party_hosting],
+            vendor_ips=_vendor_ips,
         )
         self._notify(on_progress, "external_ips", "done",
                      results["categories"]["external_ips"])
@@ -1124,7 +1136,8 @@ class SecurityScanner:
                         per_ip_results, checker_name
                     )
                 results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
-                    scan_ips, per_ip_results, ip_sources=ip_sources
+                    scan_ips, per_ip_results, ip_sources=ip_sources,
+                    vendor_ips=_vendor_ips,
                 )
         except Exception as _osv_err:
             # Log OSV enrichment errors instead of silently swallowing
@@ -1137,7 +1150,8 @@ class SecurityScanner:
         # --- Ensure re-aggregation always runs (even if OSV failed) ---
         try:
             results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
-                scan_ips, per_ip_results, ip_sources=ip_sources
+                scan_ips, per_ip_results, ip_sources=ip_sources,
+                vendor_ips=_vendor_ips,
             )
         except Exception:
             pass
