@@ -741,3 +741,50 @@ receives Shodan's `org` field, which names Microsoft on these hosts, and
 published Microsoft 365 / Azure address ranges are available in the same way the
 CDN edge ranges now are. Adding a regional mail-provider suffix list closes the
 Datapro case. Treat as remediation step 3c, before step 4.
+
+#### 5q measurement across all 30 retained scans (2026-09-09)
+
+boston.ac.za is not special. Counting only addresses the scan classified `owned`
+that carry unambiguous evidence of vendor operation, using two narrow tests
+(`tooling/measure_saas_attribution.py`; a looser first pass flagged 268 of 307
+and measured nothing, so it was discarded):
+
+  A. SERVICE-ONLY PROVENANCE - every subdomain resolving to the address is a
+     label that exists only to hand a client to a mail/collaboration platform
+     (`autodiscover`, `autoconfig`, `mta-sts`, `lyncdiscover`,
+     `enterpriseregistration`). Nobody runs their own application server behind
+     `autodiscover.`.
+  B. PLATFORM ORG - Shodan's org names an operator of a mail platform.
+
+| bucket | count | reading |
+|---|---|---|
+| A and B agree | 80 | unambiguous, both signals |
+| A only (org unknown, mostly IPv6 with no Shodan record) | 76 | unambiguous |
+| B only | 37 | **NOT safe to act on** |
+| total `owned` addresses across 30 scans | 307 | |
+
+20 of 30 scans are affected. 156 addresses are safely demotable on provenance.
+
+THE 37 ORG-ONLY CASES ARE THE TRAP, and they are why org must never decide this
+alone. That bucket contains genuine customer-operated infrastructure:
+`34.35.151.242` behind `veilguard.phishield.com` is our OWN GCE VM;
+`20.164.162.95` behind `portal.nexgro.co.za` and `staging.nexgro.co.za`,
+`20.87.11.76` behind `ifrs9.bdo.co.za`, `35.190.68.223` behind
+`qr.bbgroup.co.za` are all client-run cloud hosts. Demoting on org would delete
+those from the scan and understate the client's real exposure, which is the
+opposite error and just as expensive.
+
+It also contains real vendor hosts that provenance alone misses: DataPro's
+`196.41.30.122` (port 25 only), four Mimecast relays on `41.74.x` (25/587),
+`104.47.164.119` behind `amazon.boston.ac.za`, and five `52.96.x` Microsoft hosts
+on mydata.co.za with no subdomain recorded at all.
+
+THE DISCRIMINATOR THAT FALLS OUT OF THIS. The org list has to be split, because
+the two halves behave differently:
+  * PURE MAIL-SECURITY VENDORS (Mimecast, Proofpoint, Barracuda, DataPro) do not
+    sell customer-run VMs. Their org string IS decisive on its own.
+  * HYPERSCALERS (Microsoft, Google, Amazon) sell both the managed service and
+    the VM the client runs. Their org string is never decisive and must be paired
+    with provenance or a published service address range.
+This is the same shape as the CDN fix: identity published by the operator, not
+by the party being judged.
