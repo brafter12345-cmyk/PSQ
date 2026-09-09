@@ -788,3 +788,37 @@ the two halves behave differently:
     with provenance or a published service address range.
 This is the same shape as the CDN fix: identity published by the operator, not
 by the party being judged.
+
+### 5r. A demoted host disappears from the report entirely (OBSERVED, 2026-09-09)
+
+Found while designing the 5q fix, and it constrains that fix. Three outputs of
+the attribution step are written and never read anywhere:
+
+| field | written | read by |
+|---|---|---|
+| `results["third_party_hosting"]` | `scanner.py` | **nothing** |
+| `results["internal_dns_leak"]` | `scanner.py` | **nothing** |
+| `results["ip_classification"]` | `scanner.py` | `adversarial_gate.py` only (a test); the two hits in `scoring_analytics.py` are comments |
+
+Verified by grepping the whole tree for each name across `.py`, `.ts` and `.tsx`.
+No PDF card, no dashboard component and no scoring path consumes any of them.
+
+The comment at `scanner.py:886-888` asserts the opposite: "third-party hosting +
+internal-DNS leaks are surfaced separately (results.third_party_hosting /
+internal_dns_leak)". They are not surfaced anywhere. That comment is false and
+should be corrected in the same change.
+
+CONSEQUENCE. When a host leaves the OWNED bucket it is deleted from
+`per_ip_results`, excluded from `scan_ips`, and therefore dropped from
+`external_ips.total_unique_ips`, which is the number the report prints as the
+client's external footprint. Nothing else records that it existed. The estate
+silently shrinks and the client reads as cleaner. This already happens today for
+every Cloudflare edge address.
+
+WHY THIS BLOCKS 5q. The 5q fix demotes up to 156 addresses across 20 of 30 scans.
+Shipping it against this reporting gap would trade over-attribution for
+under-statement, which is the OTHER half of the same reviewer's criticism, and
+would move scores in the client's favour for a reason no reader could see. The
+demotion rule and a supply-chain reporting surface have to land together:
+a demoted host must still be visible, named, attributed to its operator, and
+counted toward estate coverage, just not priced as the insured's own exposure.
