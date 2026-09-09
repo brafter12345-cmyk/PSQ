@@ -700,3 +700,44 @@ commercial harm, because absence of findings may not discount or clear a risk.
 The labelling makes the situation visible to whoever reads the report.
 
 Related: 5o (a fronted www with an unfronted apex probably exposes the origin).
+
+### 5q. SaaS mail infrastructure is attributed to the insured as OWNED (OBSERVED, 2026-09-08)
+
+Found while checking whether the reviewer's over-attribution finding was already
+closed. It is not. On boston.ac.za the scan classified every one of these as
+`owned`:
+
+| Address | What it actually is |
+|---|---|
+| 104.47.164.119, 52.98.22.8, 52.98.20.136, 40.104.15.56 | Microsoft Exchange Online |
+| 2603:1006:2:c1c::8 and three siblings | Microsoft |
+| 20.126.184.33 | Azure |
+| 196.41.30.122 | `ironport.datapro.co.za`, a shared mail-security appliance |
+
+None is operated by the client. They enter the pool from MX and autodiscover
+records, which for an SME on Microsoft 365 are by definition somebody else's
+servers.
+
+TWO CAUSES, both mechanical:
+
+1. `_SAAS_RDNS` matches on a reverse-DNS suffix, and the Microsoft ranges
+   publish **no PTR at all** (verified: 52.98.22.8, 104.47.164.119, 40.104.15.56
+   and 20.126.184.33 all return no PTR). With no reverse name there is nothing
+   for the suffix table to match, so the address falls through to `owned`.
+2. `196.41.30.122` DOES have a PTR, `ironport.datapro.co.za`, but Datapro is a
+   regional South African mail-security provider and is not in the table. Same
+   fall-through.
+
+WHY IT MATTERS. The CDN half of this problem is handled: Cloudflare addresses
+are classified `cdn`, removed from `per_ip_results` and excluded from scoring.
+Shared web hosting is handled too (707418b). SaaS mail is not, so any finding on
+a Microsoft or Datapro host would be reported as the client's own exposure and
+priced accordingly. On boston.ac.za nothing surfaced, so no harm materialised,
+but the attribution is wrong and the harm is one exposed service away. This is
+precisely the over-attribution failure mode the external review described.
+
+FIX DIRECTION. Reverse DNS cannot carry this alone. The classifier already
+receives Shodan's `org` field, which names Microsoft on these hosts, and
+published Microsoft 365 / Azure address ranges are available in the same way the
+CDN edge ranges now are. Adding a regional mail-provider suffix list closes the
+Datapro case. Treat as remediation step 3c, before step 4.
