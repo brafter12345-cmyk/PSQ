@@ -4531,6 +4531,33 @@ def _supply_chain_attacker_findings(cats: dict) -> dict:
     return {"access": access, "exploit": exploit}
 
 
+def estate_ip_count(cats: dict) -> int:
+    """Addresses DISCOVERED on this estate, own-attributed plus vendor-operated.
+
+    Use this wherever the reader means "how much of this client is visible from
+    the internet". Use external_ips.total_unique_ips only where the question is
+    "what is the client answerable for", because that field counts the
+    post-attribution pool.
+
+    The distinction is not cosmetic. When the Microsoft 365 service ranges
+    landed, 174 of 307 addresses across 19 of 30 scans left the own-attributed
+    pool, and riverport.co.za and www.zinia.co.za emptied entirely: their whole
+    discovered estate is Exchange Online. Reconnaissance severity here is a
+    pure count with no reference to findings, so reading the post-attribution
+    number would have downgraded those clients from MEDIUM to LOW for the sole
+    reason that their mail is hosted by Microsoft. Correcting an attribution
+    must not read as the client getting safer.
+
+    Falls back to total_unique_ips on a scan predating the split, so an old
+    stored result renders as it always did rather than as zero.
+    """
+    ext = (cats or {}).get("external_ips", {}) or {}
+    total = ext.get("estate_total_ips")
+    if total is None:
+        total = ext.get("total_unique_ips", 0)
+    return total or 0
+
+
 def conclusive_count(cats: dict, cat_id: str, key: str):
     """A checker's COUNT field, or None when that checker could not answer.
 
@@ -4575,7 +4602,7 @@ def _kill_chain_severities(results: dict) -> dict:
         return conclusive_count(cats, cat_id, key)
 
     # Phase 1 — Reconnaissance
-    ip_count = cats.get("external_ips", {}).get("total_unique_ips", 0)
+    ip_count = estate_ip_count(cats)
     emails = _count("dehashed", "unique_emails")
     recon = ("HIGH" if (ip_count > 5 or (emails or 0) > 3)
              else "MEDIUM" if (ip_count > 1 or (emails or 0) > 0) else "LOW")
@@ -4655,7 +4682,7 @@ def _build_attackers_view(results: dict, S) -> list:
 
     # Phase 1: Reconnaissance
     sub_count = cats.get("subdomains", {}).get("total_count", 0)
-    ip_count = results.get("categories", {}).get("external_ips", {}).get("total_unique_ips", 0)
+    ip_count = estate_ip_count(results.get("categories", {}))
     tech = cats.get("tech_stack", {})
     dh = cats.get("dehashed", {})
     emails = dh.get("unique_emails", 0)

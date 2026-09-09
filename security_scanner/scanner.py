@@ -883,12 +883,16 @@ class SecurityScanner:
                     "directly accessible from internet")
 
         # --- Phase 4b: External IP Aggregation (feeds CVE panel) ---
-        # Own-infra surface = the insured's OWNED IPs only (scan_ips); third-party
-        # hosting + internal-DNS leaks are surfaced separately (results.
-        # third_party_hosting / internal_dns_leak).
+        # Own-infra surface = the insured's OWNED IPs only (scan_ips). Vendor-
+        # operated hosts are passed in separately so the ESTATE count stays
+        # whole: they are excluded from what the insured is answerable for, but
+        # they were still discovered on this client's surface and must not
+        # vanish. Correcting an attribution must never make a client look
+        # smaller and therefore cleaner.
         self._notify(on_progress, "external_ips", "running")
         results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
-            scan_ips, per_ip_results, ip_sources=ip_sources
+            scan_ips, per_ip_results, ip_sources=ip_sources,
+            vendor_ips=[e.get("ip") for e in third_party_hosting],
         )
         self._notify(on_progress, "external_ips", "done",
                      results["categories"]["external_ips"])
