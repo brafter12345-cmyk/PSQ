@@ -1566,6 +1566,78 @@ def _check_saas_service_ranges(failures):
           % ("PASS" if (swapped and refused) else "FAIL", refused or "NOT REFUSED"))
 
 
+# ---- Estate floor: an unmeasured estate must not read as a clean one --------
+#
+# WHY THIS IS A GATE AND NOT A HARNESS ROW. The SaaS attribution work added a
+# no_own_estate_assessed state for the case where every address discovered for a
+# client turns out to be operated by a provider, so the checkers ran against
+# nobody's infrastructure but a vendor's. NO FIXTURE IN THE 30-SCAN CORPUS
+# REACHES IT: measured, the worst case leaves one own-attributed host, not zero.
+# An untested branch on a scoring path is a defect by itself, so the condition
+# is driven directly here instead of being left to a corpus that cannot reach
+# it. If a later change makes the corpus reach it, this still holds.
+#
+# The third row is the one that stops the branch over-firing: an estate that was
+# empty from the start is NOT this failure, and must not be relabelled.
+NO_OWN_ESTATE_SCENARIOS = [
+    # (label, own_ips, vendor_ips, expected_estate_confidence, capped?)
+    ("normal_mixed_estate",   9, 6, "assessed",               False),
+    ("all_hosts_are_vendor",  0, 6, "no_own_estate_assessed", True),
+    ("nothing_discovered",    0, 0, "assessed",               False),
+    ("no_vendor_hosts",       3, 0, "assessed",               False),
+]
+
+
+def _check_no_own_estate(failures):
+    from scoring_analytics import RiskScorer
+
+    for label, own, vendor, expected, capped in NO_OWN_ESTATE_SCENARIOS:
+        cats = {"external_ips": {
+            "total_unique_ips": own, "vendor_ip_count": vendor,
+            "estate_total_ips": own + vendor,
+            "score": 100, "status": "completed", "issues": []}}
+        RiskScorer().calculate(cats)
+        sc = cats.get("_scan_completeness") or {}
+        got = sc.get("estate_confidence")
+        conf = sc.get("confidence_level")
+        note = sc.get("estate_note") or ""
+        ok = (got == expected)
+        if not ok:
+            failures.append("no_own_estate[%s]: estate_confidence %r != %r"
+                            % (label, got, expected))
+        if capped and conf == "full":
+            failures.append(
+                "no_own_estate[%s]: every discovered address belongs to a "
+                "provider, yet confidence_level is still 'full'. An estate "
+                "nobody measured must never read as fully assessed." % label)
+            ok = False
+        if capped and not note:
+            failures.append("no_own_estate[%s]: no estate_note explaining why "
+                            "the score is qualified" % label)
+            ok = False
+        if not capped and note:
+            failures.append("no_own_estate[%s]: estate_note set on a scan that "
+                            "did assess own hosts (%r)" % (label, note[:60]))
+            ok = False
+        print("  [%s] no_own_estate:%-22s -> %s / %s"
+              % ("PASS" if ok else "FAIL", label, got, conf))
+
+    # MUTATION: make the condition fire on an estate that was empty to begin
+    # with. That would relabel every domain with no discovered addresses as an
+    # unmeasured estate, which is a different and wrong claim.
+    cats = {"external_ips": {"total_unique_ips": 0, "vendor_ip_count": 0,
+                             "estate_total_ips": 0, "score": 100,
+                             "status": "completed", "issues": []}}
+    RiskScorer().calculate(cats)
+    over = (cats.get("_scan_completeness") or {}).get("estate_confidence")
+    if over == "no_own_estate_assessed":
+        failures.append("no_own_estate MUTATION: the branch fires when NOTHING "
+                        "was discovered. The condition must require that "
+                        "addresses were found and all went to a vendor.")
+    print("  [%s] no_own_estate:MUTATION over-fire guard"
+          % ("PASS" if over != "no_own_estate_assessed" else "FAIL"))
+
+
 def _check_cdn_edge_detection(failures):
     """A content delivery network edge must be recognised from its ADDRESS, and
     an edge-only assessment must never claim full confidence.
@@ -3645,6 +3717,7 @@ def main():
     _check_edge_measured_labelling(failures)
     _check_cdn_edge_detection(failures)
     _check_saas_service_ranges(failures)
+    _check_no_own_estate(failures)
     _check_lookalike_ownership(failures)
     _check_lookalike_posture(failures)
     _check_table_headers(failures)

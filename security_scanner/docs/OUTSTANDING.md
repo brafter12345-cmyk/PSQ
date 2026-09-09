@@ -822,3 +822,41 @@ would move scores in the client's favour for a reason no reader could see. The
 demotion rule and a supply-chain reporting surface have to land together:
 a demoted host must still be visible, named, attributed to its operator, and
 counted toward estate coverage, just not priced as the insured's own exposure.
+
+### 5s. unique_asns == 0 means "not collected" but is priced as single-homed
+
+Found while measuring 5q, and deliberately NOT fixed there, because it is a rate
+movement and does not belong inside an attribution change.
+
+`ExternalIPAggregator` sets `result["unique_asns"] = len(asns)` and its own
+comment beside that line is explicit: do not fabricate a count, `0` means
+not-collected, and the renderers show "n/a" rather than a number. The scorer does
+not honour that. `scoring_analytics.py` reads
+
+    single_asn = categories["external_ips"].get("unique_asns", 2) <= 1
+
+so `0` satisfies `<= 1` and adds **+0.025 to p_interruption** against a 0.03
+base, a third of the whole availability probability, for a control that was never
+measured. It is the absence-of-evidence error the module elsewhere refuses.
+
+MEASURED on the 30 retained scans: 13 fixtures currently fire the term, and 5 of
+them have `unique_asns == 0` -- dinamika.co.za, elleyarns.com, morgancarco.com
+and pureburn.co.za have no discovered addresses at all, and fundagroup.co.za
+carries `asn_geo_unavailable: true`, meaning the free Shodan InternetDB path
+returned no ASN. All five are charged for single-homing on no evidence.
+
+THE FIX IS ONE CHARACTER OF INTENT: fire only on `unique_asns == 1`, i.e. we
+measured, and it is one. Restricting it that way takes the charged set from 13 to
+11 on today's corpus.
+
+WHY IT IS FLAGGED RATHER THAN DONE. It is a discount for five clients, and the
+house rule is that a signal enters pricing through exactly one channel with its
+own calibration. Bundling a rate cut into an attribution correction would make
+the attribution change impossible to defend as price-neutral, which it currently
+is (0 CVEs and 0 issues moved, no score improved, no cover fell). Needs owner
+sign-off as its own change.
+
+NOTE the direction of the 5q change on this same term. Removing vendor addresses
+from the own pool makes `unique_asns` more faithful to the client's own hosting,
+so the charged set RISES from 13 to 19. That is an increase, not a cut, and it
+requires no new coefficient: it is the existing rule reading a corrected pool.

@@ -51,6 +51,7 @@ from pdf_cards import (
     records_assumption_disclosure, civil_liability_disclosure,
     peer_benchmark_card, waf_coverage_notice, waf_card_disclaimer,
     estate_edge_notice,
+    vendor_estate_notice,
     flag_audit_panel, scan_duration_profile, cat_risk_mitigations,
     build_summary_table, _build_legend, _build_vulnerability_posture,
     _build_attackers_view, _supply_chain_attacker_findings,
@@ -2061,6 +2062,7 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
             # numbers. Empty list when no intervention detected.
             story += waf_coverage_notice(results, S)
             story += estate_edge_notice(results, S)
+            story += vendor_estate_notice(results, S)
 
         # ── Why This Matters — The Reality of a Cyber Breach ──────────────
         why_banner = _section_header_banner("WHY THIS MATTERS", S)
@@ -2254,6 +2256,7 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         # findings. Returns empty list when no WAF intervention detected.
         story += waf_coverage_notice(results, S)
         story += estate_edge_notice(results, S)
+        story += vendor_estate_notice(results, S)
 
         # ── Insurance Analytics ─────────────────────────────────────────────
         if results.get("insurance"):

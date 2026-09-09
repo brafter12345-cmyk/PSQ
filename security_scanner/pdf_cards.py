@@ -3538,6 +3538,70 @@ def estate_edge_notice(results, S):
     return [Spacer(1, 2 * mm), Paragraph(body, S["body"]), Spacer(1, 1.5 * mm)]
 
 
+def vendor_estate_notice(results, S):
+    """Top-level notice: addresses discovered on this estate that a third party
+    operates, and which are therefore not priced as the client's exposure.
+
+    WHY THIS HAD TO SHIP WITH THE ATTRIBUTION FIX. results["third_party_hosting"]
+    has been written by scanner.py since the 2026-06-30 checker audit and read by
+    NOTHING: not a card, not the dashboard, not scoring. Verified by grepping the
+    whole tree. The comment beside the aggregation call claimed both it and
+    internal_dns_leak were "surfaced separately"; they were not. So every host
+    the scanner correctly declined to attribute simply vanished, and the estate
+    silently shrank. That was tolerable while it affected only Cloudflare edges.
+    It stopped being tolerable when the Microsoft 365 service ranges moved 176
+    addresses across 19 of 30 retained scans: without this block, a correct
+    attribution reads to a broker as the client having got smaller and cleaner.
+
+    Returns an empty list when nothing was re-attributed, so callers can extend
+    unconditionally.
+    """
+    hosts = results.get("third_party_hosting") or []
+    if not hosts:
+        return []
+
+    by_provider = {}
+    for h in hosts:
+        prov = (h.get("provider") or "").strip() or "unidentified provider"
+        entry = by_provider.setdefault(prov, {"ips": [], "subs": set()})
+        if h.get("ip"):
+            entry["ips"].append(str(h["ip"]))
+        for s in (h.get("subdomains") or []):
+            entry["subs"].add(str(s))
+
+    total = sum(len(v["ips"]) for v in by_provider.values())
+    out = [
+        Spacer(1, 2 * mm),
+        Paragraph(
+            f"<b>Vendor-operated infrastructure: {total} address"
+            f"{'es' if total != 1 else ''} excluded from this client's own "
+            "exposure.</b> These hosts were discovered on the client's estate "
+            "but are operated by a third party, so their configuration and "
+            "patching are the provider's responsibility. They are reported "
+            "here as supply-chain dependencies and are not scored against the "
+            "client. They remain part of the client's external footprint.",
+            S["body"]),
+    ]
+    for prov in sorted(by_provider):
+        ips = sorted(set(by_provider[prov]["ips"]))
+        subs = sorted(by_provider[prov]["subs"])
+        shown = ", ".join(ips[:8]) + (f" and {len(ips) - 8} more" if len(ips) > 8 else "")
+        via = ""
+        if subs:
+            via = (" reached via " + ", ".join(subs[:3])
+                   + (f" and {len(subs) - 3} more" if len(subs) > 3 else ""))
+        out.append(Paragraph(
+            f"&nbsp;&nbsp;<b>{prov}</b> &mdash; {len(ips)} address"
+            f"{'es' if len(ips) != 1 else ''}{via}: {shown}", S["body"]))
+    out.append(Paragraph(
+        "An absence of findings against these hosts says nothing about the "
+        "client's own security, and a finding against one is a question for "
+        "the provider's assurance, not the client's remediation plan.",
+        S["body"]))
+    out.append(Spacer(1, 1.5 * mm))
+    return out
+
+
 def waf_card_disclaimer(checker_name, results, S):
     """Per-card disclaimer block rendered ABOVE a checker card when that
     specific checker is in _scan_completeness.waf_affected_checkers.
