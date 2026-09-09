@@ -1606,11 +1606,28 @@ NO_OWN_ESTATE_SCENARIOS = [
 def _check_no_own_estate(failures):
     from scoring_analytics import RiskScorer
 
+    # DRIVEN THROUGH THE REAL AGGREGATOR, not a hand-built dict. The first
+    # version of this check constructed external_ips by hand and passed while
+    # the branch was UNREACHABLE in production: ExternalIPAggregator.aggregate
+    # returned early on an empty own pool, 150 lines before it wrote
+    # vendor_ip_count, so the field the ladder reads was never set in exactly
+    # the case the ladder exists for. Testing a consumer with synthetic input
+    # proves the consumer works and says nothing about whether the producer
+    # ever supplies it.
+    from scoring_analytics import ExternalIPAggregator
+
     for label, own, vendor, expected, capped in NO_OWN_ESTATE_SCENARIOS:
-        cats = {"external_ips": {
-            "total_unique_ips": own, "vendor_ip_count": vendor,
-            "estate_total_ips": own + vendor,
-            "score": 100, "status": "completed", "issues": []}}
+        own_ips = ["10.20.30.%d" % (i + 1) for i in range(own)]
+        vendor_addrs = ["52.98.20.%d" % (i + 1) for i in range(vendor)]
+        ext = ExternalIPAggregator.aggregate(
+            own_ips, {ip: {} for ip in own_ips}, vendor_ips=vendor_addrs)
+        if ext.get("vendor_ip_count") != vendor:
+            failures.append(
+                "no_own_estate[%s]: the aggregator returned vendor_ip_count=%r "
+                "for %d vendor address(es). The ladder below reads that field, "
+                "so a missing value makes the whole branch unreachable."
+                % (label, ext.get("vendor_ip_count"), vendor))
+        cats = {"external_ips": ext}
         RiskScorer().calculate(cats)
         sc = cats.get("_scan_completeness") or {}
         got = sc.get("estate_confidence")
@@ -1640,9 +1657,7 @@ def _check_no_own_estate(failures):
     # MUTATION: make the condition fire on an estate that was empty to begin
     # with. That would relabel every domain with no discovered addresses as an
     # unmeasured estate, which is a different and wrong claim.
-    cats = {"external_ips": {"total_unique_ips": 0, "vendor_ip_count": 0,
-                             "estate_total_ips": 0, "score": 100,
-                             "status": "completed", "issues": []}}
+    cats = {"external_ips": ExternalIPAggregator.aggregate([], {}, vendor_ips=[])}
     RiskScorer().calculate(cats)
     over = (cats.get("_scan_completeness") or {}).get("estate_confidence")
     if over == "no_own_estate_assessed":

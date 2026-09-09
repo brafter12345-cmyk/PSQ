@@ -229,6 +229,22 @@ class ExternalIPAggregator:
             "issues": [],
         }
 
+        # THE ESTATE FIELDS MUST BE SET BEFORE THIS EARLY RETURN.
+        # They used to be written 150 lines below it, which made them absent in
+        # exactly the case they exist for: when every discovered address has
+        # been re-attributed to a vendor, discovered_ips (the OWN pool) is
+        # empty, aggregate returned here, and vendor_ip_count came back None.
+        # RiskScorer then read a missing count as "no vendor hosts", so
+        # estate_confidence stayed "assessed" and confidence_level stayed
+        # "full": a client with no assessed infrastructure of its own rendered
+        # as fully assessed and clean. The no_own_estate_assessed ladder was
+        # unreachable code.
+        _vendor = sorted({str(v).strip() for v in (vendor_ips or []) if str(v).strip()})
+        result["vendor_ip_count"] = len(_vendor)
+        result["vendor_ip_addresses"] = _vendor
+        result["estate_total_ips"] = len(_vendor)          # own pool is empty here
+        result["asn_coverage"] = "partial" if _vendor else "full"
+
         if not discovered_ips:
             return result
 
@@ -390,9 +406,8 @@ class ExternalIPAggregator:
         # attributed to a vendor is still a discovered, internet-facing part of
         # this client's surface, and a reader who sees the number shrink after
         # an attribution fix would conclude the client got safer.
-        _vendor = sorted({str(v).strip() for v in (vendor_ips or []) if str(v).strip()})
-        result["vendor_ip_count"] = len(_vendor)
-        result["vendor_ip_addresses"] = _vendor
+        # vendor_ip_count / vendor_ip_addresses / asn_coverage were already set
+        # above the early return. Only the total needs the real own-pool size.
         result["estate_total_ips"] = len(seen_ips) + len(_vendor)
         # ASN redundancy can only be judged over the WHOLE estate, and a
         # vendor-operated host's ASN is not collected (it is never scanned). So

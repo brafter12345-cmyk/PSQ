@@ -35,6 +35,7 @@ import ipaddress
 
 # sha256 of data/feeds/m365_endpoints_worldwide.json this table was built from.
 FEED_SHA256 = "93e78c0533f7aaac9606ee196aff638eb241efc5fb9a0866ee7ff0174c8dbad6"
+FEED_VERSION = "2026090800"
 FEED_URL = "https://endpoints.office.com/endpoints/worldwide?clientrequestid=b10c5ed1-bad1-445f-b386-b919946339a7"
 
 SERVICE_RANGES = {

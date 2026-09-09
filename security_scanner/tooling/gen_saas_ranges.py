@@ -28,6 +28,10 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 APP = os.path.dirname(HERE)
 ARTEFACT = os.path.join(APP, "data", "feeds", "m365_endpoints_worldwide.json")
+# The feed payload does not carry its own version, so --refresh records it
+# beside the artefact. A bare sha256 tells a reviewer that SOMETHING changed;
+# a version tells them WHICH publication they are being asked to accept.
+VERSION_FILE = ARTEFACT.replace(".json", ".version")
 TARGET = os.path.join(APP, "saas_ranges.py")
 
 FEED_URL = ("https://endpoints.office.com/endpoints/worldwide"
@@ -97,6 +101,7 @@ import ipaddress
 
 # sha256 of data/feeds/m365_endpoints_worldwide.json this table was built from.
 FEED_SHA256 = "%(digest)s"
+FEED_VERSION = "%(version)s"
 FEED_URL = "%(url)s"
 
 SERVICE_RANGES = {
@@ -141,6 +146,15 @@ def is_service_ip(ip):
 '''
 
 
+def read_version():
+    """Recorded feed version, or a marker when the artefact predates this."""
+    try:
+        with open(VERSION_FILE, encoding="utf-8") as fh:
+            return fh.read().strip() or "unrecorded"
+    except OSError:
+        return "unrecorded"
+
+
 def load_artefact():
     with open(ARTEFACT, "rb") as fh:
         raw = fh.read()
@@ -170,7 +184,8 @@ def collect(feed):
 
 def render(raw, table, refused):
     digest = hashlib.sha256(raw).hexdigest()
-    parts = [HEADER % {"digest": digest, "url": FEED_URL}]
+    parts = [HEADER % {"digest": digest, "url": FEED_URL,
+                   "version": read_version()}]
     for label, cidrs in table.items():
         parts.append('    "%s": [\n' % label)
         row = []
@@ -203,9 +218,17 @@ def main():
         ver = urllib.request.urlopen(VERSION_URL, timeout=25).read().decode()
         with open(ARTEFACT, "wb") as fh:
             fh.write(raw)
+        try:
+            _v = json.loads(ver).get("latest") or ver.strip()
+        except Exception:
+            _v = ver.strip()
+        with open(VERSION_FILE, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(str(_v) + "\n")
         print("refreshed %s (%d bytes, sha256 %s)"
               % (ARTEFACT, len(raw), hashlib.sha256(raw).hexdigest()))
-        print("feed version: %s" % ver.strip())
+        print("feed version: %s  (recorded in %s)" % (_v, VERSION_FILE))
+        print("REVIEW THE DIFF. A refresh changes client-visible attribution;")
+        print("it must be its own commit, never swept in with git add -A.")
         print("now run --write, then re-run the harness and the gate")
         return 0
 
