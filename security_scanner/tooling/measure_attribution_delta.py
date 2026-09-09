@@ -69,9 +69,30 @@ def classify_pool(results, rule_on):
         # a previous run had already demoted.
         addrs = list(dict.fromkeys(
             list(per_ip.keys()) + list((results.get("ip_classification") or {}).keys())))
+        stored = results.get("ip_classification") or {}
         own, vendor, private = [], [], []
         for ip in addrs:
             v = per_ip.get(ip) or {}
+            # AN ADDRESS THE SCAN ALREADY DEMOTED HAS NO per_ip ENTRY, because
+            # scanner.py deletes it. Re-deriving its bucket from the absent
+            # evidence hands classify_ip reverse_dns=None, org=None, banner=""
+            # and it falls through to the OWNED default -- so the harness
+            # re-promoted hosts production had correctly removed, and inflated
+            # the own pool on BOTH sides of the comparison. boston.ac.za read
+            # 15 own hosts going to 9 when production has 9 going to 3.
+            #
+            # Those hosts were demoted by rules this change does not touch (the
+            # Cloudflare org and banner rules, verified still firing on real
+            # signals), so the honest treatment is to carry the stored verdict
+            # rather than re-derive it from nothing. This is the ONLY place the
+            # stored bucket is trusted, and only where no evidence survives.
+            if not v and stored.get(ip) in (ipc.CDN, ipc.SAAS, ipc.PRIVATE):
+                bucket, label = stored[ip], "carried from the stored scan"
+                if bucket == ipc.PRIVATE:
+                    private.append(ip)
+                else:
+                    vendor.append((ip, label))
+                continue
             dns = v.get("dns_infrastructure") or {}
             shod = v.get("shodan_vulns") or {}
             banner = " ".join(

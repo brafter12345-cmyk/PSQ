@@ -4636,23 +4636,19 @@ def estate_ip_count(cats: dict, results: dict = None) -> int:
     "what is the client answerable for", because that field counts the
     post-attribution pool.
 
-    The distinction is not cosmetic, and the figures below are the CORRECTED
-    ones. An earlier version of this docstring said riverport.co.za and
-    www.zinia.co.za "emptied entirely"; they did not. That claim came from
-    diffing against the bucket stored in each fixture, which predates both the
-    org rule and the post-scan pass and therefore credited this change with
-    demotions it did not make. Recomputing both sides by running the classifier,
-    riverport goes 7 own hosts to 1 and zinia 8 to 2.
+    The distinction is not cosmetic. Measured through the real
+    _kill_chain_severities over the 30-scan corpus: 174 addresses across 19
+    scans leave the own-attributed pool, 21 estates shrink if this helper is not
+    used, and FIVE clients drop Reconnaissance from HIGH to MEDIUM --
+    cyberres.co.za, fundagroup.co.za, gcrratings.com, nexgro.co.za and
+    www.zinia.co.za. Severity here is a pure count with no reference to
+    findings, so reading the post-attribution number downgrades a client for the
+    sole reason that its mail is hosted by Microsoft. Correcting an attribution
+    must not read as the client getting safer.
 
-    Measured properly, through the real _kill_chain_severities over the 30-scan
-    corpus: 177 addresses across 19 scans leave the own-attributed pool, 21
-    estates shrink if this helper is not used, and FIVE clients drop
-    Reconnaissance from HIGH to MEDIUM -- cyberres.co.za, fundagroup.co.za,
-    gcrratings.com, nexgro.co.za and www.zinia.co.za. Severity here is a pure
-    count with no reference to findings, so reading the post-attribution number
-    downgrades a client for the sole reason that its mail is hosted by
-    Microsoft. Correcting an attribution must not read as the client getting
-    safer.
+    riverport.co.za and www.zinia.co.za go to ZERO own-attributed hosts: their
+    whole discovered estate is Exchange Online. Those two are why
+    _scan_completeness carries a no_own_estate_assessed state.
 
     ON A SCAN PREDATING THE SPLIT, estate_total_ips is absent but
     third_party_hosting is not: scanner.py has written it since the 2026-06-30

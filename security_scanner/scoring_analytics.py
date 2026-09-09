@@ -1255,15 +1255,26 @@ class RiskScorer:
         # scan renders "assessed" over an empty pool and scores as clean, which
         # is precisely the absence-of-evidence reading this ladder refuses.
         #
-        # NO FIXTURE IN THE 30-SCAN CORPUS REACHES THIS. An earlier version of
-        # this comment claimed riverport.co.za and www.zinia.co.za emptied
-        # entirely; recomputing both sides by running the classifier rather than
-        # diffing against the stored bucket, they go 7 own hosts to 1 and 8 to 2.
-        # The stored buckets predate the org rule and the post-scan pass, so
-        # diffing against them credited this change with demotions it never
-        # made. The branch is therefore driven directly by
-        # adversarial_gate._check_no_own_estate, through the real aggregator,
-        # because an untested branch on a scoring path is a defect by itself.
+        # MEASURED: riverport.co.za and www.zinia.co.za both go from six
+        # own-attributed hosts to ZERO. Their entire discovered external estate
+        # is Exchange Online, so without this state both render "assessed" over
+        # an empty pool and score as clean.
+        #
+        # That figure moved twice before settling, and the history is worth
+        # keeping. Diffing against each fixture's STORED bucket said zero. A
+        # harness that re-derived both sides said 7 to 1 and 8 to 2, and I
+        # believed it and rewrote this comment. The harness was wrong: an
+        # address the scan had already demoted has no per_ip entry, so
+        # re-deriving handed classify_ip no PTR, no org and no banner, and it
+        # fell through to the OWNED default -- silently re-promoting hosts
+        # production had correctly removed. With that fixed the harness agrees
+        # with the stored buckets and with the live scan (boston.ac.za: 9 own
+        # hosts to 3). Recomputing is the right instinct; recomputing from
+        # evidence the fixture no longer carries is not.
+        #
+        # adversarial_gate._check_no_own_estate ALSO drives this branch directly
+        # through the real aggregator, so it stays covered even if the corpus
+        # changes.
         #
         # Deliberately NOT triggered by an estate that was empty to begin with:
         # the condition is that addresses were DISCOVERED and all of them went
