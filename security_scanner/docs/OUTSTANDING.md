@@ -860,3 +860,64 @@ NOTE the direction of the 5q change on this same term. Removing vendor addresses
 from the own pool makes `unique_asns` more faithful to the client's own hosting,
 so the charged set RISES from 13 to 19. That is an increase, not a cut, and it
 requires no new coefficient: it is the existing rule reading a corrected pool.
+
+### 5q status after step 3c, and the residuals that remain open
+
+CLOSED. Microsoft 365 service endpoints are no longer attributed to the insured:
+176 addresses across 19 of 30 retained scans, carrying 0 CVEs and 0 issues, with
+no score improved, no cover or loss figure fallen and no estate shrunk. The
+demoted hosts are now rendered rather than silently deleted, and confidence is
+recorded beside every classification.
+
+RESIDUALS, stated rather than engineered around.
+
+**196.41.30.122 and its class.** DataPro's shared IronPort mail appliance stays
+OWNED. Nothing offline, non-gameable and already stored reaches it: DataPro
+publishes no service ranges, its PTR names only the provider, and it carries a
+single hostname so the co-tenancy threshold is not met. Every name-based rule
+that would reach it also sweeps up 27 real client boxes carrying 204 CVEs. The
+only mechanism that could settle it is a STARTTLS default-certificate probe on
+port 25, which is live-only, cannot be replayed on frozen scans, and adds a
+handshake per mail host. Recommend accepting the residual and revisiting with
+measured incidence; it is a coverage-versus-cost call for the owner.
+
+**The co-tenancy threshold of two.** Requiring two or more distinct foreign
+registrable domains is deliberately conservative and it costs real detections.
+`102.222.124.23` is `ibis.aserv.co.za` and also serves redalert.co.za; cyberres
+appears nowhere on it, so it is plainly a shared box, but aserv.co.za is the
+provider's own zone and is excluded, leaving one foreign tenant and no flag.
+Lowering the threshold to one would flag it and would also flag every client
+whose single-tenant server happens to carry one stale foreign name. Not changed
+without calibration.
+
+**104.47.164.119.** Exchange Online Protection by function, but in
+104.47.128.0/17, the upper half, which Microsoft does not publish (the feed
+lists 104.47.0.0/17). It is pinned as a KEEP row in the gate specifically so
+nobody "completes" the table by hand to make boston.ac.za look tidy. If
+Microsoft later publishes the upper half, `--refresh` picks it up and the KEEP
+row must then be retired deliberately, with the change visible in review.
+
+**The remediation text still reads as the client's to fix.** A finding on a
+co-tenancy-flagged host is now labelled in the vendor-estate block, but the
+recommendation ladder and the remediation queue still phrase it as the client's
+action. boston.ac.za's "Investigate blacklist listings" is the live example: the
+listing is on 20.126.184.33, shared with Sendmarc and Proofpoint. The finding
+must keep its score (removing it would be a demotion by another name and would
+break the zero-findings-moved invariant), but the wording should say ownership
+is unconfirmed. Queued as its own change because it touches recommendation
+generation.
+
+**IPv6 is discovered but never port-scanned.** `checkers_network._scan_ports`
+opens `socket.socket(socket.AF_INET, ...)` while resolution uses `AF_UNSPEC`, so
+every IPv6 address enters the pool, returns zero open ports and renders as an
+OWNED host with no findings, clean by construction. Step 3c removes many of them
+(they were Exchange Online endpoints, correctly demoted), which makes the
+remainder a larger share of what is left. Pre-existing; deserves its own ticket.
+
+**verified_origin bypasses classification entirely.** Both call sites `continue`
+before `classify_ip`, and `_verify_origin` accepts any certificate covering the
+domain with chain validation off, so a multi-tenant platform serving the client's
+custom-domain certificate passes. A cert match proves the host SERVES the domain,
+not that the client OPERATES it, which is the distinction this module exists to
+draw. Narrow in practice, but it is the one path reaching the priced surface with
+no classification at all.
