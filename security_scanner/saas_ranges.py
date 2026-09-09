@@ -88,6 +88,9 @@ for _label, _cidrs in SERVICE_RANGES.items():
     for _c in _cidrs:
         _n = ipaddress.ip_network(_c)
         _floor = MIN_V6_PREFIX if _n.version == 6 else MIN_V4_PREFIX
+        if _n.prefixlen < _floor:
+            raise ValueError(
+                "saas_ranges: %s is wider than the /%d floor" % (_c, _floor))
         _NETS.append((_n, _label))
 
 

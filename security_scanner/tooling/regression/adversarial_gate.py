@@ -18,6 +18,7 @@ Run: py tooling/regression/adversarial_gate.py   (exit 1 on any mismatch)
 This file is wired into the pre-push hook so the tarpit false-positive — and any
 regression of the saturated-host gate — can never ship again.
 """
+import io
 import os, sys, socket
 from unittest import mock
 
@@ -1528,42 +1529,56 @@ def _check_saas_service_ranges(failures):
         failures.append("MUTATION M1 is vacuous: zero DEMOTE rows passed in the "
                         "first place, so reverting them proves nothing.")
 
-    # ---- MUTATION M2: table widened. Must be REFUSED, not merely noticed. ---
+    # ---- MUTATION M2: table widened. Must be REFUSED BY THE MODULE ITSELF. --
     # 40.104.0.0/15 is a real Exchange Online prefix. 40.64.0.0/10 is the coarse
     # Azure allocation that provably contains it and also contains customer VMs.
-    # This is the precise edit a red build tempts an implementer into, so the
-    # gate re-runs saas_ranges' OWN import-time validation against a widened
-    # copy of the shipped table and requires it to raise. Simulating the check
-    # here instead would only test this gate's arithmetic, not the module's
-    # refusal, and the refusal is the thing that has to hold.
-    widened = {k: list(v) for k, v in sr.SERVICE_RANGES.items()}
-    swapped = False
-    for label, cidrs in widened.items():
-        if "40.104.0.0/15" in cidrs:
-            cidrs[cidrs.index("40.104.0.0/15")] = "40.64.0.0/10"
-            swapped = True
-    if not swapped:
+    # That is the edit a red build tempts an implementer into.
+    #
+    # THIS EXECUTES A MUTATED COPY OF THE REAL saas_ranges.py SOURCE and requires
+    # the import to raise. An earlier version of this check re-implemented the
+    # prefix-floor loop here and asserted on the gate's OWN arithmetic. It passed
+    # for a while after the module's `raise ValueError` guard had been lost
+    # entirely, because the gate was only ever testing that MIN_V4_PREFIX existed
+    # and that 10 < 12. gen_saas_ranges --check could not catch it either: it
+    # proves the table matches the generator, and the generator had lost the same
+    # three lines, so the two agreed with each other about the wrong thing.
+    src_path = os.path.join(SEC, "saas_ranges.py")
+    with io.open(src_path, encoding="utf-8") as _fh:
+        _src = _fh.read()
+    if '"40.104.0.0/15"' not in _src:
         failures.append("MUTATION M2 is vacuous: 40.104.0.0/15 is no longer in "
-                        "the table, so the widening it guards cannot be tested. "
-                        "Pick a prefix that is present.")
+                        "saas_ranges.py, so the widening it guards cannot be "
+                        "tested. Point it at a prefix that is present.")
+    mutated = _src.replace('"40.104.0.0/15"', '"40.64.0.0/10"')
     refused = None
     try:
-        for label, cidrs in widened.items():
-            for c in cidrs:
-                n = ipaddress.ip_network(c)
-                floor = sr.MIN_V6_PREFIX if n.version == 6 else sr.MIN_V4_PREFIX
-                if n.prefixlen < floor:
-                    raise ValueError("%s is wider than the /%d floor" % (c, floor))
+        exec(compile(mutated, "<saas_ranges widened>", "exec"), {"__name__": "_m2"})
     except ValueError as e:
         refused = str(e)
-    if swapped and not refused:
+    except Exception as e:
+        refused = "%s: %s" % (type(e).__name__, e)
+    if not refused:
         failures.append(
-            "MUTATION M2: widening 40.104.0.0/15 to the /10 Azure allocation was "
-            "NOT refused by the prefix floors. That edit would pull customer-run "
-            "Azure VMs into the vendor bucket and delete their findings from the "
-            "insured's estate.")
-    print("  [%s] saas:MUTATION_M2 widened table refused (%s)"
-          % ("PASS" if (swapped and refused) else "FAIL", refused or "NOT REFUSED"))
+            "MUTATION M2: saas_ranges.py imported cleanly with 40.104.0.0/15 "
+            "widened to the /10 Azure allocation. The module's own prefix-floor "
+            "guard is missing or ineffective, so that edit would land and pull "
+            "customer-run Azure VMs into the vendor bucket, deleting their "
+            "findings from insureds' estates.")
+    print("  [%s] saas:MUTATION_M2 module refuses a widened table (%s)"
+          % ("PASS" if refused else "FAIL", (refused or "NOT REFUSED")[:64]))
+
+    # M2b: prove M2 is not passing for an unrelated reason. The UNmutated source
+    # must import cleanly; if it also raises, M2's signal means nothing.
+    try:
+        exec(compile(_src, "<saas_ranges pristine>", "exec"), {"__name__": "_m2b"})
+        clean_ok = True
+    except Exception as e:
+        clean_ok = False
+        failures.append("MUTATION M2b: the UNmutated saas_ranges.py does not "
+                        "import cleanly (%s), so M2 proves nothing." % e)
+    print("  [%s] saas:MUTATION_M2b pristine table imports cleanly"
+          % ("PASS" if clean_ok else "FAIL"))
+
 
 
 # ---- Estate floor: an unmeasured estate must not read as a clean one --------
