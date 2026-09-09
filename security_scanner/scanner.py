@@ -731,14 +731,31 @@ class SecurityScanner:
             for _sip in (_sips if isinstance(_sips, list) else [_sips]):
                 _ip_to_subs.setdefault(_sip, []).append(_sub)
 
+        # Attribution CONFIDENCE, recorded alongside the bucket. The bucket says
+        # who is answerable; this says how well we know. Without it, "cert-
+        # verified origin" and "nothing said otherwise, so we defaulted" render
+        # identically as owned, which is the absence-of-evidence reading this
+        # module refuses everywhere else. Changes no routing and no price.
+        from ip_attribution import attribution_for
+        ip_attribution = {}
+
         scan_ips, third_party_hosting, internal_dns_leak, ip_classification = [], [], [], {}
         for ip in all_ips:
             if "verified_origin" in ip_sources.get(ip, []):
                 scan_ips.append(ip)
                 ip_classification[ip] = "owned"
+                ip_attribution[ip] = dict(zip(
+                    ("confidence", "rule", "evidence"),
+                    attribution_for(ip, "owned", "", ip_sources=ip_sources.get(ip),
+                                    insured_domain=domain)))
                 continue
             bucket, label = classify_ip(ip, reverse_dns=ptr_map.get(ip))
             ip_classification[ip] = bucket
+            ip_attribution[ip] = dict(zip(
+                ("confidence", "rule", "evidence"),
+                attribution_for(ip, bucket, label, ip_sources=ip_sources.get(ip),
+                                reverse_dns=ptr_map.get(ip), insured_domain=domain,
+                                apex_ips=discovered_ips)))
             if bucket == PRIVATE:
                 internal_dns_leak.append({"ip": ip, "subdomains": _ip_to_subs.get(ip, [])})
             elif bucket == OWNED:
@@ -750,6 +767,7 @@ class SecurityScanner:
                     "reverse_dns": ptr_map.get(ip),
                 })
         results["ip_classification"] = ip_classification
+        results["ip_attribution"] = ip_attribution
         results["third_party_hosting"] = third_party_hosting
         results["internal_dns_leak"] = internal_dns_leak
         self._notify(on_progress, "ip_classification", "done", {
@@ -842,6 +860,19 @@ class SecurityScanner:
                                         org=shod.get("org"), banner=banner,
                                         default_cert_names=_default_cert,
                                         insured_domain=domain)
+            # Refine the confidence now that Shodan's observed hostnames exist.
+            # This is the only pass where CO-TENANCY can be seen: the pre-scan
+            # call has PTR alone. boston.ac.za's 20.126.184.33 carries
+            # mta-certs.sendmarc.com and mta-sts-policy.d.msp.proofpoint.com --
+            # two unrelated third parties on one address, and the same address
+            # appears on takealot.com's scan. It stays OWNED and stays scanned;
+            # it is the CLAIM that softens, not the coverage.
+            ip_attribution[ip] = dict(zip(
+                ("confidence", "rule", "evidence"),
+                attribution_for(ip, bucket, label, ip_sources=ip_sources.get(ip),
+                                hostnames=shod.get("hostnames"),
+                                reverse_dns=dns.get("reverse_dns"),
+                                insured_domain=domain, apex_ips=discovered_ips)))
             if is_third_party(bucket):
                 ip_classification[ip] = bucket
                 third_party_hosting.append({
@@ -852,6 +883,11 @@ class SecurityScanner:
                 del per_ip_results[ip]
         scan_ips = [ip for ip in scan_ips if ip in per_ip_results]
         results["ip_classification"] = ip_classification
+        # Re-bound explicitly rather than relying on the pre-scan write and
+        # in-place mutation. The sibling above it is re-bound here too, and a
+        # reader should not have to prove the dict identity is shared to know
+        # the post-scan refinements survive.
+        results["ip_attribution"] = ip_attribution
         results["third_party_hosting"] = third_party_hosting
 
         # --- Phase 4: Aggregate IP-level results ---

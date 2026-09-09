@@ -1653,6 +1653,153 @@ def _check_no_own_estate(failures):
           % ("PASS" if over != "no_own_estate_assessed" else "FAIL"))
 
 
+# ---- Attribution confidence + co-tenancy (OUTSTANDING 5q, 2026-09-09) -------
+#
+# THE CASE THIS EXISTS FOR. boston.ac.za's ONLY per-IP finding is a Spamhaus
+# listing on 20.126.184.33. That address is generic Azure space, so the
+# published-service-range rule correctly does not touch it and it stays OWNED
+# and scanned. But Shodan records mta-certs.sendmarc.com and
+# mta-sts-policy.d.msp.proofpoint.com on it -- two unrelated third parties --
+# and the SAME address appears on takealot.com's scan. Without this rule the
+# report tells a college to investigate a spam blacklisting on a shared
+# mail-assurance host that is not theirs.
+#
+# CO-TENANCY MUST NEVER MOVE A BUCKET. The signal rests partly on names the
+# host's operator publishes, and an insured with custom reverse DNS could forge
+# co-tenants. That is only tolerable because the rule is conservative in one
+# direction: forging gets a host FLAGGED, never discounted. The KEEP rows below
+# are what hold that line.
+ATTRIBUTION_SCENARIOS = [
+    # (label, ip, hostnames, reverse_dns, insured, expected_rule)
+    ("shared_mta_sts_host", "20.126.184.33",
+     ["mta-certs.sendmarc.com", "mta-sts-policy.d.msp.proofpoint.com"],
+     None, "boston.ac.za", "co_tenancy"),
+    # Dedicated servers whose PTR merely names the HOSTING PROVIDER. A naive
+    # version of this rule flagged 27 such addresses carrying 204 CVEs.
+    ("dedicated_host_h_net", "197.221.12.39", [],
+     "dedi376.cpt4.host-h.net", "excellentmeat.co.za", "defaulted"),
+    ("dedicated_jnb3", "156.38.230.15", [],
+     "dedi918.jnb3.host-h.net", "mcare.co.za", "defaulted"),
+    ("serverflex_shared_ptr", "156.38.174.226", ["ms1.serverflex.co.za"],
+     "ms1.serverflex.co.za", "aggregato.co.za", "defaulted"),
+    # THE ROW THAT MAKES MUTATION M3 MEAN SOMETHING. Real corpus data:
+    # 102.222.124.23 is ibis.aserv.co.za and also answers for redalert.co.za.
+    # aserv.co.za is a hosting provider's own zone, so with the infra-zone
+    # filter ON there is ONE foreign tenant and the row stays "defaulted"; with
+    # it OFF there are two and the row flips to co_tenancy. Without a row shaped
+    # like this, M3 turns the filters off and nothing changes, which is how it
+    # reported itself toothless the first time it ran.
+    ("aserv_provider_zone", "102.222.124.23",
+     ["www.redalert.co.za", "ibis.aserv.co.za", "mail.redalert.co.za"],
+     "ibis.aserv.co.za", "cyberres.co.za", "defaulted"),
+    # Same shape for an address-derived name: the Linode PTR is the address
+    # rewritten, so with the derived-name filter OFF it counts as a tenant.
+    ("linode_address_derived_pair", "213.219.38.226",
+     ["213-219-38-226.ip.linodeusercontent.com", "sip.example-vendor.com"],
+     "213-219-38-226.ip.linodeusercontent.com", "cyberres.co.za", "defaulted"),
+    ("datapro_ironport", "196.41.30.122", [],
+     "ironport.datapro.co.za", "boston.ac.za", "defaulted"),
+    # Address-derived names are the address rewritten, not tenant identities.
+    ("ec2_address_derived", "3.92.120.28", [],
+     "ec2-3-92-120-28.compute-1.amazonaws.com", "example.com", "defaulted"),
+    ("gce_address_derived", "35.190.68.223", [],
+     "223.68.190.35.bc.googleusercontent.com", "bbgroup.co.za", "defaulted"),
+    # The insured's own names must never count as foreign tenants.
+    ("own_names_only", "1.2.3.4", ["mail.x.co.za", "www.x.co.za"],
+     "mail.x.co.za", "x.co.za", "ptr_in_insured_zone"),
+    # A single foreign name is not co-tenancy; two or more is.
+    ("one_foreign_name", "5.6.7.8", ["something.vendor.com"], None,
+     "x.co.za", "defaulted"),
+]
+
+
+def _check_attribution_confidence(failures):
+    import importlib
+    ia = importlib.import_module("ip_attribution")
+
+    for label, ip, hostnames, rdns, insured, expected in ATTRIBUTION_SCENARIOS:
+        conf, rule, ev = ia.attribution_for(
+            ip, "owned", "", hostnames=hostnames, reverse_dns=rdns,
+            insured_domain=insured)
+        ok = (rule == expected)
+        if not ok:
+            failures.append("attribution[%s]: %s -> rule %r != %r (%s)"
+                            % (label, ip, rule, expected, ev[:80]))
+        print("  [%s] attribution:%-22s -> %s / %s"
+              % ("PASS" if ok else "FAIL", label, conf, rule))
+
+    # Positive-proof tiers must not collapse into the default.
+    proofs = [
+        ("verified_origin", dict(ip_sources=["verified_origin"]), "cert_verified_origin"),
+        ("apex_record", dict(apex_ips=["9.9.9.9"]), "apex_record"),
+    ]
+    for label, kw, expected in proofs:
+        _c, rule, _e = ia.attribution_for("9.9.9.9", "owned", "",
+                                          insured_domain="x.co.za", **kw)
+        ok = (rule == expected)
+        if not ok:
+            failures.append("attribution[%s]: rule %r != %r" % (label, rule, expected))
+        print("  [%s] attribution:%-22s -> %s" % ("PASS" if ok else "FAIL", label, rule))
+
+    # ORDERING: co-tenancy must beat the positive proofs. Real corpus case --
+    # mcare.co.za's 156.38.230.15 is a shared cPanel box (dedi918.jnb3.host-h.net)
+    # that also serves crestchoicechickens.com and ffg.co.za, AND it is mcare's
+    # own apex A record. Checking the apex rule first returned "confirmed" and
+    # silenced the warning on exactly the case it exists for. An SME on shared
+    # hosting always points its apex at the provider's box, so publishing an A
+    # record proves the client USES the host, never that it OPERATES it.
+    _c, rule, _e = ia.attribution_for(
+        "156.38.230.15", "owned", "",
+        hostnames=["crestchoicechickens.com", "ffg.co.za", "dedi918.jnb3.host-h.net"],
+        reverse_dns="dedi918.jnb3.host-h.net", insured_domain="mcare.co.za",
+        apex_ips=["156.38.230.15"])
+    ok = (rule == "co_tenancy")
+    if not ok:
+        failures.append(
+            "attribution[apex_does_not_beat_cotenancy]: rule %r != 'co_tenancy'. "
+            "A shared host that is also the insured's apex A record is being "
+            "reported as confirmed ownership." % rule)
+    print("  [%s] attribution:%-22s -> %s"
+          % ("PASS" if ok else "FAIL", "apex_loses_to_cotenancy", rule))
+
+    # A vendor bucket must report vendor confidence, never "confirmed".
+    conf, rule, _e = ia.attribution_for("52.98.22.8", "saas",
+                                        "Microsoft 365 (Exchange Online)")
+    ok = (conf == ia.VENDOR)
+    if not ok:
+        failures.append("attribution[vendor_bucket]: confidence %r != vendor" % conf)
+    print("  [%s] attribution:%-22s -> %s" % ("PASS" if ok else "FAIL",
+                                              "vendor_bucket", conf))
+
+    # ---- MUTATION M3: exclusions off. MUST make the gate fail. --------------
+    # Disabling the provider-infrastructure-zone and address-derived filters is
+    # the "simplification" that looks harmless and is not: measured on the
+    # corpus it flags 27 addresses carrying 204 CVEs, including two literally
+    # DEDICATED servers. This proves the exclusions are load-bearing.
+    real_infra, real_derived = ia._is_infra_zone, ia._is_address_derived
+    try:
+        ia._is_infra_zone = lambda _h: False
+        ia._is_address_derived = lambda _h, _ip: False
+        swept = [label for label, ip, hn, rdns, insured, expected
+                 in ATTRIBUTION_SCENARIOS
+                 if expected == "defaulted"
+                 and ia.attribution_for(ip, "owned", "", hostnames=hn,
+                                        reverse_dns=rdns,
+                                        insured_domain=insured)[1] == "co_tenancy"]
+    finally:
+        ia._is_infra_zone, ia._is_address_derived = real_infra, real_derived
+    # With both filters off, a provider PTR plus any other name reads as
+    # co-tenancy. At least one KEEP row must flip, or the filters are inert.
+    if not swept:
+        failures.append(
+            "MUTATION M3 is toothless: turning off the infra-zone and "
+            "address-derived filters changed no KEEP row, so those filters are "
+            "not actually what protects the 204 CVEs on dedicated servers. "
+            "Either the scenarios do not exercise them or the rule has moved.")
+    print("  [%s] attribution:MUTATION_M3 exclusions load-bearing (%d row(s) flip)"
+          % ("PASS" if swept else "FAIL", len(swept)))
+
+
 def _check_cdn_edge_detection(failures):
     """A content delivery network edge must be recognised from its ADDRESS, and
     an edge-only assessment must never claim full confidence.
@@ -3733,6 +3880,7 @@ def main():
     _check_cdn_edge_detection(failures)
     _check_saas_service_ranges(failures)
     _check_no_own_estate(failures)
+    _check_attribution_confidence(failures)
     _check_lookalike_ownership(failures)
     _check_lookalike_posture(failures)
     _check_table_headers(failures)

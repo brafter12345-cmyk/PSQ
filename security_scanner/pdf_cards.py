@@ -3598,6 +3598,28 @@ def vendor_estate_notice(results, S):
         "client's own security, and a finding against one is a question for "
         "the provider's assurance, not the client's remediation plan.",
         S["body"]))
+
+    # Hosts that stayed in the client's own pool but whose ownership the scan
+    # could not confirm, because unrelated organisations answer on the same
+    # address. These ARE scanned and their findings ARE priced, so the reader
+    # has to be told before acting on one. boston.ac.za's only per-IP finding is
+    # a Spamhaus listing on exactly such a host.
+    shared = [(ip, a) for ip, a in sorted((results.get("ip_attribution") or {}).items())
+              if (a or {}).get("rule") == "co_tenancy"]
+    if shared:
+        out.append(Spacer(1, 1.5 * mm))
+        out.append(Paragraph(
+            f"<b>Ownership unconfirmed on {len(shared)} address"
+            f"{'es' if len(shared) != 1 else ''}.</b> These remain in the "
+            "client's assessed estate and their findings are counted, but "
+            "unrelated organisations answer on the same address, so the scan "
+            "cannot confirm the client operates them. Confirm ownership before "
+            "raising any finding below with the client.", S["body"]))
+        for ip, a in shared:
+            out.append(Paragraph(
+                f"&nbsp;&nbsp;<b>{ip}</b> &mdash; {a.get('evidence', '')}",
+                S["body"]))
+
     out.append(Spacer(1, 1.5 * mm))
     return out
 
