@@ -22,5 +22,17 @@
   "takealot_baseline::full": {
     "sha256": "c15a721b4d98104766ecb70ae6bb6ffab78d9921b9c995f3d6f5844204b8985b",
     "bytes": 80866
+  },
+  "vendor_estate_baseline::assessment": {
+    "sha256": "83dd80404341eb83ca7f42951aae931a09d299468bdf0954e1caaf36941fa74d",
+    "bytes": 16144
+  },
+  "vendor_estate_baseline::summary": {
+    "sha256": "cbacd5f86a0f94f6faeaaf7bbbd50b3f110c4f4b9154bf6fe18c22f2b9ffdc8a",
+    "bytes": 15425
+  },
+  "vendor_estate_baseline::full": {
+    "sha256": "b7f47b54688d9d645e930503cdb47f0f0a02eda8998cf5c6716412d5728a0f18",
+    "bytes": 81321
   }
 }

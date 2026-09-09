@@ -243,6 +243,20 @@ class ExternalIPAggregator:
         result["vendor_ip_count"] = len(_vendor)
         result["vendor_ip_addresses"] = _vendor
         result["estate_total_ips"] = len(_vendor)          # own pool is empty here
+        # asn_coverage says whether unique_asns was computed over the WHOLE
+        # estate or only the own-attributed part. It is REPORTING ONLY and no
+        # pricing path reads it, deliberately.
+        #
+        # An earlier version of this comment asserted that the caller "must not
+        # charge a redundancy gap" once anything is demoted, and the caller does
+        # exactly that. The comment was wrong, not the caller. Measured on the
+        # 30-scan corpus, suppressing the +0.025 single_asn term on any demotion
+        # is a rate CUT, taking the charged set from 13 fixtures to 8; letting
+        # the existing rule read the corrected own-only pool raises it to 19.
+        # Removing a vendor's addresses makes unique_asns MORE faithful to the
+        # client's own hosting, because Microsoft hosting a client's mail was
+        # never redundancy for that client's website. See the single_asn comment
+        # in FinancialImpactCalculator, which records the same decision.
         result["asn_coverage"] = "partial" if _vendor else "full"
 
         if not discovered_ips:
@@ -409,13 +423,6 @@ class ExternalIPAggregator:
         # vendor_ip_count / vendor_ip_addresses / asn_coverage were already set
         # above the early return. Only the total needs the real own-pool size.
         result["estate_total_ips"] = len(seen_ips) + len(_vendor)
-        # ASN redundancy can only be judged over the WHOLE estate, and a
-        # vendor-operated host's ASN is not collected (it is never scanned). So
-        # once anything has been demoted, multi-homing is UNMEASURED rather than
-        # absent, and the caller must not charge a redundancy gap for it. This
-        # is the same "do not charge a control gap we cannot evidence" rule
-        # already applied to the WAF term.
-        result["asn_coverage"] = "partial" if _vendor else "full"
 
         # Scoring
         if agg["critical_count"] > 0 or agg["kev_count"] > 0:
@@ -1244,12 +1251,19 @@ class RiskScorer:
 
         # NO OWN ESTATE. The same failure one step further along: every
         # discovered address was re-attributed to a vendor, so the checkers ran
-        # against nobody's infrastructure but a provider's. Measured when the
-        # M365 service ranges landed, riverport.co.za and www.zinia.co.za went
-        # from six own-attributed hosts to zero, because their entire external
-        # estate is Exchange Online. Left alone, both would have rendered
-        # "assessed" over an empty pool and scored as clean, which is precisely
-        # the absence-of-evidence reading this ladder exists to refuse.
+        # against nobody's infrastructure but a provider's. Left alone, such a
+        # scan renders "assessed" over an empty pool and scores as clean, which
+        # is precisely the absence-of-evidence reading this ladder refuses.
+        #
+        # NO FIXTURE IN THE 30-SCAN CORPUS REACHES THIS. An earlier version of
+        # this comment claimed riverport.co.za and www.zinia.co.za emptied
+        # entirely; recomputing both sides by running the classifier rather than
+        # diffing against the stored bucket, they go 7 own hosts to 1 and 8 to 2.
+        # The stored buckets predate the org rule and the post-scan pass, so
+        # diffing against them credited this change with demotions it never
+        # made. The branch is therefore driven directly by
+        # adversarial_gate._check_no_own_estate, through the real aggregator,
+        # because an untested branch on a scoring path is a defect by itself.
         #
         # Deliberately NOT triggered by an estate that was empty to begin with:
         # the condition is that addresses were DISCOVERED and all of them went

@@ -3557,7 +3557,14 @@ def vendor_estate_notice(results, S):
     unconditionally.
     """
     hosts = results.get("third_party_hosting") or []
-    if not hosts:
+    # The ownership-unconfirmed section below is INDEPENDENT of the vendor list.
+    # Returning early on an empty third_party_hosting suppressed it entirely on
+    # any scan that had co-tenancy-flagged hosts but nothing demoted -- which is
+    # the commonest shape for a client with no CDN and no Microsoft 365, i.e.
+    # the small SME on a shared cPanel box that the flag exists to catch.
+    shared = [(ip, a) for ip, a in sorted((results.get("ip_attribution") or {}).items())
+              if (a or {}).get("rule") == "co_tenancy"]
+    if not hosts and not shared:
         return []
 
     by_provider = {}
@@ -3570,9 +3577,10 @@ def vendor_estate_notice(results, S):
             entry["subs"].add(str(s))
 
     total = sum(len(v["ips"]) for v in by_provider.values())
-    out = [
-        Spacer(1, 2 * mm),
-        Paragraph(
+    out = [Spacer(1, 2 * mm)]
+
+    if hosts:
+        out.append(Paragraph(
             f"<b>Vendor-operated infrastructure: {total} address"
             f"{'es' if total != 1 else ''} excluded from this client's own "
             "exposure.</b> These hosts were discovered on the client's estate "
@@ -3580,32 +3588,35 @@ def vendor_estate_notice(results, S):
             "patching are the provider's responsibility. They are reported "
             "here as supply-chain dependencies and are not scored against the "
             "client. They remain part of the client's external footprint.",
-            S["body"]),
-    ]
-    for prov in sorted(by_provider):
-        ips = sorted(set(by_provider[prov]["ips"]))
-        subs = sorted(by_provider[prov]["subs"])
-        shown = ", ".join(ips[:8]) + (f" and {len(ips) - 8} more" if len(ips) > 8 else "")
-        via = ""
-        if subs:
-            via = (" reached via " + ", ".join(subs[:3])
-                   + (f" and {len(subs) - 3} more" if len(subs) > 3 else ""))
+            S["body"]))
+        for prov in sorted(by_provider):
+            ips = sorted(set(by_provider[prov]["ips"]))
+            subs = sorted(by_provider[prov]["subs"])
+            shown = ", ".join(ips[:8]) + (f" and {len(ips) - 8} more" if len(ips) > 8 else "")
+            via = ""
+            if subs:
+                via = (" reached via " + ", ".join(subs[:3])
+                       + (f" and {len(subs) - 3} more" if len(subs) > 3 else ""))
+            out.append(Paragraph(
+                f"&nbsp;&nbsp;<b>{prov}</b> &mdash; {len(ips)} address"
+                f"{'es' if len(ips) != 1 else ''}{via}: {shown}", S["body"]))
         out.append(Paragraph(
-            f"&nbsp;&nbsp;<b>{prov}</b> &mdash; {len(ips)} address"
-            f"{'es' if len(ips) != 1 else ''}{via}: {shown}", S["body"]))
-    out.append(Paragraph(
-        "An absence of findings against these hosts says nothing about the "
-        "client's own security, and a finding against one is a question for "
-        "the provider's assurance, not the client's remediation plan.",
-        S["body"]))
+            "An absence of findings against these hosts says nothing about the "
+            "client's own security, and a finding against one is a question for "
+            "the provider's assurance, not the client's remediation plan.",
+            S["body"]))
 
     # Hosts that stayed in the client's own pool but whose ownership the scan
     # could not confirm, because unrelated organisations answer on the same
     # address. These ARE scanned and their findings ARE priced, so the reader
     # has to be told before acting on one. boston.ac.za's only per-IP finding is
     # a Spamhaus listing on exactly such a host.
-    shared = [(ip, a) for ip, a in sorted((results.get("ip_attribution") or {}).items())
-              if (a or {}).get("rule") == "co_tenancy"]
+    #
+    # Gated separately from `hosts` on purpose. Both sections used to sit behind
+    # one early return on third_party_hosting, so a scan with co-tenancy-flagged
+    # hosts and nothing demoted rendered neither -- and that is the commonest
+    # shape for the client this flag exists for: a small SME with no CDN and no
+    # Microsoft 365, sitting on somebody's shared cPanel box.
     if shared:
         out.append(Spacer(1, 1.5 * mm))
         out.append(Paragraph(
@@ -4617,7 +4628,7 @@ def _supply_chain_attacker_findings(cats: dict) -> dict:
     return {"access": access, "exploit": exploit}
 
 
-def estate_ip_count(cats: dict) -> int:
+def estate_ip_count(cats: dict, results: dict = None) -> int:
     """Addresses DISCOVERED on this estate, own-attributed plus vendor-operated.
 
     Use this wherever the reader means "how much of this client is visible from
@@ -4625,23 +4636,42 @@ def estate_ip_count(cats: dict) -> int:
     "what is the client answerable for", because that field counts the
     post-attribution pool.
 
-    The distinction is not cosmetic. When the Microsoft 365 service ranges
-    landed, 174 of 307 addresses across 19 of 30 scans left the own-attributed
-    pool, and riverport.co.za and www.zinia.co.za emptied entirely: their whole
-    discovered estate is Exchange Online. Reconnaissance severity here is a
-    pure count with no reference to findings, so reading the post-attribution
-    number would have downgraded those clients from MEDIUM to LOW for the sole
-    reason that their mail is hosted by Microsoft. Correcting an attribution
-    must not read as the client getting safer.
+    The distinction is not cosmetic, and the figures below are the CORRECTED
+    ones. An earlier version of this docstring said riverport.co.za and
+    www.zinia.co.za "emptied entirely"; they did not. That claim came from
+    diffing against the bucket stored in each fixture, which predates both the
+    org rule and the post-scan pass and therefore credited this change with
+    demotions it did not make. Recomputing both sides by running the classifier,
+    riverport goes 7 own hosts to 1 and zinia 8 to 2.
 
-    Falls back to total_unique_ips on a scan predating the split, so an old
-    stored result renders as it always did rather than as zero.
+    Measured properly, through the real _kill_chain_severities over the 30-scan
+    corpus: 177 addresses across 19 scans leave the own-attributed pool, 21
+    estates shrink if this helper is not used, and FIVE clients drop
+    Reconnaissance from HIGH to MEDIUM -- cyberres.co.za, fundagroup.co.za,
+    gcrratings.com, nexgro.co.za and www.zinia.co.za. Severity here is a pure
+    count with no reference to findings, so reading the post-attribution number
+    downgrades a client for the sole reason that its mail is hosted by
+    Microsoft. Correcting an attribution must not read as the client getting
+    safer.
+
+    ON A SCAN PREDATING THE SPLIT, estate_total_ips is absent but
+    third_party_hosting is not: scanner.py has written it since the 2026-06-30
+    checker audit, it simply had no reader. Falling back to total_unique_ips
+    alone therefore contradicts the report itself, because vendor_estate_notice
+    reads third_party_hosting and would list vendor hosts on the same page as a
+    count that excludes them. Pass `results` so the fallback can add them back;
+    without it the count degrades to the own-attributed pool, which is what the
+    document used to print.
     """
     ext = (cats or {}).get("external_ips", {}) or {}
     total = ext.get("estate_total_ips")
-    if total is None:
-        total = ext.get("total_unique_ips", 0)
-    return total or 0
+    if total is not None:
+        return total or 0
+    own = ext.get("total_unique_ips", 0) or 0
+    vendor = {str(h.get("ip")).strip()
+              for h in ((results or {}).get("third_party_hosting") or [])
+              if h.get("ip")}
+    return own + len(vendor)
 
 
 def conclusive_count(cats: dict, cat_id: str, key: str):
@@ -4688,7 +4718,7 @@ def _kill_chain_severities(results: dict) -> dict:
         return conclusive_count(cats, cat_id, key)
 
     # Phase 1 — Reconnaissance
-    ip_count = estate_ip_count(cats)
+    ip_count = estate_ip_count(cats, results)
     emails = _count("dehashed", "unique_emails")
     recon = ("HIGH" if (ip_count > 5 or (emails or 0) > 3)
              else "MEDIUM" if (ip_count > 1 or (emails or 0) > 0) else "LOW")
@@ -4768,7 +4798,7 @@ def _build_attackers_view(results: dict, S) -> list:
 
     # Phase 1: Reconnaissance
     sub_count = cats.get("subdomains", {}).get("total_count", 0)
-    ip_count = estate_ip_count(results.get("categories", {}))
+    ip_count = estate_ip_count(results.get("categories", {}), results)
     tech = cats.get("tech_stack", {})
     dh = cats.get("dehashed", {})
     emails = dh.get("unique_emails", 0)

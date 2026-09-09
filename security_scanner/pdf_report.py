@@ -165,7 +165,7 @@ def _assessment_kill_chain(results: dict) -> list:
     sevs = _kill_chain_severities(results)
 
     # Phase 1: Reconnaissance
-    ip_count  = estate_ip_count(cats)
+    ip_count  = estate_ip_count(cats, results)
     sub_count = cats.get("subdomains", {}).get("total_count", 0)
     dh = cats.get("dehashed", {})
     emails = dh.get("unique_emails", 0)
@@ -454,7 +454,7 @@ def _assessment_top_findings(results: dict) -> list:
         have = {c[1]["headline"] for c in cands}
         em_b = score_or_none(cats.get("email_security"))
         sub_count = cats.get("subdomains", {}).get("total_count", 0)
-        ip_count = estate_ip_count(cats)
+        ip_count = estate_ip_count(cats, results)
         # conclusive_count, not a raw .get: an unassessed provider reports 0
         # and would otherwise be indistinguishable from a searched-and-clean
         # estate. Here it only suppresses a finding, but the next reader of
