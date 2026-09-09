@@ -3499,6 +3499,45 @@ def waf_coverage_notice(results, S):
     ]
 
 
+def estate_edge_notice(results, S):
+    """Top-level notice: the web-layer assessment measured a CDN edge.
+
+    Rendered beside the External Visibility Notice, which is one of the few
+    notice blocks the report actually calls. The per-card helper pattern was
+    NOT reused: waf_card_disclaimer has been imported by pdf_report and never
+    invoked, so a per-card note would have been written and never seen.
+
+    boston.ac.za, 2026-08-14: 97 out of 1000, Low risk, 100 per cent
+    completeness, no failed checkers, measured against Cloudflare. The client's
+    own estate WAS discovered and port-scanned (mail, Exchange and Azure hosts,
+    correctly attributed), but every web-layer verdict described the provider.
+    Neither historical DNS, the free certificate-host hint, nor the addresses
+    the scan had already resolved produced a verified origin.
+
+    Returns an empty list when the scan did not measure an edge, so callers can
+    extend unconditionally.
+    """
+    sc = results.get("_scan_completeness", {}) or {}
+    affected = sc.get("edge_measured_checkers") or []
+    if not affected:
+        return []
+    provider = sc.get("edge_provider") or "a content delivery network"
+    names = ", ".join(a.replace("_", " ") for a in affected)
+    body = (
+        f"<b>Web assessment measured the {provider} edge.</b> The domain "
+        f"resolves to {provider}, and no origin server was verified behind it. "
+        f"The following checks therefore describe the provider's "
+        f"infrastructure rather than the client's own: <b>{names}</b>. "
+        "An absence of findings in those areas is not evidence about the "
+        "client's estate and must not be read as a clean result for the "
+        "client. Infrastructure the client operates directly, including mail "
+        "and any addresses discovered outside the edge, was assessed normally "
+        "and is reported elsewhere in this document. To assess the web origin, "
+        "the client can supply its address or allow-list the assessment source."
+    )
+    return [Spacer(1, 2 * mm), Paragraph(body, S["body"]), Spacer(1, 1.5 * mm)]
+
+
 def waf_card_disclaimer(checker_name, results, S):
     """Per-card disclaimer block rendered ABOVE a checker card when that
     specific checker is in _scan_completeness.waf_affected_checkers.

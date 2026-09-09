@@ -671,3 +671,32 @@ Raise both with the calibration owner. Step 3 deliberately ships apex-only
 detection, matching what the checker has always asked, so that the confidence
 cap can be introduced without simultaneously changing which targets are
 detected.
+
+### 5p. Should edge-measured web checks be graded non-conclusive? (CALIBRATION DECISION, 2026-09-08)
+
+Remediation step 3b labels the web-layer checks that measured a CDN edge rather
+than the client: ssl, http_headers, website_security, exposed_admin,
+third_party_js and waf carry `measured_at: "cdn_edge"`, and the report renders a
+notice naming them. That is REPORTING-ONLY. The categories still score normally,
+so a clean TLS grade on Cloudflare still contributes a clean TLS grade to the
+client's score.
+
+The arguable position is that they should be graded NON-CONCLUSIVE, the same as
+a checker that could not run. The scanner's own rule is that absence of evidence
+is not evidence of absence, and a checker that measured somebody else's server
+has produced no evidence about the client.
+
+NOT DONE, deliberately. Grading them non-conclusive excludes their weight, which
+redistributes across the remaining categories and moves the score in a direction
+that depends on the rest of the scan. Three of the four must-have checkers are in
+this set, so on a CDN-fronted target it would also trip the must-have-missing
+branch and drop confidence to low_confidence, which is a materially different
+statement from the "partial" that step 3 now sets. That is a calibration change
+requiring sign-off, a golden re-baseline, and a decision on what a scan that can
+see almost nothing about the web layer should be allowed to say at all.
+
+Interim control: the underwriting rule issued as step 1 already prevents the
+commercial harm, because absence of findings may not discount or clear a risk.
+The labelling makes the situation visible to whoever reads the report.
+
+Related: 5o (a fronted www with an unfronted apex probably exposes the origin).

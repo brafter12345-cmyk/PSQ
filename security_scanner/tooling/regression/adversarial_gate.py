@@ -1300,6 +1300,75 @@ VERDICT_SCENARIOS = [
 ]
 
 
+def _check_edge_measured_labelling(failures):
+    """When the web assessment measured a CDN edge, the report must say so.
+
+    boston.ac.za, 2026-08-14: 97 out of 1000, Low risk, 100 per cent
+    completeness, no failed checkers, measured against Cloudflare. The client's
+    own estate WAS discovered and port-scanned; every web-layer verdict
+    described the provider, and nothing in the report said which was which.
+
+    Also asserts the free origin-candidate path, because the fix that made it
+    possible is worth nothing if the candidates never reach the verifier.
+    """
+    import importlib
+    pc = importlib.import_module("pdf_cards")
+    ph = importlib.import_module("pdf_helpers")
+    od = importlib.import_module("origin_discovery")
+    S = ph.build_styles()
+
+    CASES = [
+        ("edge_measured", {"edge_measured_checkers": ["ssl", "http_headers"],
+                           "edge_provider": "Cloudflare"}, True),
+        ("origin_verified", {}, False),
+        ("no_cdn", {}, False),
+    ]
+    for label, sc, expect in CASES:
+        out = pc.estate_edge_notice({"_scan_completeness": sc}, S)
+        got = len(out) > 0
+        ok = got == expect
+        if not ok:
+            failures.append(
+                "edge_labelling[%s]: notice rendered=%s, expected %s. A web "
+                "assessment that measured the provider's edge must say so, and "
+                "must stay silent otherwise." % (label, got, expect))
+        print("  [%s] edge_label:%-18s rendered=%s"
+              % ("PASS" if ok else "FAIL", label, got))
+
+    # The notice must name the affected checkers and refuse the clean reading.
+    txt = pc.estate_edge_notice(
+        {"_scan_completeness": {"edge_measured_checkers": ["ssl"],
+                                "edge_provider": "Cloudflare"}}, S)[1].text
+    needed = ["Cloudflare", "ssl", "not evidence about the client",
+              "must not be read as a clean result"]
+    missing = [n for n in needed if n not in txt]
+    if missing:
+        failures.append("edge_labelling[wording]: the notice omits %s" % missing)
+    print("  [%s] edge_label:wording           omits=%s"
+          % ("FAIL" if missing else "PASS", missing or "nothing"))
+
+    # Free origin candidates: local addresses must be offered to the verifier,
+    # edge addresses must not, and no key may be required to try.
+    LOCAL = ["196.41.30.122", "104.26.3.40", "20.126.184.33", "2606:4700::1"]
+    with mock.patch.object(od, "_verify_origin", lambda ip, d: False):
+        res = od.discover_origin_ips("example.test", None, None,
+                                     extra_candidates=LOCAL)
+    cands = res.get("candidates") or []
+    edge_leaked = "104.26.3.40" in cands
+    v6_leaked = any(":" in c for c in cands)
+    ok = (res.get("status") == "completed" and "196.41.30.122" in cands
+          and not edge_leaked and not v6_leaked)
+    if not ok:
+        failures.append(
+            "edge_labelling[local_candidates]: status=%s candidates=%s. Locally "
+            "resolved non-edge addresses must be offered to origin verification "
+            "with no API key, and edge addresses must never be, since the edge "
+            "is what the discovery is trying to bypass."
+            % (res.get("status"), cands))
+    print("  [%s] edge_label:local_candidates  candidates=%s edge_leaked=%s"
+          % ("PASS" if ok else "FAIL", cands, edge_leaked))
+
+
 def _check_cdn_edge_detection(failures):
     """A content delivery network edge must be recognised from its ADDRESS, and
     an edge-only assessment must never claim full confidence.
@@ -3376,6 +3445,7 @@ def main():
     _check_recommendation_priority(failures)
     _check_credential_failclosed(failures)
     _check_provider_budget(failures)
+    _check_edge_measured_labelling(failures)
     _check_cdn_edge_detection(failures)
     _check_lookalike_ownership(failures)
     _check_lookalike_posture(failures)

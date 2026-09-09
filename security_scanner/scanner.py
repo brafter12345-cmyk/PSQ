@@ -663,11 +663,22 @@ class SecurityScanner:
         # that currently serve THIS domain's certificate are added to the
         # scan pool. Unverified candidates are surfaced for transparency but
         # never scanned (they may have been reassigned to a third party).
+        # The scan has ALREADY resolved every subdomain it enumerated. Those
+        # addresses are the cheapest origin candidates in existence: no key, no
+        # credit, no extra lookup. Measured on the retained scans, the two South
+        # African targets whose apex is a CDN edge got NOTHING from historical
+        # DNS or the free Shodan hint, while the scan itself was holding 6 and 3
+        # non-edge addresses from subdomains resolved moments earlier. Each is
+        # still cert-verified before it can enter the scan pool, so this widens
+        # the candidate list without weakening the gate.
+        _local_candidates = sorted(subdomain_ips | set(discovered_ips))
+
         def _compute_origin():
             try:
                 from origin_discovery import discover_origin_ips
                 return discover_origin_ips(domain, self.securitytrails_api_key,
-                                           self.shodan_api_key)
+                                           self.shodan_api_key,
+                                           extra_candidates=_local_candidates)
             except Exception as e:
                 return {"status": "error", "error": str(e),
                         "candidates": [], "verified": [], "unverified": []}
@@ -1384,6 +1395,43 @@ class SecurityScanner:
         # status field surfaces in the report renderers.
         # Reuse the pre-scoring WAF status (already read above).
         results["_scan_completeness"]["waf_status"] = waf_apex_status
+
+        # WHICH CHECKERS MEASURED THE EDGE RATHER THAN THE CLIENT.
+        #
+        # The web-layer checkers are invoked with the typed hostname. When the
+        # apex resolves into a CDN edge range and no origin was verified behind
+        # it, those checkers describe the PROVIDER's TLS, headers, admin paths
+        # and third-party scripts, not the client's. Three of the four
+        # must-have checkers are in that group.
+        #
+        # Measured on the retained scans: for boston.ac.za and www.zinia.co.za
+        # neither historical DNS, the free Shodan cert-host hint, nor the
+        # addresses the scan itself had already resolved produced a verified
+        # origin. The client's own estate IS discovered and IP-scanned (mail,
+        # Exchange and Azure hosts, correctly classified as owned), but the web
+        # origin is genuinely hidden. Saying so per card is the honest
+        # alternative to a clean-looking verdict about someone else's server.
+        #
+        # REPORTING-ONLY on purpose. Grading these categories non-conclusive
+        # would exclude their weight and move the score, which is a calibration
+        # decision, not a correctness fix. It is recorded in OUTSTANDING 5p.
+        _cdn_cat = cat_results.get("cloud_cdn") or {}
+        _org_cat = cat_results.get("origin_discovery") or {}
+        if _cdn_cat.get("cdn_detected") and not (_org_cat.get("verified") or []):
+            _EDGE_MEASURED = ("ssl", "http_headers", "website_security",
+                              "exposed_admin", "third_party_js", "waf")
+            _affected = [c for c in _EDGE_MEASURED if c in cat_results]
+            results["_scan_completeness"]["edge_measured_checkers"] = _affected
+            results["_scan_completeness"]["edge_provider"] = _cdn_cat.get("provider")
+            for _c in _affected:
+                if isinstance(cat_results.get(_c), dict):
+                    cat_results[_c]["measured_at"] = "cdn_edge"
+                    cat_results[_c]["measured_at_note"] = (
+                        "Measured at the %s edge. No origin server was verified "
+                        "behind it, so this describes the provider's "
+                        "infrastructure rather than the client's own. An absence "
+                        "of findings here is not evidence about the client."
+                        % (_cdn_cat.get("provider") or "content delivery network"))
         # Checkers that explicitly EARLY-EXITED because the apex hard-blocked
         # their path probing — they set their own `waf_truncated` flag. These are
         # "not fully assessed" even though their benign 'nothing found' line

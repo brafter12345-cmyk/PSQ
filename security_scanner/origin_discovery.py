@@ -24,6 +24,8 @@ origin-discovery tooling (CloudFail, Censys/Shodan cert pivots).
 import socket
 import ssl
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from cdn_ranges import is_edge_ip
 from typing import Optional
 
 try:
@@ -169,7 +171,8 @@ def _verify_origin(ip: str, domain: str) -> bool:
 
 def discover_origin_ips(domain: str,
                         securitytrails_api_key: Optional[str] = None,
-                        shodan_api_key: Optional[str] = None) -> dict:
+                        shodan_api_key: Optional[str] = None,
+                        extra_candidates: Optional[list] = None) -> dict:
     """Discover + verify Cloudflare-bypass origin IPs from two sources.
 
     Sources:
@@ -196,25 +199,48 @@ def discover_origin_ips(domain: str,
     domain = domain.removeprefix("https://").removeprefix("http://").split("/")[0]
     out = {"status": "skipped", "domain": domain,
            "candidates": [], "verified": [], "unverified": [],
-           "shodan_cert_hosts": None, "shodan_search_used": False}
-    if not securitytrails_api_key and not shodan_api_key:
+           "shodan_cert_hosts": None, "shodan_search_used": False,
+           "candidate_sources": {}}
+
+    # LOCAL CANDIDATES cost nothing and need no key, so they are gathered before
+    # the key check. Measured on the retained scans: for the two South African
+    # targets whose apex is a CDN edge, historical DNS and the free Shodan hint
+    # both returned NOTHING (0 candidates, no cert-host count), while the scan
+    # itself had already resolved 6 and 3 non-edge addresses respectively from
+    # subdomains it had just enumerated. Those addresses sat in the results and
+    # were never offered to this function, so a scanner that had found the
+    # client's own hosts still reported that it could not see past the edge.
+    local = []
+    for ip in (extra_candidates or []):
+        ip = str(ip).strip()
+        if not ip or ":" in ip:          # verification is an IPv4 TLS connect
+            continue
+        if is_edge_ip(ip):
+            continue                     # the edge is what we are trying to bypass
+        local.append(ip)
+
+    if not (securitytrails_api_key or shodan_api_key or local):
         return out
 
     candidates, seen = [], set()
+    sources = {}
 
-    def _add(ips):
+    def _add(ips, source):
         for ip in ips or []:
             if ip and ip not in seen:
                 seen.add(ip)
                 candidates.append(ip)
+                sources[ip] = source
 
+    # Local first: free, already resolved, and the most likely to be the origin.
+    _add(local, "subdomain")
     if securitytrails_api_key:
-        _add(_fetch_historical_a(domain, securitytrails_api_key))
+        _add(_fetch_historical_a(domain, securitytrails_api_key), "historical_dns")
     if shodan_api_key:
         count, shodan_ips, used = _shodan_cert_hosts(domain, shodan_api_key)
         out["shodan_cert_hosts"] = count
         out["shodan_search_used"] = used
-        _add(shodan_ips)
+        _add(shodan_ips, "shodan_cert")
 
     candidates = candidates[:MAX_CANDIDATES]
     out["candidates"] = candidates
@@ -238,5 +264,7 @@ def discover_origin_ips(domain: str,
 
     out["verified"] = verified
     out["unverified"] = unverified
+    out["candidate_sources"] = sources
+    out["verified_sources"] = {ip: sources.get(ip, "unknown") for ip in verified}
     out["status"] = "completed"
     return out
