@@ -30,6 +30,8 @@ insured's priced estate, carrying 0 CVEs and 0 issues. Nothing is discounted;
 only the attribution changes. Callers must still surface a demoted host as a
 supply-chain dependency, or the estate silently shrinks and the client reads as
 cleaner than it was measured to be.
+
+review-by: 2027-03-09  (provider address ranges are point-in-time)
 """
 import ipaddress
 

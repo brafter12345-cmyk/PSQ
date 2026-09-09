@@ -13440,6 +13440,26 @@
    "size_multiplier": 0.9
   }
  },
+ "internal_dns_leak": [
+  {
+   "ip": "10.26.32.100",
+   "subdomains": [
+    "fulfilment-gateway-api.takealot.com"
+   ]
+  },
+  {
+   "ip": "10.0.1.250",
+   "subdomains": [
+    "cpt-hq-fortiauth.takealot.com"
+   ]
+  },
+  {
+   "ip": "10.26.32.69",
+   "subdomains": [
+    "knime.takealot.com"
+   ]
+  }
+ ],
  "ip_attribution": {
   "20.126.184.33": {
    "confidence": "unconfirmed",

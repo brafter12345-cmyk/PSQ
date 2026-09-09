@@ -18,6 +18,8 @@ REFRESHING IS A DELIBERATE ACT. The artefact is pinned so that a scan is
 reproducible and a regression test means something. A provider that silently
 changes a JSON feed must not silently change how a client is scored, so
 --refresh rewrites the artefact for review and never runs as part of a scan.
+
+review-by: 2027-03-09  (provider address ranges are point-in-time)
 """
 import argparse
 import hashlib
@@ -56,6 +58,12 @@ ADMITTED_AREAS = ("Exchange", "SharePoint", "Skype", "Common")
 # way to turn this table into a discount for customer-run hosts.
 MIN_V4_PREFIX = 12
 MIN_V6_PREFIX = 32
+
+# How long a pinned feed may go unrefreshed before the build blocks. Six
+# months: long enough that a refresh is a deliberate, reviewed act, short
+# enough that a withdrawn or newly published prefix cannot sit unnoticed
+# through a whole underwriting year.
+MAX_FEED_AGE_DAYS = 180
 
 AREA_LABELS = {
     "Exchange": "Microsoft 365 (Exchange Online)",
@@ -96,6 +104,8 @@ insured's priced estate, carrying 0 CVEs and 0 issues. Nothing is discounted;
 only the attribution changes. Callers must still surface a demoted host as a
 supply-chain dependency, or the estate silently shrinks and the client reads as
 cleaner than it was measured to be.
+
+review-by: 2027-03-09  (provider address ranges are point-in-time)
 """
 import ipaddress
 
@@ -255,8 +265,32 @@ def main():
         print("      Either the table was hand-edited, or the artefact changed")
         print("      without regenerating. Run --write and review the diff.")
         return 1
+    # STALENESS TRIPWIRE. Pinning the table is what makes a scan reproducible,
+    # but a pin with no expiry is indistinguishable from an abandoned one. A
+    # withdrawn Microsoft prefix keeps demoting hosts forever, and a newly
+    # published one keeps being attributed to clients, in both cases silently.
+    version = read_version()
+    stale = None
+    if version != "unrecorded" and len(version) >= 8 and version[:8].isdigit():
+        import datetime
+        try:
+            published = datetime.date(int(version[:4]), int(version[4:6]), int(version[6:8]))
+            age = (datetime.date.today() - published).days
+            if age > MAX_FEED_AGE_DAYS:
+                stale = age
+        except ValueError:
+            pass
+    if stale is not None:
+        print("FAIL: the pinned Microsoft feed is %d days old (version %s, "
+              "limit %d)." % (stale, version, MAX_FEED_AGE_DAYS))
+        print("      Run --refresh, then --write, then re-run the harness and")
+        print("      the gate, and commit the artefact change on its own so the")
+        print("      attribution movement is visible in review.")
+        return 1
+
     print("OK: saas_ranges.py matches the artefact (%d areas, %d prefixes, "
-          "feed sha256 %s...)" % (len(table), n, hashlib.sha256(raw).hexdigest()[:16]))
+          "feed version %s, sha256 %s...)"
+          % (len(table), n, version, hashlib.sha256(raw).hexdigest()[:16]))
     return 0
 
 

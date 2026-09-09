@@ -921,3 +921,49 @@ custom-domain certificate passes. A cert match proves the host SERVES the domain
 not that the client OPERATES it, which is the distinction this module exists to
 draw. Narrow in practice, but it is the one path reaching the priced surface with
 no classification at all.
+
+### 5t. Steps 2 and 3 of classify_ip rest on signals the insured can author
+
+Raised by the adversarial critique of step 3c and confirmed. Walking classify_ip
+in order: step 1 (private/reserved) is arithmetic; step 1b (published service
+ranges) is genuinely un-authorable by the party being judged, which is the whole
+reason it was chosen. Steps 2 and 3 are not.
+
+* Step 2 matches a reverse-DNS SUFFIX. Where a provider delegates the reverse
+  zone, or lets a customer set custom rDNS, the address holder writes that
+  string. A PTR of `something.wpengine.com` on the insured's own exposed box
+  demotes it to SAAS and removes its findings from the priced estate.
+* Step 3 matches an HTTP `Server` banner. That header is whatever the origin
+  chooses to send. Returning `Server: cloudflare` demotes the host to CDN.
+
+Both predate this change and neither is newly introduced, but the step 3c work
+made the consequence sharper by giving demotion real teeth: a demoted host now
+leaves per_ip entirely and its findings leave the client's estate.
+
+THE FIX IS FORWARD CONFIRMATION, NOT A LONGER TABLE. Resolve the PTR name and
+require the address to come back. A customer who can write the reverse record
+usually cannot also make `wpengine.com` resolve to their box. The banner rule
+should require corroboration from an independent signal (org, or an address
+range) rather than standing alone.
+
+NOT DONE HERE because it is a behaviour change with its own measurement: a
+missing forward confirmation must never demote, or a DNS timeout becomes a
+discount, and `ptr_map` at `scanner.py` already drops addresses silently on
+`FuturesTimeoutError`. Needs its own change with a regression proving that an
+unresolvable PTR leaves the bucket alone.
+
+### 5u. measure_attribution_delta does not replay the post-scan default-cert rule
+
+`classify_pool` passes reverse_dns, org and banner. It does not pass
+`default_cert_names` or `insured_domain`, so the no-SNI shared-hosting rule
+(`looks_multi_tenant`) never fires in the harness, and the harness cannot see
+any host whose only vendor signal is the provider's default certificate.
+
+The effect is bounded and in the safe direction: the harness UNDER-counts
+demotions, so its "0 CVEs moved" is measured over a pool at least as large as
+production's, never smaller. It is recorded rather than fixed because the probe
+is live-only. Per-IP certificate names are not persisted anywhere
+(`scanner.py` probes them into a local and discards them; `checkers_core` stores
+only the apex certificate's subject and issuer), so no frozen scan can replay
+it. Persisting per-IP SAN sets would make the existing shared-hosting verdict
+replayable and is worth doing on its own.

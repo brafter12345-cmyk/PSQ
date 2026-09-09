@@ -3564,7 +3564,7 @@ def vendor_estate_notice(results, S):
     # the small SME on a shared cPanel box that the flag exists to catch.
     shared = [(ip, a) for ip, a in sorted((results.get("ip_attribution") or {}).items())
               if (a or {}).get("rule") == "co_tenancy"]
-    if not hosts and not shared:
+    if not hosts and not shared and not (results.get("internal_dns_leak") or []):
         return []
 
     by_provider = {}
@@ -3630,6 +3630,35 @@ def vendor_estate_notice(results, S):
             out.append(Paragraph(
                 f"&nbsp;&nbsp;<b>{ip}</b> &mdash; {a.get('evidence', '')}",
                 S["body"]))
+
+    # Internal addresses published in public DNS. ip_classification's docstring
+    # has called this "an info-disclosure finding" since the 2026-06-30 audit
+    # and scanner.py has written results["internal_dns_leak"] ever since, but
+    # nothing read it, so the finding was never once shown to a client. Measured
+    # on the retained scans: 12 entries across two clients, including an admin
+    # portal and a FortiAuthenticator resolving to RFC1918 space. Publishing
+    # internal hostnames and addressing hands an attacker the internal naming
+    # scheme for free, which is exactly what the reconnaissance phase of this
+    # report is about.
+    leaks = results.get("internal_dns_leak") or []
+    if leaks:
+        out.append(Spacer(1, 1.5 * mm))
+        out.append(Paragraph(
+            f"<b>Internal addresses published in public DNS: {len(leaks)} "
+            f"record{'s' if len(leaks) != 1 else ''}.</b> These names resolve to "
+            "private (RFC1918) addresses that are not reachable from the "
+            "internet, so they were not scanned and carry no external finding. "
+            "The disclosure is the finding: public DNS is revealing internal "
+            "hostnames and addressing to anyone who asks. Remove these records "
+            "from the public zone, or serve them only from internal DNS.",
+            S["body"]))
+        for leak in leaks[:12]:
+            names = ", ".join((leak.get("subdomains") or [])[:2]) or "(no name recorded)"
+            out.append(Paragraph(
+                f"&nbsp;&nbsp;<b>{leak.get('ip')}</b> &mdash; {names}", S["body"]))
+        if len(leaks) > 12:
+            out.append(Paragraph(
+                f"&nbsp;&nbsp;and {len(leaks) - 12} more.", S["body"]))
 
     out.append(Spacer(1, 1.5 * mm))
     return out
