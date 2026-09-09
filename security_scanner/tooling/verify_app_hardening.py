@@ -43,8 +43,23 @@ ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))
 
 # Throwaway DB — must be set BEFORE importing app (init_db runs at import).
+#
+# ALL THREE SELECTORS MUST BE SET, not just DB_PATH. scanner_db resolves the
+# SQLite path as SCANNER_DB_PATH -> DB_PATH -> "scans.db", and prefers
+# DATABASE_URL over SQLite entirely. Setting only DB_PATH left this gate's
+# isolation defeated by any environment that pins SCANNER_DB_PATH: the gate's
+# own sqlite3.connect opened the throwaway file while app.save_scan wrote into
+# whatever SCANNER_DB_PATH named. Observed in the remediation sandbox, whose
+# .env pins it: the gate wrote a "stale-test-id" row into the sandbox database,
+# then failed on the NEXT run with a UNIQUE constraint violation on that row it
+# had left behind. A pre-push gate must never write into a database it was not
+# handed, and it must not depend on the ambient environment being empty to
+# achieve that.
 _tmpdir = tempfile.mkdtemp(prefix="phishield_hardening_")
-os.environ["DB_PATH"] = str(Path(_tmpdir) / "gate_scans.db")
+_gate_db = str(Path(_tmpdir) / "gate_scans.db")
+os.environ["DB_PATH"] = _gate_db
+os.environ["SCANNER_DB_PATH"] = _gate_db     # takes precedence over DB_PATH
+os.environ.pop("DATABASE_URL", None)         # never touch Postgres from a gate
 os.environ.pop("SCANNER_API_KEY", None)  # start in open (back-compat) mode
 
 os.chdir(ROOT)
