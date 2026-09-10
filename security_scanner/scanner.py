@@ -708,7 +708,7 @@ class SecurityScanner:
         # is the strongest pre-scan signal (PTR is set by the IP owner); verified
         # origins are already cert-confirmed own infra and always scanned.
         from ip_classification import (classify_ip, OWNED, PRIVATE, is_third_party,
-                                       probe_default_cert)
+                                       probe_default_cert, forward_confirms)
 
         def _ptr_lookup(ip):
             try:
@@ -723,6 +723,23 @@ class SecurityScanner:
                 try:
                     for _pf in as_completed(_ptr_futs, timeout=30):
                         ptr_map[_ptr_futs[_pf]] = _pf.result(timeout=5)
+                except FuturesTimeoutError:
+                    pass
+
+        # FORWARD-CONFIRM every reverse name before it is allowed to demote a
+        # host. A reverse record is written by whoever holds the address, so on
+        # its own it is an assertion by the party being judged; the forward
+        # lookup is controlled by the zone the name claims to belong to. Absent
+        # or failed confirmation never demotes (see classify_ip), so a DNS
+        # timeout cannot become a discount.
+        ptr_ok = {}
+        if ptr_map:
+            with ThreadPoolExecutor(max_workers=16) as _fc_ex:
+                _fc = {_fc_ex.submit(forward_confirms, ptr_map.get(ip), ip): ip
+                       for ip in ptr_map if ptr_map.get(ip)}
+                try:
+                    for _f in as_completed(_fc, timeout=30):
+                        ptr_ok[_fc[_f]] = _f.result(timeout=5)
                 except FuturesTimeoutError:
                     pass
 
@@ -749,7 +766,8 @@ class SecurityScanner:
                     attribution_for(ip, "owned", "", ip_sources=ip_sources.get(ip),
                                     insured_domain=domain)))
                 continue
-            bucket, label = classify_ip(ip, reverse_dns=ptr_map.get(ip))
+            bucket, label = classify_ip(ip, reverse_dns=ptr_map.get(ip),
+                                        ptr_confirmed=ptr_ok.get(ip))
             ip_classification[ip] = bucket
             ip_attribution[ip] = dict(zip(
                 ("confidence", "rule", "evidence"),
@@ -859,7 +877,8 @@ class SecurityScanner:
             bucket, label = classify_ip(ip, reverse_dns=dns.get("reverse_dns"),
                                         org=shod.get("org"), banner=banner,
                                         default_cert_names=_default_cert,
-                                        insured_domain=domain)
+                                        insured_domain=domain,
+                                        ptr_confirmed=ptr_ok.get(ip))
             # Refine the confidence now that Shodan's observed hostnames exist.
             # This is the only pass where CO-TENANCY can be seen: the pre-scan
             # call has PTR alone. boston.ac.za's 20.126.184.33 carries

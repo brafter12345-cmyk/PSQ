@@ -2660,7 +2660,27 @@ class FinancialImpactCalculator:
         # only when we actually measured the estate and found one ASN.
         # Owner-approved 2026-09-10 as its own rate movement, with a golden
         # re-baseline, rather than folded into an attribution fix.
-        single_asn = categories.get("external_ips", {}).get("unique_asns", 2) == 1
+        _ext_asn = categories.get("external_ips", {}) or {}
+        _ua = _ext_asn.get("unique_asns", 2)
+        _vendor_n = _ext_asn.get("vendor_ip_count") or 0
+        # CHARGE ON EVIDENCE, AND NEVER REMOVE THE CHARGE BECAUSE WE MEASURED
+        # LESS. Two ways to qualify:
+        #   * unique_asns == 1  -- measured, and genuinely one.
+        #   * unique_asns == 0 WITH vendor hosts present -- addresses were
+        #     re-attributed away, and the only ASN we ever had belonged to one
+        #     of them. We cannot then claim redundancy we never evidenced.
+        #
+        # The second clause exists because of a measured interaction. For
+        # excellentmeat.co.za, riverport.co.za and www.zinia.co.za the single
+        # measured ASN was a Microsoft host; demoting it took the count 1 -> 0
+        # and, under `== 1` alone, un-charged them. That is a discount caused by
+        # the scanner knowing less, which the step-1 underwriting rule forbids
+        # outright: the absence of findings may never discount a rate.
+        #
+        # unique_asns == 0 with NO vendor hosts is the OUTSTANDING 5s case: the
+        # ASN was simply never collected, nothing was taken away, and charging
+        # it would be pricing a control we never looked at.
+        single_asn = (_ua == 1) or (_ua == 0 and _vendor_n > 0)
         # FAIR-anchored 2026-06-05. Base = Uptime Institute AOA serious/severe
         # outage rate (~3%/yr). Increments reflect the availability-relevant
         # control gaps: CDN/DDoS-mitigation is the PRIMARY lever (+0.035),

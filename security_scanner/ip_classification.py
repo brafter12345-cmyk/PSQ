@@ -121,11 +121,32 @@ def _suffix_match(host, suffix):
 
 
 def classify_ip(ip, reverse_dns=None, org=None, banner=None,
-                default_cert_names=None, insured_domain=None):
+                default_cert_names=None, insured_domain=None,
+                ptr_confirmed=None):
     """Classify *ip* by who operates the host.
 
     Returns (bucket, provider_label). bucket is OWNED / PRIVATE / CDN / SAAS.
     Only OWNED is port-scanned and attributed as the insured's own exposure.
+
+    ``ptr_confirmed`` says whether the reverse-DNS name resolves FORWARD back to
+    this address. A vendor reverse-DNS suffix may demote a host only when it is
+    True. Pass None (the default) when the check was not performed or could not
+    complete, and the reverse name will not be used to demote anything.
+
+    WHY. A reverse-DNS record is written by whoever holds the address, and many
+    providers let a customer set it. An insured wanting a cheaper premium could
+    put `something.wpengine.com` on their own exposed box and have it drop out
+    of the priced estate. Forward confirmation closes that: a customer who can
+    write the reverse record almost never also controls what `wpengine.com`
+    resolves to.
+
+    A MISSING CONFIRMATION MUST NEVER DEMOTE, which is why None and False behave
+    alike here. If a DNS timeout demoted a host, the timeout would become a
+    discount, and ptr_map in scanner.py already drops addresses silently on
+    FuturesTimeoutError. Measured on the 30 retained scans, ZERO addresses were
+    demoted by a reverse name alone: every one was also carried by Shodan org, a
+    server banner, or a published address range. So this closes a gaming vector
+    at no cost to current coverage.
     """
     # 1. private / reserved — never scan, never attribute.
     try:
@@ -163,7 +184,11 @@ def classify_ip(ip, reverse_dns=None, org=None, banner=None,
     bannerl = (banner or "").strip().lower()
 
     # 2. reverse-DNS VENDOR suffixes (CDN, then SaaS / shared hosting).
-    if rdns:
+    #    GATED ON FORWARD CONFIRMATION: the address holder writes this string,
+    #    so on its own it is an assertion by the party being judged. Absent or
+    #    failed confirmation leaves the host where it was rather than demoting
+    #    it, so a DNS timeout can never become a discount.
+    if rdns and ptr_confirmed is True:
         for suf, label in _CDN_RDNS.items():
             if _suffix_match(rdns, suf):
                 return (CDN, label)
@@ -316,3 +341,29 @@ def looks_multi_tenant(default_cert_names, insured_domain):
     if not default_cert_names or not insured_domain:
         return None
     return not _cert_covers(default_cert_names, insured_domain)
+
+
+def forward_confirms(reverse_name, ip, timeout=3.0):
+    """Does *reverse_name* resolve forward to *ip*?
+
+    True only on a positive match. False on a definite non-match. None when the
+    lookup could not be completed, so the caller can tell "not this host" from
+    "we could not tell" and refuse to demote on the latter.
+    """
+    name = (reverse_name or "").strip().rstrip(".")
+    if not name or not ip:
+        return None
+    import socket
+    old = socket.getdefaulttimeout()
+    try:
+        socket.setdefaulttimeout(timeout)
+        infos = socket.getaddrinfo(name, None)
+    except Exception:
+        return None
+    finally:
+        try:
+            socket.setdefaulttimeout(old)
+        except Exception:
+            pass
+    addrs = {i[4][0] for i in infos if i and i[4]}
+    return str(ip).strip() in addrs

@@ -106,40 +106,76 @@ SCENARIOS = {
 # IaaS VMs (an exposed Jenkins/Elasticsearch on their EC2/GCE is THEIR risk).
 # Without this gate the subdomain-IP path attributes 41 third-party hosts to the
 # target as its own exposure (the bug this audit found).
+# 7th element is ptr_confirmed: whether the reverse name resolves FORWARD back
+# to this address. A vendor reverse suffix may demote ONLY when it does, because
+# the reverse record is written by whoever holds the address and is therefore an
+# assertion by the party being judged. Most rows below do not need it: they are
+# decided by Shodan org, a server banner or a published address range. Measured
+# on the 30 retained scans, ZERO addresses demoted on a reverse name alone, so
+# this closes the gaming vector at no cost to coverage.
 CLASSIFY_SCENARIOS = [
     # --- vendor-operated -> third-party (NOT scanned/attributed as own) ---
     ("hostrocket_sharedhost", "66.147.238.15", "dirapp84.directorysecure.com",
-     "HostRocket Web Services", "220 Pure-FTPd", ipc.SAAS),
+     "HostRocket Web Services", "220 Pure-FTPd", ipc.SAAS, True),
     ("cloudfront_edge", "143.204.4.4", "server-143-204-4-4.jnb51.r.cloudfront.net",
-     None, "CloudFront", ipc.CDN),
+     None, "CloudFront", ipc.CDN, True),
     ("akamai_edge", "23.196.227.231", "a23-196-227-231.deploy.static.akamaitechnologies.com",
-     None, "AkamaiGHost", ipc.CDN),
+     None, "AkamaiGHost", ipc.CDN, True),
     ("cloudflare_no_ptr", "104.16.71.64", None, None,
-     "HTTP/1.1 403 Forbidden\r\nServer: cloudflare", ipc.CDN),
+     "HTTP/1.1 403 Forbidden\r\nServer: cloudflare", ipc.CDN, None),
+    # The ONLY original row whose verdict rests on the reverse name alone, so
+    # it is the one that proves the gate is exercising the confirmation.
     ("salesforce_exacttarget", "13.111.150.233", "ja233.mta.exacttarget.com",
-     None, None, ipc.SAAS),
-    ("zendesk_org_only", "216.198.54.99", None, "Zendesk, Inc.", "", ipc.SAAS),
+     None, None, ipc.SAAS, True),
+    # THE GAMING CASE. Identical inputs, confirmation absent: the host must
+    # STAY in the priced estate. An insured who can write their own reverse
+    # record must not be able to drop their exposed box out of scoring.
+    ("forged_ptr_unconfirmed", "13.111.150.233", "ja233.mta.exacttarget.com",
+     None, None, ipc.OWNED, None),
+    # And a reverse name that definitely does NOT forward-confirm.
+    # NOT a TEST-NET address: 203.0.113.0/24 is reserved and ipaddress marks it
+    # private, so the row would have proved nothing about the reverse-name rule.
+    ("forged_ptr_refuted", "102.219.50.41", "something.wpengine.com",
+     None, None, ipc.OWNED, False),
+    ("zendesk_org_only", "216.198.54.99", None, "Zendesk, Inc.", "", ipc.SAAS, None),
     ("aws_elb_managed", "108.132.68.82", "ec2-108-132-68-82.eu-west-1.compute.amazonaws.com",
-     None, "awselb/2.0", ipc.CDN),   # ec2-style PTR but managed LB banner -> NOT owned
+     None, "awselb/2.0", ipc.CDN, True),   # ec2-style PTR but managed LB banner -> NOT owned
     # --- insured-operated -> OWNED (scanned + attributed as the insured's) ---
     ("aws_ec2_vm", "3.92.120.28", "ec2-3-92-120-28.compute-1.amazonaws.com",
-     "Amazon Data Services", "", ipc.OWNED),
+     "Amazon Data Services", "", ipc.OWNED, True),
     ("gce_vm", "104.199.105.60", "60.105.199.104.bc.googleusercontent.com",
-     None, "", ipc.OWNED),
-    ("insured_dc_no_signal", "102.219.50.40", None, None, "", ipc.OWNED),
+     None, "", ipc.OWNED, True),
+    ("insured_dc_no_signal", "102.219.50.40", None, None, "", ipc.OWNED, None),
     # --- private (internal host leaked in public DNS) -> never scanned ---
-    ("rfc1918_fortiauth", "10.0.1.250", None, None, None, ipc.PRIVATE),
-    ("rfc1918_elasticsearch", "10.28.32.100", None, None, None, ipc.PRIVATE),
+    ("rfc1918_fortiauth", "10.0.1.250", None, None, None, ipc.PRIVATE, None),
+    ("rfc1918_elasticsearch", "10.28.32.100", None, None, None, ipc.PRIVATE, None),
 ]
 
 
 def _check_classification(failures):
-    for label, ip, rdns, org, banner, expected in CLASSIFY_SCENARIOS:
-        got, _provider = ipc.classify_ip(ip, reverse_dns=rdns, org=org, banner=banner)
+    for label, ip, rdns, org, banner, expected, ptr_ok in CLASSIFY_SCENARIOS:
+        got, _provider = ipc.classify_ip(ip, reverse_dns=rdns, org=org,
+                                         banner=banner, ptr_confirmed=ptr_ok)
         ok = (got == expected)
         if not ok:
             failures.append(f"classify[{label}]: {ip} -> {got!r} != expected {expected!r}")
         print(f"  [{'PASS' if ok else 'FAIL'}] classify:{label:<24} -> {got}")
+
+    # NON-VACUITY. At least one row's verdict must CHANGE when the forward
+    # confirmation is withheld, or the whole dimension is decorative and a
+    # regression that dropped the check would pass unnoticed.
+    swung = [label for label, ip, rdns, org, banner, expected, ptr_ok
+             in CLASSIFY_SCENARIOS
+             if ptr_ok is True
+             and ipc.classify_ip(ip, reverse_dns=rdns, org=org, banner=banner,
+                                 ptr_confirmed=None)[0] != expected]
+    if not swung:
+        failures.append(
+            "classify: no scenario depends on ptr_confirmed, so the "
+            "forward-confirmation guard is untested. Add a row whose verdict "
+            "rests on the reverse name alone.")
+    print("  [%s] classify:ptr_confirmation_is_load_bearing (%d row(s) swing)"
+          % ("PASS" if swung else "FAIL", len(swung)))
 
 
 # ---- CVE<->software matching ground truth (checker audit, 2026-07-01) ---------
@@ -2071,12 +2107,23 @@ def _check_origin_exposure(failures):
 # NEITHER GOLDEN FIXTURE EXERCISES THIS. phishield carries unique_asns=1 and
 # takealot 2, so golden --check passes either way and proves nothing about this
 # change. That is exactly why the condition is driven directly here.
+# (label, unique_asns, vendor_ip_count, should_charge)
+#
+# The vendor dimension exists because of a MEASURED interaction. For
+# excellentmeat.co.za, riverport.co.za and www.zinia.co.za the single measured
+# ASN belonged to a Microsoft host; re-attributing it took the count 1 -> 0 and,
+# under `== 1` alone, un-charged them. That is a discount caused by the scanner
+# knowing LESS, which the step-1 underwriting rule forbids outright. So a zero
+# count still charges when addresses were taken away, and only stops charging
+# when the ASN was simply never collected in the first place.
 SINGLE_ASN_SCENARIOS = [
-    # (label, unique_asns, should_charge)
-    ("not_collected_zero",   0, False),
-    ("measured_single_asn",  1, True),
-    ("measured_multi_homed", 2, False),
-    ("measured_many",        7, False),
+    ("never_collected",          0, 0,  False),
+    ("zero_after_demotion",      0, 6,  True),
+    ("measured_single_asn",      1, 0,  True),
+    ("measured_single_w_vendor", 1, 6,  True),
+    ("measured_multi_homed",     2, 0,  False),
+    ("measured_multi_w_vendor",  2, 6,  False),
+    ("measured_many",            7, 0,  False),
 ]
 
 
@@ -2084,8 +2131,9 @@ def _check_single_asn_measured(failures):
     import importlib
     sa = importlib.import_module("scoring_analytics")
 
-    for label, ua, want in SINGLE_ASN_SCENARIOS:
+    for label, ua, vendor_n, want in SINGLE_ASN_SCENARIOS:
         cats = {"external_ips": {"unique_asns": ua, "total_unique_ips": 3,
+                                 "vendor_ip_count": vendor_n,
                                  "score": 100, "status": "completed", "issues": []},
                 "waf": {"detected": True},
                 "cloud_cdn": {"cdn_detected": True}}
@@ -2107,21 +2155,25 @@ def _check_single_asn_measured(failures):
         ok = (charged == want)
         if not ok:
             failures.append(
-                "single_asn[%s]: unique_asns=%d charged=%r, expected %r "
-                "(availability indicator %s). 0 means NOT COLLECTED and must "
-                "never be priced as single-homed." % (label, ua, charged, want, ind))
-        print("  [%s] single_asn:%-24s unique_asns=%d charged=%s"
-              % ("PASS" if ok else "FAIL", label, ua, charged))
+                "single_asn[%s]: unique_asns=%d vendor=%d charged=%r, expected "
+                "%r (availability indicator %s). A never-collected count must "
+                "not be priced as single-homed; a count zeroed BY DEMOTION must "
+                "not un-charge, because that is a discount for measuring less."
+                % (label, ua, vendor_n, charged, want, ind))
+        print("  [%s] single_asn:%-26s asns=%d vendor=%d charged=%s"
+              % ("PASS" if ok else "FAIL", label, ua, vendor_n, charged))
 
     # MUTATION: restore <= 1. The not-collected row must then flip to charged.
     import inspect
     src = inspect.getsource(sa.FinancialImpactCalculator._calculate_zar)
-    uses_eq = 'unique_asns", 2) == 1' in src
+    uses_eq = "_ua == 1) or (_ua == 0 and _vendor_n > 0)" in src
     if not uses_eq:
         failures.append(
-            "single_asn MUTATION: the scorer no longer tests `== 1`. If it has "
-            "gone back to `<= 1`, five clients in the retained corpus are again "
-            "charged +0.025 for an ASN count that was never collected.")
+            "single_asn MUTATION: the scorer no longer carries the "
+            "charge-on-evidence rule. Back to `<= 1` and five clients are again "
+            "charged for an ASN count never collected; down to a bare `== 1` "
+            "and three clients get a discount because re-attribution removed "
+            "the only ASN we had ever measured.")
     print("  [%s] single_asn:MUTATION scorer tests == 1"
           % ("PASS" if uses_eq else "FAIL"))
 
