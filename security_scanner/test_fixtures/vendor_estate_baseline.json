@@ -21,8 +21,7 @@
    "cdn_detected": false,
    "hosting_type": "self-hosted or undetected cloud",
    "ip_addresses": [
-    "104.16.72.64",
-    "104.16.71.64"
+    "156.38.174.226"
    ],
    "issues": [],
    "provider": null,
@@ -8616,6 +8615,17 @@
      "tags": []
     }
    },
+   "156.38.174.226": {
+    "shodan_vulns": {
+     "cves": [],
+     "open_ports": [
+      3306,
+      22,
+      80
+     ],
+     "org": "Xneelo"
+    }
+   },
    "196.34.14.128": {
     "dns_infrastructure": {
      "dns_records": {
@@ -12487,10 +12497,7 @@
      "197.84.242.38"
     ],
     "www.takealot.com": [
-     "2606:4700::6810:4840",
-     "2606:4700::6810:4740",
-     "104.16.72.64",
-     "104.16.71.64"
+     "104.26.2.40"
     ]
    },
    "risky_subdomains": [

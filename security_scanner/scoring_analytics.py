@@ -1245,6 +1245,26 @@ class RiskScorer:
         # detection would remove it from the CDN-fronted clients while the
         # scanner still cannot see their origin. Shipping the cap alongside is
         # what keeps the net effect honest.
+        # ORIGIN EXPOSURE. Derived here rather than in the scanner so it
+        # replays on frozen scans and could be measured before it shipped.
+        #
+        # REPORTING AND REMEDIATION ONLY, DELIBERATELY. The exposed apex is
+        # already a scanned OWNED host: aggregato.co.za's 156.38.174.226 carries
+        # 20 CVEs and 6 open ports that are counted today. Scoring the finding
+        # again would price the same exposure twice, which the anchoring rule
+        # forbids. The availability angle is already handled correctly too,
+        # because the apex is not fronted, so cdn_detected stays False and the
+        # +0.035 volumetric penalty still applies. What was missing was never a
+        # number; it was telling the client which door is open.
+        if isinstance(results, dict) and results.get("cloud_cdn") is not None:
+            try:
+                from origin_exposure import assess as _assess_origin
+                from cdn_ranges import edge_provider as _edge_prov
+                results["cloud_cdn"]["origin_exposure"] = _assess_origin(
+                    results, _edge_prov)
+            except Exception:
+                pass
+
         _cdn = (results.get("cloud_cdn") or {}) if isinstance(results, dict) else {}
         _origin = (results.get("origin_discovery") or {}) if isinstance(results, dict) else {}
         _edge_only = bool(_cdn.get("cdn_detected")) and not (_origin.get("verified") or [])
@@ -4344,7 +4364,14 @@ class RemediationSimulator:
          "Update privacy policy to cover all POPIA/GDPR required sections — failure to comply risks regulatory fines up to 2% of annual turnover.", "R9,000–R36,000", 0.01),
         ("fraudulent_domains", lambda c: c.get("resolved_count", 0) > 0,
          "Register key lookalike domains defensively and set up brand monitoring — lookalike domains enable phishing and brand impersonation.", "R9,000–R36,000", 0.01),
-        ("cloud_cdn", lambda c: not c.get("cdn_detected"),
+        # The apex bypasses an edge the client ALREADY PAYS FOR. This row must
+        # come before the generic "deploy a CDN" row below and that row must not
+        # also fire, because telling a client to buy protection they already
+        # have is wrong, checkable by them, and costs the report its credibility
+        # at renewal. Measured: 4 of 30 retained scans were getting that advice.
+        ("cloud_cdn", lambda c: (c.get("origin_exposure") or {}).get("exposed"),
+         "Move the apex DNS record behind the content delivery network the client already uses, and restrict the origin to accept traffic only from the provider's published address ranges — the apex currently resolves outside the edge, so DDoS absorption, WAF rules and rate limiting are all bypassed by connecting to the origin directly.", "R0–R3,600", 0.02),
+        ("cloud_cdn", lambda c: not c.get("cdn_detected") and not (c.get("origin_exposure") or {}).get("exposed"),
          "Deploy a CDN for DDoS resilience and improved availability — single-origin hosting is vulnerable to volumetric attacks.", "R0–R9,000/mo", 0.02),
         ("security_policy", lambda c: not c.get("security_txt", {}).get("present"),
          "Create a security.txt file at /.well-known/security.txt — establishes a vulnerability disclosure policy for responsible reporting.", "R0", 0.01),

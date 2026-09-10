@@ -1960,6 +1960,101 @@ def _check_cdn_feed_table(failures):
         print("  [FAIL] cdn_feed:artefact_parity")
 
 
+# ---- Origin exposed behind a fronted subdomain (OUTSTANDING 5o, 2026-09-10) --
+#
+# CloudCDNChecker resolves the APEX only, so where www sits behind a provider
+# and the apex does not, the apex is very probably the origin: published in DNS,
+# reachable directly, outside the edge the client pays for. Measured on the 30
+# retained scans, 4 clients are in this state and two have services listening on
+# the exposed origin (aggregato.co.za 3306/110/143/80/53/22, rbs.co.za
+# 80/993/4190/2222/110).
+#
+# THE REMEDIATION EXCLUSIVITY IS THE POINT OF THIS GATE. Before the fix the
+# ladder fired its generic "Deploy a CDN" row on exactly these clients, telling
+# them to buy protection they already pay for. That is checkable by the client
+# and costs the report its credibility at renewal, so the two rows must never
+# both fire.
+#
+# REPORTING ONLY, asserted here. The exposed apex is already a scanned OWNED
+# host whose CVEs and ports are counted; scoring the finding again would price
+# one exposure twice.
+ORIGIN_EXPOSURE_SCENARIOS = [
+    # (label, apex_ips, subdomain->ips, apex_ports, expect_exposed, expect_sev)
+    ("apex_outside_edge_nonweb", ["156.38.174.226"],
+     {"www.x.co.za": ["104.26.2.40"]}, {"156.38.174.226": [3306, 22, 80]},
+     True, "high"),
+    ("apex_outside_edge_webonly", ["203.0.113.10"],
+     {"www.x.co.za": ["104.26.2.40"]}, {"203.0.113.10": [80, 443]},
+     True, "medium"),
+    # The apex is itself fronted: nothing is disclosed, the client is behind the
+    # edge where it counts.
+    ("apex_is_fronted", ["104.26.2.40"],
+     {"www.x.co.za": ["104.26.2.40"]}, {}, False, None),
+    # No edge anywhere. This is the genuinely un-fronted client who SHOULD get
+    # the generic "deploy a CDN" advice.
+    ("no_edge_anywhere", ["203.0.113.10"],
+     {"www.x.co.za": ["203.0.113.11"]}, {}, False, None),
+    ("no_apex_recorded", [], {"www.x.co.za": ["104.26.2.40"]}, {}, False, None),
+]
+
+
+def _check_origin_exposure(failures):
+    import importlib
+    oe = importlib.import_module("origin_exposure")
+    cr = importlib.import_module("cdn_ranges")
+    sa = importlib.import_module("scoring_analytics")
+
+    for label, apex, subs, ports, want, want_sev in ORIGIN_EXPOSURE_SCENARIOS:
+        cats = {
+            "cloud_cdn": {"ip_addresses": apex},
+            "subdomains": {"resolved_ips": subs},
+            "per_ip": {ip: {"shodan_vulns": {"open_ports": pl}}
+                       for ip, pl in ports.items()},
+        }
+        got = oe.assess(cats, cr.edge_provider)
+        ok = (bool(got.get("exposed")) == want
+              and (got.get("severity") == want_sev))
+        if not ok:
+            failures.append(
+                "origin_exposure[%s]: exposed=%r sev=%r, expected %r/%r (%s)"
+                % (label, got.get("exposed"), got.get("severity"), want,
+                   want_sev, got.get("reason")))
+        print("  [%s] origin_exposure:%-26s -> exposed=%s sev=%s"
+              % ("PASS" if ok else "FAIL", label, got.get("exposed"),
+                 got.get("severity")))
+
+    # THE TWO REMEDIATION ROWS MUST BE MUTUALLY EXCLUSIVE.
+    rows = [(cond, action) for k, cond, action, _c, _d
+            in sa.RemediationSimulator.REMEDIATION_MAP if k == "cloud_cdn"]
+    for label, exposed, detected, want_move, want_deploy in [
+            ("exposed_origin",  True,  False, True,  False),
+            ("no_cdn_at_all",   False, False, False, True),
+            ("fully_fronted",   False, True,  False, False)]:
+        cat = {"cdn_detected": detected, "origin_exposure": {"exposed": exposed}}
+        fired = [a for cond, a in rows if cond(cat)]
+        move = any("Move the apex" in a for a in fired)
+        deploy = any("Deploy a CDN" in a for a in fired)
+        ok = (move == want_move and deploy == want_deploy)
+        if not ok:
+            failures.append(
+                "origin_exposure_remediation[%s]: move=%r deploy=%r, expected "
+                "%r/%r. Telling a client to deploy a CDN they already pay for "
+                "is wrong, checkable by them, and costs the report its "
+                "credibility." % (label, move, deploy, want_move, want_deploy))
+        print("  [%s] origin_exposure_rem:%-22s move=%s deploy=%s"
+              % ("PASS" if ok else "FAIL", label, move, deploy))
+
+    # MUTATION: drop the exclusivity guard from the generic row. Both rows then
+    # fire on an exposed-origin client, which is the defect this replaced.
+    naive = [a for cond, a in rows if cond({"cdn_detected": False})]
+    if len([a for a in naive if "Deploy a CDN" in a]) == 0:
+        failures.append("origin_exposure MUTATION is vacuous: the generic row "
+                        "no longer fires for an unfronted client at all, so the "
+                        "exclusivity it guards cannot be tested.")
+    print("  [%s] origin_exposure:MUTATION generic row still reachable"
+          % ("PASS" if any("Deploy a CDN" in a for a in naive) else "FAIL"))
+
+
 def _check_cdn_edge_detection(failures):
     """A content delivery network edge must be recognised from its ADDRESS, and
     an edge-only assessment must never claim full confidence.
@@ -4042,6 +4137,7 @@ def main():
     _check_no_own_estate(failures)
     _check_attribution_confidence(failures)
     _check_cdn_feed_table(failures)
+    _check_origin_exposure(failures)
     _check_gate_self_wiring(failures)
     _check_lookalike_ownership(failures)
     _check_lookalike_posture(failures)

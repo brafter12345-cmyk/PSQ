@@ -28,11 +28,11 @@
     "bytes": 16144
   },
   "vendor_estate_baseline::summary": {
-    "sha256": "73d8975bd2d3bb2322a63a415dddfaaeaec7a84146460d479492e43820ee9372",
-    "bytes": 15912
+    "sha256": "742754ab12a4b9eba9ee88c649b82625285cb539db3b00797a005a3bc06d0f8f",
+    "bytes": 16522
   },
   "vendor_estate_baseline::full": {
-    "sha256": "d5884442bff8f5f3d1f0d1dc279be8566f9912ca63ffd5ffe98e3100d1149598",
-    "bytes": 81698
+    "sha256": "d6874128b1e773648520d78e7ed503eeda20a0074ac10aa9df2cf8b232f1f590",
+    "bytes": 82243
   }
 }

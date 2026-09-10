@@ -3538,6 +3538,62 @@ def estate_edge_notice(results, S):
     return [Spacer(1, 2 * mm), Paragraph(body, S["body"]), Spacer(1, 1.5 * mm)]
 
 
+def origin_exposure_notice(results, S):
+    """The apex bypasses the edge the client pays for.
+
+    Rendered beside the other estate notices. This is the half of the
+    CDN-detection problem that is worth more than the detection itself: the
+    scanner already held the records showing that a subdomain sits behind a
+    provider while the apex does not, and said nothing.
+
+    Reporting only. The exposed apex is already scanned and its findings are
+    already priced, so this names the door rather than charging for it again.
+    """
+    cats = results.get("categories") or {}
+    oe = (cats.get("cloud_cdn") or {}).get("origin_exposure") or {}
+    if not oe:
+        # DERIVE WHEN ABSENT. apply_risk_score attaches this in the live path,
+        # but a stored scan captured before this shipped carries no such field,
+        # and so would render nothing while the same data sat in the fixture.
+        # Everything the assessment needs is already in the categories dict, so
+        # deriving costs nothing and makes the finding appear on historical
+        # scans without a re-scan.
+        try:
+            from origin_exposure import assess as _assess_origin
+            from cdn_ranges import edge_provider as _edge_prov
+            oe = _assess_origin(cats, _edge_prov)
+        except Exception:
+            oe = {}
+    if not oe.get("exposed"):
+        return []
+    prov = oe.get("edge_provider") or "a content delivery network"
+    apex = ", ".join(oe.get("apex_ips") or [])
+    subs = ", ".join((oe.get("fronted_subdomains") or [])[:3]) or "a subdomain"
+    sev = "HIGH" if oe.get("severity") == "high" else "MEDIUM"
+    ports = oe.get("non_web_ports") or []
+
+    body = (f"<b>{sev} &mdash; the origin server is published in DNS and bypasses "
+            f"{prov}.</b> {subs} resolves into {prov}'s edge, but the apex resolves "
+            f"to {apex} instead. An attacker who would normally have to hunt for "
+            f"the origin can read it from the first record in the zone, and every "
+            f"control the edge provides &mdash; DDoS absorption, WAF rules, rate "
+            f"limiting, bot management &mdash; is bypassed by connecting to that "
+            f"address directly.")
+    if ports:
+        body += (f" Services are listening on the exposed origin: "
+                 f"<b>{', '.join(str(p) for p in ports)}</b>. Those were never "
+                 f"intended to face the internet, and the edge was the only thing "
+                 f"that could have been hiding them.")
+    out = [Spacer(1, 2 * mm), Paragraph(body, S["body"])]
+    out.append(Paragraph(
+        f"<b>Action:</b> move the apex record behind {prov} and restrict the "
+        f"origin to accept traffic only from the provider's published address "
+        f"ranges. This is a configuration change, not a purchase &mdash; the "
+        f"client is already paying for the protection.", S["body"]))
+    out.append(Spacer(1, 1.5 * mm))
+    return out
+
+
 def vendor_estate_notice(results, S):
     """Top-level notice: addresses discovered on this estate that a third party
     operates, and which are therefore not priced as the client's exposure.
