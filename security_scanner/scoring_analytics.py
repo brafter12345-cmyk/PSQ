@@ -2649,7 +2649,18 @@ class FinancialImpactCalculator:
         # it as single-homed and charges +0.025. Five fixtures are charged for a
         # control that was never measured. Fixing it is a rate movement in its
         # own right and does not belong in an attribution change.
-        single_asn = categories.get("external_ips", {}).get("unique_asns", 2) <= 1
+        # == 1, NOT <= 1. The aggregator's own comment beside result["unique_asns"]
+        # is explicit that 0 means NOT COLLECTED and must never be fabricated as
+        # a count. The scorer did not honour that: <= 1 read 0 as single-homed
+        # and added this term for a control that was never measured. Measured on
+        # the 30 retained scans, 13 fixtures fired the term and FIVE were in that
+        # state -- four with no discovered addresses at all, and fundagroup.co.za
+        # with asn_geo_unavailable set because the free Shodan InternetDB path
+        # returns no ASN. Requiring exactly 1 means we charge the redundancy gap
+        # only when we actually measured the estate and found one ASN.
+        # Owner-approved 2026-09-10 as its own rate movement, with a golden
+        # re-baseline, rather than folded into an attribution fix.
+        single_asn = categories.get("external_ips", {}).get("unique_asns", 2) == 1
         # FAIR-anchored 2026-06-05. Base = Uptime Institute AOA serious/severe
         # outage rate (~3%/yr). Increments reflect the availability-relevant
         # control gaps: CDN/DDoS-mitigation is the PRIMARY lever (+0.035),

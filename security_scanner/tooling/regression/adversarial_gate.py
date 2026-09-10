@@ -2055,6 +2055,77 @@ def _check_origin_exposure(failures):
           % ("PASS" if any("Deploy a CDN" in a for a in naive) else "FAIL"))
 
 
+# ---- single_asn must mean MEASURED-and-one (OUTSTANDING 5s, 2026-09-10) -----
+#
+# ExternalIPAggregator's own comment beside result["unique_asns"] is explicit:
+# do not fabricate a count, 0 means NOT COLLECTED, and the renderers show "n/a"
+# rather than a number. The scorer did not honour it. `unique_asns <= 1` read 0
+# as single-homed and added +0.025 to p_interruption against a 0.03 base -- a
+# third of the whole availability probability -- for a control never measured.
+#
+# Measured on the 30 retained scans: 13 fixtures fired the term and FIVE were in
+# that state. Four had no discovered addresses at all; fundagroup.co.za had
+# asn_geo_unavailable set, because the free Shodan InternetDB path returns no
+# ASN at all.
+#
+# NEITHER GOLDEN FIXTURE EXERCISES THIS. phishield carries unique_asns=1 and
+# takealot 2, so golden --check passes either way and proves nothing about this
+# change. That is exactly why the condition is driven directly here.
+SINGLE_ASN_SCENARIOS = [
+    # (label, unique_asns, should_charge)
+    ("not_collected_zero",   0, False),
+    ("measured_single_asn",  1, True),
+    ("measured_multi_homed", 2, False),
+    ("measured_many",        7, False),
+]
+
+
+def _check_single_asn_measured(failures):
+    import importlib
+    sa = importlib.import_module("scoring_analytics")
+
+    for label, ua, want in SINGLE_ASN_SCENARIOS:
+        cats = {"external_ips": {"unique_asns": ua, "total_unique_ips": 3,
+                                 "score": 100, "status": "completed", "issues": []},
+                "waf": {"detected": True},
+                "cloud_cdn": {"cdn_detected": True}}
+        fi = sa.FinancialImpactCalculator()
+        try:
+            out = fi._calculate_zar(cats, {}, 10_000_000, "other", None, None,
+                                    None, None)
+        except Exception as e:
+            # Signature drift must fail loudly rather than silently skip: a
+            # guard that cannot drive the code it guards is not a guard.
+            failures.append("single_asn[%s]: could not drive "
+                            "_calculate_zar (%s); the guard is inert" % (label, e))
+            print("  [FAIL] single_asn:%-24s (could not drive)" % label)
+            continue
+        rp = (out or {}).get("risk_probability") or {}
+        ind = (rp.get("availability_resilience") or {}).get("indicator")
+        # base 0.03, +0.025 when the term fires, nothing else set here.
+        charged = ind is not None and round(ind, 4) >= 0.055
+        ok = (charged == want)
+        if not ok:
+            failures.append(
+                "single_asn[%s]: unique_asns=%d charged=%r, expected %r "
+                "(availability indicator %s). 0 means NOT COLLECTED and must "
+                "never be priced as single-homed." % (label, ua, charged, want, ind))
+        print("  [%s] single_asn:%-24s unique_asns=%d charged=%s"
+              % ("PASS" if ok else "FAIL", label, ua, charged))
+
+    # MUTATION: restore <= 1. The not-collected row must then flip to charged.
+    import inspect
+    src = inspect.getsource(sa.FinancialImpactCalculator._calculate_zar)
+    uses_eq = 'unique_asns", 2) == 1' in src
+    if not uses_eq:
+        failures.append(
+            "single_asn MUTATION: the scorer no longer tests `== 1`. If it has "
+            "gone back to `<= 1`, five clients in the retained corpus are again "
+            "charged +0.025 for an ASN count that was never collected.")
+    print("  [%s] single_asn:MUTATION scorer tests == 1"
+          % ("PASS" if uses_eq else "FAIL"))
+
+
 def _check_cdn_edge_detection(failures):
     """A content delivery network edge must be recognised from its ADDRESS, and
     an edge-only assessment must never claim full confidence.
@@ -4138,6 +4209,7 @@ def main():
     _check_attribution_confidence(failures)
     _check_cdn_feed_table(failures)
     _check_origin_exposure(failures)
+    _check_single_asn_measured(failures)
     _check_gate_self_wiring(failures)
     _check_lookalike_ownership(failures)
     _check_lookalike_posture(failures)
