@@ -789,9 +789,13 @@ def credential_export():
         source_meta, leak_references = {}, []  # enrichment is best-effort
     try:
         from credential_export import generate_encrypted_export
-        fname, blob, method, n = generate_encrypted_export(
+        # Step 4: the release is authorised for the scanned domain and its
+        # subdomains. Records for mailboxes anywhere else are refused, because
+        # the client cannot consent on behalf of another company's employees.
+        fname, blob, method, n, excluded_count = generate_encrypted_export(
             domain, DEHASHED_API_KEY, age_recipient=age_pub, passphrase=passphrase,
-            source_meta=source_meta, leak_references=leak_references)
+            source_meta=source_meta, leak_references=leak_references,
+            authorised_domains=[domain])
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)[:200]}), 500
     # Deliver via a ONE-TIME, expiring link (Manual 6.4 step 4). The encrypted blob
@@ -812,13 +816,19 @@ def credential_export():
     try:
         scanner_db.record_credential_export(
             secrets.token_hex(8), domain, authorised_by, consent, consent_ref,
-            method, n, token, expires_at, request.remote_addr or "")
+            method, n, token, expires_at, request.remote_addr or "",
+            authorised_domains=[domain], excluded_count=excluded_count)
     except Exception:
         pass  # audit is best-effort; never blocks a consented export
     return jsonify({
         "status": "ready",
         "download_url": f"{request.script_root}/api/credential-export/download/{token}",
         "filename": fname, "method": method, "record_count": n,
+        # Surfaced so the operator can see the filter ran. A release that
+        # refused nothing and one where the filter never ran look identical
+        # without this.
+        "excluded_out_of_scope": excluded_count,
+        "authorised_domains": [domain],
         "expires_at": expires_at, "expires_in_minutes": 15,
     })
 

@@ -138,13 +138,70 @@ def _g(entry, key):
     return v if v is not None else ""
 
 
+# --- Remediation step 4: only the client's own mailboxes may leave -----------
+#
+# THE DEFECT. _fetch_dehashed_full issues a bare `domain:{domain}` query and
+# every returned record went straight into the CSV. DeHashed's domain: operator
+# matches ADJACENT AND LOOKALIKE mailboxes, so the export could hand a client
+# credentials belonging to staff at other organisations. This is the same
+# substring-versus-boundary defect that _email_at_domain was written to fix on
+# the scan path (evil-takealot.com and takealot.company.co.za both contain
+# "takealot.com"); the fix was never applied to the export.
+#
+# NO SIGNED CONSENT CAN CURE IT. The client cannot consent on behalf of another
+# company's employees, so until this filter exists the authorisation form
+# describes a process the software does not perform.
+#
+# FAIL CLOSED. A record we cannot attribute to an authorised domain is EXCLUDED,
+# not included: a record with no email, or an unparseable one, is dropped. The
+# cost of dropping one of the client's own rows is that they ask us for it; the
+# cost of including someone else's is a data-protection incident.
+def mailbox_in_scope(email, authorised_domains):
+    """True when *email*'s mailbox domain is, or sits under, an authorised domain.
+
+    Boundary match on the domain label, never a substring: `evil-takealot.com`
+    and `takealot.company.co.za` must both be refused for `takealot.com`.
+    """
+    if not authorised_domains:
+        return False
+    if not email or "@" not in str(email):
+        return False
+    edom = str(email).rsplit("@", 1)[1].strip().lower().rstrip(".")
+    if not edom:
+        return False
+    for d in authorised_domains:
+        d = (d or "").strip().lower().rstrip(".").lstrip("@")
+        if d and (edom == d or edom.endswith("." + d)):
+            return True
+    return False
+
+
+def filter_entries_to_authorised(entries, authorised_domains):
+    """(kept, excluded_count) for a set of DeHashed records.
+
+    Counts only. The excluded addresses are deliberately NOT returned or logged
+    anywhere: they belong to people at other organisations, and the reason we
+    are dropping them is precisely that we have no authority to hold them.
+    """
+    kept, dropped = [], 0
+    for e in (entries or []):
+        raw = e.get("email")
+        if isinstance(raw, list):
+            raw = raw[0] if raw else ""
+        if mailbox_in_scope(raw, authorised_domains):
+            kept.append(e)
+        else:
+            dropped += 1
+    return kept, dropped
+
+
 _COLUMNS = ["record_type", "source", "date", "recency_band", "match_type",
             "confidence", "email", "username", "password", "hashed_password",
             "note"]
 
 
 def build_credential_csv(entries, source_meta=None, leak_references=None,
-                         today=None):
+                         today=None, authorised_domains=None):
     """Unified, date-clustered export INCLUDING passwords (export-only).
 
     Two record types in one file, sorted newest-first so the most recent
@@ -161,6 +218,12 @@ def build_credential_csv(entries, source_meta=None, leak_references=None,
     today = today or datetime.now(timezone.utc)
     source_meta = source_meta or {}
     rows = []
+
+    # Step 4: drop every credential whose mailbox is not at an authorised
+    # domain. Applied to CREDENTIAL records only -- a leak_reference is an
+    # IntelX posting that names the domain and carries no mailbox, so there is
+    # no person to mis-attribute.
+    entries, _excluded = filter_entries_to_authorised(entries, authorised_domains)
 
     for e in entries:
         src = _g(e, "database_name") or _g(e, "database")
@@ -238,21 +301,35 @@ def encrypt_aes_openssl(data, passphrase):
 
 def generate_encrypted_export(domain, dehashed_api_key, age_recipient=None,
                               passphrase=None, source_meta=None,
-                              leak_references=None):
-    """Returns (filename, ciphertext_bytes, method, record_count). Nothing stored.
+                              leak_references=None, authorised_domains=None):
+    """Returns (filename, ciphertext_bytes, method, record_count, excluded_count).
+
+    ``record_count`` counts the records actually written; ``excluded_count``
+    counts those refused because their mailbox sits outside the authorised
+    domains. Nothing stored.
 
     ``source_meta`` / ``leak_references`` come from the domain's latest scan
     (breach-date guesstimates + IntelX dump postings) so the export carries the
     same recency clustering as the dashboard. Both optional — without them the
     export still produces credentials, just without dates/leak references."""
+    # Step 4: the release is authorised for specific domains, defaulting to the
+    # scanned domain. Records for mailboxes anywhere else are refused.
+    authorised = [d for d in (authorised_domains or [domain]) if d]
     entries = _fetch_dehashed_full(domain, dehashed_api_key)
-    csv_bytes = build_credential_csv(entries, source_meta=source_meta,
-                                     leak_references=leak_references)
+    kept, excluded = filter_entries_to_authorised(entries, authorised)
+    csv_bytes = build_credential_csv(kept, source_meta=source_meta,
+                                     leak_references=leak_references,
+                                     authorised_domains=authorised)
     safe = "".join(c for c in (domain or "export") if c.isalnum() or c in ".-")
+    # len(kept), NOT len(entries): the count shown to the operator and written
+    # to the audit row must describe the file that was produced, not the raw
+    # query result. Reporting the pre-filter number would tell an operator the
+    # export contains records it deliberately withheld.
     if age_recipient:
         return (f"{safe}-credentials.csv.age",
-                encrypt_age(csv_bytes, age_recipient), "age", len(entries))
+                encrypt_age(csv_bytes, age_recipient), "age", len(kept), excluded)
     if passphrase:
         return (f"{safe}-credentials.csv.enc",
-                encrypt_aes_openssl(csv_bytes, passphrase), "aes-256-cbc", len(entries))
+                encrypt_aes_openssl(csv_bytes, passphrase), "aes-256-cbc",
+                len(kept), excluded)
     raise ValueError("Provide an age_recipient public key or a passphrase")

@@ -239,6 +239,15 @@ MIGRATIONS = [
         )""",
         "CREATE INDEX IF NOT EXISTS idx_credexport_domain ON credential_export_audit(domain)",
     ]),
+    # Remediation step 4. The authorisation is FOR SPECIFIC DOMAINS, so the
+    # audit row has to say which, or it cannot evidence that the release stayed
+    # inside what the client actually consented to. excluded_count records how
+    # many records were refused for sitting outside them: a release that
+    # refused nothing looks identical to one that never applied the filter.
+    ("0006_credential_export_scope", [
+        "ALTER TABLE credential_export_audit ADD COLUMN authorised_domains TEXT",
+        "ALTER TABLE credential_export_audit ADD COLUMN excluded_count INTEGER DEFAULT 0",
+    ]),
     ("0005_meeting_brief_audit", [
         # One row per generated client meeting brief. The brief can optionally
         # carry password FINGERPRINTS (first character + length) for the client's
@@ -416,14 +425,26 @@ def latest_completed_for_domain(domain: str) -> "dict | None":
 def record_credential_export(audit_id: str, domain: str, authorised_by: str,
                              consent: bool, consent_ref: str, method: str,
                              record_count: int, token: str, expires_at: str,
-                             client_ip: str) -> None:
+                             client_ip: str, authorised_domains=None,
+                             excluded_count: int = 0) -> None:
     """Manual 6.4 authorisation-gate audit row. Records ONLY the authorisation
-    trail (who / when / which domain / one-time token) — never credential data."""
+    trail (who / when / which domains / one-time token) — never credential data.
+
+    ``authorised_domains`` is the set the release was authorised for, and
+    ``excluded_count`` how many records were refused for sitting outside it.
+    Both exist because the authorisation is domain-scoped: without them the row
+    cannot evidence that the release stayed inside what the client consented to,
+    and a release that refused nothing is indistinguishable from one where the
+    filter never ran."""
+    _dom = ",".join(sorted({(d or "").strip().lower() for d in
+                            (authorised_domains or [domain]) if d}))
     _run("INSERT INTO credential_export_audit (id, domain, authorised_by, consent, "
-         "consent_ref, method, record_count, token, created_at, expires_at, client_ip) "
-         "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+         "consent_ref, method, record_count, token, created_at, expires_at, "
+         "client_ip, authorised_domains, excluded_count) "
+         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
          (audit_id, domain, authorised_by, 1 if consent else 0, consent_ref, method,
-          int(record_count or 0), token, _now(), expires_at, client_ip))
+          int(record_count or 0), token, _now(), expires_at, client_ip,
+          _dom, int(excluded_count or 0)))
 
 
 def record_meeting_brief(audit_id: str, scan_id: str, domain: str,

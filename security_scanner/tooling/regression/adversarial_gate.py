@@ -2263,6 +2263,119 @@ def _check_sa_second_level_domains(failures):
           % ("PASS" if still else "FAIL", len(still)))
 
 
+# ---- Credential export must carry only the client's mailboxes (step 4) ------
+#
+# THE DEFECT. _fetch_dehashed_full issues a bare `domain:{domain}` query and
+# every returned record went straight into the CSV. DeHashed's domain: operator
+# matches ADJACENT AND LOOKALIKE mailboxes, so the export could hand a client
+# credentials belonging to staff at other organisations. It is the same
+# substring-versus-boundary defect _email_at_domain fixed on the scan path,
+# never applied to the export.
+#
+# NO SIGNED CONSENT CAN CURE IT: a client cannot consent on behalf of another
+# company's employees, so until the filter exists the authorisation form
+# describes a process the software does not perform.
+#
+# THIS CHECK NEVER TOUCHES DEHASHED. Every row is synthetic. A guard test in
+# this repo once ran a real paginated credential export and burned roughly 500
+# credits, because cost tracks SEARCHES, not results. The no-network assertion
+# below is not decoration.
+EXPORT_SCOPE_SCENARIOS = [
+    # (label, email, authorised, in_scope)
+    ("own_mailbox",            "staff@takealot.com",           ["takealot.com"], True),
+    ("own_subdomain",          "ceo@mail.takealot.com",        ["takealot.com"], True),
+    ("uppercase",              "A@TAKEALOT.COM",               ["takealot.com"], True),
+    ("trailing_dot",           "a@takealot.com.",              ["takealot.com"], True),
+    # The three the bare domain: query would have swept in.
+    ("hyphen_lookalike",       "v@evil-takealot.com",          ["takealot.com"], False),
+    ("adjacent_suffix",        "v@takealot.company.co.za",     ["takealot.com"], False),
+    ("suffix_impersonation",   "v@takealot.com.evil.ru",       ["takealot.com"], False),
+    # FAIL CLOSED: unattributable records are refused, not included.
+    ("no_at_sign",             "nomailbox",                    ["takealot.com"], False),
+    ("empty",                  "",                             ["takealot.com"], False),
+    ("none",                   None,                           ["takealot.com"], False),
+    ("no_authorised_domains",  "staff@takealot.com",           [],               False),
+    ("multi_domain_release",   "s@second-brand.co.za",
+     ["takealot.com", "second-brand.co.za"], True),
+]
+
+
+def _check_export_mailbox_scope(failures):
+    import importlib
+    ce = importlib.import_module("credential_export")
+
+    for label, email, authorised, want in EXPORT_SCOPE_SCENARIOS:
+        got = bool(ce.mailbox_in_scope(email, authorised))
+        ok = (got == want)
+        if not ok:
+            failures.append(
+                "export_scope[%s]: in_scope=%r, expected %r. A mailbox outside "
+                "the authorised domains belongs to another organisation's staff, "
+                "and no client consent can authorise its release."
+                % (label, got, want))
+        print("  [%s] export_scope:%-24s -> %s" % ("PASS" if ok else "FAIL", label, got))
+
+    # End to end through the real CSV builder, synthetic rows only.
+    entries = [{"email": "staff@takealot.com", "password": "x", "database_name": "S"},
+               {"email": "v@evil-takealot.com", "password": "x", "database_name": "S"},
+               {"username": "no-mailbox", "password": "x", "database_name": "S"}]
+    kept, excluded = ce.filter_entries_to_authorised(entries, ["takealot.com"])
+    csv = ce.build_credential_csv(
+        entries, authorised_domains=["takealot.com"],
+        leak_references=[{"name": "stealer-dump-2026", "date": "2026-01-02"}]).decode()
+    # Report WHICH condition failed. Counts being right while the rows still
+    # reach the file is a different defect from the counts being wrong, and a
+    # message that conflates them costs a debugging cycle.
+    problems = []
+    if len(kept) != 1 or excluded != 2:
+        problems.append("filter counts kept=%d excluded=%d, expected 1/2"
+                        % (len(kept), excluded))
+    leaked = [n for n in ("evil-takealot", "no-mailbox") if n in csv]
+    if leaked:
+        problems.append("out-of-scope rows REACHED THE FILE: %s -- the counts "
+                        "may be right while the CSV is still built from the "
+                        "unfiltered list" % leaked)
+    if "staff@takealot.com" not in csv:
+        problems.append("the client's OWN mailbox is missing from the file; the "
+                        "filter is refusing records it should release")
+    ok = not problems
+    if not ok:
+        failures.append("export_scope[csv]: " + "; ".join(problems))
+    print("  [%s] export_scope:%-24s kept=%d excluded=%d"
+          % ("PASS" if ok else "FAIL", "csv_end_to_end", len(kept), excluded))
+
+    # A leak_reference is an IntelX posting naming the DOMAIN, with no mailbox,
+    # so there is no person to mis-attribute and it must survive the filter.
+    ok = "stealer-dump-2026" in csv
+    if not ok:
+        failures.append("export_scope[leak_reference]: a domain-level IntelX "
+                        "posting was dropped by a MAILBOX filter; it carries no "
+                        "mailbox and cannot be mis-attributed to anyone.")
+    print("  [%s] export_scope:%-24s" % ("PASS" if ok else "FAIL", "leak_reference_kept"))
+
+    # The count handed to the operator and the audit row must describe the FILE,
+    # not the raw query. Reporting the pre-filter number would tell an operator
+    # the export contains records it deliberately withheld.
+    import inspect
+    src = inspect.getsource(ce.generate_encrypted_export)
+    ok = "len(kept)" in src and "len(entries)" not in src.split("csv_bytes")[-1]
+    if not ok:
+        failures.append("export_scope[record_count]: generate_encrypted_export "
+                        "does not report len(kept); the operator would be told "
+                        "the file holds records it refused to write.")
+    print("  [%s] export_scope:%-24s" % ("PASS" if ok else "FAIL", "count_is_post_filter"))
+
+    # MUTATION: authorise nothing and assert everything is refused. If a record
+    # survives an empty authorisation set the filter is not fail-closed.
+    kept2, _ = ce.filter_entries_to_authorised(entries, [])
+    if kept2:
+        failures.append("export_scope MUTATION: %d record(s) survived an EMPTY "
+                        "authorised-domain set. The filter must fail closed."
+                        % len(kept2))
+    print("  [%s] export_scope:MUTATION empty authorisation refuses all"
+          % ("PASS" if not kept2 else "FAIL"))
+
+
 def _check_cdn_edge_detection(failures):
     """A content delivery network edge must be recognised from its ADDRESS, and
     an edge-only assessment must never claim full confidence.
@@ -4348,6 +4461,7 @@ def main():
     _check_origin_exposure(failures)
     _check_single_asn_measured(failures)
     _check_sa_second_level_domains(failures)
+    _check_export_mailbox_scope(failures)
     _check_gate_self_wiring(failures)
     _check_lookalike_ownership(failures)
     _check_lookalike_posture(failures)

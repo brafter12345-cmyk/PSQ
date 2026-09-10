@@ -1070,3 +1070,36 @@ is: `boston.net.za` and a homoglyph like `bo5ton.ac.za` score identically, and
 everything past about 13 resolving lookalikes is free because of the cap. That
 is pre-existing and 5n only adds three items to it, but it is worth revisiting
 when lookalike scoring is next calibrated.
+
+### Remediation step 4 SHIPPED (2026-09-10) — export restricted to the client's mailboxes
+
+`_fetch_dehashed_full` issued a bare `domain:{domain}` query and every returned
+record went straight into the CSV. DeHashed's `domain:` operator matches ADJACENT
+AND LOOKALIKE mailboxes, so the export could hand a client credentials belonging
+to staff at other organisations. It is the same substring-versus-boundary defect
+`_email_at_domain` fixed on the scan path, never applied to the export.
+
+`mailbox_in_scope` / `filter_entries_to_authorised` now gate the row builder on a
+boundary match, defaulting to the scanned domain and its subdomains. FAIL CLOSED:
+a record with no email, an unparseable one, or any record when no domains are
+authorised, is REFUSED. `leak_reference` rows survive, because an IntelX posting
+names the domain and carries no mailbox, so there is no person to mis-attribute.
+
+The count reported to the operator and written to the audit row is now the
+POST-filter count. Reporting the raw query total would tell an operator the file
+holds records it deliberately withheld.
+
+Migration 0006 adds `authorised_domains` and `excluded_count` to
+`credential_export_audit`: the authorisation is domain-scoped, so without them
+the row cannot evidence that the release stayed inside what the client consented
+to, and a release that refused nothing looks identical to one where the filter
+never ran. Verified on a fresh database and on an upgraded pre-0006 one, with
+the existing row intact.
+
+WHAT THIS UNBLOCKS. The authorisation form now describes a process the software
+performs. The export remains disabled behind `CREDENTIAL_EXPORT_ENABLED`; that is
+a separate decision (§0 demo window) and this change does not flip it.
+
+NO DEHASHED CALL WAS MADE building or testing this. Every row is synthetic. A
+guard test in this repo once ran a real paginated export and burned roughly 500
+credits, because cost tracks SEARCHES, not results.
