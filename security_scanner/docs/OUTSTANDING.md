@@ -986,3 +986,14 @@ whose absence makes a finished scan hang at "0/39 Scanning" forever; and the
 string "Vendor-operated" is present in the emitted `app.js`, so the change is
 genuinely in the bundle rather than only in the source. `static/dashboard/` is
 committed; `node_modules` is gitignored and stays out.
+
+**BUILD TRAP, WINDOWS.** `SCANNER_BASE_PATH=/scanner` under Git Bash is rewritten
+by MSYS path translation into `/Program Files/Git/scanner`, and the base path is
+baked into `index.html` silently. The first build here shipped
+`src="/Program Files/Git/scanner/static/dashboard/app.js"`, which breaks the
+dashboard outright. Build with `MSYS_NO_PATHCONV=1` prefixed, or from PowerShell.
+
+Verify by extracting the `src`/`href` values and asserting each STARTS WITH
+`/scanner/static/dashboard/`. A substring grep for `/scanner/static/dashboard/`
+matches happily inside the mangled path and reports success on a broken build,
+which is how the bad artefact was committed here in the first place.
