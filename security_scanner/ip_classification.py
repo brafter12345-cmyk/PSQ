@@ -291,6 +291,71 @@ def _cert_covers(names, domain):
     return False
 
 
+# --- Port lists come in TWO SHAPES, and that is the whole problem ------------
+#
+# shodan_vulns["open_ports"]        -> list of INTS          e.g. [80, 443]
+# dns_infrastructure["open_ports"]  -> list of DICTS         e.g. [{"port": 443, ...}]
+#
+# Measured across all 307 per-IP records in the retained corpus: 941 int
+# entries and 343 dict entries, never mixed within one list. Both naive unions
+# fail, and one fails SILENTLY:
+#
+#   set(dns) | set(shodan)   -> TypeError: unhashable type: 'dict'
+#   443 in [{"port": 443}]   -> False, forever, with no error
+#
+# The silent one is the dangerous shape: a regression written that way passes
+# green over zero real evaluations, which this codebase has shipped before.
+def observed_ports(*port_lists):
+    """Port numbers from any mixture of the two shapes. Never raises.
+
+    Anything unrecognised is ignored rather than guessed at: a port list we
+    cannot parse must not invent a port, and must not lose the ones we can.
+    """
+    out = set()
+    for lst in port_lists:
+        for entry in (lst or []):
+            if isinstance(entry, bool):
+                continue                      # bool is an int subclass; refuse it
+            if isinstance(entry, int):
+                out.add(entry)
+                continue
+            if isinstance(entry, dict):
+                val = entry.get("port")
+                if isinstance(val, bool):
+                    continue
+                if isinstance(val, int):
+                    out.add(val)
+                elif isinstance(val, str) and val.strip().isdigit():
+                    out.add(int(val.strip()))
+                continue
+            if isinstance(entry, str) and entry.strip().isdigit():
+                out.add(int(entry.strip()))
+    return out
+
+
+# TLS ports worth probing for a default vhost certificate. 8443 is deliberately
+# NOT here: it adds exactly one host on the retained corpus and needs a port=
+# argument threaded into probe_default_cert, so it is measured separately.
+TLS_PROBE_PORTS = (443,)
+
+
+def tls_observed(*port_lists):
+    """True when any source observed a TLS port on this host.
+
+    THE GATE THIS REPLACES was `443 in (shod.get("open_ports") or [])`, i.e.
+    Shodan's list alone. That list is empty whenever Shodan holds no record,
+    and it can also simply disagree with our own scan. Measured on the retained
+    corpus: the probe ran on 77 hosts, our own port scan saw 443 on 82, and the
+    union is 95 -- so 18 hosts across 14 of 30 scans were never probed despite
+    an observed 443. Eight of those carry the textbook shared-cPanel port set
+    (21/22/80/110/143/443/993/995/3306), which is to say the gate failed hardest
+    on exactly the population the probe exists to identify, because Shodan
+    indexes small South African hosting space poorly.
+    """
+    seen = observed_ports(*port_lists)
+    return any(p in seen for p in TLS_PROBE_PORTS)
+
+
 def probe_default_cert(ip, timeout=5.0, port=443):
     """Certificate names the host serves with NO SNI, or None if unavailable.
 

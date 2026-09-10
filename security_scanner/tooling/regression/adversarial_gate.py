@@ -2459,6 +2459,105 @@ def _check_default_cert_verdict(failures):
           % ("PASS" if flipped else "FAIL", len(flipped)))
 
 
+# ---- The default-cert probe gate must read BOTH port shapes ----------------
+#
+# The gate was `443 in (shod.get("open_ports") or [])` -- Shodan's list alone.
+# That list is empty whenever Shodan holds no record, and it can simply
+# disagree with our own scan: aggregato.co.za's 156.38.174.226 has a FULL
+# Shodan record whose port list lacks the 443 our own port scan observed.
+#
+# Measured on the retained corpus: 77 hosts probed, our own scan sees 443 on
+# 82, union 95. Eighteen hosts across 14 of 30 scans were never probed despite
+# an observed 443, and eight of those carry the textbook shared-cPanel port set
+# (21/22/80/110/143/443/993/995/3306) -- the gate failed hardest on exactly the
+# population the probe exists to identify.
+#
+# THE TWO SHAPES ARE THE TRAP. shodan_vulns["open_ports"] is a list of INTS;
+# dns_infrastructure["open_ports"] is a list of DICTS. Both naive unions fail,
+# and one fails SILENTLY:
+#     set(dns) | set(shodan)  -> TypeError: unhashable type: 'dict'
+#     443 in [{"port": 443}]  -> False, forever, no error
+# A regression written the second way passes green over zero real evaluations.
+TLS_GATE_SCENARIOS = [
+    # (label, shodan list, dns list, expect probe)
+    ("shodan_ints_443",       [80, 443],  None,                    True),
+    ("dns_dicts_443",         [],         [{"port": 443}],         True),
+    # The 18-host case: Shodan saw the host but not the port.
+    ("shodan_has_no_443",     [80],       [{"port": 443}],         True),
+    ("no_shodan_record",      [],         [{"port": 443}],         True),
+    ("digit_strings",         [],         [{"port": "443"}],       True),
+    ("neither_has_tls",       [80, 25],   [{"port": 22}],          False),
+    ("both_empty",            [],         [],                      False),
+    ("both_none",             None,       None,                    False),
+    # bool is an int subclass; True must not read as port 1.
+    ("bool_refused",          [True],     [{"port": False}],       False),
+    ("junk_ignored",          ["abc"],    [{"noport": 1}, None],   False),
+]
+
+
+def _check_tls_port_gate(failures):
+    import importlib
+    ipc = importlib.import_module("ip_classification")
+
+    for label, shod, dns, want in TLS_GATE_SCENARIOS:
+        got = bool(ipc.tls_observed(shod, dns))
+        ok = (got == want)
+        if not ok:
+            failures.append(
+                "tls_gate[%s]: shodan=%r dns=%r -> probe=%r, expected %r"
+                % (label, shod, dns, got, want))
+        print("  [%s] tls_gate:%-22s -> probe=%s" % ("PASS" if ok else "FAIL", label, got))
+
+    # The extractor must survive every shape without raising.
+    try:
+        ipc.observed_ports([1], [{"port": 2}], ["3"], [None, "x", {}, [4]], None)
+        raised = None
+    except Exception as e:
+        raised = e
+    if raised is not None:
+        failures.append("tls_gate[extractor]: observed_ports raised %r on mixed "
+                        "input; it must never raise" % raised)
+    print("  [%s] tls_gate:%-22s" % ("PASS" if raised is None else "FAIL",
+                                     "extractor_never_raises"))
+
+    # MUTATION 1, the LOUD failure: the naive set union.
+    try:
+        set([{"port": 443}]) | set([443])
+        loud = False
+    except TypeError:
+        loud = True
+    if not loud:
+        failures.append("tls_gate MUTATION: set(dns) | set(shodan) no longer "
+                        "raises, so the dict shape has changed and this guard "
+                        "is describing a trap that no longer exists.")
+    print("  [%s] tls_gate:MUTATION naive union still raises" % ("PASS" if loud else "FAIL"))
+
+    # MUTATION 2, the SILENT failure, which is the dangerous one. A membership
+    # test straight against the dict list must still be False -- that is what
+    # makes the shape-tolerant extractor necessary rather than decorative.
+    silent = (443 not in [{"port": 443}])
+    if not silent:
+        failures.append("tls_gate MUTATION: `443 in [{'port': 443}]` is now "
+                        "True, so the silent-failure shape this guard exists "
+                        "for has changed.")
+    print("  [%s] tls_gate:MUTATION `443 in [dict]` still silently False"
+          % ("PASS" if silent else "FAIL"))
+
+    # The shipped gate must not read Shodan alone. Source-level, on the AST, so
+    # a keyword inside a comment cannot satisfy it.
+    import ast
+    with io.open(os.path.join(SEC, "scanner.py"), encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    calls = [n for n in ast.walk(tree)
+             if isinstance(n, ast.Call)
+             and getattr(n.func, "id", None) == "tls_observed"]
+    if not calls:
+        failures.append("tls_gate[wiring]: scanner.py never calls tls_observed; "
+                        "the probe gate has reverted to a single source.")
+    print("  [%s] tls_gate:wired_in_scanner (%d call site(s))"
+          % ("PASS" if calls else "FAIL", len(calls)))
+
+
 def _check_cdn_edge_detection(failures):
     """A content delivery network edge must be recognised from its ADDRESS, and
     an edge-only assessment must never claim full confidence.
@@ -4546,6 +4645,7 @@ def main():
     _check_sa_second_level_domains(failures)
     _check_export_mailbox_scope(failures)
     _check_default_cert_verdict(failures)
+    _check_tls_port_gate(failures)
     _check_gate_self_wiring(failures)
     _check_lookalike_ownership(failures)
     _check_lookalike_posture(failures)

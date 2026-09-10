@@ -708,7 +708,8 @@ class SecurityScanner:
         # is the strongest pre-scan signal (PTR is set by the IP owner); verified
         # origins are already cert-confirmed own infra and always scanned.
         from ip_classification import (classify_ip, OWNED, PRIVATE, is_third_party,
-                                       probe_default_cert, forward_confirms)
+                                       probe_default_cert, forward_confirms,
+                                       tls_observed)
 
         def _ptr_lookup(ip):
             try:
@@ -868,12 +869,18 @@ class SecurityScanner:
             # AND managed hosting under the same PTR suffix and the same org, so
             # the IaaS rule below would claim a shared box as the insured's own.
             # One extra handshake per scanned IP, and only when 443 is open.
-            _default_cert = None
-            try:
-                if 443 in (shod.get("open_ports") or []):
-                    _default_cert = probe_default_cert(ip)
-            except Exception:
-                _default_cert = None
+            # Gate on a TLS port observed by EITHER source. Shodan's list is
+            # empty whenever it holds no record, and can simply disagree with
+            # our own scan: aggregato.co.za's 156.38.174.226 has a full Shodan
+            # record whose port list lacks the 443 our own scan saw. Measured,
+            # the old gate probed 77 hosts and missed 18 that had an observed
+            # 443, eight of them carrying the textbook shared-cPanel port set.
+            #
+            # The gate expression sits OUTSIDE any try: probe_default_cert
+            # already returns None on every failure of its own, so the only
+            # thing a try here could swallow is a bug in the gate itself.
+            _tls = tls_observed(shod.get("open_ports"), dns.get("open_ports"))
+            _default_cert = probe_default_cert(ip) if _tls else None
             bucket, label = classify_ip(ip, reverse_dns=dns.get("reverse_dns"),
                                         org=shod.get("org"), banner=banner,
                                         default_cert_names=_default_cert,

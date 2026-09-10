@@ -56,18 +56,22 @@ def _fronted_subdomains(categories, edge_provider):
 
 
 def _apex_open_ports(categories, apex_ips):
+    """Observed ports per apex address.
+
+    Delegates to ip_classification.observed_ports rather than re-implementing
+    the two-shape walk. This function had its own copy, and a second copy of a
+    parser that must tolerate ints AND dicts is a second place for the silent
+    `443 in [{"port": 443}]` failure to reappear.
+    """
+    from ip_classification import observed_ports
     ports = {}
     per_ip = categories.get("per_ip") or {}
     for ip in apex_ips:
         entry = per_ip.get(ip) or {}
-        observed = set((entry.get("shodan_vulns") or {}).get("open_ports") or [])
-        for p in ((entry.get("dns_infrastructure") or {}).get("open_ports") or []):
-            if isinstance(p, dict) and p.get("port"):
-                observed.add(p["port"])
-            elif isinstance(p, int):
-                observed.add(p)
-        if observed:
-            ports[ip] = sorted(observed)
+        seen = observed_ports((entry.get("shodan_vulns") or {}).get("open_ports"),
+                              (entry.get("dns_infrastructure") or {}).get("open_ports"))
+        if seen:
+            ports[ip] = sorted(seen)
     return ports
 
 
