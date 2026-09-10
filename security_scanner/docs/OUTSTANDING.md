@@ -997,3 +997,42 @@ Verify by extracting the `src`/`href` values and asserting each STARTS WITH
 `/scanner/static/dashboard/`. A substring grep for `/scanner/static/dashboard/`
 matches happily inside the mangled path and reports success on a broken build,
 which is how the bad artefact was committed here in the first place.
+
+#### 5n MEASURED (2026-09-10) — the numbers the decision was waiting for
+
+Owner asked for measurement before any code change. Run over the 30 retained
+scans, adding `.ac.za`, `.org.za`, `.net.za`, `.gov.za` and `.web.za` to
+`ALT_TLDS`:
+
+| | |
+|---|---|
+| new candidate domains generated | **148** (about 5 per client, 22 of 30 targets are `.za`) |
+| of those, actually RESOLVE | **3** |
+| clients whose lookalike count rises | **3 of 30**, by exactly 1 each |
+
+    boston.ac.za    boston.net.za    -> 102.223.199.248
+    takealot.com    takealot.org.za  -> 156.38.135.146
+    example.com     example.org.za   -> 41.203.18.177   (test fixture)
+
+So the scoring impact is far smaller than the candidate count suggests: two real
+clients gain one resolving lookalike each. Cost is about 5 extra DNS lookups per
+South African client, which is negligible against the existing permutation set.
+
+Each of the three would still pass through the ownership verification added in
+remediation step 2, so a defensively-registered domain the client owns is
+excluded rather than counted against them. `takealot.org.za` is a plausible
+defensive registration; `boston.net.za` is the one worth a human look.
+
+CORRECTION TO A FIRST ATTEMPT AT THIS MEASUREMENT. My first probe extracted the
+brand label as `domain.split(".")[0]`, which for the target `www.zinia.co.za`
+yields `www` and generated `www.ac.za`, `www.gov.za`, `www.net.za` — three of
+which resolve, because they are ordinary hosts under the South African
+second-level domains. That produced a headline of 8 resolving candidates and an
+apparent checker bug. There is no such bug: `FraudulentDomainChecker._split_domain`
+correctly returns `("www.zinia", ".co.za")`. The reimplementation was wrong, not
+the checker. Measure with the shipped function, not a paraphrase of it.
+
+STILL A CALIBRATION DECISION. Three new resolving candidates move
+`resolved_count` and therefore the category and overall scores on two live
+clients, so it needs a golden re-baseline and a decision on whether the extra
+candidates carry the same penalty weight as the existing ones.
