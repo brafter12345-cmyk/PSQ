@@ -3,7 +3,7 @@ import { SeverityBadge, SeverityDot } from '../../components/primitives/Status'
 import EvidenceTable, { type Column } from '../../components/detail/EvidenceTable'
 import { PageTitle, KV, StatGrid, IssueList } from '../../components/detail/parts'
 import { getResults } from '../../data/results'
-import { cat, getOpenServices, getVulnerabilitySummary, type OpenService } from '../../data/selectors'
+import { cat, estateIpCount, getOpenServices, getVulnerabilitySummary, vendorIpCount, type OpenService } from '../../data/selectors'
 import { SEVERITY_COLOR } from '../../data/checkerState'
 import type { Results } from '../../types/results'
 import styles from './detail.module.css'
@@ -49,7 +49,10 @@ export default function NetworkPage({ r = getResults()! }: { r?: Results }) {
 
       <Panel title="Asset & Exposure Summary">
         <StatGrid stats={[
-          { label: 'External IPs', value: ips.length || (ext?.total_unique_ips as number) || '—' },
+          { label: 'External IPs', value: estateIpCount(r) || ips.length || '—' },
+          ...(vendorIpCount(r) > 0
+            ? [{ label: 'Vendor-operated', value: vendorIpCount(r) }]
+            : []),
           { label: 'Open services', value: services.length },
           { label: 'High-risk services', value: services.filter((s) => s.severity === 'critical' || s.severity === 'high').length, severity: 'high' },
           { label: 'Aggregate CVEs', value: vsum.total || (aggregate?.total_cves ?? '—') },

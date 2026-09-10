@@ -967,3 +967,25 @@ is live-only. Per-IP certificate names are not persisted anywhere
 only the apex certificate's subject and issuer), so no frozen scan can replay
 it. Persisting per-IP SAN sets would make the existing shared-hosting verdict
 replayable and is worth doing on its own.
+
+### 5v. Dashboard estate change is SOURCE-ONLY: not typechecked, not rebuilt
+
+`frontend/src/data/selectors.ts` gained `estateIpCount` and `vendorIpCount`, and
+`DiscoveryPage.tsx` / `NetworkPage.tsx` now use them, so the dashboard agrees
+with the PDF about how big a client's estate is. Before this, both panels read
+`external_ips.total_unique_ips` under the labels "Discovered IPs" and "External
+IPs", which after the attribution work is the POST-attribution pool: boston.ac.za
+would have read 3 on the dashboard and 15 in the PDF, and the label is the
+giveaway, because those hosts *were* discovered.
+
+**NOT VERIFIED AND NOT SHIPPED.** `frontend/node_modules` is absent in this
+sandbox, so there is no `tsc` and the change has NOT been typechecked, and
+`static/dashboard/` — a COMMITTED build artefact — has NOT been rebuilt, so the
+served dashboard still contains the old behaviour. The logic was checked by
+transliterating both helpers and running the four cases (new split, legacy plus
+vendors with de-duplication, legacy alone, empty), which is evidence about the
+algorithm and none at all about whether it compiles.
+
+BEFORE ANY DEPLOY: `npm ci` in `security_scanner/frontend`, `npm run build` with
+`SCANNER_BASE_PATH=/scanner` (without it a finished scan hangs at "0/39
+Scanning" forever), typecheck, and commit the regenerated `static/dashboard/`.

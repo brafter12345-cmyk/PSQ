@@ -1429,3 +1429,39 @@ export const CATEGORY_LABELS: Record<string, string> = {
   payment_security: 'Payment Security', privacy_compliance: 'Privacy Compliance',
   glasswing: 'AI Readiness', web_ranking: 'Web Ranking',
 }
+
+/**
+ * Addresses DISCOVERED on this estate: own-attributed plus vendor-operated.
+ *
+ * Mirrors pdf_cards.estate_ip_count. Use this wherever the label means "how
+ * much of this client is visible from the internet"; use
+ * external_ips.total_unique_ips only where the question is "what is the client
+ * answerable for", because that field counts the POST-attribution pool.
+ *
+ * Without this the dashboard and the PDF disagree out loud. When the Microsoft
+ * 365 service ranges landed, 174 addresses across 19 of 30 scans left the
+ * own-attributed pool, so boston.ac.za's PDF says 15 discovered addresses while
+ * a panel labelled "Discovered IPs" reading total_unique_ips would say 3. The
+ * label is the giveaway: those hosts were discovered, they are simply somebody
+ * else's to patch.
+ *
+ * Falls back the same way the PDF does, so a stored scan predating the split
+ * renders as it always did rather than as zero.
+ */
+export function estateIpCount(r: Results | null): number {
+  const ext = (cat(r, 'external_ips') ?? {}) as Record<string, unknown>
+  const total = ext.estate_total_ips as number | undefined
+  if (typeof total === 'number') return total
+  const own = (ext.total_unique_ips as number) ?? 0
+  return own + vendorIpCount(r)
+}
+
+/** Vendor-operated addresses excluded from the client's own exposure. */
+export function vendorIpCount(r: Results | null): number {
+  const ext = (cat(r, 'external_ips') ?? {}) as Record<string, unknown>
+  const n = ext.vendor_ip_count as number | undefined
+  if (typeof n === 'number') return n
+  const hosts = ((r as unknown as Record<string, unknown>)?.third_party_hosting
+    ?? []) as Array<Record<string, unknown>>
+  return new Set(hosts.map((h) => String(h.ip ?? '').trim()).filter(Boolean)).size
+}
