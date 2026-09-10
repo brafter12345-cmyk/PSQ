@@ -2376,6 +2376,89 @@ def _check_export_mailbox_scope(failures):
           % ("PASS" if not kept2 else "FAIL"))
 
 
+# ---- The default-certificate test must be POSITIVE, not an absence test -----
+#
+# looks_multi_tenant read `not _cert_covers(names, insured_domain)`: "the
+# certificate does not name the apex, therefore somebody else is on this box".
+# A default vhost routinely serves the box's OWN hostname rather than the apex,
+# so it fired on the insured's own infrastructure.
+#
+# MEASURED on the 30 retained scans: 3 of the 36 default-certificate demotions
+# were wrong, and they are the worst ones to lose:
+#
+#   bbgroup.co.za  41.161.81.118    cert ess.bbgroup.co.za
+#                                   also serves autohubpol. and remote.
+#   bbgroup.co.za  102.211.159.114  cert autohubpta.bbgroup.co.za
+#   dubetradeport  41.78.234.1      cert fg10e0tb20902714 (FortiGate serial),
+#                                   serves vpn.dubetradeport.co.za
+#
+# All three are the insured's own hosts, all three were deleted from
+# per_ip_results and NEVER PORT-SCANNED. Their remote-access and VPN surfaces
+# left the priced estate entirely. A demotion removes findings, which is the
+# discount direction, and step 1 forbids absence from discounting anything.
+#
+# Re-running all 36 through the corrected rule: 33 stand, 3 reverse, every
+# reversal in the LOAD direction, no genuine shared-hosting demotion lost.
+DEFAULT_CERT_SCENARIOS = [
+    # (label, cert names, insured, expected verdict)
+    ("own_apex",              {"bbgroup.co.za"},          "bbgroup.co.za",       False),
+    # The exact shape of the shipped bug.
+    ("own_subdomain",         {"ess.bbgroup.co.za"},      "bbgroup.co.za",       False),
+    ("own_subdomain_2",       {"autohubpta.bbgroup.co.za"}, "bbgroup.co.za",     False),
+    ("own_wildcard",          {"*.bbgroup.co.za"},        "bbgroup.co.za",       False),
+    # Genuine third parties: these must keep demoting.
+    ("shared_host_wildcard",  {"*.jnb3.host-h.net"},      "dinamika.co.za",      True),
+    ("another_tenant",        {"*.artztudio.ca"},         "gcrratings.com",      True),
+    ("hetzner_managed",       {"*.your-server.de"},       "phishield.com",       True),
+    # Identity-free names identify nobody and must NEVER demote.
+    ("appliance_serial",      {"fg10e0tb20902714"},       "dubetradeport.co.za", None),
+    ("bare_hostname",         {"server"},                 "x.co.za",             None),
+    ("localhost",             {"localhost"},              "x.co.za",             None),
+    ("address_literal",       {"196.41.30.122"},          "x.co.za",             None),
+    ("dot_local",             {"box.local"},              "x.co.za",             None),
+    # The insured's own name anywhere on the certificate wins.
+    ("mixed_own_and_other",   {"ess.bbgroup.co.za", "*.host-h.net"}, "bbgroup.co.za", False),
+    ("mixed_serial_and_other", {"fg123", "*.host-h.net"}, "x.co.za",             True),
+    ("no_certificate",        None,                       "x.co.za",             None),
+]
+
+
+def _check_default_cert_verdict(failures):
+    import importlib
+    ipc = importlib.import_module("ip_classification")
+
+    for label, names, insured, expected in DEFAULT_CERT_SCENARIOS:
+        got = ipc.looks_multi_tenant(names, insured)
+        ok = (got is expected)
+        if not ok:
+            failures.append(
+                "default_cert[%s]: %r vs %s -> %r, expected %r. True demotes a "
+                "host out of the priced estate, so a wrong True deletes the "
+                "client's own findings and a wrong False keeps somebody else's."
+                % (label, names, insured, got, expected))
+        print("  [%s] default_cert:%-24s -> %s" % ("PASS" if ok else "FAIL", label, got))
+
+    # MUTATION: restore the absence test. The own-infrastructure rows must flip
+    # to True, i.e. back to demoting the client's own boxes.
+    real = ipc.looks_multi_tenant
+    try:
+        ipc.looks_multi_tenant = lambda names, dom: (
+            None if not names or not dom else not ipc._cert_covers(names, dom))
+        flipped = [label for label, names, insured, expected
+                   in DEFAULT_CERT_SCENARIOS
+                   if expected is False
+                   and ipc.looks_multi_tenant(names, insured) is True]
+    finally:
+        ipc.looks_multi_tenant = real
+    if not flipped:
+        failures.append(
+            "default_cert MUTATION is vacuous: restoring the absence test "
+            "changed no own-infrastructure row, so these rows are not actually "
+            "exercising the positive test.")
+    print("  [%s] default_cert:MUTATION absence test re-demotes own infra (%d rows)"
+          % ("PASS" if flipped else "FAIL", len(flipped)))
+
+
 def _check_cdn_edge_detection(failures):
     """A content delivery network edge must be recognised from its ADDRESS, and
     an edge-only assessment must never claim full confidence.
@@ -4462,6 +4545,7 @@ def main():
     _check_single_asn_measured(failures)
     _check_sa_second_level_domains(failures)
     _check_export_mailbox_scope(failures)
+    _check_default_cert_verdict(failures)
     _check_gate_self_wiring(failures)
     _check_lookalike_ownership(failures)
     _check_lookalike_posture(failures)

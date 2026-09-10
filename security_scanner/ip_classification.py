@@ -332,15 +332,103 @@ def probe_default_cert(ip, timeout=5.0, port=443):
         return None
 
 
-def looks_multi_tenant(default_cert_names, insured_domain):
-    """True when the box's DEFAULT identity does not include the insured.
+# Names that identify NOBODY. A default vhost certificate often carries the
+# box's own hostname, an appliance serial, or a control-panel placeholder. None
+# of these is evidence that somebody ELSE is on the host, and treating them as
+# such is what produced the demotions listed in the docstring below.
+_IDENTITY_FREE_EXACT = {
+    "localhost", "localhost.localdomain", "plesk", "cpanel", "webmail",
+    "mail", "server", "ubuntu", "debian", "default", "example.com",
+}
+_IDENTITY_FREE_SUFFIX = (".local", ".lan", ".internal", ".localdomain",
+                         ".invalid", ".test", ".home", ".corp")
 
-    None (unknown) whenever we could not read a default certificate, so the
-    caller keeps its existing behaviour instead of inventing a verdict.
+
+def _identity_free_cert_name(name):
+    """True when a certificate name names nobody in particular."""
+    import re as _re
+    n = (name or "").strip().lower().rstrip(".").lstrip("*.")
+    if not n:
+        return True
+    if n in _IDENTITY_FREE_EXACT:
+        return True
+    if any(n.endswith(sfx) for sfx in _IDENTITY_FREE_SUFFIX):
+        return True
+    if "." not in n:
+        # A bare label: a hostname, or an appliance serial such as the
+        # FortiGate "fg10e0tb20902714" that demoted a client's VPN endpoint.
+        return True
+    try:
+        ipaddress.ip_address(n)
+        return True                      # an address literal, not an identity
+    except ValueError:
+        pass
+    return False
+
+
+def _registrable(host):
+    """Crude registrable domain: last two labels, or three under a known
+    multi-part suffix. Deliberately local so this module stays importable
+    without the discovery stack."""
+    h = (host or "").strip().lower().rstrip(".").lstrip("*.")
+    parts = [x for x in h.split(".") if x]
+    if len(parts) < 2:
+        return h
+    if len(parts) >= 3 and parts[-2] in ("co", "com", "org", "net", "ac",
+                                         "gov", "web", "edu"):
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:])
+
+
+def looks_multi_tenant(default_cert_names, insured_domain):
+    """True only on POSITIVE evidence that the default vhost belongs to someone
+    else. False when it belongs to the insured. None when it names nobody.
+
+    THIS WAS AN ABSENCE TEST AND THE ABSENCE TEST WAS WRONG. It read
+    ``not _cert_covers(names, insured_domain)`` -- i.e. "the certificate does
+    not name the apex, therefore somebody else is on this box". A default vhost
+    routinely serves the box's OWN hostname rather than the apex, so the test
+    fired on the insured's own infrastructure. Measured on the 30 retained
+    scans, 3 of the 36 default-certificate demotions were wrong, and the three
+    are the worst possible ones to lose:
+
+        bbgroup.co.za  41.161.81.118   default cert ess.bbgroup.co.za
+                                       also serves autohubpol. and remote.
+        bbgroup.co.za  102.211.159.114 default cert autohubpta.bbgroup.co.za
+        dubetradeport  41.78.234.1     default cert fg10e0tb20902714,
+                                       a FortiGate serial; serves vpn.
+
+    All three are the insured's own hosts. All three were deleted from
+    per_ip_results and never port-scanned, so their remote-access and VPN
+    surfaces were removed from the priced estate entirely. A demotion removes
+    findings, which is the discount direction, and remediation step 1 forbids
+    the absence of findings from discounting anything.
+
+    THE THREE-WAY VERDICT:
+      False -- a name on the certificate shares the insured's registrable
+               domain, so this is the client's own box.
+      None  -- every name identifies nobody (a bare hostname, an appliance
+               serial, a control-panel placeholder, an address literal). Probed
+               but unreadable; the caller keeps its existing behaviour.
+      True  -- a name identifies a DIFFERENT organisation. Only this demotes.
     """
     if not default_cert_names or not insured_domain:
         return None
-    return not _cert_covers(default_cert_names, insured_domain)
+
+    # (a) The insured's own identity on the certificate, by apex or by wildcard.
+    if _cert_covers(default_cert_names, insured_domain):
+        return False
+    insured_apex = _registrable(insured_domain)
+    for n in default_cert_names:
+        if insured_apex and _registrable(n) == insured_apex:
+            return False
+
+    # (b) Nothing on it identifies anyone. Never demote on a non-identity.
+    if all(_identity_free_cert_name(n) for n in default_cert_names):
+        return None
+
+    # (c) A different organisation's identity. This is the only demoting case.
+    return True
 
 
 def forward_confirms(reverse_name, ip, timeout=3.0):
