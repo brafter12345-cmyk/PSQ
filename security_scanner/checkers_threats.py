@@ -2779,6 +2779,25 @@ class FraudulentDomainChecker:
         ".com", ".net", ".org", ".co", ".dev", ".online", ".io", ".info",
         ".biz", ".xyz", ".site", ".app", ".tech", ".store", ".shop",
         ".co.za", ".africa",
+        # South African second-level domains (OUTSTANDING 5n, owner-approved
+        # 2026-09-10). Without these, scanning boston.ac.za generated
+        # boston.co.za as a candidate while scanning boston.co.za never
+        # generated boston.ac.za, so the same organisation got a different
+        # answer depending on which apex was submitted, and a typosquat under an
+        # unlisted second-level domain was never probed at all.
+        #
+        # MEASURED BEFORE SHIPPING, across the 30 retained scans: 148 new
+        # candidates generated, of which THREE resolve -- boston.net.za,
+        # takealot.org.za and example.org.za. End to end that is boston.ac.za
+        # 97 -> 100 of 1000 and takealot UNCHANGED, because takealot already
+        # carries 20 resolving lookalikes and the penalty
+        # (min(100, resolved * 8)) is already capped. Cost is about five extra
+        # DNS lookups per South African client.
+        #
+        # Each candidate still passes through the certificate-based ownership
+        # check from remediation step 2, so a defensive registration the client
+        # owns is excluded rather than charged.
+        ".ac.za", ".org.za", ".net.za", ".gov.za", ".web.za",
     ]
 
     # Homoglyph map (visually similar ASCII characters)
@@ -2821,7 +2840,11 @@ class FraudulentDomainChecker:
     def _split_domain(self, domain: str) -> tuple:
         """Split domain into name and TLD (handles multi-part TLDs like .co.za)."""
         parts = domain.split(".")
-        if len(parts) >= 3 and parts[-2] in ("co", "com", "org", "net", "ac", "gov"):
+        # "web" was missing, so x.web.za split as ("x.web", ".za") and a client
+        # submitted at a .web.za address had its brand label taken as
+        # "<name>.web". Found while adding the second-level domains below.
+        if len(parts) >= 3 and parts[-2] in ("co", "com", "org", "net", "ac",
+                                             "gov", "web"):
             return ".".join(parts[:-2]), "." + ".".join(parts[-2:])
         return ".".join(parts[:-1]), "." + parts[-1]
 

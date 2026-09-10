@@ -608,7 +608,7 @@ embedding in every generated PDF.
 
 ### 5n. Lookalike permutation coverage is thin for South African second-level domains (OBSERVED, 2026-09-08)
 
-**QUEUED: owner-flagged 2026-09-08 for after the six remediation steps.** Not a 
+**RESOLVED 2026-09-10, owner-approved after measurement.** See the measured impact below. Not a 
 blocker for any of them. First action is measurement rather than a code change: 
 run the expanded second-level-domain list across the retained scans and report how 
 many new candidates appear and how far category and overall scores move, so the 
@@ -1036,3 +1036,37 @@ STILL A CALIBRATION DECISION. Three new resolving candidates move
 `resolved_count` and therefore the category and overall scores on two live
 clients, so it needs a golden re-baseline and a decision on whether the extra
 candidates carry the same penalty weight as the existing ones.
+
+#### 5n SHIPPED (2026-09-10)
+
+`.ac.za`, `.org.za`, `.net.za`, `.gov.za` and `.web.za` added to `ALT_TLDS`.
+Scanning either apex now finds lookalikes under the others, so the same
+organisation no longer gets a different answer depending which apex was
+submitted.
+
+MEASURED IMPACT, end to end: **boston.ac.za 97 -> 100 of 1000**, takealot
+**unchanged**. takealot already carries 20 resolving lookalikes and the penalty
+`min(100, resolved * 8)` is already capped at 100, so extra candidates cost it
+nothing. Movement is upward, i.e. toward more risk, which is the safe side of
+the step-1 underwriting rule.
+
+A GOLDEN RE-BASELINE WAS NOT NEEDED, and my earlier claim that it was is
+withdrawn. golden.py replays the SCORING layer over frozen checker output; its
+own docstring says "the frozen fixtures ARE the checker output -- the checkers
+never re-run here". `ALT_TLDS` is a checker constant, so golden is structurally
+blind to it. Verified empirically as well as by reading: adding the five TLDs
+left `golden --check` passing unchanged. Golden gates `scoring_analytics` /
+`scoring_pipeline`; a checker-table change needs live measurement instead, which
+is what was done.
+
+ALSO FIXED, found while doing this: `_split_domain` recognised
+`co/com/org/net/ac/gov` but NOT `web`, so `x.web.za` split as `("x.web", ".za")`
+and a client submitted at a `.web.za` address had its brand label taken as
+`<name>.web`, making every permutation built from it meaningless.
+
+THE FLAT PENALTY IS UNCHANGED AND STILL A CALIBRATION QUESTION. Every resolving
+candidate costs a flat 8 of 100 category points regardless of how convincing it
+is: `boston.net.za` and a homoglyph like `bo5ton.ac.za` score identically, and
+everything past about 13 resolving lookalikes is free because of the cap. That
+is pre-existing and 5n only adds three items to it, but it is worth revisiting
+when lookalike scoring is next calibrated.

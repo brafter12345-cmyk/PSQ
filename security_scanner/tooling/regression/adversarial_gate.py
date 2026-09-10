@@ -2178,6 +2178,91 @@ def _check_single_asn_measured(failures):
           % ("PASS" if uses_eq else "FAIL"))
 
 
+# ---- SA second-level domain coverage (OUTSTANDING 5n, 2026-09-10) ----------
+#
+# ALT_TLDS carried the generic TLDs and .co.za but none of the other South
+# African second-level domains, so scanning boston.ac.za generated boston.co.za
+# as a candidate while scanning boston.co.za NEVER generated boston.ac.za. The
+# same organisation got a different answer depending on which apex was
+# submitted, and a typosquat under an unlisted second-level domain was never
+# probed at all.
+#
+# SYMMETRY IS THE PROPERTY WORTH GATING, not the presence of a string in a list.
+# A list membership test would pass while the generator silently stopped using
+# it, so these rows drive the real _generate_permutations.
+#
+# Measured before shipping: 148 new candidates across the 30 retained scans, of
+# which THREE resolve. End to end that is boston.ac.za 97 -> 100 of 1000 and
+# takealot UNCHANGED, its lookalike penalty already capped.
+SA_SLDS = (".co.za", ".ac.za", ".org.za", ".net.za", ".gov.za", ".web.za")
+
+
+def _check_sa_second_level_domains(failures):
+    import importlib
+    ct = importlib.import_module("checkers_threats")
+    c = ct.FraudulentDomainChecker()
+
+    # 1. Every SA second-level domain must SPLIT correctly, or the brand label
+    #    is wrong and every permutation built from it is wrong too. ".web.za"
+    #    was the one missing from _split_domain when this shipped.
+    for sld in SA_SLDS:
+        got_name, got_tld = c._split_domain("acme" + sld)
+        ok = (got_name == "acme" and got_tld == sld)
+        if not ok:
+            failures.append(
+                "sa_slds split[%s]: acme%s -> (%r, %r), expected ('acme', %r). "
+                "A bad split makes the brand label wrong and every permutation "
+                "built from it meaningless." % (sld, sld, got_name, got_tld, sld))
+        print("  [%s] sa_slds:split%-12s -> (%s, %s)"
+              % ("PASS" if ok else "FAIL", sld, got_name, got_tld))
+
+    # 2. SYMMETRY. From any SA apex, every OTHER SA second-level domain must be
+    #    generated, and the target's own must not be (a self-match is not a
+    #    lookalike).
+    for target in ("boston.ac.za", "aggregato.co.za", "dept.gov.za"):
+        name, tld = c._split_domain(target)
+        variants = {(x[0] if isinstance(x, (list, tuple)) else x)
+                    for x in c._generate_permutations(name, tld)}
+        want = {name + s for s in SA_SLDS if s != tld}
+        missing = sorted(want - variants)
+        selfmatch = target in variants
+        ok = not missing and not selfmatch
+        if missing:
+            failures.append(
+                "sa_slds symmetry[%s]: did NOT generate %s. Scanning one apex "
+                "must find lookalikes under the others, or the same client gets "
+                "a different answer depending which apex was submitted."
+                % (target, missing))
+        if selfmatch:
+            failures.append("sa_slds symmetry[%s]: generated ITSELF as a "
+                            "lookalike candidate" % target)
+        print("  [%s] sa_slds:symmetry:%-18s %d/%d generated, self-match=%s"
+              % ("PASS" if ok else "FAIL", target,
+                 len(want) - len(missing), len(want), selfmatch))
+
+    # 3. NON-VACUITY / MUTATION. Removing the SA entries from ALT_TLDS must
+    #    break symmetry, or these rows are testing nothing.
+    real = ct.FraudulentDomainChecker.ALT_TLDS
+    try:
+        ct.FraudulentDomainChecker.ALT_TLDS = [
+            t for t in real if t not in (".ac.za", ".org.za", ".net.za",
+                                         ".gov.za", ".web.za")]
+        c2 = ct.FraudulentDomainChecker()
+        name, tld = c2._split_domain("boston.ac.za")
+        variants = {(x[0] if isinstance(x, (list, tuple)) else x)
+                    for x in c2._generate_permutations(name, tld)}
+        still = {"boston" + s for s in SA_SLDS if s != tld} - variants
+    finally:
+        ct.FraudulentDomainChecker.ALT_TLDS = real
+    if not still:
+        failures.append(
+            "sa_slds MUTATION is vacuous: removing the SA second-level domains "
+            "from ALT_TLDS changed nothing, so the symmetry rows above are not "
+            "actually exercising the table.")
+    print("  [%s] sa_slds:MUTATION removing them breaks symmetry (%d lost)"
+          % ("PASS" if still else "FAIL", len(still)))
+
+
 def _check_cdn_edge_detection(failures):
     """A content delivery network edge must be recognised from its ADDRESS, and
     an edge-only assessment must never claim full confidence.
@@ -4262,6 +4347,7 @@ def main():
     _check_cdn_feed_table(failures)
     _check_origin_exposure(failures)
     _check_single_asn_measured(failures)
+    _check_sa_second_level_domains(failures)
     _check_gate_self_wiring(failures)
     _check_lookalike_ownership(failures)
     _check_lookalike_posture(failures)
