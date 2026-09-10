@@ -978,14 +978,11 @@ IPs", which after the attribution work is the POST-attribution pool: boston.ac.z
 would have read 3 on the dashboard and 15 in the PDF, and the label is the
 giveaway, because those hosts *were* discovered.
 
-**NOT VERIFIED AND NOT SHIPPED.** `frontend/node_modules` is absent in this
-sandbox, so there is no `tsc` and the change has NOT been typechecked, and
-`static/dashboard/` — a COMMITTED build artefact — has NOT been rebuilt, so the
-served dashboard still contains the old behaviour. The logic was checked by
-transliterating both helpers and running the four cases (new split, legacy plus
-vendors with de-duplication, legacy alone, empty), which is evidence about the
-algorithm and none at all about whether it compiles.
-
-BEFORE ANY DEPLOY: `npm ci` in `security_scanner/frontend`, `npm run build` with
-`SCANNER_BASE_PATH=/scanner` (without it a finished scan hangs at "0/39
-Scanning" forever), typecheck, and commit the regenerated `static/dashboard/`.
+**RESOLVED 2026-09-10.** `npm install` (there is no lockfile, so `npm ci`
+is not available), `npm run typecheck` clean, and `SCANNER_BASE_PATH=/scanner
+npm run build` run. Verified afterwards rather than assumed: the built
+`index.html` references `/scanner/static/dashboard/`, which is the base path
+whose absence makes a finished scan hang at "0/39 Scanning" forever; and the
+string "Vendor-operated" is present in the emitted `app.js`, so the change is
+genuinely in the bundle rather than only in the source. `static/dashboard/` is
+committed; `node_modules` is gitignored and stays out.
