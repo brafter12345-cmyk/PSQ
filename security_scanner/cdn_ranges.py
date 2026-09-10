@@ -68,8 +68,40 @@ CDN_RANGES = {
     "Sucuri": ["192.88.134.0/23", "185.93.228.0/22", "66.248.200.0/22"],
 }
 
+# --- Feed-backed providers OVERRIDE the curated table above ------------------
+#
+# The curated entries were hand-typed and had rotted. Measured 2026-09-10
+# against the operators' own published lists: Cloudflare was exact (22 of 22),
+# Fastly was missing 6 of 21 prefixes (26% of its v4 space), and AWS CloudFront
+# was missing 216 of 243 (66% of its v4 space). Three CloudFront prefixes and
+# one Fastly prefix were carried that the operator NO LONGER publishes, which is
+# the worse direction: AWS reassigns retired CloudFront space to other services,
+# so a stale entry can end up demoting an EC2 instance belonging to someone else.
+#
+# REPLACE rather than merge, for exactly that reason. A curated entry surviving
+# beside a feed is how a withdrawn range keeps demoting hosts forever.
+#
+# Providers with no machine-readable feed (Akamai, Imperva, Sucuri, Azure Front
+# Door) keep their curated entries untouched.
+#
+# MEASURED EFFECT on the 30 retained scans: ZERO scans newly detect a CDN, so
+# this ships price-neutral. The South African SME estate sits on Cloudflare,
+# which was already exact, so the gap was latent rather than active. It would
+# have become active the moment a client moved to CloudFront or Fastly: an
+# unrecognised edge is both scanned as the client's own AND charged the +0.035
+# no-CDN availability penalty, wrong in both directions at once.
+#
+# Imported directly. A silent fallback would turn a broken generated table into
+# a silent regression, restoring exactly the rot this replaced.
+from cdn_feeds import FEED_RANGES as _FEED_RANGES
+
 _NETS = []
 for _prov, _cidrs in CDN_RANGES.items():
+    if _prov in _FEED_RANGES:
+        continue                      # the operator's own feed is authoritative
+    for _c in _cidrs:
+        _NETS.append((_prov, ipaddress.ip_network(_c)))
+for _prov, _cidrs in _FEED_RANGES.items():
     for _c in _cidrs:
         _NETS.append((_prov, ipaddress.ip_network(_c)))
 

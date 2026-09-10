@@ -1333,10 +1333,28 @@ class RiskScorer:
                 "and an absence of findings here is not evidence about the "
                 "client's estate."),
             "score_qualified": confidence != "full",
+            # THE DISCLAIMER MUST NAME THE REASON THE SCORE IS QUALIFIED.
+            # When confidence is capped for an ESTATE reason -- an edge-only
+            # assessment, or an estate that is entirely vendor-operated -- every
+            # checker ran and excluded_fraction is 0, so the coverage sentence
+            # rendered literally as "Partial coverage: 0% of the weighted signal
+            # was unavailable". A broker cannot make sense of that, and it
+            # actively conceals the real reason: the checkers ran perfectly
+            # against somebody else's infrastructure.
             "disclaimer": (
                 "" if confidence == "full" else
-                f"Partial coverage: {round(excluded_fraction * 100)}% of the weighted "
-                f"signal was unavailable"
+                ("Estate not assessed: every discovered address is operated by "
+                 "a third-party provider, so no infrastructure belonging to "
+                 "this organisation was measured. The score reflects what could "
+                 "be seen, which is not the client's own estate."
+                 if _no_own_estate else
+                 "Origin not reached: the assessed addresses are a content "
+                 "delivery network edge and no origin server was verified "
+                 "behind it. Web-layer findings describe the provider, not the "
+                 "client."
+                 if (_edge_only and excluded_fraction == 0 and not failed_checkers) else
+                 f"Partial coverage: {round(excluded_fraction * 100)}% of the weighted "
+                 f"signal was unavailable")
                 + (f" (including must-have checker(s): {', '.join(must_have_missing)})"
                    if must_have_missing else "")
                 + ". This risk score is " + (

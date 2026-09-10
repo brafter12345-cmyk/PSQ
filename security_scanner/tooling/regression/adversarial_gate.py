@@ -1815,6 +1815,151 @@ def _check_attribution_confidence(failures):
           % ("PASS" if swept else "FAIL", len(swept)))
 
 
+# ---- The gate must not be able to lose a check silently --------------------
+#
+# MUTATION F, from the step-3 critique: a _check_* function can be unwired from
+# the runner while the gate still prints its PASS banner. Deleting one call
+# removes a guard and nothing says so, which is the same false-green shape as a
+# source check matching its own comment or a comparison running over zero
+# scenarios. Both have shipped here before.
+#
+# This closes the CLASS rather than one instance. It parses this file's own AST,
+# collects every _check_* function defined at module level and every _check_*
+# called anywhere, and fails on any that is defined but never invoked. AST and
+# not text: a name appearing inside a comment or a docstring must not count as
+# wiring, which is precisely how the earlier false green happened.
+def _check_gate_self_wiring(failures):
+    import ast
+
+    src_path = os.path.abspath(__file__)
+    with io.open(src_path, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+
+    defined, called = set(), set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("_check_"):
+            defined.add(node.name)
+        elif isinstance(node, ast.Call):
+            fn = node.func
+            name = getattr(fn, "id", None) or getattr(fn, "attr", None)
+            if name and name.startswith("_check_"):
+                called.add(name)
+
+    # This function is invoked by the runner like any other, so it appears in
+    # both sets; nothing special-cased.
+    orphans = sorted(defined - called - {"_check_gate_self_wiring"})
+
+    if not defined:
+        failures.append("gate_self_wiring: found ZERO _check_* definitions. The "
+                        "parse is looking at the wrong file and proves nothing.")
+    if orphans:
+        failures.append(
+            "gate_self_wiring: %d check(s) are DEFINED BUT NEVER CALLED (%s). "
+            "An unwired check leaves the PASS banner intact while the guard it "
+            "provides is gone." % (len(orphans), ", ".join(orphans)))
+    print("  [%s] gate:self_wiring %d defined, %d wired, %d orphaned"
+          % ("PASS" if (defined and not orphans) else "FAIL",
+             len(defined), len(defined) - len(orphans), len(orphans)))
+
+
+# ---- Feed-backed CDN edge table (step 3, 2026-09-10) -----------------------
+#
+# cdn_ranges was hand-curated and had rotted: against the operators' own feeds
+# it was missing 216 of AWS CloudFront's 243 prefixes (66% of its v4 space) and
+# 6 of Fastly's 21, while carrying 3 CloudFront and 1 Fastly prefix the operator
+# no longer publishes. AWS reassigns retired CloudFront space to other services,
+# so a stale entry can demote an EC2 instance belonging to somebody else.
+#
+# The same boundary discipline as the SaaS table applies: the KEEP side matters
+# at least as much as the DETECT side, because a CDN table that captures a
+# customer host removes that host's findings from the priced estate.
+CDN_DETECT = [
+    ("cloudflare_v4",     "104.26.2.40",            "Cloudflare"),
+    ("cloudflare_v6",     "2606:4700:20::681a:328", "Cloudflare"),
+    # Both of these are in the 216 prefixes the curated table was missing, so
+    # each row fails if the feed table is ever dropped back to the old list.
+    ("cloudfront_added",  "205.251.249.5",          "AWS CloudFront"),
+    ("cloudfront_added2", "23.228.249.5",           "AWS CloudFront"),
+    ("fastly",            "151.101.1.1",            "Fastly"),
+    # A provider with NO feed, still hand-curated. Proves the override replaced
+    # only the feed-backed providers and left the rest intact.
+    ("akamai_curated",    "23.32.0.1",              "Akamai"),
+]
+
+# Real client-run hosts from the retained corpus. None may be inside the CDN
+# table, in either direction.
+CDN_NON_CONTAINMENT = [
+    "34.35.151.242", "20.164.162.95", "20.87.11.76", "35.190.68.223",
+    "213.219.38.226", "3.92.120.28", "104.199.105.60", "102.219.50.40",
+    "169.255.29.162", "102.218.213.68", "156.38.174.226", "196.41.30.122",
+    "20.126.184.33",
+]
+
+
+def _check_cdn_feed_table(failures):
+    import importlib
+    import subprocess
+    cr = importlib.import_module("cdn_ranges")
+
+    for label, ip, expected in CDN_DETECT:
+        got = cr.edge_provider(ip)
+        ok = (got == expected)
+        if not ok:
+            failures.append("cdn_feed[%s]: %s -> %r, expected %r"
+                            % (label, ip, got, expected))
+        print("  [%s] cdn_feed:%-20s -> %s" % ("PASS" if ok else "FAIL", label, got))
+
+    captured = [(ip, cr.edge_provider(ip)) for ip in CDN_NON_CONTAINMENT
+                if cr.edge_provider(ip)]
+    if captured:
+        failures.append(
+            "cdn_feed_non_containment: %s are inside the CDN table. A CDN table "
+            "that captures a customer host deletes that host's findings from the "
+            "insured's priced estate." % captured)
+    print("  [%s] cdn_feed:non_containment (%d addresses)"
+          % ("PASS" if not captured else "FAIL", len(CDN_NON_CONTAINMENT)))
+
+    # The feed-backed providers must genuinely come from cdn_feeds, not from a
+    # curated entry that quietly survived the override.
+    try:
+        feeds = importlib.import_module("cdn_feeds")
+        overridden = [p for p in feeds.FEED_RANGES if p in cr.CDN_RANGES]
+        live = {p for p, _n in cr._NETS}
+        missing = [p for p in feeds.FEED_RANGES if p not in live]
+        if missing:
+            failures.append("cdn_feed: provider(s) %s are in cdn_feeds but "
+                            "contribute no active ranges" % missing)
+        for prov in overridden:
+            curated = set(cr.CDN_RANGES[prov])
+            active = {str(n) for p, n in cr._NETS if p == prov}
+            leaked = sorted(curated - set(feeds.FEED_RANGES[prov]) & active)
+            leaked = sorted(c for c in curated
+                            if c not in feeds.FEED_RANGES[prov] and c in active)
+            if leaked:
+                failures.append(
+                    "cdn_feed: curated prefix(es) %s for %s survived alongside "
+                    "the feed. A withdrawn range that survives keeps demoting "
+                    "hosts forever." % (leaked, prov))
+        print("  [%s] cdn_feed:feed_is_authoritative (%d overridden)"
+              % ("PASS" if not any("survived alongside" in f for f in failures)
+                 else "FAIL", len(overridden)))
+    except Exception as e:
+        failures.append("cdn_feed: could not verify authority (%s)" % e)
+        print("  [FAIL] cdn_feed:feed_is_authoritative")
+
+    try:
+        r = subprocess.run([sys.executable, "tooling/gen_cdn_ranges.py", "--check"],
+                           cwd=SEC, capture_output=True, text=True, timeout=90)
+        ok = (r.returncode == 0)
+        if not ok:
+            failures.append("cdn_feed_artefact_parity: %s"
+                            % (r.stdout or r.stderr).strip()[:300])
+        print("  [%s] cdn_feed:artefact_parity" % ("PASS" if ok else "FAIL"))
+    except Exception as e:
+        failures.append("cdn_feed_artefact_parity: could not run generator (%s)" % e)
+        print("  [FAIL] cdn_feed:artefact_parity")
+
+
 def _check_cdn_edge_detection(failures):
     """A content delivery network edge must be recognised from its ADDRESS, and
     an edge-only assessment must never claim full confidence.
@@ -3896,6 +4041,8 @@ def main():
     _check_saas_service_ranges(failures)
     _check_no_own_estate(failures)
     _check_attribution_confidence(failures)
+    _check_cdn_feed_table(failures)
+    _check_gate_self_wiring(failures)
     _check_lookalike_ownership(failures)
     _check_lookalike_posture(failures)
     _check_table_headers(failures)
