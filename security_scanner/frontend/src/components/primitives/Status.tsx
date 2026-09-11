@@ -21,6 +21,7 @@ const SEV_ICON: Record<Severity, typeof CheckCircle2> = {
 
 const STATE_ICON: Partial<Record<CheckerState, typeof CheckCircle2>> = {
   passed: CheckCircle2,
+  completed: CircleDot,
   warning: AlertTriangle,
   failed: XCircle,
   critical: ShieldAlert,

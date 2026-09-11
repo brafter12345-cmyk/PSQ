@@ -14,6 +14,8 @@ import {
   normalizeSeverity, severityRank, isConclusive,
 } from './checkerState'
 import type { CheckerState } from '../types/results'
+import { relatedDomainsPanel } from './relatedDomains'
+import type { RelatedDomainsPanelModel } from './relatedDomains'
 
 export function cat(r: Results | null, id: string): CategoryBase | undefined {
   return r?.categories?.[id]
@@ -1404,7 +1406,11 @@ export function getEmailSecuritySummary(r: Results | null): EmailSummary {
       dane: !!(h?.dane as { present?: boolean })?.present,
       tlsRpt: !!(h?.tls_rpt as { present?: boolean })?.present,
     },
-    vendors: (v?.vendors_detected as string[]) ?? [],
+    // The checker stores {vendor, includes} objects; a plain name is kept as
+    // it is (step-5 critique round 9).
+    vendors: ((v?.vendors_detected as unknown[]) ?? [])
+      .map((x) => (typeof x === 'string' ? x : String((x as { vendor?: unknown } | null)?.vendor ?? '')))
+      .filter(Boolean),
   }
 }
 
@@ -1464,4 +1470,19 @@ export function vendorIpCount(r: Results | null): number {
   const hosts = ((r as unknown as Record<string, unknown>)?.third_party_hosting
     ?? []) as Array<Record<string, unknown>>
   return new Set(hosts.map((h) => String(h.ip ?? '').trim()).filter(Boolean)).size
+}
+
+/**
+ * Related domains: the state model and the panel's wording live in
+ * data/relatedDomains.ts, which the regression gate runs under node against
+ * the Python and the PDF card.
+ */
+export type {
+  DiscoveredDomain, RelatedDomainsState, RelatedDomainsDiscovery, RelatedDomainsPanelModel,
+} from './relatedDomains'
+export { relatedDomainsState, relatedDomainsFullyAssessed } from './relatedDomains'
+
+/** The related-domains panel for one scan. */
+export function getRelatedDomainsPanel(r: Results | null): RelatedDomainsPanelModel {
+  return relatedDomainsPanel((cat(r, 'related_domains') ?? null) as Record<string, unknown> | null)
 }

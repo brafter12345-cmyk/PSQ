@@ -484,7 +484,8 @@ import re
 # can import it without booting Flask. normalize_domain() is what lets a broker
 # paste a URL, an email address, or a value copied out of a PDF form and still
 # have the scan target come out right.
-from domain_validation import normalize_domain, valid_domain, domain_exists
+from domain_validation import (normalize_domain, valid_domain, domain_exists,
+                               clean_related_domains)
 
 
 # WS2: the job queue + in-process worker pool. The job is run_scan(**payload). With
@@ -891,8 +892,12 @@ def age_check():
 @rate_limited(_scan_limiter)
 def start_scan():
     data = request.get_json(silent=True) or {}
-    domain = str(data.get("domain", "")).strip().lower()
-    domain = domain.removeprefix("https://").removeprefix("http://").split("/")[0]
+    # Normalised as the pre-flight does, and to the same fixed point as the
+    # related domains, so the target that is validated is the target scanned: a
+    # pasted address, a port or an invisible character no longer reaches the
+    # scan, and the insured's own domain is recognised in the related list
+    # (step-5 critique round 6).
+    domain = normalize_domain(data.get("domain", ""))
 
     if not domain or not valid_domain(domain):
         return jsonify({"error": "Invalid or missing domain"}), 400
@@ -996,16 +1001,15 @@ def start_scan():
             else:
                 rejected_client_ips.append(candidate)
 
-    # Broker-declared related/supplier domains (S-1 supply-chain). Each is
-    # subject to the same valid_domain check as the primary; v1.1 will add
-    # auto-discovery from cert SAN/WHOIS/analytics ID feeding broker confirm.
-    raw_related = data.get("related_domains", [])
-    related_domains = []
-    if isinstance(raw_related, list):
-        for rd_str in raw_related:
-            rd_clean = str(rd_str).strip().lower().removeprefix("https://").removeprefix("http://").split("/")[0]
-            if rd_clean and valid_domain(rd_clean):
-                related_domains.append(rd_clean)
+    # Broker-CONFIRMED related/supplier domains (S-1 supply-chain). Each is
+    # subject to the same valid_domain check as the primary. These are the only
+    # related domains that are probed and scored. Discovery itself runs inside
+    # every scan (step 5) regardless of this list, so an API scan and a form
+    # scan of the same domain list the same candidates; this field only decides
+    # which of them the client has confirmed.
+    # Normalised like the primary; the value valid_domain accepts is the value
+    # kept (domain_validation.clean_related_domains, tested by the gate).
+    related_domains = clean_related_domains(data.get("related_domains", []))
 
     scan_id = str(uuid.uuid4())
     effective_revenue = annual_revenue_zar if annual_revenue_zar > 0 else annual_revenue

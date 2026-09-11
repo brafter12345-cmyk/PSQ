@@ -5,7 +5,8 @@ loaded into the page, the email-vendor surface (SPF include chain), the
 CMS-plugin attack surface, and known-breach correlations against the
 detected vendor surface.
 
-S-1  RelatedDomainsChecker (v1.0 — broker-declared only)
+S-1  RelatedDomainsChecker (probes broker-CONFIRMED siblings; discovery runs on every
+     scan from certificate records, but discovered domains are listed, not probed)
 S-2  ThirdPartyJSChecker — Magecart / polyfill.io / missing-SRI risk
 S-3  DependencyManifestChecker — leaked package.json / requirements.txt etc.
 S-4  EmailVendorSurfaceChecker — SPF include-chain SaaS sender surface
@@ -19,8 +20,10 @@ Cross-references to project memory:
     project_related_domain_discovery.md — S-1 v1.1 auto-discovery design
 """
 
+import ipaddress
 import json
 import re
+from concurrent.futures import wait as _wait_futures
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -32,8 +35,27 @@ from checkers_threats import InformationDisclosureChecker, OSVChecker
 
 
 class RelatedDomainsChecker:
-    LITE_TIMEOUT_PER_DOMAIN = 45  # seconds
+    # The wall-clock budget. Each confirmed domain runs three sub-checks in
+    # turn (SSL, DNS ports, information disclosure), and none of them has a
+    # deadline of its own. Worked through the real sub-checkers' timeouts, a
+    # domain with one address whose HTTPS does not answer takes about 144 to
+    # 146 s with no open port, and about 150 s with one, because the port probe
+    # then runs its canary connects (step-5 critique rounds 3 and 4). Each
+    # further address adds about 137 s, so such a host can outrun the budget
+    # and is then NOT ASSESSED (OUTSTANDING 5aa). Four domains run at a time,
+    # so the budget is one allowance per round of four, with a margin over the
+    # single-address profile: 180 s for up to four domains, 540 s for ten.
+    # check() returns when the budget ends; a domain still being probed then
+    # is reported NOT ASSESSED.
+    WORKERS = 4
+    ROUND_BUDGET = 180            # seconds per round of WORKERS domains
     MAX_DOMAINS = 10              # cap broker-declared list to bound scan time
+
+    @classmethod
+    def budget_seconds(cls, n):
+        """Wall-clock seconds allowed for assessing *n* confirmed domains."""
+        rounds = -(-max(1, int(n or 0)) // cls.WORKERS)
+        return cls.ROUND_BUDGET * rounds
 
     def check(self, primary_domain: str, related_domains: list = None) -> dict:
         related = [d.strip().lower() for d in (related_domains or [])
@@ -41,87 +63,251 @@ class RelatedDomainsChecker:
         related = [d for d in related if d != primary_domain.lower()]
         related = list(dict.fromkeys(related))[:self.MAX_DOMAINS]
 
+        # "completed", never "skipped", when nothing was confirmed. Measured over
+        # the 30 retained scans: a skipped related_domains category redistributes
+        # its weight and prices the scan +5 to +16 points higher (mean +8.47),
+        # while completed/100 prices at exactly +0. Emitting "skipped" here would
+        # therefore make a client with no related domains DEARER than a client
+        # with one clean confirmed sibling, which inverts the incentive. The
+        # step-1 rule is honoured on the other side by the caller, which reports
+        # a discovery outage as "unassessed" rather than as a clean result.
         result = {
-            "status": "skipped" if not related else "completed",
+            "status": "completed",
             "declared_count": len(related),
             "scanned_count": 0,
             "dependants": [],
             "worst_domain": None,
             "critical_count": 0,
             "high_count": 0,
+            "not_assessed": [],
             "score": 100,
             "issues": [],
         }
         if not related:
             return result
 
+        def _measured(res, key):
+            # The value a sub-check MEASURED, or None when it did not measure.
+            # A measured 0 stays 0: the old `int(x or 100)` read the worst
+            # possible result as a clean 100, and a sub-check that raised kept a
+            # default of 100, so both priced the sibling as clean.
+            if not isinstance(res, dict) or res.get("status", "completed") != "completed":
+                return None
+            v = res.get(key)
+            try:
+                return None if v is None else int(v)
+            except (TypeError, ValueError):
+                return None
+
+        def _open_ports(dns):
+            # dns_infrastructure open_ports are dicts; tolerate bare ints too.
+            return {p.get("port") if isinstance(p, dict) else p
+                    for p in ((dns or {}).get("open_ports") or [])}
+
+        def _tls_reached(ssl):
+            # Did any TLS handshake happen? On a connection failure the stdlib
+            # path leaves every tls_versions flag False and the certificate as
+            # {"valid": False, "error": ...}. A certificate that failed
+            # verification still means TLS was reached, and is a finding.
+            tv = (ssl or {}).get("tls_versions") or {}
+            if any(bool(v) for v in tv.values()):
+                return True
+            cert = (ssl or {}).get("certificate") or {}
+            if cert.get("valid") or cert.get("subject"):
+                return True
+            err = str(cert.get("error") or "").lower()
+            return "certificate verify failed" in err or "certificate_verify_failed" in err
+
+        def _ssl_errors(ssl):
+            # Every connection error the SSL check recorded. The certificate and
+            # cipher probes are separate connections to 443, so one can hold the
+            # answer the other missed (step-5 critique round 6).
+            return [str(((ssl or {}).get(k) or {}).get("error")).lower()
+                    for k in ("certificate", "cipher_suite")
+                    if ((ssl or {}).get(k) or {}).get("error")]
+
+        # 443 accepted a connection and answered without TLS: plain HTTP, an EOF
+        # or a reset after the connect.
+        _TLS_ANSWERED = ("wrong_version_number", "wrong version number",
+                         "record layer failure", "packet length too long",
+                         "unknown protocol", "unexpected_eof", "eof occurred",
+                         "connection reset", "errno 104", "forcibly closed",
+                         "winerror 10054")
+        # 443 accepted a connection and never answered the handshake.
+        _TLS_HUNG = ("handshake operation timed out", "read operation timed out")
+        # The connection itself timed out: nothing accepted it.
+        _TCP_TIMEOUT = ("timed out", "timeout", "winerror 10060",
+                        "did not properly respond")
+
+        def _has(errs, marks):
+            return any(m in e for e in errs for m in marks)
+
+        def _addresses(d):
+            # (every IPv4 address, every IPv6 address). All of them, not only
+            # the first: the port probe uses the first IPv4 address, but the
+            # SSL and HTTP probes resolve the name for themselves, in either
+            # address family.
+            try:
+                v4 = [a for a in (dns_cache.resolve(d, "A") or []) if a]
+                if not v4:
+                    ip = dns_cache.get_ip(d)
+                    v4 = [ip] if ip else []
+            except Exception:
+                v4 = []
+            try:
+                v6 = [a for a in (dns_cache.resolve(d, "AAAA") or []) if a]
+            except Exception:
+                v6 = []
+            return v4, v6
+
+        def _public(addr):
+            try:
+                return ipaddress.ip_address(str(addr)).is_global
+            except ValueError:
+                return False
+
         def _scan_one(d: str) -> dict:
-            dep = {"domain": d, "ssl_grade": None, "ssl_score": 100,
-                   "info_score": 100, "dns_risk": 0,
-                   "critical_paths": 0, "lite_score": 100, "issues": []}
+            dep = {"domain": d, "ssl_grade": None, "ssl_score": None,
+                   "info_score": None, "dns_risk": None,
+                   "critical_paths": 0, "lite_score": None,
+                   "measured": False, "not_measured": [], "issues": []}
+            # A sibling that does not resolve cannot be measured. Every check
+            # would fail, and SSLChecker scores a failed connection 0, which
+            # priced a broker's typo as the worst possible sibling. The port
+            # probe is IPv4 only, so a name with only IPv6 records is not
+            # assessed either, and is not described as unresolvable. A name
+            # with any private, loopback or link-local address, in either
+            # family, is not the insured's public estate: probing it would
+            # reach an address inside the scanner's own network and score
+            # whatever answers there.
+            v4, v6 = _addresses(d)
+            why = None
+            if not v4:
+                why = "resolves to IPv6 only" if v6 else "does not resolve"
+            elif not all(_public(a) for a in v4 + v6):
+                why = "resolves to a non-public address"
+            if why:
+                dep["not_measured"] = ["dns", "info", "ssl"]
+                dep["issues"].append("[dns] %s; not assessed on this scan" % why)
+                return dep
+            ssl = dns = info = None
             try:
                 ssl = SSLChecker().check(d) or {}
                 dep["ssl_grade"] = ssl.get("grade")
-                dep["ssl_score"] = ssl.get("score", 100)
                 dep["issues"] += [f"[ssl] {i}" for i in (ssl.get("issues") or [])[:3]]
             except Exception:
-                pass
+                ssl = None
             try:
                 dns = DNSInfrastructureChecker().check(d) or {}
-                dep["dns_risk"] = dns.get("risk_score", 0)
+                dep["dns_risk"] = _measured(dns, "risk_score")
                 dep["issues"] += [f"[dns] {i}" for i in (dns.get("issues") or [])[:3]]
             except Exception:
-                pass
+                dns = None
             try:
                 info = InformationDisclosureChecker().check(d) or {}
-                dep["info_score"] = info.get("score", 100)
-                dep["critical_paths"] = sum(
-                    1 for p in (info.get("exposed_paths") or [])
-                    if p.get("risk_level") == "critical"
-                )
+                dep["info_score"] = _measured(info, "score")
+                codes = info.get("probe_status_codes")
+                if (dep["info_score"] is not None and isinstance(codes, dict)
+                        and not [c for c in codes if str(c) != "0"]):
+                    # No probe got an HTTP answer (every status 0): the check
+                    # still reports completed/100, but it measured nothing.
+                    dep["info_score"] = None
+                if dep["info_score"] is not None:
+                    dep["critical_paths"] = sum(
+                        1 for p in (info.get("exposed_paths") or [])
+                        if p.get("risk_level") == "critical"
+                    )
                 dep["issues"] += [f"[info] {i}" for i in (info.get("issues") or [])[:3]]
             except Exception:
-                pass
-            dep["lite_score"] = min(
-                int(dep["ssl_score"] or 100),
-                int(dep["info_score"] or 100),
-                max(0, 100 - int(dep["dns_risk"] or 0)),
-            )
+                info = None
+            ssl_score = _measured(ssl, "score")
+            if ssl_score is not None and not _tls_reached(ssl):
+                # No TLS handshake completed. 443 answering without TLS (plain
+                # HTTP, an EOF, a reset) is a finding whatever the port probe
+                # saw. A handshake that 443 accepted and never answered measured
+                # nothing whatever it saw: a TCP accept is not an answer. Short
+                # of either, the port probe decides: plain HTTP on 80 with
+                # nothing on 443, or 443 closing, is a finding; a host with no
+                # web port, or whose ports are unknown, measured nothing, and a
+                # connection that timed out on a 443 the probe saw open is not
+                # an answer (step-5 critique rounds 5 and 6).
+                errs = _ssl_errors(ssl)
+                if _has(errs, _TLS_ANSWERED):
+                    pass
+                elif _has(errs, _TLS_HUNG):
+                    ssl_score = None
+                else:
+                    ports = _open_ports(dns) if dep["dns_risk"] is not None else set()
+                    if not ports & {80, 443}:
+                        ssl_score = None
+                    elif 443 in ports and _has(errs, _TCP_TIMEOUT):
+                        ssl_score = None
+            dep["ssl_score"] = ssl_score
+            parts = {
+                "ssl": dep["ssl_score"],
+                "info": dep["info_score"],
+                "dns": None if dep["dns_risk"] is None else max(0, 100 - dep["dns_risk"]),
+            }
+            got = [v for v in parts.values() if v is not None]
+            dep["not_measured"] = sorted(k for k, v in parts.items() if v is None)
+            for k in dep["not_measured"]:
+                dep["issues"].append(f"[{k}] not assessed on this scan")
+            if got:
+                # Worst of what was measured. A check that returned nothing is
+                # left out rather than counted as clean; one that returned a
+                # finding still loads the sibling.
+                dep["measured"] = True
+                dep["lite_score"] = min(got)
             return dep
 
-        with ThreadPoolExecutor(max_workers=4) as ex:
-            futures = {ex.submit(_scan_one, d): d for d in related}
-            try:
-                for fut in as_completed(
-                        futures,
-                        timeout=self.LITE_TIMEOUT_PER_DOMAIN * len(related)):
-                    try:
-                        result["dependants"].append(
-                            fut.result(timeout=self.LITE_TIMEOUT_PER_DOMAIN))
-                    except Exception:
-                        pass
-            except (TimeoutError, FuturesTimeoutError):
-                # as_completed(timeout=) raises concurrent.futures.TimeoutError
-                # (FuturesTimeoutError) — a DISTINCT class from builtin TimeoutError
-                # on Python <3.11 (the VM runs 3.10). A bare `except TimeoutError`
-                # never caught it there, so a slow related-domains scan lost the
-                # partial dependants it had collected and errored the whole checker.
-                pass
+        # The budget bounds the wait. A `with ThreadPoolExecutor` block waits on
+        # exit for every running probe, so the budget bounded nothing, check()
+        # returned only when its slowest domain did, and the caller's own
+        # timeout could fire first and discard everything that had finished,
+        # findings included (critique round 3). At the budget the pool is shut
+        # down without waiting: queued domains are cancelled, running ones are
+        # left to finish in the background, and both are reported NOT ASSESSED.
+        pool = ThreadPoolExecutor(max_workers=self.WORKERS)
+        futures = {pool.submit(_scan_one, d): d for d in related}
+        _wait_futures(futures, timeout=self.budget_seconds(len(related)))
+        pool.shutdown(wait=False, cancel_futures=True)
+        timed_out = []
+        for fut, d in futures.items():
+            if fut.done() and not fut.cancelled():
+                try:
+                    result["dependants"].append(fut.result(timeout=0))
+                except Exception:
+                    pass
+            else:
+                timed_out.append(d)
+        result["timed_out"] = timed_out
 
-        result["scanned_count"] = len(result["dependants"])
+        # Only a sibling on which at least one check returned a result counts
+        # as scanned. The rest are listed as not assessed; the caller reports
+        # the category NOT ASSESSED when nothing at all was measured.
+        measured = [d for d in result["dependants"] if d.get("measured")]
+        result["scanned_count"] = len(measured)
+        _measured_names = {m["domain"] for m in measured}
+        result["not_assessed"] = [d for d in related if d not in _measured_names]
+        if not measured and timed_out:
+            # Nothing was measured, and time ran out on at least one domain
+            # (any others did not resolve or were not public). A "timeout" is
+            # never checkpointed, so a resumed scan probes again, and the
+            # caller reports the confirmed domains NOT ASSESSED.
+            result["status"] = "timeout"
+            return result
 
-        if result["dependants"]:
-            worst = min(result["dependants"], key=lambda d: d.get("lite_score", 100))
+        if measured:
+            worst = min(measured, key=lambda d: d["lite_score"])
             result["worst_domain"] = {
                 "domain": worst["domain"],
-                "lite_score": worst.get("lite_score", 100),
+                "lite_score": worst["lite_score"],
             }
             result["critical_count"] = sum(d.get("critical_paths", 0)
-                                            for d in result["dependants"])
-            result["high_count"] = sum(1 for d in result["dependants"]
-                                        if d.get("lite_score", 100) < 60)
-            result["score"] = min(d.get("lite_score", 100)
-                                   for d in result["dependants"])
+                                            for d in measured)
+            result["high_count"] = sum(1 for d in measured
+                                        if d["lite_score"] < 60)
+            result["score"] = min(d["lite_score"] for d in measured)
 
             if result["critical_count"] > 0:
                 result["issues"].append(
@@ -761,7 +947,15 @@ class EmailVendorSurfaceChecker:
         ("okta",                ["okta.com", "oktapreview.com", "okta.net"]),
     ]
 
-    INCLUDE_RE = re.compile(r"include:(\S+)")
+    # SPF mechanism and modifier names are case-insensitive (RFC 7208
+    # s4.6.1), so "Include:" authorises a vendor and "REDIRECT=" delegates
+    # exactly as the lower-case spellings do; reading them as absent certified
+    # a surface the walk never followed (step-5 critique round 9). A term
+    # starts the record or follows a space, and a mechanism may carry a
+    # qualifier.
+    INCLUDE_RE = re.compile(r"(?:^|\s)[-+?~]?include:(\S+)", re.I)
+    REDIRECT_RE = re.compile(r"(?:^|\s)redirect=(\S+)", re.I)
+    SPF_VERSION_RE = re.compile(r"v=spf1(?:\s|$)", re.I)
 
     def _classify(self, include_domain: str) -> str:
         d = include_domain.lower().rstrip(".")
@@ -771,17 +965,30 @@ class EmailVendorSurfaceChecker:
         return ""
 
     def _fetch_spf(self, domain: str) -> str:
+        # "" when there is no SPF record, whether the name has no TXT record or
+        # does not exist. A lookup that did not answer (a timeout, SERVFAIL, no
+        # nameservers) returns "" too, but is recorded in _spf_failed, so an
+        # empty vendor surface is not read as a measured one (step-5 critique
+        # round 7).
+        failed = self.__dict__.setdefault("_spf_failed", set())
         try:
             import dns.resolver
+        except Exception:
+            failed.add(domain)
+            return ""
+        try:
             answers = dns.resolver.resolve(domain, "TXT", lifetime=DEFAULT_TIMEOUT)
             for rdata in answers:
                 txt = "".join(
                     s.decode() if isinstance(s, bytes) else s
                     for s in rdata.strings
                 )
-                if txt.startswith("v=spf1"):
+                if self.SPF_VERSION_RE.match(txt):
                     return txt
+        except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+            return ""
         except Exception:
+            failed.add(domain)
             return ""
         return ""
 
@@ -797,11 +1004,24 @@ class EmailVendorSurfaceChecker:
         if not record:
             return []
         includes = self.INCLUDE_RE.findall(record)
+        # A record that delegates with redirect= is not walked: record it, so an
+        # empty vendor surface behind it is not read as a measured one (step-5
+        # critique round 8).
+        if self.REDIRECT_RE.search(record):
+            self.__dict__.setdefault("_spf_unfollowed", set()).add(domain)
         out = []
         for inc in includes[:10]:
             out.append({"include": inc, "depth": depth})
             out.extend(self._walk_includes(inc, depth + 1, seen))
         return out
+
+    def _spf_outcome(self, domain: str) -> str:
+        """answered, failed or not_followed, for the domain's own SPF lookup."""
+        if domain in self.__dict__.get("_spf_failed", set()):
+            return "failed"
+        if domain in self.__dict__.get("_spf_unfollowed", set()):
+            return "not_followed"
+        return "answered"
 
     def _fetch_dmarc_policy(self, domain: str) -> str:
         try:
@@ -833,9 +1053,13 @@ class EmailVendorSurfaceChecker:
             "score": 100,
             "issues": [],
         }
+        self._spf_failed, self._spf_unfollowed = set(), set()
         includes = self._walk_includes(domain)
         if not includes:
             result["status"] = "no_data"
+            # Whether "no includes" was measured. Reporting only: the status,
+            # and so the price, is unchanged.
+            result["spf_lookup"] = self._spf_outcome(domain)
             return result
         result["spf_includes"] = includes
         vendor_map = {}
@@ -850,6 +1074,20 @@ class EmailVendorSurfaceChecker:
             for v, incs in sorted(vendor_map.items())
         ]
         result["vendor_count"] = len(vendor_map)
+        if not vendor_map and (self._spf_failed or self._spf_unfollowed):
+            # Includes were found, but a lookup behind them did not answer, or
+            # delegates with redirect=, and no vendor was identified: the vendor
+            # surface was not measured. "no_data" prices as a completed result
+            # with no vendors does (step-5 critique round 8).
+            result["status"] = "no_data"
+            result["spf_lookup"] = "failed" if self._spf_failed else "not_followed"
+            return result
+        # Recorded on a completed result too, so a result stored before this
+        # field existed is never read as a measured one; "partial" is a walk
+        # that found a vendor while another lookup did not answer or was not
+        # followed, so the vendors are a lower bound (step-5 critique round 9).
+        result["spf_lookup"] = ("partial" if (self._spf_failed or self._spf_unfollowed)
+                                else "answered")
         result["dmarc_policy"] = self._fetch_dmarc_policy(domain)
         result["weak_dmarc"] = result["dmarc_policy"] in ("", "none")
 
@@ -1130,9 +1368,12 @@ class VendorBreachChecker:
         # Re-extract the vendor surface (cheaper than a cross-checker
         # dependency and keeps this checker self-contained for testing).
         surface = EmailVendorSurfaceChecker()
+        surface._spf_failed, surface._spf_unfollowed = set(), set()
         includes = surface._walk_includes(domain)
         if not includes:
             result["status"] = "no_data"
+            # As for the vendor surface: was "no vendors" measured?
+            result["spf_lookup"] = surface._spf_outcome(domain)
             return result
 
         seen = set()
@@ -1143,7 +1384,20 @@ class VendorBreachChecker:
                 result["vendors_detected"].append(v)
 
         if not result["vendors_detected"]:
+            if surface._spf_failed or surface._spf_unfollowed:
+                # No vendor identified, and a lookup behind the includes did
+                # not answer or was not followed: not measured, as for the
+                # vendor surface.
+                result["status"] = "no_data"
+                result["spf_lookup"] = "failed" if surface._spf_failed else "not_followed"
+            else:
+                result["spf_lookup"] = "answered"
             return result
+        # As for the vendor surface: recorded on a completed result too, and
+        # "partial" where the walk found a vendor beside a lookup that did not
+        # answer or was not followed (step-5 critique round 9).
+        result["spf_lookup"] = ("partial" if (surface._spf_failed or surface._spf_unfollowed)
+                                else "answered")
 
         penalty = 0
         for v in result["vendors_detected"]:

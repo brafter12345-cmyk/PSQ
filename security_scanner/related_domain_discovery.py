@@ -113,20 +113,21 @@ def _is_shared_infra(host: str) -> bool:
                for s in SHARED_INFRA_SUFFIXES)
 
 
-def _crtsh_query(domain: str, retries: int = 2) -> list:
+def _crtsh_query(domain: str, retries: int = 2):
     """Query crt.sh for certificate transparency entries.
 
-    crt.sh's hosted Postgres backend is intermittently slow / empty on
-    cold-cache queries. Retry once with a short backoff before giving up
-    so a single transient miss doesn't break the pre-flight.
+    Returns the rows, [] when crt.sh answered with none, or None when it did
+    not answer at all. An outage is not "none found": the pre-flight reports
+    it as unavailable, as the report does (step-5 critique round 4).
 
-    crt.sh response shape: [{"name_value": "example.com\\nwww.example.com",
-                              "issuer_name": "...", ...}, ...]
-    `name_value` contains all SAN entries newline-joined.
+    crt.sh's hosted Postgres backend is intermittently slow or empty on
+    cold-cache queries, so an empty answer is retried with a short backoff.
+    Each row's `name_value` holds that certificate's SAN entries, one per line.
     """
     if not REQUESTS_AVAILABLE:
-        return []
+        return None
     import time
+    answered = False
     for attempt in range(retries + 1):
         try:
             r = CRTSH.get(
@@ -138,15 +139,22 @@ def _crtsh_query(domain: str, retries: int = 2) -> list:
             if r is not None and r.status_code == 200 and r.text:
                 try:
                     data = r.json()
+                except Exception:
+                    data = None
+                # The scan's test (checkers_network._ct_crtsh): a list of
+                # entries, each carrying its names as text (step-5 critique
+                # rounds 6 and 7).
+                if isinstance(data, list) and all(
+                        isinstance(e, dict) and isinstance(e.get("name_value"), str)
+                        for e in data):
+                    answered = True
                     if data:
                         return data
-                except Exception:
-                    pass
         except Exception:
             pass
         if attempt < retries:
             time.sleep(2.0)  # short backoff between retries
-    return []
+    return [] if answered else None
 
 
 def _extract_san_apexes(crt_rows: list, primary_apex: str) -> dict:
@@ -156,42 +164,76 @@ def _extract_san_apexes(crt_rows: list, primary_apex: str) -> dict:
     so we can both deduplicate AND give the broker the strongest
     individual evidence.
     """
+    from estate_discovery import registrable, _rejection
     seen: dict = {}
-    for row in crt_rows:
+    for idx, row in enumerate(crt_rows):
         if not isinstance(row, dict):
             continue
         name_value = row.get("name_value") or ""
         for raw in str(name_value).split("\n"):
-            host = raw.strip().lower()
+            host = raw.strip().lower().rstrip(".")
+            while host.startswith("*."):
+                host = host[2:]
             if not host:
                 continue
-            apex = _apex(host)
-            if not apex or apex == primary_apex:
-                continue
-            if _is_shared_infra(apex):
+            # The same reducer and rejection rules as the scan's own discovery
+            # (estate_discovery), so the form never offers a registry zone such
+            # as school.za, an IP address, a hosting provider's zone or CDN
+            # infrastructure, all of which the report rejects.
+            apex = registrable(host)
+            if _rejection(apex, primary_apex, host):
                 continue
             if apex not in seen:
-                seen[apex] = {"sample_san": host, "cert_count": 1}
-            else:
-                seen[apex]["cert_count"] += 1
+                seen[apex] = {"sample_san": host, "cert_count": 0, "_rows": set()}
+            elif host == apex:
                 # Prefer the apex-only SAN as the sample (less noisy)
-                if host == apex:
-                    seen[apex]["sample_san"] = host
+                seen[apex]["sample_san"] = host
+            # Certificates, not names: one certificate listing www, mail and
+            # cpanel of the same domain is one piece of evidence.
+            if idx not in seen[apex]["_rows"]:
+                seen[apex]["_rows"].add(idx)
+                seen[apex]["cert_count"] += 1
+    for meta in seen.values():
+        meta.pop("_rows", None)
     return seen
 
 
+# Words so common in business names that sharing one says nothing about who
+# owns a domain: smith-attorneys and jones-attorneys are separate practices.
+_GENERIC_WORDS = frozenset((
+    "group", "holdings", "holding", "africa", "african", "online", "insurance",
+    "attorneys", "attorney", "legal", "dental", "clinic", "health", "care",
+    "bank", "finance", "financial", "capital", "investments", "home", "homes",
+    "trading", "consulting", "services", "solutions", "systems", "technologies",
+    "tech", "digital", "media", "global", "international", "partners", "property",
+    "properties", "logistics", "motors", "auto", "travel", "foods", "farms",
+    "mail", "shop", "store", "cloud", "hosting", "south", "north", "east",
+    "west", "cape", "town",
+))
+
+
+def _brand_part(label: str) -> str:
+    """The first hyphen-separated part of a first label, when it can name a
+    brand: at least four letters, and not a generic business word."""
+    first = (label or "").split("-")[0]
+    if len(first) >= 4 and first.isalpha() and first not in _GENERIC_WORDS:
+        return first
+    return ""
+
+
 def _confidence_for(apex: str, meta: dict, primary_apex: str) -> str:
-    """Heuristic confidence for the broker to weight their review."""
+    """Heuristic confidence for the broker to weight their review.
+
+    The number of certificates naming the candidate, plus a shared brand:
+    the same first part of the first label, of at least four letters and not
+    a generic business word (acme and acme-group). Containment is not a
+    shared brand (laservision contains "vision"), and neither is a shared
+    generic word (smith-attorneys and jones-attorneys) (step-5 critique
+    rounds 4 and 5).
+    """
     cnt = meta.get("cert_count", 0)
-    # Shared brand fragment between primary and candidate = stronger
-    pri_root = primary_apex.split(".")[0]
-    cand_root = apex.split(".")[0]
-    shared_root = pri_root and (
-        pri_root in cand_root or cand_root in pri_root or
-        # Levenshtein-ish: long common prefix
-        (len(pri_root) >= 5 and len(cand_root) >= 5 and
-         pri_root[:5] == cand_root[:5])
-    )
+    a = _brand_part(primary_apex.split(".")[0])
+    shared_root = bool(a) and a == _brand_part(apex.split(".")[0])
     if cnt >= 5 and shared_root:
         return "high"
     if cnt >= 3 or shared_root:
@@ -199,16 +241,20 @@ def _confidence_for(apex: str, meta: dict, primary_apex: str) -> str:
     return "low"
 
 
-def discover_via_cert_san(primary_domain: str) -> list:
+def discover_via_cert_san(primary_domain: str):
     """Cert-SAN method (S-1 v1.1 MVP).
 
-    Returns broker-confirmable candidates with evidence and confidence.
+    Returns broker-confirmable candidates with evidence and confidence, or
+    None when the certificate lookup did not answer.
     """
-    primary_apex = _apex(primary_domain)
+    from estate_discovery import registrable
+    primary_apex = registrable(primary_domain) or _apex(primary_domain)
     if not primary_apex:
         return []
 
     crt_rows = _crtsh_query(primary_apex)
+    if crt_rows is None:
+        return None
     if not crt_rows:
         return []
 
@@ -278,6 +324,17 @@ def discover_related_domains(primary_domain: str) -> dict:
     candidates: list = []
 
     cert_san_results = discover_via_cert_san(primary_domain)
+    if cert_san_results is None:
+        # The certificate lookup did not answer. That is not "none found": the
+        # form says auto-discovery is unavailable, as the report says Not
+        # Assessed for the same outage.
+        return {
+            "status": "error",
+            "primary_domain": primary_domain,
+            "candidates": [],
+            "methods_used": [],
+            "error": "the certificate lookup (crt.sh) did not answer",
+        }
     if cert_san_results:
         methods_used.append("cert_san")
         candidates.extend(cert_san_results)

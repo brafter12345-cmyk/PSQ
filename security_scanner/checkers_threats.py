@@ -3382,21 +3382,32 @@ class FraudulentDomainChecker:
 
                 _decided, _any_names = {}, False
                 ex3 = ThreadPoolExecutor(max_workers=10)
+                # Submission and collection are two blocks, not one nested in
+                # the other. The timeout gate requires every try that contains
+                # an as_completed(timeout=) loop to catch the futures
+                # TimeoutError, so that a broad outer handler cannot hide an
+                # inner `except TimeoutError` that misses it on Python 3.10. A
+                # cleanup-only try/finally around the loop fails that rule.
+                # Behaviour is unchanged: a submission failure still shuts the
+                # pool down and propagates, and the loop still stops at budget.
                 try:
                     _futs = {ex3.submit(self._ownership_verdict, e, _insured,
                                         _insured_names): idx
                              for idx, e in enumerate(_probe)}
-                    try:
-                        for _f in as_completed(_futs, timeout=_budget):
-                            try:
-                                _why, _names = _f.result(timeout=1)
-                            except Exception:
-                                _why, _names = None, set()
-                            if _names:
-                                _any_names = True
-                            _decided[_futs[_f]] = (_why, _names)
-                    except Exception:
-                        pass          # budget expired; the rest stay undecided
+                except BaseException:
+                    ex3.shutdown(wait=False, cancel_futures=True)
+                    raise
+                try:
+                    for _f in as_completed(_futs, timeout=_budget):
+                        try:
+                            _why, _names = _f.result(timeout=1)
+                        except Exception:
+                            _why, _names = None, set()
+                        if _names:
+                            _any_names = True
+                        _decided[_futs[_f]] = (_why, _names)
+                except Exception:
+                    pass          # budget expired; the rest stay undecided
                 finally:
                     # Do NOT wait: an unbounded handshake would otherwise hold
                     # the scan open for as long as the remote host chooses.
@@ -4031,6 +4042,7 @@ class InformationDisclosureChecker:
             _probed = {"n": 0}
             _plock = _threading.Lock()
             _codes: dict = {}       # HTTP status -> count, across all probes
+            _errors = {"n": 0}      # probes that raised: counted, never dropped
 
             def _probe_guarded(url, risk):
                 if risk == "medium":
@@ -4055,6 +4067,7 @@ class InformationDisclosureChecker:
                         try:
                             found, status, size = fut.result(timeout=2)
                         except Exception:
+                            _errors["n"] += 1
                             continue
                         # Track what the probes actually met. A WAF answering
                         # 403/406/451 to EVERY path produces found=False across
@@ -4085,7 +4098,11 @@ class InformationDisclosureChecker:
 
             # Directory listing probe (separate — checks root HTML, not path).
             # It doubles as the CONTROL for the blocked/denied question below.
-            from http_client import HTTP
+            # HTTP is the module-level client. A local `from http_client import
+            # HTTP` here made HTTP a local of check(), unbound while the pool
+            # above ran, so every medium-risk probe raised NameError inside
+            # _probe_guarded and was dropped: from 2026-06-28 only the 8 critical
+            # paths were ever requested (step-5 critique round 2, OUTSTANDING 5y).
             r = HTTP.get(f"{base}/", timeout=8)
             result["control_status"] = r.status_code if r is not None else None
             if r is not None and (
@@ -4106,6 +4123,8 @@ class InformationDisclosureChecker:
                 key=lambda e: (0 if e["risk_level"] == "critical" else 1, e["path"])
             )
             result["probe_status_codes"] = dict(sorted(_codes.items()))
+            if _errors["n"]:
+                result["probe_errors"] = _errors["n"]
 
             # If EVERY probe was refused by an edge and nothing was ever
             # retrieved, we did not assess this domain — we were turned away at
@@ -4127,8 +4146,21 @@ class InformationDisclosureChecker:
             # denials — a clean, EARNED result. Only when the control is refused
             # too is the host actually walled off.
             BLOCKING = {401, 403, 406, 409, 418, 429, 451, 503}
-            probed = sum(_codes.values())
-            blocked = sum(n for c, n in _codes.items() if c in BLOCKING)
+            # Only probes that got an HTTP answer decide this. Status 0 means no
+            # answer (no response, or not sent because an opt-in precheck
+            # flagged the apex as a catch-all): it is neither a refusal nor a
+            # sign that the origin is talking to us.
+            # Counted as probed, one unanswered probe turned a host that refused
+            # every answered probe from "unreachable" into a clean 100, a
+            # discount the absence of findings may never give (step-5 critique
+            # round 3).
+            answered = {c: n for c, n in _codes.items() if str(c) != "0"}
+            silent = sum(n for c, n in _codes.items() if str(c) == "0")
+            probed = sum(answered.values())
+            blocked = sum(n for c, n in answered.items() if c in BLOCKING)
+            refused_codes = ", ".join(str(c) for c in sorted(answered))
+            answered_txt = " that got an answer" if silent else ""
+            not_answered = ("; %d got no answer" % silent) if silent else ""
             ctl = result.get("control_status")
             if ctl is not None:
                 origin_answering = ctl not in BLOCKING
@@ -4140,18 +4172,18 @@ class InformationDisclosureChecker:
             if origin_answering and probed and blocked == probed:
                 result["sensitive_paths_denied"] = probed
                 result["issues"].append(
-                    f"All {probed} sensitive-file probes were refused (HTTP "
-                    f"{', '.join(str(c) for c in sorted(_codes))}) while the site "
+                    f"All {probed} sensitive-file probes{answered_txt} were refused "
+                    f"(HTTP {refused_codes}{not_answered}) while the site "
                     f"root responded normally (HTTP {ctl}) — the server is denying "
                     f"access to these paths, which is the correct configuration. "
                     f"No exposed files were found.")
             if probed and not exposed and blocked == probed and not origin_answering:
                 result["status"] = "unreachable"
-                result["http_status"] = max(_codes, key=_codes.get)
+                result["http_status"] = max(answered, key=answered.get)
                 result["unreachable_reason"] = (
                     f"Sensitive-file exposure could not be assessed — all {probed} "
-                    f"probes were refused by a WAF/CDN (HTTP "
-                    f"{', '.join(str(c) for c in sorted(_codes))}). No verdict on "
+                    f"probes{answered_txt} were refused by a WAF/CDN (HTTP "
+                    f"{refused_codes}{not_answered}). No verdict on "
                     f"exposed files is implied; this is not evidence that none exist.")
                 result.pop("score", None)
 

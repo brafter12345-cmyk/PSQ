@@ -141,25 +141,85 @@ class SubdomainChecker:
                     return None  # CNAME matches pattern but target is live
         return None  # CNAME doesn't match any known-vulnerable patterns
 
+    class _CTNames(set):
+        """In-domain names, carrying the OUT-of-domain names as `.foreign`.
+
+        Remediation step 5 needs the names these fetchers used to discard: they
+        are the related-domain candidates, and harvesting them from this fetch
+        costs nothing extra. A set subclass keeps every existing caller
+        byte-identical -- `ct_names |= got` and `if got:` behave exactly as
+        before -- and it keeps the regression gate's mocks working. Those mocks
+        return a plain set, which simply has no `.foreign`, so a mocked run
+        yields no candidates and makes no network call.
+
+        `.answered` is True whenever the source returned a parseable answer,
+        including one with no names under the scanned domain. `ct_sources`
+        lists only sources that returned such names, so it cannot say whether a
+        source answered, and discovery must not report an outage that did not
+        happen.
+        """
+        foreign = frozenset()
+        answered = False
+
+    # Foreign names kept for discovery: at most this many organisations, a few
+    # sample names each, with the number of organisations left out recorded.
+    FOREIGN_ORG_CAP = 300
+    FOREIGN_NAMES_PER_ORG = 5
+    # Pause before retrying an empty crt.sh answer (the pre-flight waits 2 s).
+    CRTSH_EMPTY_RETRY_DELAY = 2.0
+
     @staticmethod
     def _ct_crtsh(domain: str) -> set:
         """Subdomains from crt.sh CT logs (retry once). Empty set on failure.
         The richest CT source but flaky (slow / 502 under load)."""
-        for _ in range(2):
+        empty = None
+        for attempt in range(2):
             try:
                 r = CRTSH.get(f"https://crt.sh/?q=%25.{domain}&output=json",
                               timeout=20, headers={"User-Agent": USER_AGENT})
                 if r is not None and r.status_code == 200 and r.text.strip():
-                    out = set()
-                    for entry in r.json():
+                    rows = r.json()
+                    # Only a list of entries, each carrying its names as text,
+                    # is an answer; null, {}, a list of anything else, or an
+                    # entry whose names are missing or not text is not, and
+                    # must not read as "none found" (step-5 critique rounds 5
+                    # to 7). The form's pre-flight applies the same test.
+                    if (not isinstance(rows, list)
+                            or not all(isinstance(e, dict)
+                                       and isinstance(e.get("name_value"), str)
+                                       for e in rows)):
+                        continue
+                    if not rows and attempt == 0:
+                        # crt.sh's backend is intermittently empty on a cold
+                        # cache, so an empty answer is retried once; it stands
+                        # if the retry fails (step-5 critique round 7). The
+                        # pre-flight searches and retries in its own way
+                        # (docs/OUTSTANDING.md 5w).
+                        empty = SubdomainChecker._CTNames()
+                        empty.foreign, empty.answered = frozenset(), True
+                        import time
+                        time.sleep(SubdomainChecker.CRTSH_EMPTY_RETRY_DELAY)
+                        continue
+                    out, foreign = SubdomainChecker._CTNames(), set()
+                    for entry in rows:
                         for name in entry.get("name_value", "").split("\n"):
-                            name = name.strip().lower().lstrip("*.")
-                            if name and name != domain and domain in name:
+                            name = name.strip().lower().rstrip(".").lstrip("*.")
+                            if not name or name == domain:
+                                continue
+                            # A label boundary, not a substring. notacme.co.za
+                            # and acme.co.za.evil.net are NOT under acme.co.za;
+                            # the substring test filed them as the client's own
+                            # subdomains, to be resolved and takeover-probed.
+                            if name.endswith("." + domain):
                                 out.add(name)
+                            else:
+                                foreign.add(name)
+                    out.foreign = frozenset(foreign)
+                    out.answered = True
                     return out
             except Exception:
                 pass  # retry once
-        return set()
+        return empty if empty is not None else set()
 
     @staticmethod
     def _ct_certspotter(domain: str) -> set:
@@ -173,16 +233,55 @@ class SubdomainChecker:
                 "&include_subdomains=true&expand=dns_names",
                 timeout=20, headers={"User-Agent": USER_AGENT})
             if r is not None and r.status_code == 200:
-                out = set()
-                for iss in (r.json() or []):
+                rows = r.json()
+                # The same test as crt.sh's: a list of entries, each carrying
+                # its names as a list of text.
+                if not isinstance(rows, list) or not all(
+                        isinstance(i, dict) and isinstance(i.get("dns_names"), list)
+                        and all(isinstance(n, str) for n in i["dns_names"])
+                        for i in rows):
+                    return set()
+                out, foreign = SubdomainChecker._CTNames(), set()
+                for iss in rows:
                     for name in iss.get("dns_names", []):
-                        name = (name or "").strip().lower().lstrip("*.")
-                        if name and name != domain and domain in name:
+                        name = (name or "").strip().lower().rstrip(".").lstrip("*.")
+                        if not name or name == domain:
+                            continue
+                        if name.endswith("." + domain):     # label boundary
                             out.add(name)
+                        else:
+                            foreign.add(name)
+                out.foreign = frozenset(foreign)
+                out.answered = True
                 return out
         except Exception:
             pass
         return set()
+
+    @classmethod
+    def _cap_foreign(cls, names):
+        """Bound the stored foreign names WITHOUT silently losing organisations.
+
+        A shared certificate can list thousands of names. Truncating the raw,
+        alphabetically sorted list dropped whole organisations with no record.
+        Grouping by registrable domain first keeps every organisation up to the
+        cap, a few sample names each, and returns how many organisations were
+        left out so discovery can count them.
+        """
+        from estate_discovery import registrable
+        by_org = {}
+        for n in sorted(names):
+            by_org.setdefault(registrable(n) or n, []).append(n)
+        orgs = sorted(by_org, key=lambda o: (-len(by_org[o]), o))
+        kept = orgs[:cls.FOREIGN_ORG_CAP]
+        out = sorted(n for o in kept for n in by_org[o][:cls.FOREIGN_NAMES_PER_ORG])
+        # The true name count of every sampled organisation. Many names on the
+        # insured's certificates is the strongest ownership signal, and ranking
+        # by the capped sample flattened a sister company to the level of a
+        # co-tenant with five names.
+        counts = {o: len(by_org[o]) for o in kept
+                  if len(by_org[o]) > cls.FOREIGN_NAMES_PER_ORG}
+        return out, max(0, len(orgs) - len(kept)), counts
 
     def check(self, domain: str) -> dict:
         result = {
@@ -217,6 +316,8 @@ class SubdomainChecker:
         # yields real CT coverage. ct_source_ok is True if ANY CT source answered.
         ct_names = set()
         ct_ok = []
+        ct_answered = []
+        ct_foreign = set()
         with ThreadPoolExecutor(max_workers=2) as _ctex:
             _ct_futs = {
                 _ctex.submit(self._ct_crtsh, domain): "crtsh",
@@ -228,9 +329,18 @@ class SubdomainChecker:
                         _got = _f.result(timeout=5)
                     except Exception:
                         _got = set()
+                    # A source that answered with no names under the scanned
+                    # domain still answered: discovery must not report it as an
+                    # outage. ct_sources keeps its old meaning.
+                    if _got or getattr(_got, "answered", False):
+                        ct_answered.append(_ct_futs[_f])
                     if _got:
                         ct_ok.append(_ct_futs[_f])
                         ct_names |= _got
+                    # Names outside the scanned domain, kept for related-domain
+                    # discovery (step 5). getattr, because a mocked fetcher
+                    # returns a plain set with no such attribute.
+                    ct_foreign |= set(getattr(_got, "foreign", ()) or ())
             except FuturesTimeoutError:
                 pass
         for name in sorted(ct_names):
@@ -240,6 +350,11 @@ class SubdomainChecker:
         result["ct_count"] = len(ct_names)
         result["ct_source_ok"] = bool(ct_ok)
         result["ct_sources"] = sorted(ct_ok)
+        result["ct_sources_answered"] = sorted(ct_answered)
+        # Bounded per organisation, never by truncating the raw sorted list,
+        # which dropped whole organisations with no record of them.
+        (result["ct_foreign_names"], result["ct_foreign_orgs_dropped"],
+         result["ct_foreign_org_counts"]) = self._cap_foreign(ct_foreign)
 
         # --- Wildcard-DNS guard ---
         # Before trusting any brute-forced result, resolve random non-existent
@@ -285,7 +400,12 @@ class SubdomainChecker:
         # broker sees the scan was degraded, and (b) scan-to-scan delta tooling can
         # exclude it — a drop from ~90 to ~16 subdomains here is data loss, not
         # the org shedding attack surface.
-        result["low_coverage"] = not result["ct_source_ok"]
+        # Degraded means no certificate source ANSWERED. A source that answered
+        # with no names under the target is authoritative (the target has no
+        # subdomains on certificate records), not an outage; calling both
+        # sources "unreachable" contradicted the related-domains card, which
+        # lists what those same sources returned.
+        result["low_coverage"] = not result.get("ct_sources_answered")
         if result["low_coverage"]:
             result["issues"].append(
                 "Subdomain enumeration DEGRADED — both Certificate Transparency "

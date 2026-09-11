@@ -22,6 +22,8 @@ export interface StateMeta {
 
 export const STATE_META: Record<CheckerState, StateMeta> = {
   passed: { label: 'Passed', severity: 'positive', conclusive: true },
+  // Ran to the end, with no verdict the panel can read: never a pass.
+  completed: { label: 'Completed', severity: 'unknown', conclusive: true },
   warning: { label: 'Warning', severity: 'medium', conclusive: true },
   failed: { label: 'Failed', severity: 'high', conclusive: true },
   critical: { label: 'Critical', severity: 'critical', conclusive: true },
@@ -109,6 +111,69 @@ export function normalizeState(raw: string | null | undefined): CheckerState {
 /** Did a checker actually run to a verdict? false for blocked/error/no-data/etc. */
 export function isConclusive(category: CategoryBase | undefined): boolean {
   return STATE_META[normalizeState(category?.status)].conclusive
+}
+
+/** The state of a generic panel for a checker with no selector of its own.
+ *  A completed checker's own severity, or its finding counts, give its finding
+ *  level; otherwise the panel says only that it completed, never "Passed",
+ *  because its findings may sit in fields a generic panel does not read (step-5
+ *  critique rounds 7 and 8). A result marked assessed: false was not assessed,
+ *  and anything that did not complete keeps its own state. */
+export function refineCompletedState(category: CategoryBase | undefined): CheckerState {
+  const state = normalizeState(category?.status)
+  if (state !== 'passed' || !category) return state
+  const c = category as unknown as Record<string, unknown>
+  if (c.assessed === false) return 'not_assessed'
+  const sev = String(c.severity ?? '').toLowerCase()
+  const n = (...keys: string[]) => keys.reduce((t, k) => t + (Number(c[k] ?? 0) || 0), 0)
+  if (sev === 'critical' || n('critical_count', 'critical_match_count') > 0) return 'critical'
+  if (sev === 'high' || n('high_count', 'high_match_count') > 0) return 'failed'
+  if (sev === 'medium' || n('medium_count') > 0) return 'warning'
+  return 'completed'
+}
+
+/** The badge a checker's panel header shows: its state, and the reason where
+ *  the checker did not complete. One function, so the regression gate runs the
+ *  real thing under node on real checker output rather than reading a line of
+ *  the page (step-5 critique rounds 7 to 9).
+ *
+ *  The email-vendor surface (S-4) and the vendor-breach correlation (S-5) carry
+ *  their own rule: the surface is a measurement only where the SPF lookup is
+ *  recorded as answered, a result stored before that field existed cannot show
+ *  it, and a walk that found a vendor beside a lookup that did not answer read
+ *  only part of the chain. */
+export function headerBadge(category: CategoryBase | undefined,
+                            refine = false): { state: CheckerState; label?: string } {
+  if (!category) return { state: 'not_assessed', label: 'Not in scan' }
+  const c = category as unknown as Record<string, unknown>
+  if ('vendors_detected' in c) {
+    const how = c.spf_lookup
+    const none = !((c.vendors_detected as unknown[]) ?? []).length && !c.vendor_count
+    if (c.status === 'no_data') {
+      return how === 'answered'
+        ? { state: 'completed' }
+        : { state: 'not_assessed', label: 'Not assessed' }
+    }
+    if (c.status === 'completed' && how === undefined && none) {
+      return { state: 'not_assessed', label: 'Not assessed' }
+    }
+    if (c.status === 'completed' && how !== undefined && how !== 'answered'
+        && how !== 'partial') {
+      // An outcome this rule does not know is not a measurement.
+      return { state: 'not_assessed', label: 'Not assessed' }
+    }
+    // A result stored before the outcome was recorded that still named a vendor
+    // is the shape a partly read chain writes (step-5 critique round 10).
+    if (c.status === 'completed' && (how === 'partial' || how === undefined)) {
+      const refined = refineCompletedState(category)
+      return refined === 'completed'
+        ? { state: 'warning', label: 'Partly assessed' }
+        : { state: refined }
+    }
+  }
+  const state = refine ? refineCompletedState(category) : normalizeState(category.status)
+  const label = isConclusive(category) ? undefined : inconclusiveLabel(category.status as string)
+  return { state, label }
 }
 
 /** Friendlier label for inconclusive states, with the no-API-key nuance. */

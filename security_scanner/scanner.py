@@ -35,6 +35,26 @@ import socket
 CHECKPOINT_TTL_S = int(os.environ.get("CHECKPOINT_TTL_S", "21600"))
 
 
+def _run_related_probe(ckpt, domain, domains):
+    """RelatedDomainsChecker on the broker-confirmed *domains*, checkpointed.
+
+    Module level so that the regression gate runs this exact function.
+    RelatedDomainsChecker returns when its own budget ends
+    (RelatedDomainsChecker.budget_seconds), and the outer timeout sits 60 s
+    above it. run_with_timeout waits for its worker even after it times out
+    (OUTSTANDING 5aa), so an outer budget at or below the checker's own saves
+    no time and only discards a result the checker went on to finish,
+    findings included. A "timeout" or "error" result is in the
+    checkpointer's not-done set, so a resumed scan probes again rather than
+    loading a NOT ASSESSED result; the builder maps both to "unassessed",
+    which prices exactly like an absent category.
+    """
+    return ckpt.run("related_domains", lambda: run_with_timeout(
+        RelatedDomainsChecker().check, args=(domain, domains),
+        timeout=RelatedDomainsChecker.budget_seconds(len(domains)) + 60,
+        on_timeout_result={"status": "timeout"}))
+
+
 # ---------------------------------------------------------------------------
 # Main Scanner Orchestrator
 # ---------------------------------------------------------------------------
@@ -615,25 +635,25 @@ class SecurityScanner:
             checker_durations[name] = round(time.perf_counter() - t0, 3)
             self._notify(on_progress, name, "done", cat_results[name])
 
-        # --- Related-domain LITE scan (broker-declared suppliers/siblings) ---
-        # Each declared sibling gets SSL + DNS-port + info_disclosure probes,
-        # rolled up worst-of-N into a single category. Skipped when no
-        # domains are declared. v1.0 broker-declared only — v1.1 will add
-        # cert-SAN/WHOIS/analytics-ID auto-discovery (see project memory:
-        # project_related_domain_discovery.md).
-        if related_domains:
-            self._notify(on_progress, "related_domains", "running")
-            t0 = time.perf_counter()
-            cat_results["related_domains"] = _ckpt.run(
-                "related_domains",
-                lambda: run_with_timeout(
-                    RelatedDomainsChecker().check,
-                    args=(domain, related_domains),
-                    timeout=min(300, 60 * max(1, len(related_domains))),
-                ))
-            checker_durations["related_domains"] = round(time.perf_counter() - t0, 3)
-            self._notify(on_progress, "related_domains", "done",
-                         cat_results["related_domains"])
+        # --- Related domains: DISCOVERY on every scan, PROBES on confirmed only ---
+        # Remediation step 5. Discovery used to run only in the form's
+        # pre-flight, so an API scan looked for related domains not at all. It
+        # now runs here, for every scan by every entry path, from the certificate
+        # names SubdomainChecker already fetched. Discovered domains are LISTED
+        # for confirmation and never probed or priced; only broker-confirmed or
+        # API-declared domains are probed. The whole category, status contract
+        # included, is built by estate_discovery.build_related_domains_category,
+        # the function the regression gate drives, and assigned exactly once.
+        from estate_discovery import build_related_domains_category
+
+        self._notify(on_progress, "related_domains", "running")
+        t0 = time.perf_counter()
+        _rd = build_related_domains_category(
+            domain, related_domains, cat_results.get("subdomains") or {},
+            lambda ds: _run_related_probe(_ckpt, domain, ds))
+        cat_results["related_domains"] = _rd
+        checker_durations["related_domains"] = round(time.perf_counter() - t0, 3)
+        self._notify(on_progress, "related_domains", "done", _rd)
 
         # --- Expand IP pool with subdomain-resolved IPs ---
         sub_result = cat_results.get("subdomains", {})

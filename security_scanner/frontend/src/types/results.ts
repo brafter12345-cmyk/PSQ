@@ -8,6 +8,7 @@
 /** Normalised checker lifecycle state — never infer "pass" from score===100. */
 export type CheckerState =
   | 'passed'
+  | 'completed'
   | 'warning'
   | 'failed'
   | 'critical'

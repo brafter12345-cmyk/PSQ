@@ -362,9 +362,11 @@ def build_brief(results: dict, domain: str, fingerprint_data: "dict | None" = No
               "addresses appear across %d domains: %s. Only %s was scanned, so "
               "accounts on the other domains are currently classified as personal "
               "rather than corporate, which understates them. That is a limitation "
-              "of scanning one domain, not a judgement about those accounts. To "
-              "assess them properly they should be declared as related domains and "
-              "scanned in their own right."
+              "of scanning one domain, not a judgement about those accounts. "
+              "Credential exposure on those domains is assessed only by scanning "
+              "each one as a domain in its own right. Confirming them as related "
+              "domains on the scan form adds a lighter check of their "
+              "certificates, DNS and exposed files, not a credential assessment."
               % (len(by), ", ".join("%s (%d)" % (k, v) for k, v in
                                     sorted(by.items(), key=lambda t: -t[1])), domain))
     else:

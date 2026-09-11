@@ -2558,6 +2558,3374 @@ def _check_tls_port_gate(failures):
           % ("PASS" if calls else "FAIL", len(calls)))
 
 
+# ---- Step 5: related domains, discovery on EVERY scan, assessment on confirmed -
+#
+# Discovery ran only in the form's pre-flight, so an API scan looked for related
+# domains not at all. It now runs inside every scan from the certificate names
+# SubdomainChecker already fetches, and the whole category is built by
+# estate_discovery.build_related_domains_category, which scan() calls once.
+#
+# THIS GATE DRIVES THE REAL CODE. Its first version called discover() on
+# hand-fed names and priced dicts it built itself, so deleting the feature, or
+# turning a CT outage into "completed", passed it (step-5 critique round 1), and
+# round 2 found sixteen more regressions it missed. Every check below runs what
+# a scan runs: the builder, the CT fetchers through faked HTTP clients,
+# RelatedDomainsChecker with its three sub-checks faked, the form pre-flight,
+# the PDF card, the executive deck and the summary tier, scan()'s wiring by AST
+# including its arguments, and the dashboard's TypeScript state logic under node.
+#
+# THE STATUS CONTRACT IS A PRICE DECISION. Measured over the 30 retained scans:
+# a related_domains category that is absent, completed/100 or unassessed prices
+# at exactly +0; skipped, error or timeout prices at +5 to +16 (mean +8.47). So
+# this category may only ever be "completed" or "unassessed", a discovery outage
+# must never read as "none found", and a partial assessment is never clean.
+DISCOVERY_SCENARIOS = [
+    # (label, scanned domain, foreign names, sources_ok, attested,
+    #  want listed {domain: attested}, want rejected {domain: reason fragment})
+    # A wildcard name counts as its organisation, on the form and in the report.
+    ("shared_cert_tenant_listed_unconfirmed", "acme.co.za",
+     ["shop.clientb.co.za", "*.clientc.co.za"], ["certspotter"], [],
+     {"clientb.co.za": False, "clientc.co.za": False}, {}),
+    ("attested_flagged", "acme.co.za",
+     ["www.acme-group.co.za"], ["crtsh"], ["acme-group.co.za"],
+     {"acme-group.co.za": True}, {}),
+    ("registry_zone_never_a_sibling", "acme.co.za",
+     ["school.za"], ["crtsh"], [], {}, {"school.za": "registry zone"}),
+    ("scanned_domain_excluded", "acme.co.za",
+     ["www.acme.co.za"], ["crtsh"], [], {}, {"acme.co.za": "scanned domain"}),
+    ("scanned_organisation_named_as_such", "www.acme.co.za",
+     ["acme.co.za", "mail.acme.co.za"], ["crtsh"], [], {},
+     {"acme.co.za": "scanned organisation"}),
+    ("cdn_excluded", "acme.co.za",
+     ["d1.cloudfront.net"], ["crtsh"], [], {}, {"cloudfront.net": "CDN"}),
+    ("provider_zone_excluded", "acme.co.za",
+     ["cpanel.host-h.net"], ["crtsh"], [], {}, {"host-h.net": "provider"}),
+    ("certificate_authority_named_as_such", "acme.co.za",
+     ["r3.letsencrypt.org"], ["crtsh"], [], {},
+     {"letsencrypt.org": "certificate authority"}),
+    # The keep side. A bare endswith() would reject all three as CA or CDN.
+    ("substring_of_ca_is_kept", "acme.co.za",
+     ["www.myssl.com", "www.notdigicert.com"], ["crtsh"], [],
+     {"myssl.com": False, "notdigicert.com": False}, {}),
+    ("substring_of_cdn_is_kept", "acme.co.za",
+     ["www.mycloudfront.net"], ["crtsh"], [], {"mycloudfront.net": False}, {}),
+    ("ip_address_never_a_sibling", "acme.co.za",
+     ["196.22.1.5"], ["crtsh"], [], {}, {"196.22.1.5": "IP address"}),
+    ("african_second_level_registry", "acme.co.za",
+     ["www.acme.com.na", "shop.other.co.ke"], ["crtsh"], [],
+     {"acme.com.na": False, "other.co.ke": False}, {}),
+    # Each half of the registry rule on its own: the generic-label heuristic
+    # (co.ao is in no list) and the named list (govt.nz has no generic label).
+    ("generic_label_heuristic_only", "acme.co.za",
+     ["shop.acme.co.ao", "www.other.co.ao"], ["crtsh"], [],
+     {"acme.co.ao": False, "other.co.ao": False}, {}),
+    ("named_registry_list_only", "acme.co.za",
+     ["www.acme.govt.nz", "www.other.govt.nz"], ["crtsh"], [],
+     {"acme.govt.nz": False, "other.govt.nz": False}, {}),
+    ("private_registry_za_com", "acme.co.za",
+     ["www.acme.za.com", "other.za.com"], ["crtsh"], [],
+     {"acme.za.com": False, "other.za.com": False}, {}),
+    ("round2_registry_sc_ke", "acme.co.za",
+     ["stmarys.sc.ke", "kenyahigh.sc.ke"], ["crtsh"], [],
+     {"stmarys.sc.ke": False, "kenyahigh.sc.ke": False}, {}),
+    ("za_always_three_labels", "acme.co.za",
+     ["www.foo.nis.za"], ["crtsh"], [], {"foo.nis.za": False}, {}),
+    ("provider_zone_deeper_than_the_apex", "acme.co.za",
+     ["vm1.southafricanorth.cloudapp.azure.com"], ["crtsh"], [], {},
+     {"azure.com": "provider"}),
+    ("platform_zone", "acme.co.za",
+     ["sni12345.cloudflaressl.com"], ["crtsh"], [], {},
+     {"cloudflaressl.com": "shared platform"}),
+    ("provider_zone_of_the_insureds_own_brand_is_kept", "afrihost.com",
+     ["www.afrihost.co.za"], ["crtsh"], [], {"afrihost.co.za": False}, {}),
+    ("provider_zone_of_another_brand_is_rejected", "acme.co.za",
+     ["www.afrihost.co.za"], ["crtsh"], [], {}, {"afrihost.co.za": "provider"}),
+    ("platform_zone_needs_an_exact_brand", "webstar.co.za",
+     ["x.web.app"], ["crtsh"], [], {}, {"web.app": "shared platform"}),
+    # Name likeness is not ownership: hetzner.co.za is xneelo's (formerly
+    # Hetzner South Africa), not Hetzner Online's. A provider or platform zone
+    # is listed only through its own group's alias list (round 5).
+    ("like_named_platform_zone_is_rejected", "hetzner.com",
+     ["www.hetzner.co.za"], ["crtsh"], [], {}, {"hetzner.co.za": "shared platform"}),
+    ("platform_zone_of_the_insureds_group_is_kept", "xneelo.co.za",
+     ["www.hetzner.co.za"], ["crtsh"], [], {"hetzner.co.za": False}, {}),
+    # Round 4: the brand exception is exact, or a listed alias, and never
+    # unlocks a zone deeper than its registrable domain.
+    ("provider_group_alias_is_kept", "voxtelecom.co.za",
+     ["www.vox.co.za"], ["crtsh"], [], {"vox.co.za": False}, {}),
+    ("brand_containment_is_not_a_brand", "laservision.co.za",
+     ["cp12.aserv.co.za"], ["crtsh"], [], {}, {"aserv.co.za": "provider"}),
+    ("provider_zone_below_its_apex_never_branded", "azurecapital.co.za",
+     ["acp.southafricanorth.cloudapp.azure.com"], ["crtsh"], [], {},
+     {"azure.com": "provider"}),
+    ("short_generic_brand_never_unlocks_a_platform", "web.co.za",
+     ["x.web.app"], ["crtsh"], [], {}, {"web.app": "shared platform"}),
+    ("two_letter_provider_never_branded", "discovery.co.za",
+     ["mail.is.co.za"], ["crtsh"], [], {}, {"is.co.za": "provider"}),
+    # compute.amazonaws.com's first label is the insured's brand, but the
+    # candidate would be amazonaws.com, the provider's own apex.
+    ("deep_provider_zone_never_branded", "compute.co.za",
+     ["ec2-1-2-3-4.compute.amazonaws.com"], ["crtsh"], [], {},
+     {"amazonaws.com": "provider"}),
+    ("telkom_group_zone_is_kept", "telkom.co.za",
+     ["webmail.telkomsa.net"], ["crtsh"], [], {"telkomsa.net": False}, {}),
+    ("internet_solutions_alias_is_kept", "internetsolutions.co.za",
+     ["mail.is.co.za"], ["crtsh"], [], {"is.co.za": False}, {}),
+    # An insured whose name merely equals, or begins with, a group's is not
+    # that group: aliases are keyed on the group's own domains (round 6).
+    ("like_named_brand_is_not_the_group", "vox.com",
+     ["www.vox.co.za"], ["crtsh"], [], {}, {"vox.co.za": "provider"}),
+    ("first_label_coincidence_is_rejected", "liquid.co.za",
+     ["x.liquidtelecom.net"], ["crtsh"], [], {}, {"liquidtelecom.net": "provider"}),
+    ("alias_prefix_is_not_the_group", "voxel.co.za",
+     ["www.vox.co.za"], ["crtsh"], [], {}, {"vox.co.za": "provider"}),
+    ("like_named_provider_zone_is_rejected", "datapro.net",
+     ["cpanel.datapro.co.za"], ["crtsh"], [], {}, {"datapro.co.za": "provider"}),
+]
+
+# SubdomainChecker results the builder receives, one per real situation.
+RD_SUB_OK = {"status": "completed", "ct_sources": ["crtsh"],
+             "ct_sources_answered": ["certspotter", "crtsh"],
+             "ct_foreign_names": ["shop.clientb.co.za", "www.acme-group.co.za"],
+             "ct_foreign_orgs_dropped": 0}
+RD_SUB_EMPTY = {"status": "completed", "ct_sources": ["crtsh"],
+                "ct_sources_answered": ["crtsh"], "ct_foreign_names": [],
+                "ct_foreign_orgs_dropped": 0}
+RD_SUB_ANSWERED_EMPTY = {"status": "completed", "ct_sources": [],
+                         "ct_sources_answered": ["crtsh"], "ct_foreign_names": [],
+                         "ct_foreign_orgs_dropped": 0}
+RD_SUB_OUTAGE = {"status": "completed", "ct_sources": [], "ct_sources_answered": [],
+                 "ct_foreign_names": [], "ct_foreign_orgs_dropped": 0}
+RD_SUB_ONLY_CONFIRMED = {"status": "completed", "ct_sources": ["crtsh"],
+                         "ct_sources_answered": ["certspotter", "crtsh"],
+                         "ct_foreign_names": ["www.acme-group.co.za"],
+                         "ct_foreign_orgs_dropped": 0}
+RD_SUB_TIMEOUT = {"status": "timeout", "error": "Checker timed out after 150s"}
+RD_SUB_PRECHANGE = {"status": "completed", "ct_sources": ["certspotter", "crtsh"]}
+RD_SUB_ANSWERED_NO_SUBDOMAINS = {"status": "completed", "ct_sources": [],
+                                 "ct_sources_answered": ["certspotter"],
+                                 "ct_foreign_names": ["acme-group.co.za"],
+                                 "ct_foreign_orgs_dropped": 0}
+
+
+# More than twenty confirmed domains co-listed on the insured's certificates:
+# confirmed candidates must not crowd every unconfirmed one out of the list.
+RD_SUB_MANY_ATTESTED = {"status": "completed", "ct_sources": ["crtsh"],
+                        "ct_sources_answered": ["crtsh"],
+                        "ct_foreign_names": (["www.sib%02d.co.za" % i for i in range(22)]
+                                             + ["www.clienta.co.za", "www.clientb.co.za",
+                                                "www.clientc.co.za"]),
+                        "ct_foreign_orgs_dropped": 0}
+# Only confirmed domains listed, but organisations the producer left out still
+# exist: the "and N more" line must survive the empty unconfirmed list.
+RD_SUB_ATTESTED_PLUS_DROPPED = {"status": "completed", "ct_sources": ["crtsh"],
+                                "ct_sources_answered": ["crtsh"],
+                                "ct_foreign_names": ["www.acme-group.co.za"],
+                                "ct_foreign_orgs_dropped": 7}
+# Fifteen organisations on the certificates, none confirmed: the card lists
+# twelve and says "and 3 more".
+RD_SUB_FIFTEEN = {"status": "completed", "ct_sources": ["crtsh"],
+                  "ct_sources_answered": ["crtsh"],
+                  "ct_foreign_names": ["www.org%02d.co.za" % i for i in range(15)],
+                  "ct_foreign_orgs_dropped": 0}
+# Five confirmed domains and eighteen unconfirmed tenants: the list holds the
+# eighteen and two confirmed, so "and N more" is 6 (18 - 12), never 9, which
+# counted the three confirmed domains past the list as awaiting confirmation.
+RD_SUB_FIVE_PLUS_EIGHTEEN = {"status": "completed", "ct_sources": ["crtsh"],
+                             "ct_sources_answered": ["crtsh"],
+                             "ct_foreign_names": (["www.sib%d.co.za" % i for i in range(5)]
+                                                  + ["www.tenant%02d.co.za" % i
+                                                     for i in range(18)]),
+                             "ct_foreign_orgs_dropped": 0}
+
+
+def _rd_probe(kind, calls):
+    """A stand-in for RelatedDomainsChecker that records what it was asked."""
+    def run(domains):
+        calls.append(list(domains))
+        if kind == "raise":
+            raise RuntimeError("probe blew up")
+        if kind in ("timeout", "error", "skipped"):
+            return {"status": kind}
+        deps = []
+        for i, d in enumerate(domains):
+            measured = not (kind == "none_measured" or (
+                kind in ("partial", "partial_finding", "partial_high") and i > 0))
+            score = {"finding": 40, "high": 45, "partial_finding": 40,
+                     "partial_high": 45}.get(kind, 100)
+            gap = (kind == "partial_checks"
+                   or (kind == "partial_checks_last" and i == len(domains) - 1))
+            dep = {"domain": d, "measured": measured,
+                   "lite_score": score if measured else None,
+                   "critical_paths": (1 if measured and kind in ("finding", "partial_finding")
+                                      else 0),
+                   "not_measured": ["ssl"] if gap else []}
+            if kind == "legacy_shape":
+                # What the pre-change checker wrote: no measured marker at all.
+                del dep["measured"]
+                del dep["not_measured"]
+            deps.append(dep)
+        m = [x for x in deps if x.get("measured", kind == "legacy_shape")]
+        return {"status": "completed", "declared_count": len(domains),
+                "scanned_count": len(m), "dependants": deps,
+                "worst_domain": ({"domain": m[0]["domain"], "lite_score": m[0]["lite_score"]}
+                                 if m else None),
+                "critical_count": sum(x["critical_paths"] for x in m),
+                "high_count": sum(1 for x in m if x["lite_score"] < 60),
+                "score": min((x["lite_score"] for x in m), default=100), "issues": []}
+    return run
+
+
+NONE_FOUND_TEXT = "no related domains were found"
+
+# (label, confirmed list, subdomains result, probe kind, expectations)
+RD_BUILDER = [
+    ("api_ct_answered", None, RD_SUB_OK, None,
+     dict(status="completed", state="awaiting_confirmation", probed=None, colour="blue",
+          listed={"clientb.co.za", "acme-group.co.za"},
+          says=["awaiting confirmation", "clientb.co.za"],
+          never=["none found", NONE_FOUND_TEXT])),
+    ("api_ct_answered_none_found", None, RD_SUB_EMPTY, None,
+     dict(status="completed", state="none_found", probed=None, listed=set(),
+          says=[NONE_FOUND_TEXT, "does not show"])),
+    ("api_ct_answered_empty_names", None, RD_SUB_ANSWERED_EMPTY, None,
+     dict(status="completed", state="none_found", probed=None,
+          never=["did not return a result"])),
+    ("api_ct_outage", None, RD_SUB_OUTAGE, None,
+     dict(status="unassessed", state="degraded", probed=None, listed=set(),
+          says=["not assessed", "not a finding that none exist",
+                "certificate-record lookup did not return a result"],
+          never=["none found", NONE_FOUND_TEXT])),
+    ("api_subdomains_timed_out", None, RD_SUB_TIMEOUT, None,
+     dict(status="unassessed", state="degraded", probed=None,
+          says=["not assessed", "the subdomain check"],
+          never=["none found", NONE_FOUND_TEXT, "certificate-record lookup"])),
+    ("resumed_prechange_checkpoint", None, RD_SUB_PRECHANGE, None,
+     dict(status="unassessed", state="degraded", probed=None,
+          says=["not assessed", "resumed from a checkpoint"],
+          never=["none found", NONE_FOUND_TEXT, "certificate-record lookup"])),
+    ("source_answered_without_subdomains", None, RD_SUB_ANSWERED_NO_SUBDOMAINS, None,
+     dict(status="completed", state="awaiting_confirmation",
+          listed={"acme-group.co.za"},
+          never=["did not return a result", NONE_FOUND_TEXT])),
+    ("primary_only_confirmed_in_outage", ["ACME.co.za "], RD_SUB_OUTAGE, "clean",
+     dict(status="unassessed", state="degraded", probed=None,
+          rejected={"acme.co.za"}, says=["assessed by the main scan"],
+          never=["none found", NONE_FOUND_TEXT])),
+    ("confirmed_own_subdomain", ["shop.acme.co.za"], RD_SUB_OK, "clean",
+     dict(status="completed", state="awaiting_confirmation", probed=None,
+          rejected={"shop.acme.co.za"},
+          says=["shop.acme.co.za", "a subdomain of the scanned domain",
+                "not assessed separately on this scan", "submitted for assessment 1"])),
+    ("subdomain_scan_confirms_parent", ["acme.co.za", "portal.acme.co.za"],
+     RD_SUB_OK, "clean",
+     dict(domain="www.acme.co.za", status="completed", state="confirmed",
+          probed=[["acme.co.za", "portal.acme.co.za"]], rejected=set())),
+    ("registry_zone_never_probed", ["school.za", "acme-group.co.za"], RD_SUB_OK, "clean",
+     dict(status="completed", state="confirmed", probed=[["acme-group.co.za"]],
+          rejected={"school.za"}, listed={"clientb.co.za"},
+          says=["school.za", "submitted for assessment 2"])),
+    ("confirmed_clean", ["acme-group.co.za"], RD_SUB_OK, "clean",
+     dict(status="completed", state="confirmed", listed={"clientb.co.za"}, full=True,
+          colour="green", says=["passed the lite-mode checks"],
+          never=[NONE_FOUND_TEXT, "confirmed by broker"],
+          block_excludes="acme-group.co.za")),
+    ("confirmed_finding", ["acme-group.co.za"], RD_SUB_OK, "finding",
+     dict(status="completed", state="confirmed", loads=True, colour="critical",
+          never=["passed the lite-mode checks"])),
+    ("confirmed_high_only", ["acme-group.co.za"], RD_SUB_OK, "high",
+     dict(status="completed", state="confirmed", loads=True, colour="red",
+          never=["passed the lite-mode checks"])),
+    ("probe_timed_out", ["acme-group.co.za"], RD_SUB_OK, "timeout",
+     dict(status="unassessed", state="confirmed_unassessed", reason="timeout",
+          says=["not assessed", "within the time allowed"],
+          never=["were assessed", "confirmed by broker", NONE_FOUND_TEXT])),
+    ("probe_errored", ["acme-group.co.za"], RD_SUB_OK, "error",
+     dict(status="unassessed", state="confirmed_unassessed", reason="error",
+          says=["because the assessment failed"],
+          never=["time allowed", "were assessed"])),
+    ("probe_raised", ["acme-group.co.za"], RD_SUB_OK, "raise",
+     dict(status="unassessed", state="confirmed_unassessed", reason="error")),
+    ("probe_returned_skipped", ["acme-group.co.za"], RD_SUB_OK, "skipped",
+     dict(status="unassessed", state="confirmed_unassessed")),
+    ("probe_measured_nothing", ["acme-group.co.za"], RD_SUB_OK, "none_measured",
+     dict(status="unassessed", state="confirmed_unassessed", reason="not_measured",
+          never=["were assessed"])),
+    ("resumed_prechange_probe_result", ["acme-group.co.za"], RD_SUB_OK, "legacy_shape",
+     dict(status="unassessed", state="confirmed_unassessed", reason="not_measured")),
+    ("probe_measured_some", ["acme-group.co.za", "acme-holdings.co.za"], RD_SUB_OK, "partial",
+     dict(status="completed", state="confirmed", not_assessed=["acme-holdings.co.za"],
+          full=False, colour="amber",
+          says=["could not be assessed on this scan", "assessment is incomplete"],
+          never=["passed the lite-mode checks"])),
+    ("partial_checks", ["acme-group.co.za"], RD_SUB_OK, "partial_checks",
+     dict(status="completed", state="confirmed", full=False,
+          colour="amber",
+          says=["ssl not assessed", "some checks returned no result",
+                "assessment is incomplete"],
+          never=["passed the lite-mode checks"])),
+    ("over_the_cap", ["sib%02d.co.za" % i for i in range(12)], RD_SUB_OK, "clean",
+     dict(status="completed", state="confirmed",
+          probed=[["sib%02d.co.za" % i for i in range(10)]],
+          over_cap=["sib10.co.za", "sib11.co.za"], full=False,
+          colour="amber",
+          says=["at most 10", "submitted for assessment 12", "assessment is incomplete"],
+          never=["passed the lite-mode checks"])),
+    ("confirmed_while_discovery_down", ["acme-group.co.za"], RD_SUB_OUTAGE, "clean",
+     dict(status="completed", state="confirmed", says=["discovery could not run"])),
+    ("partial_while_discovery_down", ["acme-group.co.za"], RD_SUB_OUTAGE, "partial_checks",
+     dict(status="completed", state="confirmed", full=False,
+          says=["discovery could not run", "ssl not assessed"])),
+    ("finding_while_discovery_down", ["acme-group.co.za"], RD_SUB_OUTAGE, "finding",
+     dict(status="completed", state="confirmed", loads=True,
+          says=["discovery could not run"])),
+    ("timeout_while_discovery_down", ["acme-group.co.za"], RD_SUB_OUTAGE, "timeout",
+     dict(status="unassessed", state="confirmed_unassessed", reason="timeout",
+          says=["discovery could not run", "within the time allowed"])),
+    # The only certificate name besides the insured's own is the confirmed
+    # domain: nothing is listed, and the dashboard lead says nothing of listed
+    # candidates (critique round 6, GS6-6).
+    ("confirmed_only_attested_candidate", ["acme-group.co.za"], RD_SUB_ONLY_CONFIRMED,
+     "clean", dict(status="completed", state="confirmed", full=True,
+                   block_excludes="acme-group.co.za")),
+    ("twenty_confirmed_domains_on_certificates",
+     ["sib%02d.co.za" % i for i in range(22)], RD_SUB_MANY_ATTESTED, "clean",
+     dict(status="completed", state="confirmed",
+          listed={"clienta.co.za", "clientb.co.za", "clientc.co.za"},
+          over_cap=["sib%02d.co.za" % i for i in range(10, 22)], full=False,
+          says=["clienta.co.za"], never=["and 5 more"])),
+    ("dropped_organisations_still_counted", ["acme-group.co.za"],
+     RD_SUB_ATTESTED_PLUS_DROPPED, "clean",
+     dict(status="completed", state="confirmed", says=["and 7 more"])),
+    # Round 4. A partial assessment that found something shows the finding,
+    # on the card, the deck and the summary tier.
+    ("partial_with_critical", ["acme-group.co.za", "acme-holdings.co.za"], RD_SUB_OK,
+     "partial_finding",
+     dict(status="completed", state="confirmed", full=False, loads=True, colour="critical",
+          not_assessed=["acme-holdings.co.za"], never=["passed the lite-mode checks"])),
+    ("partial_with_high", ["acme-group.co.za", "acme-holdings.co.za"], RD_SUB_OK,
+     "partial_high",
+     dict(status="completed", state="confirmed", full=False, loads=True, colour="red",
+          never=["passed the lite-mode checks"])),
+    # The card lists five dependants; the sixth's missing check is in the note.
+    ("partial_checks_beyond_five_rows", ["sib%d.co.za" % i for i in range(6)], RD_SUB_OK,
+     "partial_checks_last",
+     dict(status="completed", state="confirmed", full=False, colour="amber",
+          says=["some checks returned no result", "sib5.co.za: ssl",
+                "assessment is incomplete"])),
+    ("fifteen_candidates_none_confirmed", None, RD_SUB_FIFTEEN, None,
+     dict(status="completed", state="awaiting_confirmation", says=["and 3 more"])),
+    ("five_confirmed_among_eighteen_tenants", ["sib%d.co.za" % i for i in range(5)],
+     RD_SUB_FIVE_PLUS_EIGHTEEN, "clean",
+     dict(status="completed", state="confirmed", full=True, says=["and 6 more"],
+          never=["and 9 more"])),
+    # A confirmed host attests its own registrable domain, which is therefore
+    # not listed as awaiting confirmation.
+    ("confirmed_host_attests_its_domain", ["www.acme-group.co.za"], RD_SUB_OK, "clean",
+     dict(status="completed", state="confirmed", probed=[["www.acme-group.co.za"]],
+          listed={"clientb.co.za"}, block_excludes="acme-group.co.za")),
+    # Round 5. A clean confirmed estate with no candidate left awaiting
+    # confirmation: the only kind whose summary row may read "Clean".
+    ("confirmed_clean_no_candidates", ["acme-group.co.za"], RD_SUB_EMPTY, "clean",
+     dict(status="completed", state="confirmed", full=True, colour="green",
+          says=["passed the lite-mode checks"])),
+    # A partial assessment beside a rejected entry: the deck counts confirmed
+    # related domains only.
+    ("partial_with_rejected_entry", ["school.za", "acme-group.co.za"], RD_SUB_OK,
+     "partial_checks",
+     dict(status="completed", state="confirmed", full=False, colour="amber",
+          says=["submitted for assessment 2"])),
+    # A probe that assessed nothing, beside confirmed domains over the cap and
+    # a rejected entry: the card still names both.
+    ("unassessed_with_overcap_and_rejected",
+     ["school.za"] + ["sib%02d.co.za" % i for i in range(12)], RD_SUB_OK, "timeout",
+     dict(status="unassessed", state="confirmed_unassessed", reason="timeout",
+          says=["at most 10", "school.za"])),
+]
+
+# Categories stored BEFORE step 5, as they sit in the database today.
+RD_LEGACY = [
+    ("legacy_stored_timeout",
+     {"status": "timeout", "error": "Checker timed out after 60s",
+      "issues": ["Checker did not complete within 60s"]}, "not_run"),
+    ("legacy_stored_skipped",
+     {"status": "skipped", "declared_count": 0, "scanned_count": 0, "score": 100,
+      "issues": []}, "not_run"),
+    ("legacy_stored_error", {"status": "error", "error": "boom"}, "not_run"),
+    ("legacy_completed_nothing_scanned",
+     {"status": "completed", "declared_count": 2, "scanned_count": 0, "score": 100,
+      "issues": []}, "not_run"),
+    ("legacy_confirmed_completed",
+     {"status": "completed", "declared_count": 1, "scanned_count": 1, "score": 88,
+      "dependants": [{"domain": "sib.co.za", "lite_score": 88, "critical_paths": 0}],
+      "worst_domain": {"domain": "sib.co.za", "lite_score": 88},
+      "critical_count": 0, "high_count": 0, "issues": []}, "confirmed"),
+]
+
+
+def _rd_flow_text(x):
+    """Visible text of reportlab flowables: cards, tables, nested groups."""
+    out = []
+
+    def walk(y):
+        if y is None:
+            return
+        if isinstance(y, (list, tuple)):
+            for z in y:
+                walk(z)
+            return
+        if isinstance(y, str):
+            out.append(y)
+            return
+        if isinstance(y, (int, float)):
+            out.append(str(y))
+            return
+        t = getattr(y, "text", None)
+        if isinstance(t, str):
+            out.append(t)
+        for row in (getattr(y, "_cellvalues", None) or []):
+            for c in row:
+                walk(c)
+        for attr in ("_content", "_flowables"):
+            walk(getattr(y, attr, None))
+
+    walk(x)
+    return " ".join(out)
+
+
+def _summary_sc_row(table):
+    """The Supply-Chain Risk row of the summary table, as text ('' if absent)."""
+    for row in (getattr(table, "_cellvalues", None) or []):
+        t = _rd_flow_text(list(row))
+        if "Supply-Chain Risk" in t:
+            return t
+    return ""
+
+
+def _pdf_visible_text(pdf):
+    """The text a reader sees in a generated PDF (content streams, decoded)."""
+    import re, zlib, base64
+    chunks = []
+    for m in re.finditer(rb"stream\r?\n(.*?)endstream", pdf, re.S):
+        blob = m.group(1).strip()
+        for dec in (lambda b: zlib.decompress(base64.a85decode(b, adobe=True)),
+                    zlib.decompress):
+            try:
+                chunks.append(dec(blob).decode("latin-1"))
+                break
+            except Exception:
+                pass
+    doc = " ".join(chunks)
+    out, i, n = [], 0, len(doc)
+    while i < n:
+        if doc[i] == "(":
+            j, buf = i + 1, []
+            while j < n:
+                ch = doc[j]
+                if ch == "\\" and j + 1 < n:
+                    buf.append(doc[j + 1])
+                    j += 2
+                    continue
+                if ch == ")":
+                    break
+                buf.append(ch)
+                j += 1
+            out.append("".join(buf))
+            i = j + 1
+        else:
+            i += 1
+    return re.sub(r"\s+", " ", " ".join(out))
+
+
+def _deck_group(text, name="Related domains"):
+    """Which footer group of the executive deck lists *name*, or None. A signal
+    that gathered data but was not (fully) assessed has a sentence of its own,
+    returned as 'own: not assessed' or 'own: not fully assessed'."""
+    import re
+    m = re.search(re.escape(name) + r": (not fully assessed|not assessed) \(", text)
+    if m:
+        return "own: " + m.group(1)
+    for m in re.finditer(r"(Not assessed \(no scan data\)|Not applicable|Assessed):\s*([^.]*)", text):
+        if name in m.group(2):
+            return m.group(1)
+    return None
+
+
+def _colour_spy(pc, sink):
+    """Wrap pdf_cards.build_cat_card to record the related-domains card's colour."""
+    real = pc.build_cat_card
+    names = {id(pc.C_GREEN): "green", id(pc.C_AMBER): "amber", id(pc.C_RED): "red",
+             id(pc.C_CRITICAL): "critical", id(pc.C_BLUE): "blue"}
+
+    def spy(title, col, *a, **k):
+        if title == pc._RD_TITLE:
+            sink.append(names.get(id(col), "other"))
+        return real(title, col, *a, **k)
+    return spy
+
+
+class _FakeCT:
+    """A CT HTTP client returning one canned response. No packet leaves the box."""
+
+    def __init__(self, status, payload):
+        self.status, self.payload = status, payload
+
+    def get(self, url, **kw):
+        import json as _j
+        resp = mock.MagicMock()
+        resp.status_code = self.status
+        resp.text = _j.dumps(self.payload)
+        resp.json = lambda: self.payload
+        return resp
+
+
+class _FakeWeb:
+    """An HTTP client for InformationDisclosureChecker. By default every path
+    answers 404. ``head(path)`` may return another code, or None for no answer;
+    ``root`` is the site root's code (None: no answer); ``apex`` is what
+    apex_answered reports; a path in ``raise_on`` raises. Every HEAD is
+    recorded, so the gate can see which paths were asked for."""
+
+    def __init__(self, head=None, root=404, apex=True, raise_on=()):
+        self.heads = []
+        self._head = head or (lambda path: 404)
+        self._root, self._apex, self._raise_on = root, apex, set(raise_on)
+
+    def _resp(self, code):
+        r = mock.MagicMock()
+        r.status_code = code
+        r.text = "nothing here"
+        r.headers = {}
+        return r
+
+    @staticmethod
+    def _path(url):
+        rest = url.split("://", 1)[-1]
+        return "/" + rest.split("/", 1)[1] if "/" in rest else "/"
+
+    def head(self, url, **kw):
+        self.heads.append(url)
+        path = self._path(url)
+        if path in self._raise_on:
+            raise RuntimeError("probe blew up")
+        code = self._head(path)
+        return None if code is None else self._resp(code)
+
+    def get(self, url, **kw):
+        if self._path(url) == "/":
+            return None if self._root is None else self._resp(self._root)
+        return self._resp(404)
+
+    def stop_probing(self, *a, **k):
+        return False
+
+    def apex_answered(self, *a, **k):
+        return self._apex
+
+
+def _fake_checker(result, delay=0.0, calls=None):
+    class _Fake:
+        def check(self, d, *a, **k):
+            if calls is not None:
+                calls.append(d)
+            if delay:
+                import time as _t
+                _t.sleep(delay)
+            if isinstance(result, Exception):
+                raise result
+            return dict(result)
+    return _Fake
+
+
+def _fake_dns(v4, v6=(), per=None):
+    """dns_cache.resolve and get_ip answering from fixed lists, or per domain
+    from ``per`` ({domain: (v4, v6)}). No packet leaves."""
+    def pick(d):
+        return (per or {}).get(d, (v4, v6))
+
+    def resolve(d, rtype, *a, **k):
+        a4, a6 = pick(d)
+        return list(a4 if rtype.upper() == "A" else a6 if rtype.upper() == "AAAA" else [])
+
+    def get_ip(d):
+        a4, _ = pick(d)
+        return a4[0] if a4 else None
+    return resolve, get_ip
+
+
+def _check_discovery_parity(failures):
+    import importlib, ast, json, copy, shutil, subprocess, tempfile
+    import re as _re
+    ed = importlib.import_module("estate_discovery")
+    pc = importlib.import_module("pdf_cards")
+    pr = importlib.import_module("pdf_report")
+    csc = importlib.import_module("checkers_supply_chain")
+    rdd = importlib.import_module("related_domain_discovery")
+    import http_client as _hc
+    from scoring_pipeline import apply_risk_score
+    S = pr.build_styles()
+
+    def report(ok, label, detail=""):
+        print("  [%s] discovery:%-46s %s" % ("PASS" if ok else "FAIL", label, detail))
+
+    # 1. The reducer, the reject side and the keep side.
+    for label, primary, names, srcs, att, want, want_rej in DISCOVERY_SCENARIOS:
+        out = ed.discover(primary, names, srcs, attested=att)
+        got = {c["domain"]: c["attested"] for c in out["discovered"]}
+        rej = {r["domain"]: r["reason"] for r in out["rejected"]}
+        conf_ok = all(c["confidence"] == "unconfirmed" for c in out["discovered"])
+        rej_ok = all(k in rej and frag in rej[k] for k, frag in want_rej.items())
+        ok = (got == want) and rej_ok and conf_ok
+        if not ok:
+            failures.append("discovery[%s]: listed=%r rejected=%r" % (label, got, rej))
+        report(ok, label)
+
+    # Every alias entry lists its zone for each of the group's own domains
+    # (critique round 5, G5-13).
+    bad = []
+    for zone, owners in ed._BRAND_ALIASES.items():
+        for owner in owners:
+            listed_ = {c["domain"] for c in ed.discover(owner, ["www." + zone],
+                                                        ["crtsh"])["discovered"]}
+            if zone not in listed_:
+                bad.append("%s for %s" % (zone, owner))
+    if bad:
+        failures.append("discovery[aliases]: not listed: " + "; ".join(bad))
+    report(not bad, "every_group_alias_lists_its_zone", "%d zones" % len(ed._BRAND_ALIASES))
+
+    # 2. "ran" means a source answered, and names can only come from one that did.
+    no_source = ed.discover("acme.co.za", [], [])["discovery"]["ran"]
+    names_only = ed.discover("acme.co.za", ["www.sib.co.za"], [])["discovery"]["ran"]
+    ok = no_source is False and names_only is True
+    if not ok:
+        failures.append("discovery[ran]: no source -> %r, names without a source -> %r"
+                        % (no_source, names_only))
+    report(ok, "ran_means_a_source_answered")
+
+    # A sister company with five names among 21 single-name tenants is listed
+    # first: organisations rank by the names seen, not only by a producer
+    # sample. The two tenants past the list are counted as unconfirmed.
+    names = (["h%d.zz-sister.co.za" % i for i in range(5)]
+             + ["www.tenant%02d.co.za" % i for i in range(21)])
+    out = ed.discover("acme.co.za", names, ["crtsh"])
+    listed = [c["domain"] for c in out["discovered"]]
+    unl = out["discovery"]["not_listed_unconfirmed_count"]
+    ok = listed[:1] == ["zz-sister.co.za"] and len(listed) == 20 and unl == 2
+    if not ok:
+        failures.append("discovery[ranking]: first=%r listed=%d unconfirmed_not_listed=%r"
+                        % (listed[:1], len(listed), unl))
+    report(ok, "ranks_by_names_seen_and_counts_the_rest")
+
+    with io.open(os.path.join(SEC, "test_fixtures", "takealot_baseline.json"),
+                 encoding="utf-8") as fh:
+        fx = json.load(fh)
+    base = fx.get("results") if "results" in fx else fx
+
+    def with_rd(rd):
+        r = copy.deepcopy(base)
+        if rd is None:
+            r["categories"].pop("related_domains", None)
+        else:
+            r["categories"]["related_domains"] = copy.deepcopy(rd)
+        return r
+
+    def price(rd):
+        r = with_rd(rd)
+        apply_risk_score(r)
+        return r.get("overall_risk_score") or 0
+
+    absent = price(None)
+
+    # 3. The builder scan() calls: every state, priced, and rendered.
+    built = {}
+    for label, related, sub, kind, want in RD_BUILDER:
+        calls = []
+        rd = ed.build_related_domains_category(
+            want.get("domain", "acme.co.za"), related, copy.deepcopy(sub),
+            _rd_probe(kind or "clean", calls))
+        built[label] = rd
+        state = ed.related_domains_state(rd)
+        bad = []
+        if rd.get("status") != want["status"]:
+            bad.append("status=%r" % rd.get("status"))
+        if state != want["state"]:
+            bad.append("state=%r" % state)
+        if "probed" in want and calls != (want["probed"] or []):
+            bad.append("probed=%r" % calls)
+        if "listed" in want:
+            got = {c["domain"] for c in rd.get("discovered", []) if not c.get("attested")}
+            if got != want["listed"]:
+                bad.append("listed=%r" % sorted(got))
+        for key, field in (("reason", "unassessed_reason"),
+                           ("over_cap", "confirmed_over_cap"),
+                           ("not_assessed", "confirmed_not_assessed")):
+            if key in want and rd.get(field) != want[key]:
+                bad.append("%s=%r" % (field, rd.get(field)))
+        if "rejected" in want:
+            got = {x["domain"] for x in rd.get("confirmed_rejected", [])}
+            if got != want["rejected"]:
+                bad.append("confirmed_rejected=%r" % sorted(got))
+        if "full" in want and ed.related_domains_fully_assessed(rd) != want["full"]:
+            bad.append("fully_assessed=%r" % ed.related_domains_fully_assessed(rd))
+        p = price(rd)
+        if want.get("loads"):
+            if not p > absent:
+                bad.append("a confirmed finding priced %s, not above absent %s" % (p, absent))
+        elif p != absent:
+            bad.append("priced %s against absent %s" % (p, absent))
+        seen_col = []
+        with mock.patch.object(pc, "build_cat_card", _colour_spy(pc, seen_col)):
+            text = _rd_flow_text(pc.cat_related_domains({"related_domains": rd}, S)).lower()
+        if "colour" in want and (seen_col or [None])[-1] != want["colour"]:
+            bad.append("card colour %r, want %r" % ((seen_col or [None])[-1], want["colour"]))
+        for ph in want.get("says", []):
+            if ph.lower() not in text:
+                bad.append("card lacks %r" % ph)
+        for ph in want.get("never", []):
+            if ph.lower() in text:
+                bad.append("card says %r" % ph)
+        if "block_excludes" in want:
+            block = _rd_flow_text(pc._rd_discovered_block(rd, S))
+            if want["block_excludes"] in block:
+                bad.append("a confirmed domain is listed as awaiting confirmation")
+        if bad:
+            failures.append("discovery[builder:%s]: %s" % (label, "; ".join(bad)))
+        report(not bad, "builder:" + label, "%s / %s / %s" % (rd.get("status"), state, p))
+
+    # Parity: the form (a confirmed domain) and the API (none) see one estate.
+    form = {c["domain"] for c in built["confirmed_clean"]["discovered"]}
+    api = {c["domain"] for c in built["api_ct_answered"]["discovered"]}
+    ok = form == api and bool(api)
+    if not ok:
+        failures.append("discovery[parity]: form %r vs API %r" % (sorted(form), sorted(api)))
+    report(ok, "form_and_api_discover_the_same")
+
+    # 4. Scans stored before step 5 never re-render as "none found".
+    for label, rd, want_state in RD_LEGACY:
+        state = ed.related_domains_state(rd)
+        text = _rd_flow_text(pc.cat_related_domains({"related_domains": rd}, S)).lower()
+        bad = []
+        if state != want_state:
+            bad.append("state=%r" % state)
+        if want_state == "not_run":
+            if "not assessed" not in text:
+                bad.append("card does not say Not assessed")
+            if "none found" in text or NONE_FOUND_TEXT in text:
+                bad.append("card says none found")
+        elif "before related-domain discovery was added" not in text:
+            bad.append("card does not say the scan predates discovery")
+        if (rd.get("status") in ("timeout", "error")
+                and "confirmed for this scan were not assessed" not in text):
+            bad.append("a stored timeout or error does not say its confirmed domains "
+                       "went unassessed")
+        if want_state == "confirmed" and text.count(pc._RD_LEGACY_CONFIRMED.lower()) != 1:
+            bad.append("a stored confirmed result does not state its caveat exactly once")
+        if bad:
+            failures.append("discovery[legacy:%s]: %s" % (label, "; ".join(bad)))
+        report(not bad, "legacy:" + label, state)
+
+    # Beside a finding, and beside issues (where the card's fallback is hidden),
+    # the stored-result caveat is still stated, and only once (critique round 5,
+    # T5-4).
+    legacy_base = next(rd for l, rd, st in RD_LEGACY if st == "confirmed")
+    legacy_shapes = [
+        ("clean", legacy_base),
+        ("with_issues", dict(legacy_base, issues=["[dns] sib.co.za: port 3389 open"])),
+        ("with_high", dict(legacy_base, score=40, high_count=1,
+                           dependants=[{"domain": "sib.co.za", "lite_score": 40,
+                                        "critical_paths": 0}],
+                           worst_domain={"domain": "sib.co.za", "lite_score": 40},
+                           issues=["[ssl] sib.co.za: no valid TLS"])),
+        ("with_critical", dict(legacy_base, critical_count=1,
+                               dependants=[{"domain": "sib.co.za", "lite_score": 88,
+                                            "critical_paths": 1}],
+                               issues=["[info] sib.co.za: /.env exposed"])),
+    ]
+    bad = []
+    for l, rd in legacy_shapes:
+        card_ = _rd_flow_text(pc.cat_related_domains({"related_domains": rd}, S))
+        n = card_.count(pc._RD_LEGACY_CONFIRMED)
+        m = card_.lower().count("not a complete assessment")
+        if n != 1 or m != 1:
+            bad.append("%s states it %d time(s), 'not a complete assessment' %d time(s)"
+                       % (l, n, m))
+    if bad:
+        failures.append("discovery[legacy_caveat]: " + "; ".join(bad))
+    report(not bad, "stored_result_caveat_once", "%d shapes" % len(legacy_shapes))
+
+    # 5. The executive deck, rendered: every discovery state, every legacy
+    # shape, and the confirmed states, where a finding must show as a finding.
+    NA = "Not assessed (no scan data)"
+    OWN, OWN_PART = "own: not assessed", "own: not fully assessed"
+    deck_cases = [
+        # (label, category, footer group, text the deck must carry, text it must not)
+        ("degraded", built["api_ct_outage"], OWN,
+         "not assessed (the certificate lookup returned no result)", None),
+        ("degraded_subdomains", built["api_subdomains_timed_out"], OWN,
+         "not assessed (the subdomain check did not complete)", None),
+        ("awaiting_confirmation", built["api_ct_answered"], OWN,
+         "2 found on certificate records", None),
+        ("confirmed_unassessed", built["probe_timed_out"], OWN,
+         "1 confirmed related domain(s) could not be assessed within the time "
+         "allowed; 1 further related domain(s) found, awaiting broker confirmation",
+         None),
+        ("none_found", built["api_ct_answered_none_found"], OWN,
+         "none found on certificate records", None),
+        # A clean confirmed estate: candidates still awaiting confirmation are
+        # stated beside it, and only where there are some.
+        ("confirmed_clean", built["confirmed_clean"], "Assessed",
+         "1 further related domain(s) found on certificate records, awaiting "
+         "broker confirmation and not assessed", None),
+        ("confirmed_clean_no_candidates", built["confirmed_clean_no_candidates"],
+         "Assessed", None, "further related domain"),
+        ("partial_checks", built["partial_checks"], OWN_PART,
+         "1 of 1 confirmed related domain(s) assessed, some checks not assessed on 1; "
+         "1 further related domain(s) found, awaiting broker confirmation", None),
+        ("partial_with_rejected_entry", built["partial_with_rejected_entry"], OWN_PART,
+         "1 of 1 confirmed related domain(s) assessed", "1 of 2"),
+        ("over_the_cap", built["over_the_cap"], OWN_PART,
+         "10 of 12 confirmed related domain(s) assessed", None),
+        ("confirmed_finding", built["confirmed_finding"], None,
+         "1 critical of 1 assessed related domain(s)", None),
+        ("confirmed_high_only", built["confirmed_high_only"], None,
+         "1 of 1 related domain(s) below 60/100", None),
+        # A partial assessment's finding outranks its incompleteness.
+        ("partial_with_critical", built["partial_with_critical"], None,
+         "1 critical of 1 assessed related domain(s)", None),
+        ("partial_with_high", built["partial_with_high"], None,
+         "1 of 1 related domain(s) below 60/100", None),
+        # Beside a finding, what the card leaves unsaid gets a sentence of its own.
+        ("confirmed_finding_footnote", built["confirmed_finding"], None,
+         "Related domains: 1 further related domain(s) found on certificate records, "
+         "awaiting broker confirmation and not assessed", None),
+        ("partial_with_critical_footnote", built["partial_with_critical"], None,
+         "not fully assessed (1 of 2 confirmed related domain(s) assessed)", None),
+        ("confirmed_while_discovery_down", built["confirmed_while_discovery_down"],
+         "Assessed", "related-domain discovery could not run on this scan", None),
+        ("partial_while_discovery_down", built["partial_while_discovery_down"], OWN_PART,
+         "1 of 1 confirmed related domain(s) assessed, some checks not assessed on 1; "
+         "related-domain discovery could not run", None),
+        # Nothing assessed is never "a positive due-diligence result".
+        ("nothing_assessed_is_not_clean", built["api_ct_answered_none_found"], OWN,
+         "No supply-chain signal could be assessed on this scan",
+         "positive due-diligence result"),
+        # Beside a finding every gap is still stated (critique round 6: GS6-5,
+        # CD6-2): a HIGH card's partial assessment, discovery that could not
+        # run beside a finding and beside a timeout, a stored result with a
+        # finding.
+        ("partial_with_high_footnote", built["partial_with_high"], None,
+         "not fully assessed (1 of 2 confirmed related domain(s) assessed)", None),
+        ("finding_while_discovery_down", built["finding_while_discovery_down"], None,
+         "related-domain discovery could not run on this scan", None),
+        ("timeout_while_discovery_down", built["timeout_while_discovery_down"], OWN,
+         "could not be assessed within the time allowed; related-domain discovery "
+         "could not run", None),
+        ("legacy_with_high", dict(legacy_shapes)["with_high"], None,
+         "not fully assessed (stored by an earlier version of the check", None),
+        ("legacy_with_critical", dict(legacy_shapes)["with_critical"], None,
+         "not fully assessed (stored by an earlier version of the check", None),
+        # Timed out beside domains over the cap: the deck counts those too
+        # (critique round 6, ST6-5).
+        ("unassessed_with_overcap", built["unassessed_with_overcap_and_rejected"], OWN,
+         "2 further confirmed related domain(s) not assessed, because a scan assesses "
+         "at most 10", None),
+        # Partly assessed and nothing else: never "none could be assessed"
+        # (critique round 6, ST6-4).
+        ("partly_assessed_wording", built["over_the_cap"], OWN_PART,
+         "No supply-chain signal was fully assessed on this scan",
+         "could be assessed on this scan"),
+    ] + [("legacy:" + l, rd, NA if st == "not_run" else OWN_PART,
+          None if st == "not_run" else "stored by an earlier version of the check", None)
+         for l, rd, st in RD_LEGACY]
+    for label, rd, want_group, want_text, never_text in deck_cases:
+        text = _pdf_visible_text(pr.generate_pdf(with_rd(rd), report_type="assessment"))
+        group = _deck_group(text)
+        ok = ((want_group is None or group == want_group)
+              and (want_text is None or want_text in text)
+              and (never_text is None or never_text not in text))
+        if not ok:
+            failures.append("discovery[deck:%s]: related domains filed under %r%s%s"
+                            % (label, group,
+                               "" if want_text is None or want_text in text
+                               else ", and the deck lacks %r" % want_text,
+                               "" if never_text is None or never_text not in text
+                               else ", and the deck says %r" % never_text))
+        report(ok, "deck:" + label, "%s %s" % (group, want_text or ""))
+
+    # The vendor cross-correlation's "no_data" is clean only when Hudson Rock
+    # completed; when Hudson Rock did not, nothing was measured (critique round
+    # 6, FC6-1). The dict is the one scan() writes.
+    tpc_no_data = {"status": "no_data", "hudson_rock_third_party_count": 0,
+                   "hudson_rock_employees": 0, "spf_vendor_count": 0, "spf_vendors": [],
+                   "vendor_breach_match_count": 0, "suspected_vendors": [],
+                   "severity": "none", "critical_count": 0, "high_count": 0,
+                   "score": 100, "issues": []}
+    bad = []
+    # Every way Hudson Rock can fail to complete, a status the gate has never
+    # seen, and no Hudson Rock at all (critique round 7, GS7-2).
+    for hr_status, clean_ in (("error", False), ("timeout", False), ("no_api_key", False),
+                              ("rate_limited", False), ("skipped", False),
+                              ("never-seen-status", False), (None, False), ("missing", False),
+                              ("completed", True)):
+        r_ = with_rd(built["api_ct_outage"])
+        if hr_status == "missing":
+            r_["categories"].pop("hudson_rock", None)
+        elif hr_status is None:
+            r_["categories"]["hudson_rock"] = {"third_party_exposures": 0}
+        else:
+            r_["categories"]["hudson_rock"] = {"status": hr_status, "third_party_exposures": 0}
+        r_["categories"]["third_party_correlation"] = dict(tpc_no_data)
+        text = _pdf_visible_text(pr.generate_pdf(r_, report_type="assessment"))
+        says_clean = ("positive due-diligence result" in text
+                      or "Assessed: Cross-checked vendor exposure" in text)
+        if says_clean != clean_:
+            bad.append("Hudson Rock %s -> the deck %s" % (
+                hr_status, "calls the vendor join clean" if says_clean
+                else "does not credit a measured clean"))
+    if bad:
+        failures.append("discovery[deck:vendor_join]: " + "; ".join(bad))
+    report(not bad, "deck_vendor_join_clean_only_when_measured")
+
+    # The slide's pill and sub-line, not only its paragraph (critique round 7,
+    # GS7-3), and its footer list beside a partly assessed signal (ST7-4).
+    # Every pill the deck draws, so the verdict's colour is read as well as its
+    # words (critique round 8, GS8-6). The slide's palette is local to it, so
+    # it is read from the source.
+    pills = []
+    sev_hex_ = {}
+    for n_ in ast.walk(ast.parse(io.open(pr.__file__, encoding="utf-8").read())):
+        if isinstance(n_, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "_SC_SEV_HEX"
+                                              for t in n_.targets):
+            sev_hex_ = {k: str(v).lower() for k, v in ast.literal_eval(n_.value).items()}
+
+    def slide_of(rd, extra=None):
+        r_ = with_rd(rd)
+        for k, v in (extra or {}).items():
+            r_["categories"][k] = v
+        real_pill = pr._asx_pill
+
+        def _pill(text, bg_hex, *a, **k):
+            pills.append((str(text), str(bg_hex).lower()))
+            return real_pill(text, bg_hex, *a, **k)
+        del pills[:]
+        with mock.patch.object(pr, "_asx_pill", _pill):
+            text_ = _pdf_visible_text(pr.generate_pdf(r_, report_type="assessment"))
+        i_ = text_.find("SUPPLY-CHAIN EXPOSURE")
+        return text_[i_:text_.find("Full signal-by-signal detail", i_)] if i_ >= 0 else ""
+
+    def verdict_pill():
+        """The last slide's verdict pill, and whether its fill is the one its
+        words call for: neutral grey for NOT ASSESSED and NOT FULLY ASSESSED,
+        never a severity colour; a severity's own colour otherwise."""
+        vp = [p for p in pills if p[0].endswith(" EXPOSURE")
+              or p[0] in ("NOT ASSESSED", "NOT FULLY ASSESSED")]
+        if len(vp) != 1:
+            return vp, False
+        words, fill = vp[0]
+        verdict_fills = {sev_hex_.get(k) for k in ("CRITICAL", "HIGH", "MEDIUM", "LOW")}
+        if words.startswith("NOT "):
+            return vp, fill == "#475569" and fill not in verdict_fills
+        return vp, bool(sev_hex_) and fill == sev_hex_.get(words.split()[0])
+    verdicts = [
+        ("nothing_assessed", built["api_ct_answered_none_found"], None,
+         ["NOT ASSESSED", "No external supply-chain signals could be assessed on this scan."],
+         ["LOW EXPOSURE", "NOT FULLY ASSESSED", "All 0"]),
+        ("partly_assessed", built["over_the_cap"], None,
+         ["NOT FULLY ASSESSED",
+          "No external supply-chain signal was fully assessed on this scan.",
+          "Fully assessed: none."],
+         ["LOW EXPOSURE", "All 0", "Assessed: none."]),
+        ("finding", built["confirmed_finding"], None, ["CRITICAL EXPOSURE"], ["LOW EXPOSURE"]),
+        ("vendor_join_measured", built["api_ct_outage"],
+         {"hudson_rock": {"status": "completed", "third_party_exposures": 0},
+          "third_party_correlation": dict(tpc_no_data)},
+         ["LOW EXPOSURE", "All 1 assessed supply-chain signal(s) are clean."],
+         ["NOT ASSESSED"]),
+        ("vendor_join_unmeasured", built["api_ct_outage"],
+         {"hudson_rock": {"status": "timeout"}, "third_party_correlation": dict(tpc_no_data)},
+         ["NOT ASSESSED"], ["LOW EXPOSURE", "positive due-diligence result"]),
+    ]
+    bad = []
+    if {k.lower(): v for k, v in sev_hex_.items()} != {
+            "critical": "#991b1b", "high": "#dc2626", "medium": "#92400e",
+            "low": "#166534", "info": "#475569"}:
+        bad.append("the slide's palette is %r" % (sev_hex_,))
+    for label, rd, extra, must, never in verdicts:
+        slide = slide_of(rd, extra)
+        miss = [m for m in must if m not in slide]
+        hit = [n for n in never if n in slide]
+        if not slide or miss or hit:
+            bad.append("%s: missing %r, has %r" % (label, miss, hit))
+        vp, fill_ok = verdict_pill()
+        if not fill_ok:
+            bad.append("%s: verdict pill %r" % (label, vp))
+    if bad:
+        failures.append("discovery[deck:verdict]: " + "; ".join(bad))
+    report(not bad, "deck_verdict_follows_what_was_assessed", "%d cases" % len(verdicts))
+
+    # S-4 and S-5 say whether "no vendors" was measured: an SPF lookup that did
+    # not answer is not clean on the deck (critique round 7, CL7-1).
+    import dns.resolver as _dnsr
+    import dns.exception as _dnse
+    import checkers_supply_chain as _csc_spf
+    bad = []
+    # A MEDIUM vendor join is Hudson Rock alone, or an overlap whose worst
+    # matched breach is medium: the slide says which (critique round 9, CD9-6).
+    join_hr = {"status": "completed", "compromised_employees": 0, "compromised_users": 0,
+               "third_party_exposures": 3, "issues": []}
+    join_base = {"status": "completed", "severity": "medium", "medium_count": 1,
+                 "critical_count": 0, "high_count": 0, "score": 90, "issues": [],
+                 "hudson_rock_third_party_count": 3, "spf_vendor_count": 1,
+                 "vendor_breach_match_count": 1}
+    slide_ov = slide_of(built["api_ct_outage"], {
+        "hudson_rock": join_hr,
+        "third_party_correlation": dict(join_base, suspected_vendors=[
+            {"vendor": "intercom", "breaches": [{"severity": "medium", "date": "2023-08-31"}]}])})
+    slide_hr = slide_of(built["api_ct_outage"], {
+        "hudson_rock": join_hr,
+        "third_party_correlation": dict(join_base, suspected_vendors=[])})
+    if "overlap at intercom" not in slide_ov or "no SPF / breach overlap" in slide_ov:
+        bad.append("a MEDIUM join with an overlap does not name the vendor")
+    if "no SPF / breach overlap" not in slide_hr:
+        bad.append("a MEDIUM join without an overlap does not say so")
+    for how, exc, want_ in (("timeout", _dnse.Timeout(), "failed"),
+                            ("servfail", _dnsr.NoNameservers(), "failed"),
+                            ("nxdomain", _dnsr.NXDOMAIN(), "answered"),
+                            ("noanswer", _dnsr.NoAnswer(), "answered")):
+        def _raise(*a, _e=exc, **k):
+            raise _e
+        with mock.patch.object(_dnsr, "resolve", _raise):
+            evs_ = _csc_spf.EmailVendorSurfaceChecker().check("acme.co.za")
+            vb_ = _csc_spf.VendorBreachChecker().check("acme.co.za")
+        got_ = (evs_.get("status"), evs_.get("spf_lookup"), vb_.get("status"),
+                vb_.get("spf_lookup"))
+        if got_ != ("no_data", want_, "no_data", want_):
+            bad.append("%s -> %r" % (how, got_))
+    for how in ("failed", "answered"):
+        slide = slide_of(built["api_ct_outage"], {
+            "email_vendor_surface": {"status": "no_data", "spf_lookup": how, "score": 100,
+                                     "issues": [], "vendors_detected": [], "vendor_count": 0},
+            "vendor_breach": {"status": "no_data", "spf_lookup": how, "score": 100,
+                              "issues": [], "matches": [], "match_count": 0}})
+        credited = "LOW EXPOSURE" in slide or "positive due-diligence result" in slide
+        if credited != (how == "answered"):
+            bad.append("SPF lookup %s -> the deck %s" % (
+                how, "calls S-4/S-5 clean" if credited else "does not credit a measured result"))
+    # A lookup behind an include, and a record that delegates with redirect=,
+    # where no vendor was identified, are not measured either; a walk that
+    # answered and found a vendor completes (critique round 8, FC8-1, FC8-3).
+    class _Txt:
+        def __init__(self, t):
+            self.strings = [t.encode()]
+
+    def _zone(rec):
+        def res(name, rdtype="A", *a, **k):
+            v = rec.get(str(name).rstrip("."))
+            if v is None:
+                raise _dnsr.NXDOMAIN()
+            if isinstance(v, Exception):
+                raise v
+            return [_Txt(v)]
+        return res
+    evs_real, vb_real = {}, {}
+    top_ = "v=spf1 include:_spf.acme.co.za -all"
+    MS_, PM_ = "spf.protection.outlook.com", "spf.mtasv.net"
+    # want: S-4 status and outcome, S-5 status and outcome, a vendor identified.
+    for how, rec, want_ in (
+            ("nested_timeout", {"acme.co.za": top_, "_spf.acme.co.za": _dnse.Timeout()},
+             ("no_data", "failed", "no_data", "failed", False)),
+            ("nested_servfail", {"acme.co.za": top_, "_spf.acme.co.za": _dnsr.NoNameservers()},
+             ("no_data", "failed", "no_data", "failed", False)),
+            ("redirect_only", {"acme.co.za": "v=spf1 redirect=_spf.acme.co.za"},
+             ("no_data", "not_followed", "no_data", "not_followed", False)),
+            ("include_and_redirect",
+             {"acme.co.za": "v=spf1 include:_spf.x.co.za redirect=_spf.acme.co.za",
+              "_spf.x.co.za": "v=spf1 -all"},
+             ("no_data", "not_followed", "no_data", "not_followed", False)),
+            ("no_includes", {"acme.co.za": "v=spf1 ip4:196.22.1.5 -all"},
+             ("no_data", "answered", "no_data", "answered", False)),
+            ("includes_no_vendor",
+             {"acme.co.za": "v=spf1 include:_spf.x.co.za -all",
+              "_spf.x.co.za": "v=spf1 ip4:196.22.1.5 -all"},
+             ("completed", "answered", "completed", "answered", False)),
+            ("nested_answered",
+             {"acme.co.za": top_, "_spf.acme.co.za": "v=spf1 include:%s -all" % MS_,
+              MS_: "v=spf1 -all"},
+             ("completed", "answered", "completed", "answered", True)),
+            # SPF mechanism and modifier names are case-insensitive (RFC 7208
+            # s4.6.1): a capitalised spelling delegates, and authorises, exactly
+            # as the lower-case one does (critique round 9, FC9-2, IR9-2, GS9-1,
+            # ST9-3).
+            ("upper_redirect",
+             {"acme.co.za": "v=spf1 Redirect=_spf.acme.co.za",
+              "_spf.acme.co.za": "v=spf1 include:%s -all" % MS_, MS_: "v=spf1 -all"},
+             ("no_data", "not_followed", "no_data", "not_followed", False)),
+            ("nested_upper_redirect",
+             {"acme.co.za": "v=spf1 include:_spf.x.co.za -all",
+              "_spf.x.co.za": "v=spf1 REDIRECT=_spf.y.co.za"},
+             ("no_data", "not_followed", "no_data", "not_followed", False)),
+            ("caps_include",
+             {"acme.co.za": "v=spf1 Include:%s -all" % MS_, MS_: "v=spf1 -all"},
+             ("completed", "answered", "completed", "answered", True)),
+            ("caps_version",
+             {"acme.co.za": "V=SPF1 include:%s -all" % MS_, MS_: "v=spf1 -all"},
+             ("completed", "answered", "completed", "answered", True)),
+            # A vendor found beside a lookup that did not answer, or a record
+            # the walk does not follow: the vendors are a lower bound, and a
+            # finding they carry still loads (critique round 9, GS9-2).
+            ("vendor_plus_timeout",
+             {"acme.co.za": "v=spf1 include:%s include:_spf.acme.co.za -all" % MS_,
+              MS_: "v=spf1 -all", "_spf.acme.co.za": _dnse.Timeout()},
+             ("completed", "partial", "completed", "partial", True)),
+            ("vendor_plus_redirect",
+             {"acme.co.za": "v=spf1 include:%s redirect=_spf.acme.co.za" % MS_,
+              MS_: "v=spf1 -all"},
+             ("completed", "partial", "completed", "partial", True)),
+            ("quiet_vendor_plus_timeout",
+             {"acme.co.za": "v=spf1 include:%s include:_spf.acme.co.za -all" % PM_,
+              PM_: "v=spf1 -all", "_spf.acme.co.za": _dnse.Timeout(),
+              "_dmarc.acme.co.za": "v=DMARC1; p=reject"},
+             ("completed", "partial", "completed", "partial", True))):
+        with mock.patch.object(_dnsr, "resolve", _zone(rec)):
+            evs_ = _csc_spf.EmailVendorSurfaceChecker().check("acme.co.za")
+            vb_ = _csc_spf.VendorBreachChecker().check("acme.co.za")
+        got_ = (evs_.get("status"), evs_.get("spf_lookup"), vb_.get("status"),
+                vb_.get("spf_lookup"), bool(evs_.get("vendor_count")))
+        evs_real[how], vb_real[how] = evs_, vb_
+        if got_ != want_:
+            bad.append("%s -> %r" % (how, got_))
+    # The deck, rendered from what the real checkers returned for every zone:
+    # each signal's own outcome decides its place, S-5's as well as S-4's
+    # (critique round 9, GS9-4). A partial walk is never clean; a finding it
+    # carries still loads, with the lower bound stated.
+    for how in evs_real:
+        e_, v_ = evs_real[how], vb_real[how]
+        slide = slide_of(built["api_ct_outage"], {"email_vendor_surface": e_,
+                                                  "vendor_breach": v_})
+        credited = []
+        for name_, pay_, flagged_ in (
+                ("Email service providers", e_,
+                 bool((e_.get("weak_dmarc") and e_.get("vendor_count", 0) >= 1)
+                      or e_.get("vendor_count", 0) >= 6)),
+                ("Known vendor breaches", v_, bool(v_.get("matches")))):
+            outcome_ = pay_.get("spf_lookup")
+            if outcome_ in ("failed", "not_followed"):
+                want_grp = "own: not assessed"
+            elif outcome_ == "partial" and not flagged_:
+                want_grp = "own: not fully assessed"
+            else:
+                want_grp = "Assessed"
+            grp_ = _deck_group(slide, name_)
+            if grp_ != want_grp:
+                bad.append("%s/%s: %s filed under %r, want %r"
+                           % (how, outcome_, name_, grp_, want_grp))
+            credited.append(want_grp == "Assessed")
+            if outcome_ == "partial" and flagged_ and "lower bound" not in slide:
+                bad.append("%s: %s does not state the lower bound" % (how, name_))
+        if not any(credited) and "positive due-diligence result" in slide:
+            bad.append("%s: the deck credits an unmeasured slide" % how)
+    # Each deck block reads its own category's field, in mixed outcomes
+    # (critique round 8, GS8-2), for a result stored before the field existed
+    # (CD8-3) and for a record that redirects (FC8-3); a signal the deck
+    # cannot credit says why, in a sentence of its own.
+    def _evs(how, status="no_data"):
+        d = {"status": status, "score": 100, "issues": [], "vendors_detected": [],
+             "vendor_count": 0}
+        if how is not None:
+            d["spf_lookup"] = how
+        return d
+
+    def _vb(how, status="no_data"):
+        d = {"status": status, "score": 100, "issues": [], "matches": [], "match_count": 0}
+        if how is not None:
+            d["spf_lookup"] = how
+        return d
+    measured_ = {"status": "completed", "spf_lookup": "answered",
+                 "score": 100, "issues": [], "vendor_count": 1,
+                 "unknown_count": 0, "dmarc_policy": "reject", "weak_dmarc": False,
+                 "spf_includes": [{"include": "spf.protection.outlook.com", "depth": 0}],
+                 "vendors_detected": [{"vendor": "microsoft_365",
+                                       "includes": ["spf.protection.outlook.com"]}]}
+    why_ = {"failed": "an SPF lookup did not answer",
+            "not_followed": "a record in the SPF chain redirects to another record",
+            None: "stored by an earlier version of the check"}
+    for label, e_, v_, e_in, v_in in (
+            ("s4_answered_s5_failed", _evs("answered"), _vb("failed"), True, False),
+            ("s4_failed_s5_answered", _evs("failed"), _vb("answered"), False, True),
+            ("s4_measured_s5_failed", measured_, _vb("failed"), True, False),
+            ("s4_not_followed_s5_answered", _evs("not_followed"), _vb("answered"),
+             False, True),
+            ("both_stored_before_the_field", _evs(None), _vb(None), False, False)):
+        slide = slide_of(built["api_ct_outage"], {"email_vendor_surface": e_,
+                                                  "vendor_breach": v_})
+        for name_, inn, pay in (("Email service providers", e_in, e_),
+                                ("Known vendor breaches", v_in, v_)):
+            grp_ = _deck_group(slide, name_)
+            if inn and grp_ != "Assessed":
+                bad.append("%s: %s filed under %r" % (label, name_, grp_))
+            if not inn and ("%s: not assessed (%s" % (name_, why_[pay.get("spf_lookup")])
+                            not in slide):
+                bad.append("%s: %s filed under %r, without its reason" % (label, name_, grp_))
+        if not (e_in or v_in) and ("LOW EXPOSURE" in slide
+                                   or "positive due-diligence result" in slide):
+            bad.append("%s: the deck credits S-4/S-5" % label)
+    # Every S-4/S-5 "no_data" prices exactly as a completed result with no
+    # vendors, whatever the lookup recorded: the mapping reports, it never
+    # prices (critique round 8).
+    def _price_sc(e_, v_):
+        r_ = with_rd(None)
+        r_["categories"]["email_vendor_surface"] = copy.deepcopy(e_)
+        r_["categories"]["vendor_breach"] = copy.deepcopy(v_)
+        apply_risk_score(r_)
+        return r_.get("overall_risk_score") or 0
+    p_done = _price_sc(_evs(None, "completed"), _vb(None, "completed"))
+    p_nd = {str(h_): _price_sc(_evs(h_), _vb(h_))
+            for h_ in ("answered", "failed", "not_followed", None)}
+    if set(p_nd.values()) != {p_done}:
+        bad.append("no_data prices %r against %r for a completed result" % (p_nd, p_done))
+    # A vendor found beside a lookup that did not answer is a finding, and a
+    # finding prices (critique round 9, GS9-2).
+    p_vendor = _price_sc(evs_real["vendor_plus_timeout"], vb_real["vendor_plus_timeout"])
+    if not p_vendor > p_done:
+        bad.append("a vendor found beside a failed lookup prices %r, not above %r"
+                   % (p_vendor, p_done))
+    # The shape the earlier check stored whenever a lookup behind an include did
+    # not answer, or a record redirected: completed, no vendor, no record of the
+    # lookup. It cannot be told from a measured result, so no surface may read
+    # it as clean (critique round 9, ST9-2, FC9-3).
+    stored_evs = {"status": "completed", "score": 100, "issues": [], "vendor_count": 0,
+                  "unknown_count": 1, "dmarc_policy": "reject", "weak_dmarc": False,
+                  "vendors_detected": [],
+                  "spf_includes": [{"include": "_spf.acme.co.za", "depth": 0}]}
+    stored_vb = {"status": "completed", "score": 100, "issues": [], "vendors_detected": [],
+                 "matches": [], "match_count": 0, "critical_match_count": 0,
+                 "high_match_count": 0}
+    measured_evs = dict(stored_evs, spf_lookup="answered")
+    measured_vb = dict(stored_vb, spf_lookup="answered")
+    slide = slide_of(built["api_ct_outage"], {"email_vendor_surface": stored_evs,
+                                              "vendor_breach": stored_vb})
+    for name_ in ("Email service providers", "Known vendor breaches"):
+        if _deck_group(slide, name_) != "own: not assessed":
+            bad.append("stored completed: %s filed under %r"
+                       % (name_, _deck_group(slide, name_)))
+    if ("did not record whether every SPF lookup answered" not in slide
+            or "positive due-diligence result" in slide):
+        bad.append("stored completed: the deck does not say why, or credits it")
+    if (pc.cat_email_vendor_surface({"email_vendor_surface": stored_evs}, S)
+            or pc.cat_vendor_breach({"vendor_breach": stored_vb}, S)):
+        bad.append("stored completed: the technical report draws a card")
+    if not (pc.cat_email_vendor_surface({"email_vendor_surface": measured_evs}, S)
+            and pc.cat_vendor_breach({"vendor_breach": measured_vb}, S)):
+        bad.append("a measured result draws no card")
+    # A partly read chain, and the stored result that is the same walk without
+    # the record: a card, but never the clean colour, and it says why (critique
+    # round 10, FC10-1, ST10-1).
+    stored_vendor_evs = {k: v for k, v in evs_real["nested_answered"].items()
+                         if k != "spf_lookup"}
+    stored_vendor_vb = {k: v for k, v in vb_real["nested_answered"].items()
+                        if k != "spf_lookup"}
+
+    def _card_of(builder, key, payload):
+        seen = {}
+        real_card = pc.build_cat_card
+
+        def spy(title, col, *a, **k):
+            seen["col"] = col
+            return real_card(title, col, *a, **k)
+        with mock.patch.object(pc, "build_cat_card", spy):
+            flow = builder({key: payload}, S)
+        return seen.get("col"), _rd_flow_text(flow)
+    for label_, builder_, key_, payload_ in (
+            ("partial_s4", pc.cat_email_vendor_surface, "email_vendor_surface",
+             evs_real["quiet_vendor_plus_timeout"]),
+            ("partial_s5", pc.cat_vendor_breach, "vendor_breach",
+             vb_real["quiet_vendor_plus_timeout"]),
+            ("stored_with_vendor_s4", pc.cat_email_vendor_surface, "email_vendor_surface",
+             stored_vendor_evs),
+            ("stored_with_vendor_s5", pc.cat_vendor_breach, "vendor_breach",
+             stored_vendor_vb)):
+        col_, text_ = _card_of(builder_, key_, payload_)
+        low_ = text_.lower()
+        want_ = [pc._SPF_PARTIAL_ROW[1].lower(), "never read"]
+        # The fallback line renders only where the card carries no issues.
+        if not payload_.get("issues"):
+            want_.append("part of the spf chain was not read")
+        missing_ = [w for w in want_ if w not in low_]
+        if col_ is None or col_ is pc.C_GREEN or missing_:
+            bad.append("the %s card is %r and omits %r" % (label_, col_, missing_))
+
+    def _sc_row(e_, v_):
+        r_ = with_rd(None)
+        for k_ in ("dependency_manifests", "third_party_js", "cms_plugin_sbom",
+                   "third_party_correlation", "hudson_rock"):
+            r_["categories"][k_] = {"status": "error"}
+        r_["categories"]["email_vendor_surface"] = copy.deepcopy(e_)
+        r_["categories"]["vendor_breach"] = copy.deepcopy(v_)
+        return _summary_sc_row(pc.build_summary_table(r_, S))
+    # The row's own text, not merely the absence of "Clean": an unmeasured or
+    # partly read signal renders no row of its own, a measured one reads Clean,
+    # and a finding renders the row even where nothing counted as completed
+    # (critique round 10, GS10-3).
+    for label_, e_, v_, want_ in (
+            ("stored_completed", stored_evs, stored_vb, ""),
+            ("measured", measured_evs, measured_vb, "Clean"),
+            ("partial", evs_real["quiet_vendor_plus_timeout"],
+             vb_real["quiet_vendor_plus_timeout"], ""),
+            ("stored_with_vendor", stored_vendor_evs, stored_vendor_vb, "signal(s)"),
+            ("partial_finding", evs_real["vendor_plus_timeout"],
+             vb_real["vendor_plus_timeout"], "signal(s)")):
+        row_ = _sc_row(e_, v_)
+        ok_ = (row_.strip() == "") if want_ == "" else (want_ in row_)
+        if not ok_:
+            bad.append("summary row for %s reads %r, want %r" % (label_, row_[:140], want_))
+    # An outcome this rule does not know is not a measurement (FC10-3), and a
+    # six-vendor surface is a finding on every surface (GS10-4).
+    future_evs = dict(measured_evs, spf_lookup="truncated")
+    future_vb = dict(measured_vb, spf_lookup="truncated")
+    slide_future = slide_of(built["api_ct_outage"], {"email_vendor_surface": future_evs,
+                                                     "vendor_breach": future_vb})
+    for name_ in ("Email service providers", "Known vendor breaches"):
+        if _deck_group(slide_future, name_) != "own: not assessed":
+            bad.append("an outcome the rule does not know is credited: %s filed under %r"
+                       % (name_, _deck_group(slide_future, name_)))
+    _wide = ("mailchimp", "sendgrid", "mailgun", "postmark", "zendesk", "intercom")
+    wide_evs = {"status": "completed", "spf_lookup": "answered", "score": 95, "issues": [],
+                "vendor_count": 6, "unknown_count": 0, "dmarc_policy": "reject",
+                "weak_dmarc": False,
+                "vendors_detected": [{"vendor": v, "includes": [v + ".example"]}
+                                     for v in _wide],
+                "spf_includes": [{"include": v + ".example", "depth": 0} for v in _wide]}
+    if "wide fourth-party surface" not in slide_of(
+            built["api_ct_outage"], {"email_vendor_surface": wide_evs,
+                                     "vendor_breach": measured_vb}):
+        bad.append("a six-vendor surface is not a finding on the deck")
+    if bad:
+        failures.append("discovery[spf_lookup]: " + "; ".join(bad))
+    report(not bad, "spf_lookup_that_did_not_answer_is_not_clean")
+
+    # The summary tier. The summary report has no related-domains card, so the
+    # supply-chain row may never read a plain "Clean" beside confirmed domains
+    # that were not fully assessed, or beside candidates awaiting confirmation,
+    # whether or not another supply-chain category completed (the fixture has
+    # none; a completed, finding-free dependency check is the neighbour).
+    neighbour = {"status": "completed", "exposed_manifests": [], "total_critical_cves": 0}
+
+    def sc_row(rd, with_neighbour=False):
+        r = with_rd(rd)
+        if with_neighbour:
+            r["categories"]["dependency_manifests"] = dict(neighbour)
+        return _summary_sc_row(pc.build_summary_table(r, S))
+
+    legacy_confirmed = next(rd for l, rd, st in RD_LEGACY if st == "confirmed")
+    legacy_timeout = next(rd for l, rd, st in RD_LEGACY if rd.get("status") == "timeout")
+    legacy_error = next(rd for l, rd, st in RD_LEGACY if rd.get("status") == "error")
+    legacy_nothing = next(rd for l, rd, st in RD_LEGACY
+                          if l == "legacy_completed_nothing_scanned")
+    BLUE, GREEN, AMBER = "#1d4ed8", "#16a34a", "#d97706"
+    NOFIND = "No finding on assessed signals"
+    summary_cases = [
+        # (label, category, with neighbour, must contain, must not contain)
+        ("awaiting_alone", built["api_ct_answered"], False,
+         ["2 related domain(s) found, awaiting confirmation", BLUE], ["Clean", GREEN, NOFIND]),
+        # Discovery ran and found nothing: stated, never "Clean" (critique
+        # round 6, ST6-6).
+        ("none_found_alone", built["api_ct_answered_none_found"], False,
+         ["no related domains found on certificate records", BLUE],
+         ["Clean", GREEN, NOFIND]),
+        ("none_found_with_neighbour", built["api_ct_answered_none_found"], True,
+         ["no related domains found on certificate records", BLUE], ["Clean", GREEN]),
+        ("finding_while_discovery_down", built["finding_while_discovery_down"], False,
+         ["critical", "related-domain discovery could not run"], ["Clean"]),
+        ("timeout_while_discovery_down", built["timeout_while_discovery_down"], False,
+         ["confirmed related domains not assessed", "related-domain discovery could not run",
+          AMBER], ["Clean"]),
+        ("degraded_alone", built["api_ct_outage"], False,
+         ["related-domain discovery could not run", BLUE], ["Clean", GREEN]),
+        ("degraded_with_neighbour", built["api_ct_outage"], True,
+         ["related-domain discovery could not run", BLUE], ["Clean", GREEN]),
+        ("confirmed_while_discovery_down", built["confirmed_while_discovery_down"], False,
+         ["related-domain discovery could not run", BLUE], ["Clean", GREEN]),
+        ("partial_while_discovery_down", built["partial_while_discovery_down"], False,
+         ["not fully assessed", "related-domain discovery could not run", AMBER], ["Clean"]),
+        ("clean_with_a_candidate_alone", built["confirmed_clean"], False,
+         ["1 related domain(s) found, awaiting confirmation", BLUE], ["Clean", GREEN]),
+        ("clean_no_candidates_alone", built["confirmed_clean_no_candidates"], False,
+         ["Clean", GREEN], ["not fully", "awaiting"]),
+        ("critical_alone", built["confirmed_finding"], False, ["critical"], ["Clean"]),
+        ("high_alone", built["confirmed_high_only"], False, ["high"], ["Clean"]),
+        ("partial_alone", built["partial_checks"], False,
+         ["not fully assessed", AMBER], ["Clean"]),
+        ("partial_critical_alone", built["partial_with_critical"], False,
+         ["critical", "not fully assessed"], ["Clean"]),
+        ("partial_high_alone", built["partial_with_high"], False, ["high"], ["Clean"]),
+        ("partial_with_neighbour", built["partial_checks"], True,
+         ["not fully assessed", AMBER], ["Clean"]),
+        ("over_cap_with_neighbour", built["over_the_cap"], True, ["not fully assessed"], ["Clean"]),
+        ("timed_out_with_neighbour", built["probe_timed_out"], True,
+         ["confirmed related domains not assessed",
+          "1 related domain(s) found, awaiting confirmation"], ["Clean"]),
+        ("awaiting_with_neighbour", built["api_ct_answered"], True,
+         ["awaiting confirmation", BLUE], ["Clean", GREEN]),
+        ("clean_with_a_candidate_with_neighbour", built["confirmed_clean"], True,
+         ["awaiting confirmation", BLUE], ["Clean", GREEN]),
+        ("legacy_with_neighbour", legacy_confirmed, True, ["not fully assessed"], ["Clean"]),
+        ("legacy_timeout_with_neighbour", legacy_timeout, True,
+         ["confirmed related domains not assessed", AMBER], ["Clean"]),
+        ("legacy_error_with_neighbour", legacy_error, True,
+         ["confirmed related domains not assessed", AMBER], ["Clean"]),
+        ("legacy_nothing_scanned_with_neighbour", legacy_nothing, True,
+         ["confirmed related domains not assessed", AMBER], ["Clean"]),
+        ("clean_no_candidates_with_neighbour", built["confirmed_clean_no_candidates"], True,
+         ["Clean", GREEN], ["not fully", "awaiting"]),
+    ]
+    bad = []
+    for label, rd, nb, must, never in summary_cases:
+        row_text = sc_row(rd, nb)
+        miss = [m for m in must if m not in row_text]
+        hit = [n for n in never if n in row_text]
+        if miss or hit:
+            bad.append("%s reads %r (missing %r, has %r)" % (label, row_text[:120], miss, hit))
+    if bad:
+        failures.append("discovery[summary]: " + "; ".join(bad))
+    report(not bad, "summary_row_follows_the_findings", "%d cases" % len(summary_cases))
+
+    # A MEDIUM vendor join beside a clean estate: never "Clean" on the summary
+    # row, as it is MEDIUM on the deck and the card (critique round 7, ST7-2).
+    r_m = with_rd(built["confirmed_clean_no_candidates"])
+    r_m["categories"]["third_party_correlation"] = {
+        "status": "completed", "severity": "medium", "critical_count": 0, "high_count": 0,
+        "medium_count": 1, "hudson_rock_third_party_count": 3, "spf_vendor_count": 0,
+        "suspected_vendors": [], "score": 84, "issues": []}
+    row_m = _summary_sc_row(pc.build_summary_table(r_m, S))
+    ok = "cross-vendor MEDIUM" in row_m and "Clean" not in row_m and GREEN not in row_m
+    if not ok:
+        failures.append("discovery[summary:vendor_join_medium]: %r" % row_m[:160])
+    report(ok, "summary_row_states_a_medium_vendor_join")
+
+    # Names from a stored result or a certificate record are printed, never
+    # parsed: markup in them neither stops the PDF nor renders as markup
+    # (critique round 5, PR5-2).
+    # One name per printing path, so an unescaped path cannot hide behind another.
+    esc = copy.deepcopy(built["confirmed_clean"])
+    esc["dependants"][0]["domain"] = "<b>sib.co.za"
+    esc["dependants"].append({"domain": "<s>un.co.za", "measured": False, "lite_score": None,
+                              "critical_paths": 0, "not_measured": []})
+    esc["worst_domain"] = {"domain": "<em>w.co.za", "lite_score": 100}
+    esc["confirmed_not_assessed"] = ["<u>na.co.za"]
+    for c in esc.get("discovered") or []:
+        if not c.get("attested"):
+            c["domain"], c["evidence"] = "<i>cand.co.za", "a & b <x>"
+            break
+    bad = []
+    try:
+        text = _rd_flow_text(pc.cat_related_domains({"related_domains": esc}, S))
+        for want in ("&lt;b&gt;sib.co.za", "&lt;s&gt;un.co.za", "&lt;u&gt;na.co.za",
+                     "&lt;i&gt;cand.co.za", "a &amp; b &lt;x&gt;"):
+            if want not in text:
+                bad.append("%r not escaped" % want)
+        for raw in ("<b>sib", "<s>un", "<em>w", "<u>na", "<i>cand", "<x>"):
+            if raw in text:
+                bad.append("%r printed as markup" % raw)
+        pr.generate_pdf(with_rd(esc), report_type="full")
+    except Exception as exc:
+        bad.append("the card raised %r" % exc)
+    if bad:
+        failures.append("discovery[escaping]: " + "; ".join(bad))
+    report(not bad, "names_are_printed_not_parsed")
+
+    # 6. The producer: the real CT fetchers, fed canned HTTP answers.
+    crt_payload = [{"name_value": "acme.co.za\nwww.acme.co.za\nmyacme.co.za\n"
+                                  "acme.co.za.evil.net\nshop.clientb.co.za"}]
+    cs_payload = [{"dns_names": ["acme.co.za", "acme-group.co.za", "notacme.co.za",
+                                 "acme.co.za.evil.net"]}]
+
+    def run_sub(crt_client, cs_client):
+        with mock.patch.object(cn, "CRTSH", crt_client), \
+             mock.patch.object(cn, "CERTSPOTTER", cs_client), \
+             mock.patch.object(cn.SubdomainChecker, "_wildcard_ips", lambda self, d: set()), \
+             mock.patch.object(cn.SubdomainChecker, "_resolves", lambda self, h: None), \
+             mock.patch.object(cn.SubdomainChecker, "_check_cname_takeover", lambda self, s: None), \
+             mock.patch.object(cn.SubdomainChecker, "CRTSH_EMPTY_RETRY_DELAY", 0):
+            return cn.SubdomainChecker().check("acme.co.za")
+
+    def build(sub):
+        return ed.build_related_domains_category("acme.co.za", None, sub,
+                                                 _rd_probe("clean", []))
+
+    # A 200 whose body is not a list of entries is not an answer on either
+    # source, and must not read as "none found" (critique round 5, PR5-4).
+    bad = []
+    class _FakeCTText:
+        """A CT client whose body is raw text: an HTML error page or a truncated
+        body fails to parse, as a real one does (critique round 6, GS6-2)."""
+
+        def __init__(self, status, text):
+            self.status, self.text = status, text
+
+        def get(self, url, **kw):
+            import json as _j
+            resp = mock.MagicMock()
+            resp.status_code = self.status
+            resp.text = self.text
+            resp.json = lambda: _j.loads(self.text)
+            return resp
+
+    shapes = [(_FakeCT(200, a), _FakeCT(200, b)) for a, b in (
+        (None, None), ({}, {}), ({"error": "rate limited"}, {"x": 1}), (["x"], ["y"]),
+        ([{"name_value": None}], [{"dns_names": None}]),
+        ([{"name_value": 5}], [{"dns_names": [5]}]),
+        # Entries without their names field (critique round 7, CL7-2).
+        ([{}], [{}]), ([{"id": 1}], [{"id": "1", "tbs_sha256": "ab"}]),
+        ([{"error": "rate limited"}], [{"error": "rate limited"}]))]
+    shapes += [(_FakeCTText(200, t), _FakeCTText(200, t))
+               for t in ("<html><body>502 Bad Gateway</body></html>", '[{"name_value": "x')]
+    for crt_client, cs_client in shapes:
+        sub_ = run_sub(crt_client, cs_client)
+        rd_ = build(sub_)
+        ran_ = (rd_.get("discovery") or {}).get("ran")
+        if (sub_.get("ct_sources_answered") or ran_ or sub_.get("low_coverage") is not True
+                or ed.related_domains_state(rd_) != "degraded"):
+            bad.append("%r / %r -> answered=%r ran=%r low_coverage=%r state=%r" % (
+                getattr(crt_client, "payload", getattr(crt_client, "text", "")),
+                getattr(cs_client, "payload", getattr(cs_client, "text", "")),
+                sub_.get("ct_sources_answered"), ran_, sub_.get("low_coverage"),
+                ed.related_domains_state(rd_)))
+    if bad:
+        failures.append("discovery[ct_reply_shapes]: " + "; ".join(bad))
+    report(not bad, "ct_non_list_reply_is_not_an_answer")
+
+    # crt.sh answers empty, then with names: the scan retries an empty answer as
+    # the pre-flight does, so both list the same domains (critique round 7,
+    # IR7-3).
+    class _SeqCT:
+        """A CT client giving each canned body in turn (None is a 502)."""
+
+        def __init__(self, bodies):
+            self.bodies, self.calls = list(bodies), 0
+
+        def get(self, url, **kw):
+            import json as _j
+            body = self.bodies[min(self.calls, len(self.bodies) - 1)]
+            self.calls += 1
+            resp = mock.MagicMock()
+            resp.status_code = 200 if body is not None else 502
+            resp.text = _j.dumps(body) if body is not None else "bad gateway"
+            resp.json = lambda: _j.loads(resp.text)
+            return resp
+
+    import related_domain_discovery as _rdd_seq
+    rows_ = [{"name_value": "www.acme-group.co.za\nshop.clientb.co.za"}]
+    crt_seq = _SeqCT([[], rows_])
+    sub_ = run_sub(crt_seq, _SeqCT([None]))
+    scan_listed = {c["domain"] for c in build(sub_).get("discovered", [])}
+    with mock.patch.object(_rdd_seq, "CRTSH", _SeqCT([[], rows_])), \
+         mock.patch.object(_rdd_seq.socket, "gethostbyname", lambda h: "196.22.1.5"), \
+         mock.patch("time.sleep", lambda s: None):
+        form_listed = {c["domain"] for c in
+                       (_rdd_seq.discover_related_domains("acme.co.za").get("candidates") or [])}
+    ok = (crt_seq.calls == 2
+          and scan_listed == form_listed == {"acme-group.co.za", "clientb.co.za"})
+    if not ok:
+        failures.append("discovery[ct_empty_then_names]: crt.sh calls=%d scan %r form %r"
+                        % (crt_seq.calls, sorted(scan_listed), sorted(form_listed)))
+    report(ok, "empty_crtsh_answer_is_retried_on_both_sides")
+    # When the retry itself fails, the empty answer stands: crt.sh answered, so
+    # this is "none found", not an outage.
+    sub_ = run_sub(_SeqCT([[], None]), _SeqCT([None]))
+    rd_ = build(sub_)
+    ok = (sub_.get("ct_sources_answered") == ["crtsh"]
+          and ed.related_domains_state(rd_) == "none_found")
+    if not ok:
+        failures.append("discovery[ct_empty_then_outage]: answered=%r state=%r"
+                        % (sub_.get("ct_sources_answered"), ed.related_domains_state(rd_)))
+    report(ok, "empty_crtsh_answer_stands_when_the_retry_fails")
+
+    bad = []
+    sub = run_sub(_FakeCT(200, crt_payload), _FakeCT(200, cs_payload))
+    rd = build(sub)
+    listed = {c["domain"] for c in rd.get("discovered", [])}
+    if sub.get("subdomains") != ["www.acme.co.za"]:
+        bad.append("subdomains=%r (a name merely containing the domain is not its "
+                   "subdomain, on either source)" % sub.get("subdomains"))
+    if (sub.get("ct_sources") != ["crtsh"]
+            or sub.get("ct_sources_answered") != ["certspotter", "crtsh"]):
+        bad.append("ct_sources=%r answered=%r" % (sub.get("ct_sources"),
+                                                  sub.get("ct_sources_answered")))
+    want_listed = {"myacme.co.za", "evil.net", "clientb.co.za", "acme-group.co.za",
+                   "notacme.co.za"}
+    if listed != want_listed or rd.get("status") != "completed":
+        bad.append("listed=%r status=%r" % (sorted(listed), rd.get("status")))
+    down = run_sub(_FakeCT(502, None), _FakeCT(502, None))
+    if (down.get("ct_sources_answered") != [] or down.get("low_coverage") is not True
+            or build(down).get("status") != "unassessed"):
+        bad.append("both sources down -> answered=%r low=%r status=%r"
+                   % (down.get("ct_sources_answered"), down.get("low_coverage"),
+                      build(down).get("status")))
+    empty = run_sub(_FakeCT(200, []), _FakeCT(502, None))
+    if (empty.get("ct_sources_answered") != ["crtsh"] or empty.get("low_coverage")
+            or ed.related_domains_state(build(empty)) != "none_found"):
+        bad.append("crt.sh answered [] -> answered=%r low=%r state=%r"
+                   % (empty.get("ct_sources_answered"), empty.get("low_coverage"),
+                      ed.related_domains_state(build(empty))))
+    apex_only = run_sub(_FakeCT(200, [{"name_value": "acme.co.za"}]),
+                        _FakeCT(200, [{"dns_names": ["acme.co.za"]}]))
+    if apex_only.get("low_coverage") or "unreachable" in " ".join(apex_only.get("issues") or []):
+        bad.append("both sources answered with no subdomains, yet low_coverage=%r"
+                   % apex_only.get("low_coverage"))
+    if bad:
+        failures.append("discovery[producer]: " + "; ".join(bad))
+    report(not bad, "producer_ct_fetch_to_listed_candidates")
+
+    # The cap, through check() and the builder: one organisation with 40 names
+    # and 350 single-name tenants. Organisations past 300 are counted, and the
+    # sister company ranks first by its TRUE name count, not the capped sample.
+    big = "\n".join(["h%02d.zz-acme-group.co.za" % i for i in range(40)]
+                    + ["www.tenant%03d.co.za" % i for i in range(350)])
+    sub_cap = run_sub(_FakeCT(200, [{"name_value": "www.acme.co.za\n" + big}]),
+                      _FakeCT(502, None))
+    rd_cap = build(sub_cap)
+    disc = rd_cap["discovery"]
+    top = (rd_cap.get("discovered") or [{}])[0]
+    ok = (sub_cap.get("ct_foreign_orgs_dropped") == 51 and disc["candidate_count"] == 351
+          and disc["not_examined_count"] == 51 and top.get("domain") == "zz-acme-group.co.za"
+          and top.get("name_count") == 40)
+    if not ok:
+        failures.append("discovery[cap]: dropped=%r candidates=%r not_examined=%r top=%r/%r"
+                        % (sub_cap.get("ct_foreign_orgs_dropped"), disc["candidate_count"],
+                           disc["not_examined_count"], top.get("domain"), top.get("name_count")))
+    report(ok, "cap_through_check_counts_and_ranks")
+    row_cap = _summary_sc_row(pc.build_summary_table(with_rd(rd_cap), S))
+    ok = "351 related domain(s) found, awaiting confirmation" in row_cap
+    if not ok:
+        failures.append("discovery[cap_summary]: 351 candidates read %r" % row_cap[:120])
+    report(ok, "summary_row_counts_every_candidate")
+
+    # 7. The form pre-flight uses the report's reducer and rejection rules.
+    bad = []
+    rows_ = [{"name_value": "d1.cloudfront.net\nsni1.cloudflaressl.com\ncpanel.host-h.net\n"
+                            "stjohns.school.za\nshop.clientb.co.za\n196.22.1.5\n"
+                            "www.acme.co.za\nnotacme.co.za"}]
+    offered = set(rdd._extract_san_apexes(rows_, "acme.co.za"))
+    if offered != {"clientb.co.za", "stjohns.school.za", "notacme.co.za"}:
+        bad.append("form offers %r" % sorted(offered))
+    for label, primary, names, srcs, att, want, want_rej in DISCOVERY_SCENARIOS:
+        form_set = set(rdd._extract_san_apexes([{"name_value": "\n".join(names)}],
+                                               ed.registrable(primary) or primary))
+        report_set = {c["domain"] for c in ed.discover(primary, names, srcs)["discovered"]}
+        if form_set != report_set:
+            bad.append("%s: form %r, report %r" % (label, sorted(form_set), sorted(report_set)))
+    with mock.patch.object(rdd, "_crtsh_query", lambda d, retries=2: [
+            {"name_value": "stjohns.school.za\nwww.stjohns.school.za\notherschool.school.za"}]):
+        cands = {c["domain"] for c in rdd.discover_via_cert_san("stjohns.school.za")}
+    if cands != {"otherschool.school.za"}:
+        bad.append("pre-flight for stjohns.school.za offers %r" % sorted(cands))
+    if bad:
+        failures.append("discovery[preflight]: " + "; ".join(bad))
+    report(not bad, "form_preflight_matches_the_report")
+
+    # The form's pre-flight states a crt.sh outage as unavailable, never as
+    # "none found", and its confidence label does not treat containment as a
+    # shared brand (critique round 4, T4-9 and PR4-3).
+    bad = []
+
+    class _CrtResp:
+        def __init__(self, code, body):
+            self.status_code, self.text = code, body
+
+        def json(self):
+            return json.loads(self.text)
+
+    class _Crt:
+        def __init__(self, code, body):
+            self.code, self.body = code, body
+
+        def get(self, *a, **k):
+            return _CrtResp(self.code, self.body)
+    with mock.patch.object(rdd, "CRTSH", _Crt(502, "bad gateway")):
+        down = rdd._crtsh_query("acme.co.za", retries=0)
+    with mock.patch.object(rdd, "CRTSH", _Crt(200, "[]")):
+        empty = rdd._crtsh_query("acme.co.za", retries=0)
+    if down is not None or empty != []:
+        bad.append("crt.sh down -> %r, answered empty -> %r" % (down, empty))
+    for body in ("{}", "null", "<html>502</html>", '[{"name_value": "x', '["x"]',
+                 '[{"name_value": null}]', '[{"name_value": 5}]', '[{"id": 1}]', '[{}]',
+                 '[{"error": "rate limited"}]'):
+        with mock.patch.object(rdd, "CRTSH", _Crt(200, body)):
+            if rdd._crtsh_query("acme.co.za", retries=0) is not None:
+                bad.append("crt.sh 200 %r read as an answer" % body[:20])
+    with mock.patch.object(rdd.socket, "gethostbyname", lambda h: "196.22.1.5"):
+        with mock.patch.object(rdd, "_crtsh_query", lambda d, retries=2: None):
+            out_down = rdd.discover_related_domains("acme.co.za")
+        with mock.patch.object(rdd, "_crtsh_query", lambda d, retries=2: []):
+            out_empty = rdd.discover_related_domains("acme.co.za")
+    if out_down.get("status") != "error" or out_empty.get("status") != "no_data":
+        bad.append("pre-flight: outage -> %r, empty -> %r"
+                   % (out_down.get("status"), out_empty.get("status")))
+    conf = {a: rdd._confidence_for(a, {"cert_count": 5}, p) for a, p in (
+        ("me.co.za", "acme.co.za"), ("vision.co.za", "laservision.co.za"),
+        ("azure.co.za", "azurecapital.co.za"), ("acme-group.co.za", "acme.co.za"),
+        ("jones-attorneys.co.za", "smith-attorneys.co.za"),
+        ("xyz-holdings.co.za", "abc-holdings.co.za"), ("my-bank.co.za", "my-acme.co.za"),
+        ("1234-ltd.co.za", "1234.co.za"), ("group-one.co.za", "group-two.co.za"))}
+    one_cert = rdd._extract_san_apexes(
+        [{"name_value": "www.clientx.co.za\nmail.clientx.co.za\ncpanel.clientx.co.za\n"
+                        "clientx.co.za\nwebmail.clientx.co.za"}], "acme.co.za")
+    if one_cert.get("clientx.co.za", {}).get("cert_count") != 1:
+        bad.append("one certificate counted as %r" % one_cert.get("clientx.co.za"))
+    if conf["acme-group.co.za"] != "high" or any(
+            v == "high" for k, v in conf.items() if k != "acme-group.co.za"):
+        bad.append("confidence labels %r" % conf)
+    with io.open(os.path.join(SEC, "templates", "index.html"), encoding="utf-8") as fh:
+        page_ = fh.read().replace("\r\n", "\n")
+
+    def _node_file(src):
+        """Run a script under node from a UTF-8 file: the page's code carries
+        characters a Windows command line may not. None when node is absent."""
+        import tempfile as _tf_node
+        node_ = shutil.which("node")
+        if not node_:
+            return None
+        fd_, p_ = _tf_node.mkstemp(suffix=".js")
+        os.close(fd_)
+        with io.open(p_, "w", encoding="utf-8") as fh_:
+            fh_.write(src)
+        try:
+            return subprocess.run([node_, p_], capture_output=True, text=True,
+                                  encoding="utf-8", timeout=60)
+        finally:
+            os.remove(p_)
+    if ("normal for well-isolated" in page_
+            or "show that the client has no other domains" not in page_):
+        bad.append("the form's empty-result text is not the report's caveat")
+    # One cleaner, everywhere the form reads the domain box: the pre-flight and
+    # the submit handler had a cruder one, so a value sent with Enter reached
+    # the server cut at the first "/" (critique round 9, IR9-5).
+    if _re.search(r"\.trim\(\)\s*\.toLowerCase\(\)", page_):
+        bad.append("the form still carries a cleaner of its own")
+    if page_.count("normalizeDomainInput(document.getElementById('domain').value)") != 2:
+        bad.append("the pre-flight and the submit handler do not both use the server's cleaner")
+    # The preview searches crt.sh alone, and says the report can list more
+    # (critique round 8, ST8-4).
+    if ("No related domains were found in the crt.sh certificate search" not in page_
+            or "so its report can list domains this preview did not" not in page_):
+        bad.append("the form's empty result does not name its one source")
+    # The form never pre-ticks a candidate, renders an outage as unavailable,
+    # and its banner says so (critique round 5, G5-01, G5-08, T5-5).
+    m_rc = _re.search(r"function renderRelatedCandidates\(rc\) \{.*?\n\}\n", page_, _re.S)
+    rc_body = m_rc.group(0) if m_rc else ""
+    if not rc_body:
+        bad.append("renderRelatedCandidates not found")
+    else:
+        # Any way of ticking a box anywhere in the page's scripts, other than
+        # the page's own business flags; un-ticking is always allowed. A box
+        # ticked outside the renderer, in runPreflight say, would reach the
+        # scan as broker-confirmed (critique rounds 6 and 8, GS6-3, GS8-5).
+        scripts_ = "\n".join(_re.findall(r"<script[^>]*>(.*?)</script>", page_, _re.S))
+        tick = _re.compile(r"\.checked\s*(?:\|\||&&|\?\?|\*\*|<<|>>>?|[-+*/%&|^])?=(?!=)"
+                           r"|\[\s*['\"]checked['\"]\s*\]\s*(?:\|\||&&|\?\?)?=(?!=)"
+                           r"|defaultChecked|setAttribute\(\s*['\"]checked"
+                           r"|toggleAttribute\(\s*['\"]checked|Reflect\.set\([^)]*checked"
+                           r"|\.click\(\s*\)|dispatchEvent\(\s*new\s+\w*Event\(\s*['\"]"
+                           r"(?:click|change)|['\"]?\bchecked['\"]?\s*:"
+                           r"|<input[^>]*\bchecked\b")
+        flag_ = _re.compile(r"document\.getElementById\('(?:listed|ai|b2c|gdpr|pci)-check'\)"
+                            r"\.checked = true;")
+        ticks = []
+        for l in scripts_.splitlines():
+            s_ = l.strip()
+            if not tick.search(s_) or flag_.fullmatch(s_):
+                continue
+            if not tick.search(_re.sub(r"\.checked\s*=\s*false\b", "", s_)):
+                continue
+            ticks.append(s_[:60])
+        if "function renderRelatedCandidates" not in scripts_:
+            ticks.append("the page's scripts were not found")
+        if ticks:
+            bad.append("the form ticks candidates: %r" % ticks[:2])
+        # And run it: render two candidates into a stub DOM, then collect. No
+        # box is ticked, and only what the broker typed is sent (critique round
+        # 7, GS7-5).
+        m_col = _re.search(r"function collectRelatedDomains\(\) \{.*?\n\}\n", page_, _re.S)
+        m_pre = _re.search(r"async function runPreflight\(\) \{.*?\n\}\n", page_, _re.S)
+        m_k1 = _re.search(r"function normalizeDomainOnce\(raw\) \{.*?\n\}\n", page_, _re.S)
+        m_k2 = _re.search(r"function normalizeDomainInput\(raw\) \{.*?\n\}\n", page_, _re.S)
+        # The pre-flight itself, in a stub DOM: it ticks no box anywhere (a
+        # candidate ticked outside the renderer would be sent as
+        # broker-confirmed), it asks about the domain the server would scan, and
+        # the box keeps every entry the API keeps (critique rounds 7 and 9,
+        # GS7-5, GS9-6, IR9-4, IR9-5).
+        import domain_validation as _dv_form
+        tokens_ = ["<https://supplier.co.za/>", '"https://supplier2.co.za"',
+                   "mailto://accounts@supplier3.co.za", "https://http://supplier4.co.za",
+                   "//supplier5.co.za", "ftp://supplier6.co.za", "<info@supplier7.co.za>",
+                   "Supplier8.CO.ZA.", "https://supplier9.co.za/contact?to=<jane@gmail.com>"]
+        # More than ten, so a cap written into the browser shows here (critique
+        # round 10, GS10-1).
+        tokens_ += ["supplier1%d.co.za" % i for i in range(5)]
+        # A contact address beside a host on one line. The API cleans the entry
+        # whole and keeps the host, so the form must not also send the
+        # contact's domain into the client's scope (round 10, IR10-3).
+        tokens_.append("acme.co.za <info@brokerfirm.co.za>")
+        js_d = (r"""
+const made = [];
+function el(tag) {
+  const e = { tagName: tag, style: {}, dataset: {}, attrs: {}, children: [], value: '',
+    classList: { add() {}, remove() {} },
+    appendChild(c) { this.children.push(c); return c; },
+    setAttribute(k, v) { this.attrs[k] = v; } };
+  made.push(e);
+  return e;
+}
+const byId = { 'related-candidates-list': el('div'), 'related-candidates-checkboxes': el('div'),
+  'related-domains-badge': el('span'),
+  'related-domains': { value: """ + json.dumps("\n".join(tokens_)) + r""" },
+  'domain': { value: 'Accounts/Finance <accounts@acme.co.za>' },
+  'sub-industry': { value: '' } };
+globalThis.document = {
+  getElementById: (id) => byId[id] || (byId[id] = el('stub')),
+  createElement: (t) => el(t),
+  querySelectorAll: (sel) => made.filter((e) => e.tagName === 'input'
+    && (!sel.includes(':checked') || e.checked || e.defaultChecked || 'checked' in e.attrs)),
+};
+let preflightInFlight = false;
+let preflightResult = null;
+function setRelatedCandidatesLoading() {}
+function setBadge() {}
+function apiHeaders(h) { return h || {}; }
+const asked = [];
+globalThis.fetch = async (url, opt) => {
+  asked.push(JSON.parse((opt || {}).body || '{}'));
+  return { ok: true, json: async () => ({ status: 'ok', flags: {}, related_candidates: {
+    status: 'ok', candidates: [{ domain: 'a.co.za', confidence: 'high', signal_detail: 'x' },
+                               { domain: 'b.co.za', confidence: 'medium', signal_detail: 'y' }] } }) };
+};
+""" + (m_k1.group(0) if m_k1 else "") + (m_k2.group(0) if m_k2 else "")
+                + rc_body + (m_col.group(0) if m_col else "")
+                + (m_pre.group(0) if m_pre else "") + r"""
+(async () => {
+  await runPreflight();
+  const boxes = made.filter((e) => e.tagName === 'input');
+  const ticked = boxes.filter((e) => e.checked || e.defaultChecked || 'checked' in e.attrs);
+  console.log(JSON.stringify({ boxes: boxes.length, ticked: ticked.length,
+    collected: collectRelatedDomains(), asked: asked.map((a) => a.domain) }));
+})();
+""")
+        r_d = _node_file(js_d) if (m_col and m_pre and m_k1 and m_k2) else None
+        try:
+            dom = json.loads(r_d.stdout.strip().splitlines()[-1])
+        except Exception:
+            dom = {}
+        want_col = sorted(_dv_form.clean_related_domains(tokens_))
+        got_col = sorted(_dv_form.clean_related_domains(dom.get("collected") or []))
+        if (dom.get("boxes") != 2 or dom.get("ticked") != 0 or got_col != want_col
+                or dom.get("asked") != ["acme.co.za"]):
+            bad.append("the form as rendered: %r (the API keeps %r) %s"
+                       % (dom, want_col,
+                          (r_d.stderr.strip()[-200:] if r_d else "no node, or no code")))
+    if ("} else if (status === 'no_data') {" not in rc_body
+            or "Auto-discovery temporarily unavailable" not in rc_body.rsplit("} else {", 1)[-1]):
+        bad.append("an outage is not rendered as unavailable")
+    # The banner itself, run under node for each pre-flight outcome: an outage
+    # says so, and an answer does not (critique round 6, GS6-3).
+    m_b = _re.search(r"(const candFragment = .*?\+ \(rdDown \? ' Related-domain "
+                     r"auto-discovery was unavailable\.' : ''\);)", page_, _re.S)
+    node_b = shutil.which("node")
+    if not (m_b and node_b):
+        bad.append("the pre-flight banner code, or node, was not found")
+    else:
+        # With and without flags detected, and with candidates found
+        # (critique round 7, GS7-5).
+        js = ("const out = {};\n"
+              "const cases = {error: {status: 'error'}, skipped: {status: 'skipped'},"
+              " missing: undefined, ok: {status: 'ok', candidates: [{}, {}, {}]},"
+              " no_data: {status: 'no_data'}};\n"
+              "for (const [k, rc] of Object.entries(cases)) for (const dc of [0, 2]) {\n"
+              "  const d = {related_candidates: rc}; const domain = 'acme.co.za';\n"
+              "  const detectedCount = dc; const banner = {};\n"
+              "  const candCount = (rc && rc.candidates) ? rc.candidates.length : 0;\n"
+              + m_b.group(1) + "\n  out[k + ':' + dc] = banner.textContent;\n}\n"
+              "console.log(JSON.stringify(out));\n")
+        r_b = subprocess.run([node_b, "-e", js], capture_output=True, text=True, timeout=60)
+        try:
+            said = json.loads(r_b.stdout.strip().splitlines()[-1])
+        except Exception:
+            said = {}
+        wrong = [k for k in ("%s:%d" % (s_, dc_) for s_ in ("error", "skipped", "missing",
+                                                             "ok", "no_data")
+                             for dc_ in (0, 2))
+                 if k not in said
+                 or ("unavailable" in said[k]) != (k.split(":")[0] in ("error", "skipped",
+                                                                      "missing"))]
+        if wrong:
+            bad.append("the banner is wrong for %r: %r"
+                       % (wrong, {k: said.get(k) for k in wrong} or r_b.stderr[-120:]))
+    # The form's cleaner shows the target the server scans: the same steps in
+    # the same order to the same fixed point (critique round 7, IR7-1, IR7-5).
+    import domain_validation as _dv_js
+    m_n1 = _re.search(r"function normalizeDomainOnce\(raw\) \{.*?\n\}\n", page_, _re.S)
+    m_n2 = _re.search(r"function normalizeDomainInput\(raw\) \{.*?\n\}\n", page_, _re.S)
+    raws = ['"acme.co.za".', "'acme.co.za'.", "<acme.co.za>.", ">acme.co.za<",
+            "https://www.acme.co.za/contact?email=jane@gmail.com",
+            "acme.co.za/?utm_source=x&to=info@mimecast.com",
+            "https://www.acme.co.za/#/team/jane@acme-group.com", "info@acme.co.za",
+            "mailto:info@acme.co.za?subject=x", "user:pw@host.co.za:8443/x",
+            "ACME.CO.ZA.", "  acme.co.za  ", "acme.co.za:443", "acme.co.za​",
+            "﻿acme.co.za", "x" + '".' * 50]
+    # Display-name addresses, chained schemes and Python's whitespace set,
+    # which both sides clean to the address's domain (critique round 8, IR8-3
+    # and IR8-4).
+    addr_raws = ["Accounts/Finance <accounts@acme.co.za>",
+                 '"Sales / Marketing" <sales@acme.co.za>', "HR/Payroll <payroll@acme.co.za>",
+                 "Accounts #2 <accounts2@acme.co.za>",
+                 '"Claims (Ref #4471)" <claims@acme.co.za>', "Jane Doe <jane@acme.co.za>",
+                 "mailto://jane@acme.co.za", "mailto:https://acme.co.za",
+                 "https://http://acme.co.za", "http://https://acme.co.za/x",
+                 "//https://acme.co.za", "\x1cacme.co.za\x85", "\x1f acme.co.za \x1c",
+                 "\x1dacme.co.za", "\x1eacme.co.za", "ftp://acme.co.za"]
+    # A URL that carries an address in its path, query or fragment: the host is
+    # the target, as round 7 settled (critique round 9, IR9-3, FC9-4).
+    url_raws = ["https://acme.co.za/contact?to=<jane@gmail.com>",
+                "acme.co.za/#<ops@gmail.com>",
+                "www.acme.co.za/contact <info@brokerfirm.co.za>",
+                "https://www.acme.co.za/ (broker: Jane <jane@brokerfirm.co.za>)",
+                "acme.co.za <info@brokerfirm.co.za>",
+                "https://acme.co.za\\@attacker.com"]
+    raws = raws + addr_raws + url_raws
+    r_n = (_node_file(m_n1.group(0) + m_n2.group(0)
+                      + "console.log(JSON.stringify(%s.map(normalizeDomainInput)));\n"
+                      % json.dumps(raws)) if (m_n1 and m_n2) else None)
+    try:
+        js_out = json.loads(r_n.stdout.strip().splitlines()[-1])
+    except Exception:
+        js_out = None
+    py_out = [_dv_js.normalize_domain(x) for x in raws]
+    off_ = [x for x in addr_raws if _dv_js.normalize_domain(x) != "acme.co.za"]
+    off_ += [x for x in url_raws
+             if _dv_js.normalize_domain(x) not in ("acme.co.za", "www.acme.co.za")]
+    if off_:
+        bad.append("not cleaned to the host, or the address's domain: %r" % off_[:3])
+    if js_out != py_out:
+        bad.append("the form's cleaner differs from the server's: %r" % (
+            [(x, j_, p_) for x, j_, p_ in zip(raws, js_out or [], py_out) if j_ != p_][:3]
+            or (r_n.stderr[-160:] if r_n else "no node, or no cleaner")))
+    # The API keeps the value it validated (critique round 5, PR5-1).
+    import domain_validation as _dv
+    got_rd = _dv.clean_related_domains(["Sib.co.za.", "*.group.co.za", "info@sib2.co.za",
+                                        "<b>@sib3.co.za", "https://sib4.co.za:8443/x?y=1",
+                                        "sib5.co.za\u200b", "not a domain", "196.22.1.5",
+                                        "Sib.co.za", '"sib6.co.za".', "'sib7.co.za'.",
+                                        'https://"sib8.co.za"', "*.*.sib9.co.za",
+                                        "https://sib10.co.za/contact?email=jane@gmail.com",
+                                        "https://sib11.co.za/#/team/x@other.co.za",
+                                        "*." * 3000 + "sib12.co.za"])
+    # More than ten are kept: the scan, not the API, applies the cap and lists
+    # the rest (critique round 7, GS7-1); an address in a URL's query or
+    # fragment is not the host (IR7-1).
+    if got_rd != ["sib.co.za", "group.co.za", "sib2.co.za", "sib3.co.za", "sib4.co.za",
+                  "sib5.co.za", "sib6.co.za", "sib7.co.za", "sib8.co.za", "sib9.co.za",
+                  "sib10.co.za", "sib11.co.za", "sib12.co.za"]:
+        bad.append("the API keeps %r" % got_rd)
+    for raw_, want_ in (("https://www.acme.co.za/contact?email=jane@gmail.com", "www.acme.co.za"),
+                        ("acme.co.za/?utm_source=x&to=info@mimecast.com", "acme.co.za"),
+                        ("mailto:info@acme.co.za?subject=x", "acme.co.za"),
+                        ("user:pw@host.co.za:8443/x", "host.co.za"),
+                        ('"supplier.co.za".', "supplier.co.za")):
+        if _dv.normalize_domain(raw_) != want_:
+            bad.append("normalize_domain(%r) = %r" % (raw_, _dv.normalize_domain(raw_)))
+    # Normalising stays linear on a hostile value (critique round 7, IR7-2).
+    import time as _time_n
+    t_n = _time_n.time()
+    _dv.normalize_domain("x" + '".' * 64000)
+    _dv.clean_related_domains(["*." * 32768 + "acme.co.za"] * 3)
+    if _time_n.time() - t_n > 2.0:
+        bad.append("normalising long pasted values took %.1f s" % (_time_n.time() - t_n))
+    # The value kept is its own normalisation (critique round 6, IR6-1).
+    unstable = [v for v in got_rd if _dv.normalize_domain(v) != v]
+    if unstable:
+        bad.append("kept values that normalise further: %r" % unstable)
+    # The scan route enqueues the domain and related domains it normalised and
+    # validated, each assigned once (critique round 6, GS6-3 and IR6-3).
+    import ast as _ast
+    with io.open(os.path.join(SEC, "app.py"), encoding="utf-8") as fh:
+        app_tree = _ast.parse(fh.read())
+    fn_ = next((n for n in _ast.walk(app_tree)
+                if isinstance(n, _ast.FunctionDef) and n.name == "start_scan"), None)
+    if fn_ is None:
+        bad.append("app.py has no start_scan")
+    else:
+        binds = {}
+        for n in _ast.walk(fn_):
+            if isinstance(n, _ast.Assign):
+                for t in n.targets:
+                    if isinstance(t, _ast.Name):
+                        binds.setdefault(t.id, []).append(n.value)
+        def _of_data(call, key):
+            # The argument is data.get("<key>", ...) itself: nothing trimmed or
+            # sliced on the way in (critique round 7, GS7-1).
+            a = call.args[0] if call.args else None
+            return (isinstance(a, _ast.Call) and isinstance(a.func, _ast.Attribute)
+                    and a.func.attr == "get" and isinstance(a.func.value, _ast.Name)
+                    and a.func.value.id == "data" and bool(a.args)
+                    and isinstance(a.args[0], _ast.Constant) and a.args[0].value == key)
+        for name, func in (("domain", "normalize_domain"),
+                           ("related_domains", "clean_related_domains")):
+            vals = binds.get(name, [])
+            if not (len(vals) == 1 and isinstance(vals[0], _ast.Call)
+                    and getattr(vals[0].func, "id", None) == func
+                    and _of_data(vals[0], name)):
+                bad.append("start_scan: %s is not assigned once from %s(data.get(%r, ...))"
+                           % (name, func, name))
+        payloads = [n for n in _ast.walk(fn_) if isinstance(n, _ast.Dict)
+                    and any(isinstance(k, _ast.Constant) and k.value == "related_domains"
+                            for k in n.keys)]
+        if not payloads or not all(
+                isinstance(v, _ast.Name) and v.id == k.value
+                for d_ in payloads for k, v in zip(d_.keys, d_.values)
+                if isinstance(k, _ast.Constant) and k.value in ("domain", "related_domains")):
+            bad.append("start_scan does not enqueue the normalised domain and related domains")
+    if bad:
+        failures.append("discovery[preflight_outage]: " + "; ".join(bad))
+    report(not bad, "form_preflight_states_an_outage")
+
+    # The related domains the route validated reach scan()'s builder as they
+    # are: nothing in start_scan, _run_scan_job, run_scan or scan() rebinds,
+    # slices, deletes from or otherwise changes the list, and run_scan passes
+    # it on verbatim. A cap anywhere in that chain would drop confirmed domains
+    # unreported and read the estate fully assessed (critique round 8, GS8-1).
+    mut_ = {"append", "extend", "insert", "pop", "remove", "clear", "sort", "reverse",
+            "__delitem__", "__setitem__", "__iadd__"}
+
+    def _roots(t):
+        if isinstance(t, (_ast.Tuple, _ast.List)):
+            for e in t.elts:
+                yield from _roots(e)
+        elif isinstance(t, _ast.Starred):
+            yield from _roots(t.value)
+        else:
+            while isinstance(t, (_ast.Subscript, _ast.Attribute)):
+                t = t.value
+            yield t
+
+    def _changes(fn, nm):
+        out = []
+        for n in _ast.walk(fn):
+            tg = []
+            if isinstance(n, (_ast.Assign, _ast.Delete)):
+                tg = n.targets
+            elif isinstance(n, (_ast.AugAssign, _ast.AnnAssign, _ast.NamedExpr,
+                                _ast.For, _ast.AsyncFor, _ast.comprehension)):
+                tg = [n.target]
+            elif isinstance(n, (_ast.With, _ast.AsyncWith)):
+                tg = [i.optional_vars for i in n.items if i.optional_vars is not None]
+            if any(isinstance(r, _ast.Name) and r.id == nm for t in tg for r in _roots(t)):
+                out.append(n)
+            if (isinstance(n, _ast.Call) and isinstance(n.func, _ast.Attribute)
+                    and n.func.attr in mut_ and isinstance(n.func.value, _ast.Name)
+                    and n.func.value.id == nm):
+                out.append(n)
+        return out
+    bad = []
+    fns_ = {n.name: n for n in _ast.walk(app_tree) if isinstance(n, _ast.FunctionDef)
+            and n.name in ("start_scan", "_run_scan_job", "run_scan")}
+    with io.open(os.path.join(SEC, "scanner.py"), encoding="utf-8") as fh:
+        sc_tree_ = _ast.parse(fh.read())
+    scan_fns_ = [n for n in _ast.walk(sc_tree_) if isinstance(n, _ast.FunctionDef)
+                 and n.name == "scan"
+                 and "related_domains" in [a.arg for a in n.args.args + n.args.kwonlyargs]]
+    bad += ["app.py has no %s" % f_ for f_ in ("start_scan", "_run_scan_job", "run_scan")
+            if f_ not in fns_]
+    if len(scan_fns_) != 1:
+        bad.append("scanner.py has %d scan() taking related_domains" % len(scan_fns_))
+    if not bad:
+        ch_ = _changes(fns_["start_scan"], "related_domains")
+        if len(ch_) != 1 or not isinstance(ch_[0], _ast.Assign):
+            bad.append("start_scan changes related_domains %d time(s)" % len(ch_))
+        job_ = fns_["_run_scan_job"]
+        body_ = [s for s in job_.body
+                 if not (isinstance(s, _ast.Expr) and isinstance(s.value, _ast.Constant))]
+        call_ = body_[0].value if (len(body_) == 1 and isinstance(body_[0], _ast.Expr)) else None
+        if not (isinstance(call_, _ast.Call) and getattr(call_.func, "id", "") == "run_scan"
+                and not call_.args and len(call_.keywords) == 1
+                and call_.keywords[0].arg is None and job_.args.args
+                and getattr(call_.keywords[0].value, "id", "") == job_.args.args[0].arg):
+            bad.append("_run_scan_job does more than run_scan(**payload)")
+        if _changes(fns_["run_scan"], "related_domains"):
+            bad.append("run_scan changes related_domains")
+        passes_ = [k.value for n in _ast.walk(fns_["run_scan"])
+                   if isinstance(n, _ast.Call) and isinstance(n.func, _ast.Attribute)
+                   and n.func.attr == "scan"
+                   for k in n.keywords if k.arg == "related_domains"]
+        if not (len(passes_) == 1 and isinstance(passes_[0], _ast.Name)
+                and passes_[0].id == "related_domains"):
+            bad.append("run_scan does not pass related_domains=related_domains to scan()")
+        if _changes(scan_fns_[0], "related_domains"):
+            bad.append("scan() changes related_domains")
+    # The list is used only where it is passed on: start_scan cleans it once and
+    # puts it in the payload, run_scan hands it to scan(), and scan() hands it
+    # to the builder. An alias (confirmed = related_domains; del confirmed[10:])
+    # trims the same list without touching a name the walk follows (critique
+    # round 9, GS9-3).
+    if not bad:
+        for fn_, nm_, want_uses_, how_ in (
+                (fns_["start_scan"], "start_scan", 2, "cleaned once and put in the payload"),
+                (fns_["run_scan"], "run_scan", 1, "handed to scan()"),
+                (scan_fns_[0], "scan()", 1, "handed to the builder")):
+            uses_ = [n for n in _ast.walk(fn_)
+                     if isinstance(n, _ast.Name) and n.id == "related_domains"]
+            if len(uses_) != want_uses_:
+                bad.append("%s names related_domains %d times, not %d (%s)"
+                           % (nm_, len(uses_), want_uses_, how_))
+        # The payload dict itself: built once, passed on, never written into.
+        pay_uses = [n for n in _ast.walk(fns_["start_scan"])
+                    if isinstance(n, _ast.Name) and n.id == "payload"]
+        pay_writes = [n for n in _ast.walk(fns_["start_scan"])
+                      if isinstance(n, (_ast.Assign, _ast.AugAssign, _ast.Delete))
+                      and any(isinstance(t, _ast.Subscript)
+                              and getattr(t.value, "id", "") in ("payload", "data")
+                              for t in (n.targets if isinstance(n, (_ast.Assign, _ast.Delete))
+                                        else [n.target]))]
+        if len(pay_uses) != 2 or pay_writes:
+            bad.append("start_scan builds the payload %d time(s) and writes into the "
+                       "payload or the request %d time(s)" % (len(pay_uses) - 1, len(pay_writes)))
+    # And by behaviour: 12 confirmed domains posted to the route must reach the
+    # scanner as 12. A cap written to the payload, to the request body or
+    # through an alias changes no name the AST walk follows (critique round 9,
+    # GS9-3).
+    twelve_ = ["sib%02d.co.za" % i for i in range(12)]
+    seen_ = {}
+
+    class _StubScanner:
+        def __init__(self, *a, **k):
+            pass
+
+        def scan(self, domain, **kw):
+            seen_["scanner"] = list(kw.get("related_domains") or [])
+            raise RuntimeError("the arguments are recorded; the scan itself is not run")
+
+    app_mod = importlib.import_module("app")
+    import contextlib as _ctx
+    import types as _types
+    # run_scan imports observability, which needs prometheus_client: a stub
+    # stands in, so this measures the chain rather than the environment.
+    _obs = _types.ModuleType("observability")
+    _obs.observe_scan = lambda *a, **k: _ctx.nullcontext()
+    _obs.record_checker_durations = lambda *a, **k: None
+
+    def _enqueue(scan_id, payload):
+        seen_["payload"] = list(payload.get("related_domains") or [])
+        app_mod._run_scan_job(payload)
+        return True
+
+    def _failed(scan_id, msg=None, *a, **k):
+        seen_.setdefault("failed", msg)
+    try:
+        with mock.patch.object(app_mod, "domain_exists", lambda *a, **k: True), \
+             mock.patch.object(app_mod, "SecurityScanner", _StubScanner), \
+             mock.patch.object(app_mod, "save_scan", lambda *a, **k: None), \
+             mock.patch.object(app_mod, "mark_failed", _failed), \
+             mock.patch.dict(sys.modules, {"observability": _obs}), \
+             mock.patch.object(app_mod.SCAN_QUEUE, "enqueue", _enqueue), \
+             app_mod.app.test_client() as client_:
+            resp_ = client_.post("/api/scan", json={"domain": "acme.co.za",
+                                                    "related_domains": twelve_})
+        seen_["http"] = resp_.status_code
+    except Exception as exc_:
+        seen_["error"] = repr(exc_)[:160]
+    if seen_.get("payload") != twelve_ or seen_.get("scanner") != twelve_:
+        bad.append("the route enqueued %r and the scanner received %r of 12 confirmed "
+                   "domains (%r)" % (len(seen_.get("payload") or []),
+                                     len(seen_.get("scanner") or []),
+                                     seen_.get("error") or seen_.get("failed")
+                                     or seen_.get("http")))
+    if bad:
+        failures.append("discovery[related_domains_chain]: " + "; ".join(bad))
+    report(not bad, "related_domains_reach_the_builder_as_validated")
+
+    # 8. The checker: measured only where the sibling answered, at a public
+    # address; a measured 0 is 0; every branch of the TLS-reached test; and it
+    # returns at its budget with what finished, through scan()'s own runner.
+    import threading
+    import time as _time
+    import scanner_db as _sdb
+    dns_ok = {"status": "completed", "risk_score": 0, "issues": [],
+              "open_ports": [{"port": 443}]}
+    dns_no_ports = {"status": "completed", "risk_score": 0, "issues": [], "open_ports": []}
+    info_ok = {"status": "completed", "score": 100, "exposed_paths": [], "issues": [],
+               "probe_status_codes": {404: 18}}
+    ssl_zero = {"status": "completed", "score": 0, "grade": "F",
+                "tls_versions": {"TLS 1.2": True}}
+    off = {"TLS 1.0": False, "TLS 1.1": False, "TLS 1.2": False, "TLS 1.3": False}
+    ssl_fail = {"status": "completed", "score": 0, "grade": "F", "tls_versions": dict(off),
+                "certificate": {"valid": False, "error": "[Errno 111] Connection refused"}}
+    ssl_good = {"status": "completed", "score": 95, "grade": "A",
+                "tls_versions": {"TLS 1.2": True, "TLS 1.3": True},
+                "certificate": {"valid": True, "subject": "CN=sib.co.za"}}
+    no_answer = {"status": "completed", "score": 100, "exposed_paths": [], "issues": [],
+                 "probe_status_codes": {0: 18}}
+    no_codes = {"status": "completed", "score": 100, "exposed_paths": [], "issues": [],
+                "probe_status_codes": {}}
+    # What SSLChecker returns when TLS WAS reached (critique round 3 read these
+    # off the real checker): the stdlib path against a self-signed host, the
+    # stdlib path with a certificate read and no protocol answer, the sslyze
+    # path, and protocols answered with a certificate error. Each is paired
+    # with a DNS check that failed, and with one that lists no web port, so the
+    # score can only be kept because TLS was reached.
+    tls_shapes = [
+        ("stdlib_self_signed", 0, {"status": "completed", "score": 0, "grade": "F",
+                                   "tls_versions": dict(off),
+                                   "certificate": {"valid": False, "error":
+                                                   "[SSL: CERTIFICATE_VERIFY_FAILED] certificate "
+                                                   "verify failed: self-signed certificate"}}),
+        ("stdlib_certificate_only", 20, {"status": "completed", "score": 20, "grade": "F",
+                                         "tls_versions": dict(off),
+                                         "certificate": {"valid": True,
+                                                         "subject": "CN=sib.co.za"}}),
+        ("sslyze_tls10", 50, {"status": "completed", "score": 50, "grade": "C",
+                              "tls_versions": {"TLS 1.0": True, "TLS 1.2": True},
+                              "certificate": {"valid": True, "subject": "CN=sib.co.za"}}),
+        ("versions_with_certificate_error", 30, {"status": "completed", "score": 30,
+                                                 "grade": "D",
+                                                 "tls_versions": {"TLS 1.0": True},
+                                                 "certificate": {"valid": False,
+                                                                 "error": "hostname mismatch"}}),
+    ]
+    pub = ["196.22.1.5"]
+    checker_cases = [
+        ("ssl_zero", ssl_zero, dns_ok, info_ok, pub, []),
+        ("ssl_error", {"status": "error", "score": 0}, dns_ok, info_ok, pub, []),
+        ("nothing", RuntimeError("down"), RuntimeError("down"), RuntimeError("down"), pub, []),
+        ("no_dns", ssl_zero, dns_ok, info_ok, [], []),
+        ("no_web", ssl_fail, {"status": "completed", "risk_score": 0,
+                              "open_ports": [{"port": 25}]}, no_answer, pub, []),
+        ("plain_http", ssl_fail, {"status": "completed", "risk_score": 0,
+                                  "open_ports": [{"port": 80}]}, no_answer, pub, []),
+        ("info_error", ssl_zero, dns_ok,
+         {"status": "error", "exposed_paths": [{"path": "/.env", "risk_level": "critical"}]},
+         pub, []),
+        ("info_no_probe_finished", ssl_good, dns_ok, no_codes, pub, []),
+        ("loopback", ssl_zero, dns_ok, info_ok, ["127.0.0.1"], []),
+        ("rfc1918", ssl_zero, dns_ok, info_ok, ["10.1.2.3"], []),
+        ("link_local", ssl_zero, dns_ok, info_ok, ["169.254.169.254"], []),
+        ("one_private_among_public", ssl_zero, dns_ok, info_ok, ["196.22.1.5", "10.0.0.1"], []),
+        ("ipv6_only", ssl_zero, dns_ok, info_ok, [], ["2001:db8::10"]),
+        ("cgnat", ssl_zero, dns_ok, info_ok, ["100.64.1.1"], []),
+        ("public_a_loopback_aaaa", ssl_zero, dns_ok, info_ok, pub, ["::1"]),
+        ("public_a_private_aaaa", ssl_zero, dns_ok, info_ok, pub, ["fd00::5"]),
+        ("dual_stack_public", ssl_zero, dns_ok, info_ok, pub, ["2001:4860:4860::8888"]),
+        # 443 accepts TCP but never answers the handshake: nothing measured.
+        # An EOF or a plain-HTTP reply on 443 is an answer, and a finding.
+        ("hung_tls_on_443", dict(ssl_fail, certificate={
+            "valid": False, "error": "_ssl.c:993: The handshake operation timed out"}),
+         {"status": "completed", "risk_score": 0, "issues": [], "open_ports": [{"port": 443}]},
+         no_answer, pub, []),
+        ("tls_eof_on_443", dict(ssl_fail, certificate={
+            "valid": False, "error": "[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in "
+                                     "violation of protocol (_ssl.c:1006)"}),
+         {"status": "completed", "risk_score": 0, "issues": [], "open_ports": [{"port": 443}]},
+         info_ok, pub, []),
+        ("http_on_443", dict(ssl_fail, certificate={
+            "valid": False, "error": "[SSL: WRONG_VERSION_NUMBER] wrong version number "
+                                     "(_ssl.c:1006)"}),
+         {"status": "completed", "risk_score": 0, "issues": [], "open_ports": [{"port": 443}]},
+         info_ok, pub, []),
+        # Every branch of the TLS rule (critique round 6: GS6-1, CD6-1, FC6-3,
+        # FC6-4). A handshake that 443 accepted and never answered is not
+        # assessed whatever the port probe listed; 443 answering without TLS is
+        # a finding whatever it listed; a connect that timed out is a finding
+        # only beside plain HTTP on 80.
+        ("hung_tls_probe_missed_443", dict(ssl_fail, certificate={
+            "valid": False, "error": "_ssl.c:993: The handshake operation timed out"}),
+         {"status": "completed", "risk_score": 0, "issues": [], "open_ports": [{"port": 80}]},
+         info_ok, pub, []),
+        ("connect_timeout_443_filtered_80_open", dict(ssl_fail, certificate={
+            "valid": False, "error": "timed out"}),
+         {"status": "completed", "risk_score": 0, "issues": [], "open_ports": [{"port": 80}]},
+         info_ok, pub, []),
+        ("connect_timeout_on_open_443", dict(ssl_fail, certificate={
+            "valid": False, "error": "timed out"}),
+         {"status": "completed", "risk_score": 0, "issues": [], "open_ports": [{"port": 443}]},
+         info_ok, pub, []),
+        ("reset_on_443", dict(ssl_fail, certificate={
+            "valid": False, "error": "[Errno 104] Connection reset by peer"}),
+         {"status": "completed", "risk_score": 0, "issues": [], "open_ports": [{"port": 443}]},
+         info_ok, pub, []),
+        ("forcibly_closed_on_443", dict(ssl_fail, certificate={
+            "valid": False, "error": "[WinError 10054] An existing connection was forcibly "
+                                     "closed by the remote host"}),
+         {"status": "completed", "risk_score": 0, "issues": [], "open_ports": [{"port": 443}]},
+         info_ok, pub, []),
+        ("hang_then_plain_http", dict(ssl_fail, certificate={
+            "valid": False, "error": "_ssl.c:993: The handshake operation timed out"},
+            cipher_suite={"name": "Unknown", "bits": 0, "is_weak": True,
+                          "error": "[SSL: WRONG_VERSION_NUMBER] wrong version number"}),
+         {"status": "completed", "risk_score": 0, "issues": [], "open_ports": [{"port": 443}]},
+         info_ok, pub, []),
+        ("http_on_443_port_check_failed", dict(ssl_fail, certificate={
+            "valid": False, "error": "[SSL: WRONG_VERSION_NUMBER] wrong version number"}),
+         {"status": "error", "error": "port scan timed out"}, info_ok, pub, []),
+        ("http_on_443_no_ports_listed", dict(ssl_fail, certificate={
+            "valid": False, "error": "[SSL: WRONG_VERSION_NUMBER] wrong version number"}),
+         {"status": "completed", "risk_score": 0, "issues": [], "open_ports": []},
+         info_ok, pub, []),
+        ("reset_on_443_port_check_failed", dict(ssl_fail, certificate={
+            "valid": False, "error": "[Errno 104] Connection reset by peer"}),
+         {"status": "error", "error": "port scan timed out"}, info_ok, pub, []),
+    ] + [("tls:%s:dns_down" % n, s, RuntimeError("dns down"), info_ok, pub, [])
+         for n, _, s in tls_shapes] \
+      + [("tls:%s:no_ports" % n, s, dns_no_ports, info_ok, pub, [])
+         for n, _, s in tls_shapes]
+    # One case per error the SSL check records, written as the real checker
+    # writes it, beside the port probe that decides it (critique round 7: GS7-4,
+    # CL7-3). An answer without TLS is a finding whatever the probe saw; a hang
+    # is never priced; a connect timeout, a refusal or an alert is left to the
+    # probe.
+    dns_443 = {"status": "completed", "risk_score": 0, "issues": [],
+               "open_ports": [{"port": 443}]}
+    dns_80 = {"status": "completed", "risk_score": 0, "issues": [],
+              "open_ports": [{"port": 80}]}
+    dns_80_443 = {"status": "completed", "risk_score": 0, "issues": [],
+                  "open_ports": [{"port": 80}, {"port": 443}]}
+    dns_failed = {"status": "error", "error": "port scan timed out"}
+    answered_errs = [
+        "[SSL: WRONG_VERSION_NUMBER] wrong version number (_ssl.c:1006)",
+        "[SSL: RECORD_LAYER_FAILURE] record layer failure (_ssl.c:1000)",
+        "[SSL: PACKET_LENGTH_TOO_LONG] packet length too long (_ssl.c:1000)",
+        "[SSL: UNKNOWN_PROTOCOL] unknown protocol (_ssl.c:1000)",
+        "[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol "
+        "(_ssl.c:1006)",
+        "EOF occurred in violation of protocol (_ssl.c:2427)",
+        "[Errno 104] Connection reset by peer",
+        "[WinError 10054] An existing connection was forcibly closed by the remote host",
+    ]
+    hung_errs = ["_ssl.c:993: The handshake operation timed out",
+                 "_ssl.c:980: The read operation timed out"]
+    tcp_errs = ["timed out", "[Errno 110] Connection timed out",
+                "[WinError 10060] A connection attempt failed because the connected party "
+                "did not properly respond after a period of time, or established connection "
+                "failed because connected host has failed to respond"]
+    alert = "[SSL: SSLV3_ALERT_HANDSHAKE_FAILURE] sslv3 alert handshake failure (_ssl.c:1010)"
+
+    def tls_fail(cert_err, cipher_err=None):
+        s_ = dict(ssl_fail, certificate={"valid": False, "error": cert_err})
+        if cipher_err:
+            s_["cipher_suite"] = {"name": "Unknown", "bits": 0, "is_weak": True,
+                                  "error": cipher_err}
+        return s_
+    tls_table = []   # (label, SSL result, DNS result, a finding?)
+    for i, e in enumerate(answered_errs):
+        tls_table += [("answered%d:port_check_failed" % i, tls_fail(e), dns_failed, True),
+                      ("answered%d:beside_a_hang" % i, tls_fail(hung_errs[0], e), dns_443, True)]
+    for i, e in enumerate(hung_errs):
+        tls_table += [("hung%d:80_listed" % i, tls_fail(e), dns_80, False),
+                      ("hung%d:80_443_listed" % i, tls_fail(e), dns_80_443, False)]
+    for i, e in enumerate(tcp_errs):
+        tls_table += [("tcp%d:443_listed" % i, tls_fail(e), dns_443, False),
+                      ("tcp%d:80_443_listed" % i, tls_fail(e), dns_80_443, False),
+                      ("tcp%d:80_listed" % i, tls_fail(e), dns_80, True)]
+    tls_table += [
+        ("refused:443_listed", tls_fail("[Errno 111] Connection refused"), dns_443, True),
+        ("refused:80_443_listed", tls_fail("[Errno 111] Connection refused"), dns_80_443,
+         True),
+        ("refused:port_check_failed", tls_fail("[Errno 111] Connection refused"), dns_failed,
+         False),
+        ("alert:443_listed", tls_fail(alert), dns_443, True),
+        ("alert:port_check_failed", tls_fail(alert), dns_failed, False),
+    ]
+    checker_cases += [("tls_table:" + l, s_, d_, info_ok, pub, [])
+                      for l, s_, d_, _f in tls_table]
+    got = {}
+    for label, s_res, d_res, i_res, v4, v6 in checker_cases:
+        calls = []
+        res_fn, ip_fn = _fake_dns(v4, v6)
+        with mock.patch.object(csc, "SSLChecker", _fake_checker(s_res, calls=calls)), \
+             mock.patch.object(csc, "DNSInfrastructureChecker", _fake_checker(d_res, calls=calls)), \
+             mock.patch.object(csc, "InformationDisclosureChecker",
+                               _fake_checker(i_res, calls=calls)), \
+             mock.patch.object(csc.dns_cache, "resolve", res_fn), \
+             mock.patch.object(csc.dns_cache, "get_ip", ip_fn):
+            r = csc.RelatedDomainsChecker().check("acme.co.za", ["sib.co.za"])
+            c = ed.build_related_domains_category(
+                "acme.co.za", ["sib.co.za"], RD_SUB_OK,
+                lambda ds: csc.RelatedDomainsChecker().check("acme.co.za", ds))
+        got[label] = (r, c, ((r.get("dependants") or [{}])[0]), len(calls))
+    bad = []
+    r, c, dep, _n = got["ssl_zero"]
+    if not (r["scanned_count"] == 1 and r["score"] == 0 and r["high_count"] == 1):
+        bad.append("SSL 0 -> scanned=%s score=%s high=%s"
+                   % (r["scanned_count"], r["score"], r["high_count"]))
+    clean_price = price(built["confirmed_clean"])
+    if not price(c) > clean_price:
+        bad.append("a sibling with SSL 0 prices %s, not above a clean sibling %s"
+                   % (price(c), clean_price))
+    r, c, dep, _n = got["ssl_error"]
+    if not (r["scanned_count"] == 1 and r["score"] == 100 and dep.get("not_measured") == ["ssl"]):
+        bad.append("SSL error -> score=%s not_measured=%r" % (r["score"], dep.get("not_measured")))
+    for label in ("nothing", "no_dns"):
+        r, c, dep, _n = got[label]
+        if not (r["scanned_count"] == 0 and r.get("not_assessed") == ["sib.co.za"]
+                and c.get("status") == "unassessed"
+                and c.get("unassessed_reason") == "not_measured"):
+            bad.append("%s -> scanned=%s category=%s/%s" % (
+                label, r["scanned_count"], c.get("status"), c.get("unassessed_reason")))
+    if "[dns] does not resolve; not assessed on this scan" not in got["no_dns"][2].get("issues", []):
+        bad.append("an unresolvable sibling is not described as such: %r"
+                   % got["no_dns"][2].get("issues"))
+    r, c, dep, _n = got["no_web"]
+    if not (r["scanned_count"] == 1 and r["score"] == 100
+            and dep.get("not_measured") == ["info", "ssl"]
+            and not ed.related_domains_fully_assessed(c)):
+        bad.append("no web service -> score=%s not_measured=%r"
+                   % (r["score"], dep.get("not_measured")))
+    r, c, dep, _n = got["plain_http"]
+    if not (r["score"] == 0 and dep.get("ssl_score") == 0):
+        bad.append("plain-HTTP web host lost its no-TLS finding: score=%s" % r["score"])
+    r, c, dep, _n = got["info_error"]
+    if r["critical_count"] != 0:
+        bad.append("an errored info check still counted %s critical path(s)"
+                   % r["critical_count"])
+    r, c, dep, _n = got["info_no_probe_finished"]
+    if not (r["scanned_count"] == 1 and dep.get("not_measured") == ["info"]
+            and not ed.related_domains_fully_assessed(c)):
+        bad.append("an info check on which no probe finished counted as measured: "
+                   "not_measured=%r full=%r" % (dep.get("not_measured"),
+                                               ed.related_domains_fully_assessed(c)))
+    for label in ("loopback", "rfc1918", "link_local", "one_private_among_public",
+                  "cgnat", "public_a_loopback_aaaa", "public_a_private_aaaa"):
+        r, c, dep, n_calls = got[label]
+        if not (r["scanned_count"] == 0 and n_calls == 0 and c.get("status") == "unassessed"
+                and any("non-public address" in i for i in dep.get("issues", []))):
+            bad.append("%s -> scanned=%s sub-checks called=%d status=%s issues=%r"
+                       % (label, r["scanned_count"], n_calls, c.get("status"),
+                          dep.get("issues")))
+    r, c, dep, n_calls = got["ipv6_only"]
+    issues = " ".join(dep.get("issues", []))
+    if not (r["scanned_count"] == 0 and n_calls == 0 and "resolves to IPv6 only" in issues
+            and "does not resolve" not in issues):
+        bad.append("IPv6-only sibling -> scanned=%s calls=%d issues=%r"
+                   % (r["scanned_count"], n_calls, dep.get("issues")))
+    r, c, dep, _n = got["hung_tls_on_443"]
+    if not (dep.get("ssl_score") is None and "ssl" in dep.get("not_measured", [])
+            and price(c) == absent):
+        bad.append("a TLS handshake that timed out on an open 443 was scored: ssl_score=%r "
+                   "not_measured=%r price=%s/%s" % (dep.get("ssl_score"),
+                                                  dep.get("not_measured"), price(c), absent))
+    for label in ("tls_eof_on_443", "http_on_443", "connect_timeout_443_filtered_80_open",
+                  "reset_on_443", "forcibly_closed_on_443", "hang_then_plain_http",
+                  "http_on_443_port_check_failed", "http_on_443_no_ports_listed",
+                  "reset_on_443_port_check_failed"):
+        r, c, dep, _n = got[label]
+        if not (dep.get("ssl_score") == 0 and price(c) > absent):
+            bad.append("%s lost its no-TLS finding: ssl_score=%r price=%s/%s"
+                       % (label, dep.get("ssl_score"), price(c), absent))
+    for label in ("hung_tls_probe_missed_443", "connect_timeout_on_open_443"):
+        r, c, dep, _n = got[label]
+        if not (dep.get("ssl_score") is None and "ssl" in dep.get("not_measured", [])
+                and price(c) == absent):
+            bad.append("%s was scored: ssl_score=%r price=%s/%s"
+                       % (label, dep.get("ssl_score"), price(c), absent))
+    for l, _s, _d, finding in tls_table:
+        r, c, dep, _n = got["tls_table:" + l]
+        ok_ = ((dep.get("ssl_score") == 0 and price(c) > absent) if finding else
+               (dep.get("ssl_score") is None and "ssl" in dep.get("not_measured", [])))
+        if not ok_:
+            bad.append("%s: ssl_score=%r price=%s/%s, %s expected"
+                       % (l, dep.get("ssl_score"), price(c), absent,
+                          "a finding" if finding else "not assessed"))
+    r, c, dep, n_calls = got["dual_stack_public"]
+    if not (r["scanned_count"] == 1 and n_calls == 6 and r["score"] == 0):
+        bad.append("a public dual-stack sibling -> scanned=%s calls=%d score=%s"
+                   % (r["scanned_count"], n_calls, r["score"]))
+    for n, want_score, _s in tls_shapes:
+        for how, want_nm in (("dns_down", ["dns"]), ("no_ports", [])):
+            r, c, dep, _n = got["tls:%s:%s" % (n, how)]
+            if not (dep.get("ssl_score") == want_score and r["high_count"] == 1
+                    and dep.get("not_measured") == want_nm and price(c) > absent):
+                bad.append("TLS reached (%s, DNS %s) lost its finding: ssl_score=%r high=%s "
+                           "not_measured=%r price=%s/%s"
+                           % (n, how, dep.get("ssl_score"), r["high_count"],
+                              dep.get("not_measured"), price(c), absent))
+    if bad:
+        failures.append("discovery[checker]: " + "; ".join(bad))
+    report(not bad, "checker_measures_only_what_answered", "%d cases" % len(checker_cases))
+
+    # The runner scan() uses, with the real run_with_timeout. The checker must
+    # return at its own budget with what finished, and the outer timeout must
+    # never fire first: before round 4 the checker's `with` block waited for its
+    # slowest domain and the outer timeout discarded every finished one,
+    # findings included. A slow check is held on an event released only after
+    # the builder has returned, so a checker that waited for it could not
+    # return at all: that, not a wall-clock bound, is what the gate detects
+    # (critique round 4, G4-12). The held check is the last of the three, and
+    # the fakes stay in place until every held thread has finished.
+    crit_info = {"status": "completed", "score": 80, "issues": [],
+                 "exposed_paths": [{"path": "/.env", "risk_level": "critical"}],
+                 "probe_status_codes": {200: 1, 404: 17}}
+
+    class _Held:
+        """InformationDisclosureChecker whose slow domains wait for a release."""
+
+        def __init__(self, slow=(), delay=0.0):
+            self.slow, self.delay = set(slow), delay
+            self.release, self.lock = threading.Event(), threading.Lock()
+            self.started, self.running, self.peak, self.done = [], 0, 0, 0
+
+        def factory(self):
+            held = self
+
+            class _Info:
+                def check(self, d, *a, **k):
+                    with held.lock:
+                        held.started.append(d)
+                        held.running += 1
+                        held.peak = max(held.peak, held.running)
+                    try:
+                        if d in held.slow or "*" in held.slow:
+                            held.release.wait(10)
+                        elif held.delay:
+                            _time.sleep(held.delay)
+                        return dict(crit_info if d == "fast.co.za" else info_ok)
+                    finally:
+                        with held.lock:
+                            held.running -= 1
+                            held.done += 1
+            return _Info
+
+        def settle(self, n):
+            """Release every held check and wait until *n* checks have finished."""
+            self.release.set()
+            t_end = _time.monotonic() + 10
+            while _time.monotonic() < t_end:
+                with self.lock:
+                    if self.done >= n:
+                        return True
+                _time.sleep(0.02)
+            return False
+
+    class _Ck:
+        """Scan()'s checkpointer, recording whether it would save the result."""
+
+        def __init__(self):
+            self.name = self.saved = None
+
+        def run(self, name, fn):
+            res = fn()
+            self.name, self.saved = name, _sdb._is_done(res)
+            return res
+
+    def run_builder(confirmed, ck):
+        """The builder through scan()'s runner, in a thread with a hang guard."""
+        box = {}
+
+        def go():
+            box["rd"] = ed.build_related_domains_category(
+                "acme.co.za", confirmed, RD_SUB_OK,
+                lambda ds: sc._run_related_probe(ck, "acme.co.za", ds))
+        t = threading.Thread(target=go, daemon=True)
+        t.start()
+        t.join(5)
+        return box.get("rd") or {}, not t.is_alive()
+
+    bad = []
+    RDC = csc.RelatedDomainsChecker
+    res_fn, ip_fn = _fake_dns(pub)
+    # (1) One domain answers at once with a critical finding; one is held.
+    held = _Held(slow=["slow.co.za"])
+    with mock.patch.object(RDC, "ROUND_BUDGET", 0.3), \
+         mock.patch.object(csc, "SSLChecker", _fake_checker(ssl_good)), \
+         mock.patch.object(csc, "DNSInfrastructureChecker", _fake_checker(dns_ok)), \
+         mock.patch.object(csc, "InformationDisclosureChecker", held.factory()), \
+         mock.patch.object(csc.dns_cache, "resolve", res_fn), \
+         mock.patch.object(csc.dns_cache, "get_ip", ip_fn):
+        ck = _Ck()
+        rd_run, returned = run_builder(["fast.co.za", "slow.co.za"], ck)
+        settled = held.settle(2)
+    if not (returned and settled and rd_run.get("status") == "completed"
+            and rd_run.get("critical_count") == 1
+            and rd_run.get("confirmed_not_assessed") == ["slow.co.za"]
+            and rd_run.get("timed_out") == ["slow.co.za"]
+            and ck.name == "related_domains" and ck.saved is True
+            and price(rd_run) > absent):
+        bad.append("one slow domain: returned=%s status=%r critical=%r not_assessed=%r "
+                   "timed_out=%r checkpointed=%r"
+                   % (returned, rd_run.get("status"), rd_run.get("critical_count"),
+                      rd_run.get("confirmed_not_assessed"), rd_run.get("timed_out"),
+                      ck.saved))
+    # (2) Nothing measured and time ran out: only a held domain, and a held
+    # domain beside one that does not resolve. Both are a timeout, which is
+    # never checkpointed, so a resumed scan probes again.
+    for label, confirmed, per in (
+            ("only_a_slow_domain", ["slow.co.za"], None),
+            ("slow_beside_unresolvable", ["gone.co.za", "slow.co.za"],
+             {"gone.co.za": ([], [])})):
+        held = _Held(slow=["slow.co.za"])
+        r_fn, i_fn = _fake_dns(pub, per=per)
+        with mock.patch.object(RDC, "ROUND_BUDGET", 0.3), \
+             mock.patch.object(csc, "SSLChecker", _fake_checker(ssl_good)), \
+             mock.patch.object(csc, "DNSInfrastructureChecker", _fake_checker(dns_ok)), \
+             mock.patch.object(csc, "InformationDisclosureChecker", held.factory()), \
+             mock.patch.object(csc.dns_cache, "resolve", r_fn), \
+             mock.patch.object(csc.dns_cache, "get_ip", i_fn):
+            ck2 = _Ck()
+            rd_to, returned = run_builder(confirmed, ck2)
+            settled = held.settle(1)
+        if not (returned and settled and rd_to.get("status") == "unassessed"
+                and rd_to.get("unassessed_reason") == "timeout" and ck2.saved is False):
+            bad.append("%s: returned=%s status=%r reason=%r checkpointed=%r"
+                       % (label, returned, rd_to.get("status"),
+                          rd_to.get("unassessed_reason"), ck2.saved))
+    # (3) More domains than workers: eight domains of 0.4 s each run as two
+    # rounds of four inside the two-round budget (1.2 s). A checker that waits
+    # for one round only, or runs fewer than four at a time, leaves some
+    # unassessed.
+    held = _Held(delay=0.4)
+    eight = ["s%d.co.za" % i for i in range(8)]
+    with mock.patch.object(RDC, "ROUND_BUDGET", 0.6), \
+         mock.patch.object(csc, "SSLChecker", _fake_checker(ssl_good)), \
+         mock.patch.object(csc, "DNSInfrastructureChecker", _fake_checker(dns_ok)), \
+         mock.patch.object(csc, "InformationDisclosureChecker", held.factory()), \
+         mock.patch.object(csc.dns_cache, "resolve", res_fn), \
+         mock.patch.object(csc.dns_cache, "get_ip", ip_fn):
+        r8 = csc.RelatedDomainsChecker().check("acme.co.za", eight)
+        held.settle(8)
+    if not (r8.get("scanned_count") == 8 and not r8.get("timed_out")
+            and held.peak == RDC.WORKERS == 4):
+        bad.append("eight domains: scanned=%r timed_out=%r peak concurrency=%r"
+                   % (r8.get("scanned_count"), r8.get("timed_out"), held.peak))
+    # (4) Queued domains are cancelled at the budget and never probed after
+    # it: nine held domains, four running and five queued when it ends.
+    held = _Held(slow=["*"])
+    nine = ["q%d.co.za" % i for i in range(9)]
+    with mock.patch.object(RDC, "ROUND_BUDGET", 0.1), \
+         mock.patch.object(csc, "SSLChecker", _fake_checker(ssl_good)), \
+         mock.patch.object(csc, "DNSInfrastructureChecker", _fake_checker(dns_ok)), \
+         mock.patch.object(csc, "InformationDisclosureChecker", held.factory()), \
+         mock.patch.object(csc.dns_cache, "resolve", res_fn), \
+         mock.patch.object(csc.dns_cache, "get_ip", ip_fn):
+        r9 = csc.RelatedDomainsChecker().check("acme.co.za", nine)
+        started_at_return = list(held.started)
+        held.settle(len(started_at_return))
+        _time.sleep(0.3)
+        started_after = list(held.started)
+        held.settle(len(started_after))
+    if not (r9.get("status") == "timeout"
+            and sorted(r9.get("timed_out") or []) == sorted(nine)
+            and len(started_at_return) == 4 and started_after == started_at_return):
+        bad.append("nine held domains: status=%r timed_out=%d started by the budget=%d, "
+                   "started after it=%r"
+                   % (r9.get("status"), len(r9.get("timed_out") or []),
+                      len(started_at_return),
+                      sorted(set(started_after) - set(started_at_return))))
+    # The outer budget, as scan() passes it, for one to ten confirmed domains.
+    seen = []
+
+    def spy(fn, args=(), kwargs=None, timeout=60.0, on_timeout_result=None):
+        seen.append((type(getattr(fn, "__self__", None)), args, timeout, on_timeout_result))
+        return {"status": "completed", "dependants": [], "scanned_count": 0}
+    with mock.patch.object(sc, "run_with_timeout", spy):
+        for n in range(1, 11):
+            sc._run_related_probe(_Ck(), "acme.co.za", ["s%02d.co.za" % i for i in range(n)])
+    for n, (cls, args_, timeout, oto) in zip(range(1, 11), seen):
+        if not (cls is RDC and args_ == ("acme.co.za", ["s%02d.co.za" % i for i in range(n)])
+                and timeout >= RDC.budget_seconds(n) + 30 and oto == {"status": "timeout"}):
+            bad.append("n=%d: runner called %r with %r, outer timeout %r against a checker "
+                       "budget of %r, on_timeout=%r" % (n, cls, args_, timeout,
+                                                        RDC.budget_seconds(n), oto))
+    if len(seen) != 10:
+        bad.append("the runner called run_with_timeout %d times for 10 runs" % len(seen))
+    # The budget covers the slowest realistic domain with a margin: one whose
+    # HTTPS does not answer takes about 144 to 150 s, the upper figure when an
+    # open port makes the port probe run its canary connects (rounds 3 and 4).
+    if not (RDC.ROUND_BUDGET >= 160 and RDC.budget_seconds(4) == RDC.ROUND_BUDGET
+            and RDC.budget_seconds(10) == 3 * RDC.ROUND_BUDGET):
+        bad.append("budget: ROUND_BUDGET=%r budget(4)=%r budget(10)=%r"
+                   % (RDC.ROUND_BUDGET, RDC.budget_seconds(4), RDC.budget_seconds(10)))
+    if bad:
+        failures.append("discovery[runner]: " + "; ".join(bad))
+    report(not bad, "runner_returns_at_the_budget_with_what_finished")
+
+    # 9. InformationDisclosureChecker requests all 18 of its paths (5y). A late
+    # local import once made HTTP unbound in the probe threads, so the 10
+    # medium-risk paths were never requested while the check reported completed.
+    web = _FakeWeb()
+    with mock.patch.object(_hc, "HTTP", web), mock.patch.object(ct, "HTTP", web):
+        res = ct.InformationDisclosureChecker().check("acme.co.za")
+    asked = {u.split("acme.co.za", 1)[1] for u in web.heads}
+    want_paths = {p for p, _ in (ct.InformationDisclosureChecker.CRITICAL_PATHS
+                                 + ct.InformationDisclosureChecker.MEDIUM_PATHS)}
+    ok = asked == want_paths and res.get("status") == "completed" and not res.get("probe_errors")
+    if not ok:
+        failures.append("discovery[info_paths]: %d of %d paths requested (missing %r), "
+                        "status=%r probe_errors=%r"
+                        % (len(asked & want_paths), len(want_paths),
+                           sorted(want_paths - asked)[:4], res.get("status"),
+                           res.get("probe_errors")))
+    report(ok, "info_disclosure_requests_every_path", "%d/%d" % (len(asked), len(want_paths)))
+
+    # A probe with no HTTP answer never decides the refusal test (critique
+    # round 3, C3-1): on a host that refused every answered probe, an
+    # unanswered one used to turn "unreachable" into a clean 100. A probe that
+    # raises is counted.
+    CRIT = {p for p, _ in ct.InformationDisclosureChecker.CRITICAL_PATHS}
+    MED = [p for p, _ in ct.InformationDisclosureChecker.MEDIUM_PATHS]
+    info_cases = [
+        # (label, head(path), root, apex_answered, raise_on, want)
+        ("walled_off_medium_unanswered", lambda p: 403 if p in CRIT else None, None, False, (),
+         dict(status="unreachable", silent=10)),
+        ("one_unanswered_probe", lambda p: None if p == MED[0] else 403, 403, False, (),
+         dict(status="unreachable", silent=1)),
+        ("denied_with_unanswered_medium", lambda p: 403 if p in CRIT else None, 200, False, (),
+         dict(status="completed", denied=8)),
+        ("probe_that_raises_is_counted", None, 404, True, ("/.env",),
+         dict(status="completed", errors=1)),
+    ]
+    bad = []
+    for label, head, root, apex, raise_on, want in info_cases:
+        web = _FakeWeb(head=head, root=root, apex=apex, raise_on=raise_on)
+        with mock.patch.object(_hc, "HTTP", web), mock.patch.object(ct, "HTTP", web):
+            res = ct.InformationDisclosureChecker().check("acme.co.za")
+        why = res.get("unreachable_reason") or ""
+        if (res.get("status") != want["status"]
+                or ("denied" in want and res.get("sensitive_paths_denied") != want["denied"])
+                or ("errors" in want and res.get("probe_errors") != want["errors"])
+                or ("silent" in want and "%d got no answer" % want["silent"] not in why)
+                or (want["status"] == "unreachable" and res.get("http_status") == 0)):
+            bad.append("%s -> status=%r denied=%r errors=%r http_status=%r reason=%r"
+                       % (label, res.get("status"), res.get("sensitive_paths_denied"),
+                          res.get("probe_errors"), res.get("http_status"), why[:90]))
+    if bad:
+        failures.append("discovery[info_refusal]: " + "; ".join(bad))
+    report(not bad, "unanswered_probe_never_decides_a_refusal", "%d cases" % len(info_cases))
+
+    # The scan form sends every confirmed domain. The server caps the list and
+    # reports the overflow as not assessed; a browser-side trim dropped it unseen.
+    with io.open(os.path.join(SEC, "templates", "index.html"), encoding="utf-8") as fh:
+        page = fh.read().replace("\r\n", "\n")
+    m = _re.search(r"function collectRelatedDomains\(\) \{.*?\n\}\n", page, _re.S)
+    body = m.group(0) if m else ""
+    ok = bool(body) and not _re.search(r"\.(slice|splice)\(|\.length\s*=", body)
+    if not ok:
+        failures.append("discovery[form]: collectRelatedDomains %s"
+                        % ("not found" if not body else "trims the confirmed list"))
+    report(ok, "form_sends_every_confirmed_domain")
+
+    # 10. Wiring. scan() builds the category once, through the builder, with
+    # the right arguments, assigns it once, and probes confirmed domains only
+    # through the module-level runner, which gives the checker the runner's own
+    # list. AST, so a comment cannot satisfy it. The runner's budget is checked
+    # by running it (section 8).
+    with io.open(os.path.join(SEC, "scanner.py"), encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    scan_fn = next(n for n in ast.walk(tree)
+                   if isinstance(n, ast.FunctionDef) and n.name == "scan")
+    runner = next((n for n in tree.body
+                   if isinstance(n, ast.FunctionDef) and n.name == "_run_related_probe"), None)
+    builder_calls = gated = 0
+    call_ok = False
+    builder_targets, writes = set(), []
+    for node in ast.walk(scan_fn):
+        if isinstance(node, ast.If) and "related_domains" in ast.dump(node.test):
+            for inner in ast.walk(node):
+                if (isinstance(inner, ast.Call)
+                        and getattr(inner.func, "id", "") == "build_related_domains_category"):
+                    gated += 1
+        if (isinstance(node, ast.Call)
+                and getattr(node.func, "id", "") == "build_related_domains_category"):
+            builder_calls += 1
+            a = node.args
+            sub_ok = len(a) > 2 and any(
+                isinstance(x, ast.Call) and isinstance(x.func, ast.Attribute)
+                and x.func.attr == "get" and getattr(x.func.value, "id", "") == "cat_results"
+                and x.args and getattr(x.args[0], "value", None) == "subdomains"
+                for x in ast.walk(a[2]))
+            probe = a[3] if len(a) == 4 else None
+            probe_ok = False
+            if isinstance(probe, ast.Lambda) and len(probe.args.args) == 1:
+                p = probe.args.args[0].arg
+                b = probe.body
+                probe_ok = (isinstance(b, ast.Call)
+                            and getattr(b.func, "id", "") == "_run_related_probe"
+                            and len(b.args) == 3 and not b.keywords
+                            and getattr(b.args[0], "id", "") == "_ckpt"
+                            and getattr(b.args[1], "id", "") == "domain"
+                            and getattr(b.args[2], "id", "") == p)
+            call_ok = (len(a) == 4 and getattr(a[0], "id", "") == "domain"
+                       and getattr(a[1], "id", "") == "related_domains" and sub_ok
+                       and probe_ok)
+        if isinstance(node, ast.Assign):
+            if (isinstance(node.value, ast.Call)
+                    and getattr(node.value.func, "id", "") == "build_related_domains_category"):
+                builder_targets |= {t.id for t in node.targets if isinstance(t, ast.Name)}
+            for t in node.targets:
+                if (isinstance(t, ast.Subscript) and isinstance(t.value, ast.Name)
+                        and t.value.id == "cat_results"
+                        and isinstance(t.slice, ast.Constant)
+                        and t.slice.value == "related_domains"):
+                    writes.append(node.value)
+    write_ok = (len(writes) == 1 and isinstance(writes[0], ast.Name)
+                and writes[0].id in builder_targets)
+    # Every assignment to the builder's variable is the builder call: a
+    # fallback such as `except: _rd = {"status": "error"}` would pass as built
+    # once from the builder, and "error" prices +5 to +16.
+    target_assigns = [
+        n for n in ast.walk(scan_fn)
+        if isinstance(n, (ast.Assign, ast.AnnAssign, ast.AugAssign))
+        and any(isinstance(t, ast.Name) and t.id in builder_targets
+                for t in (n.targets if isinstance(n, ast.Assign) else [n.target]))]
+    write_ok = write_ok and len(target_assigns) == 1
+    in_scan = sum(1 for n in ast.walk(scan_fn)
+                  if isinstance(n, ast.Name) and n.id == "RelatedDomainsChecker")
+    runner_ok = False
+    if runner is not None and len(runner.args.args) == 3:
+        dparam, lparam = runner.args.args[1].arg, runner.args.args[2].arg
+        for n in ast.walk(runner):
+            if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "run_with_timeout":
+                first = n.args[0] if n.args else None
+                first_ok = (isinstance(first, ast.Attribute) and first.attr == "check"
+                            and isinstance(first.value, ast.Call)
+                            and getattr(first.value.func, "id", "") == "RelatedDomainsChecker")
+                kw = {k.arg: k.value for k in n.keywords}
+                targs = kw.get("args")
+                args_ok = (isinstance(targs, ast.Tuple) and len(targs.elts) == 2
+                           and getattr(targs.elts[0], "id", "") == dparam
+                           and getattr(targs.elts[1], "id", "") == lparam)
+                oto = kw.get("on_timeout_result")
+                oto_ok = isinstance(oto, ast.Dict) and {
+                    getattr(k, "value", None): getattr(v, "value", None)
+                    for k, v in zip(oto.keys, oto.values)}.get("status") == "timeout"
+                runner_ok = first_ok and args_ok and oto_ok
+    ckpt_ok = {"timeout", "error"} <= set(_sdb._NOT_DONE_STATUSES)
+    ok = (builder_calls == 1 and gated == 0 and call_ok and write_ok and runner_ok
+          and in_scan == 0 and ckpt_ok)
+    if not ok:
+        failures.append(
+            "discovery[wiring]: builder calls=%d gated=%d arguments=%s single-assignment=%s "
+            "runner=%s RelatedDomainsChecker named in scan()=%d timeout-not-checkpointed=%s"
+            % (builder_calls, gated, call_ok, write_ok, runner_ok, in_scan, ckpt_ok))
+    report(ok, "scan_builds_once_with_the_right_arguments")
+
+    # 11. The dashboard, run by node on every case the gate built, against the
+    # Python and the PDF card: the state, whether fully assessed, the notes word
+    # for word, the lead sentence (the card's own opening sentence, where the
+    # two share one), the badge against the card's colour, the rows, and the
+    # candidates and "and N more" count. frontend/src/data/relatedDomains.ts is
+    # self-contained so node can run it as it ships.
+    # The page renders every field of the model and shows related domains
+    # nowhere else, and the committed bundle carries this module's wording, so
+    # a stale build cannot ship (critique round 4, G4-04).
+    mod_path = os.path.join(SEC, "frontend", "src", "data", "relatedDomains.ts")
+    with io.open(os.path.join(SEC, "frontend", "src", "pages", "detail", "ExposurePage.tsx"),
+                 encoding="utf-8") as fh:
+        page_tsx = fh.read()
+    with io.open(mod_path, encoding="utf-8") as fh:
+        mod_src = fh.read()
+    with io.open(os.path.join(SEC, "static", "dashboard", "app.js"), encoding="utf-8") as fh:
+        bundle = fh.read()
+    bad = [f for f in ("m.intro", "m.lead", "m.sources", "m.badge", "m.rows", "m.notes",
+                       "m.pending", "m.extra") if f not in page_tsx]
+    page_tsx_n = page_tsx.replace("\r\n", "\n")
+    for snippet in ("\n      <div style={{ fontSize: 12.5, marginBottom: 10 }}>{m.lead}</div>\n",
+                    "\n      {m.notes.map((n) => (\n",
+                    "\n      {(m.pending.length > 0 || m.extra > 0) && (\n"):
+        if snippet not in page_tsx_n:
+            bad.append("not rendered unconditionally: %r" % snippet.strip()[:40])
+    # The panel itself is mounted unconditionally (critique round 7, GS7-5).
+    lines_ = page_tsx_n.split("\n")
+    at_ = [i for i, l in enumerate(lines_) if l.strip() == "<RelatedDomainsPanel r={r} />"]
+    before_ = [l.strip() for l in lines_[:at_[0]] if l.strip()][-1] if at_ else ""
+    if len(at_) != 1 or before_.endswith(("&&", "&& (", "?", "? (", "(", "{")):
+        bad.append("the related-domains panel is not mounted unconditionally")
+    # A generic panel for a completed checker reads its own severity and
+    # finding counts, never "Passed" beside a finding (critique round 7,
+    # ST7-2); the Additional Intelligence Sources panels use it.
+    if "<CheckerHeader category={c} refine />" not in page_tsx_n:
+        bad.append("MoreCheckers does not refine its badges")
+    cs_path = os.path.join(SEC, "frontend", "src", "data", "checkerState.ts")
+    node_cs = shutil.which("node")
+    if not node_cs:
+        bad.append("node is not on PATH, so checkerState.ts cannot be run")
+    else:
+        td_cs = tempfile.mkdtemp(prefix="cs_")
+        try:
+            shutil.copyfile(cs_path, os.path.join(td_cs, "checkerState.mts"))
+            with io.open(os.path.join(td_cs, "cs_check.mts"), "w", encoding="utf-8") as fh:
+                # Each field the rule reads, then real checker shapes: a
+                # generic panel never shows "Passed", and a result marked
+                # assessed: false is not assessed (critique round 8, FC8-2,
+                # ST8-2, GS8-3).
+                fh.write("import { refineCompletedState as f, STATE_META as M }"
+                         " from './checkerState.mts'\n"
+                         "console.log(JSON.stringify([\n"
+                         "  f({status: 'completed', severity: 'medium', medium_count: 1}),\n"
+                         "  f({status: 'completed', severity: 'high'}),\n"
+                         "  f({status: 'completed', critical_count: 2}),\n"
+                         "  f({status: 'completed', critical_match_count: 1}),\n"
+                         "  f({status: 'completed', high_match_count: 1}),\n"
+                         "  f({status: 'completed', severity: 'none'}),\n"
+                         "  f({status: 'completed', severity: 'critical'}),\n"
+                         "  f({status: 'completed', severity: 'medium'}),\n"
+                         "  f({status: 'no_data', severity: 'medium', medium_count: 1}),\n"
+                         "  f({status: 'error', critical_count: 3}),\n"
+                         "  f(undefined),\n"
+                         "  f({status: 'completed', high_count: 1, critical_count: 0}),\n"
+                         "  f({status: 'completed', medium_count: 2}),\n"
+                         "  f({status: 'completed', severity: 'none', assessed: false}),\n"
+                         "  f({status: 'completed', match_count: 1, critical_match_count: 0,"
+                         " high_match_count: 0}),\n"
+                         "  f({status: 'completed', is_wordpress: true, plugin_count: 1,"
+                         " versioned_count: 1}),\n"
+                         "  f({status: 'completed', compromised_employees: 3}),\n"
+                         "  f({status: 'completed', risk_level: 'CRITICAL'}),\n"
+                         "  f({status: 'completed'}),\n"
+                         "  M.completed]))\n")
+            r_cs = subprocess.run([node_cs, "--no-warnings",
+                                   os.path.join(td_cs, "cs_check.mts")],
+                                  capture_output=True, text=True, timeout=60)
+            try:
+                cs_out = json.loads(r_cs.stdout.strip().splitlines()[-1])
+            except Exception:
+                cs_out = r_cs.stderr[-160:]
+            if cs_out != ["warning", "failed", "critical", "critical", "failed", "completed",
+                          "critical", "warning",
+                          "no_data", "error", "not_assessed",
+                          "failed", "warning", "not_assessed", "completed", "completed",
+                          "completed", "completed", "completed",
+                          {"label": "Completed", "severity": "unknown", "conclusive": True}]:
+                bad.append("refineCompletedState gives %r" % (cs_out,))
+        finally:
+            shutil.rmtree(td_cs, ignore_errors=True)
+    # CheckerHeader routes refine to that rule, and the Email-Vendor panel
+    # prints its rows only for a completed result, saying when the SPF lookup
+    # did not answer or was not followed (critique round 8, GS8-3, FC8-4).
+    with io.open(os.path.join(SEC, "frontend", "src", "components", "detail", "parts.tsx"),
+                 encoding="utf-8") as fh:
+        parts_src_ = fh.read().replace("\r\n", "\n")
+    if ("  const b = headerBadge(category, refine)\n" not in parts_src_
+            or "  return <StatusBadge state={b.state} label={b.label} />\n" not in parts_src_):
+        bad.append("CheckerHeader does not render the badge headerBadge gives")
+    with io.open(os.path.join(SEC, "frontend", "src", "components", "primitives",
+                              "Status.tsx"), encoding="utf-8") as fh:
+        status_src_ = fh.read().replace("\r\n", "\n")
+    if "  completed: CircleDot,\n" not in status_src_:
+        bad.append("the Completed badge does not carry an icon of its own")
+    # The Email-Vendor panel renders from data/emailVendorPanel.ts, which runs
+    # under node on the real S-4 checker's output for every SPF outcome the
+    # zone cases produced, and on a stored result without the field (critique
+    # round 8, FC8-4; the round-9 spot check found the checker's vendor and
+    # include objects joined into "[object Object]").
+    with io.open(os.path.join(SEC, "frontend", "src", "pages", "detail", "EmailPage.tsx"),
+                 encoding="utf-8") as fh:
+        email_src_ = fh.read().replace("\r\n", "\n")
+    if ("  const vp = vendorPanel(vendor as Record<string, unknown> | undefined)\n"
+            not in email_src_
+            or "{vp.kind === 'rows' ? <KV rows={vp.rows} /> : <EmptyState compact title={vp.title} />}"
+            not in email_src_
+            or "'Weak DMARC'" in email_src_ or "vendor.spf_includes" in email_src_):
+        bad.append("the Email-Vendor panel does not render from emailVendorPanel.ts")
+    vp_cases = dict(evs_real)
+    vp_cases["stored_no_data"] = {k: v for k, v in evs_real["no_includes"].items()
+                                  if k != "spf_lookup"}
+    vp_cases["stored_completed"] = stored_evs
+    vp_cases["timeout"] = {"status": "timeout", "error": "Checker timed out after 180s",
+                           "issues": []}
+    vp_cases["stored_with_vendor"] = stored_vendor_evs
+    vp_cases["unknown_outcome"] = future_evs
+    vp_cases["wide_surface"] = wide_evs
+    vp_cases["error"] = {"status": "error", "error": "no answer", "issues": []}
+    vp_out = None
+    if node_cs:
+        td_vp = tempfile.mkdtemp(prefix="vp_")
+        try:
+            shutil.copyfile(os.path.join(SEC, "frontend", "src", "data", "emailVendorPanel.ts"),
+                            os.path.join(td_vp, "emailVendorPanel.mts"))
+            with io.open(os.path.join(td_vp, "vp_check.mts"), "w", encoding="utf-8") as fh:
+                fh.write("import { vendorPanel } from './emailVendorPanel.mts'\n"
+                         "const cases = " + json.dumps(vp_cases) + "\n"
+                         "const out = {}\n"
+                         "for (const [k, v] of Object.entries(cases)) out[k] = vendorPanel(v)\n"
+                         "out.absent = vendorPanel(undefined)\n"
+                         "console.log(JSON.stringify(out))\n")
+            r_vp = subprocess.run([node_cs, "--no-warnings", os.path.join(td_vp, "vp_check.mts")],
+                                  capture_output=True, text=True, timeout=60)
+            try:
+                vp_out = json.loads(r_vp.stdout.strip().splitlines()[-1])
+            except Exception:
+                vp_out = r_vp.stderr[-200:]
+        finally:
+            shutil.rmtree(td_vp, ignore_errors=True)
+    if not isinstance(vp_out, dict):
+        bad.append("the Email-Vendor panel did not run under node: %r" % (vp_out,))
+        vp_out = {}
+
+    def _want_panel(p):
+        """What the panel must say, from the renderer's own rule."""
+        why = pc.spf_surface_unmeasured(p)
+        if why:
+            return {"kind": "empty", "title": "Not assessed: " + why,
+                    "badge": {"state": "not_assessed", "label": "Not assessed"}}
+        if p.get("status") == "completed":
+            vendors = [x.get("vendor") for x in (p.get("vendors_detected") or [])]
+            vendors = [v for v in vendors if v]
+            incs = [x.get("include") for x in (p.get("spf_includes") or [])]
+            weak, partial = bool(p.get("weak_dmarc")), pc.spf_surface_partial(p)
+            rows = [{"label": "Vendors detected",
+                     "value": ", ".join(vendors) or "None identified"},
+                    {"label": "SPF includes", "value": ", ".join(i for i in incs if i) or "—"},
+                    {"label": "Weak DMARC", "value": "Yes" if weak else "No",
+                     "severity": "medium" if weak else "positive"}]
+            if partial:
+                rows.append({"label": "SPF chain", "severity": "medium",
+                             "value": "Partly read: a lookup did not answer, or a record "
+                                      "redirects, so the vendors above are a lower bound"})
+            if weak and vendors:
+                badge = {"state": "failed"}
+            elif len(vendors) >= 6:
+                badge = {"state": "warning"}
+            elif partial:
+                badge = {"state": "warning", "label": "Partly assessed"}
+            else:
+                badge = {"state": "completed"}
+            return {"kind": "rows", "rows": rows, "badge": badge}
+        if p.get("status") == "no_data":
+            return {"kind": "rows", "badge": {"state": "completed"},
+                    "rows": [{"label": "Vendors detected",
+                              "value": "None: no SPF includes are published"}]}
+        return {"kind": "empty", "title": "No vendor-surface data"}
+    for k_, p_ in sorted(vp_cases.items()):
+        if vp_out.get(k_) != _want_panel(p_):
+            bad.append("the Email-Vendor panel for %s gives %r, want %r"
+                       % (k_, vp_out.get(k_), _want_panel(p_)))
+    if vp_out.get("absent") != {"kind": "empty", "title": "No vendor-surface data"}:
+        bad.append("the Email-Vendor panel with no result gives %r" % (vp_out.get("absent"),))
+    if "[object" in json.dumps(vp_out):
+        bad.append("the Email-Vendor panel prints an object")
+    # Pinned, not derived from the same threshold the module uses (GS10-4).
+    if (vp_out.get("wide_surface") or {}).get("badge") != {"state": "warning"}:
+        bad.append("a six-vendor surface is not a finding on the dashboard: %r"
+                   % ((vp_out.get("wide_surface") or {}).get("badge"),))
+    # The header badge, on the same real results and on the generic panels'
+    # shapes: a measurement reads Completed, an unmeasured or partly read
+    # surface never does, and nothing reads "Passed" (critique round 9, GS9-5).
+    hb_cases = {
+        "vb_failed": vb_real["nested_timeout"],
+        "vb_not_followed": vb_real["redirect_only"],
+        "vb_answered": vb_real["no_includes"],
+        "vb_partial_quiet": vb_real["quiet_vendor_plus_timeout"],
+        "vb_partial_matches": vb_real["vendor_plus_timeout"],
+        "vb_stored_with_vendor": dict(stored_vendor_vb, matches=[],
+                                     critical_match_count=0, high_match_count=0,
+                                     issues=[]),
+        "vb_unknown_outcome": future_vb,
+        "vb_matches": vb_real["nested_answered"],
+        "vb_stored": stored_vb,
+        "dependency_manifests": {"status": "completed", "high_count": 1, "critical_count": 0},
+        "credential_correlation": {"status": "completed", "severity": "none", "assessed": False},
+        "cms_plugin_sbom": {"status": "completed", "is_wordpress": True, "plugin_count": 1,
+                            "versioned_count": 1},
+    }
+    hb_out = None
+    if node_cs:
+        td_hb = tempfile.mkdtemp(prefix="hb_")
+        try:
+            shutil.copyfile(cs_path, os.path.join(td_hb, "checkerState.mts"))
+            with io.open(os.path.join(td_hb, "hb_check.mts"), "w", encoding="utf-8") as fh:
+                fh.write("import { headerBadge as h, STATE_META as M } from './checkerState.mts'\n"
+                         "const cases = " + json.dumps(hb_cases) + "\n"
+                         "const out = {}\n"
+                         "for (const [k, v] of Object.entries(cases)) {\n"
+                         "  const b = h(v, true)\n"
+                         "  out[k] = { state: b.state, label: b.label ?? null,"
+                         " shown: M[b.state].label }\n"
+                         "}\n"
+                         "const n = h(undefined, true)\n"
+                         "out.absent = { state: n.state, label: n.label ?? null,"
+                         " shown: M[n.state].label }\n"
+                         "console.log(JSON.stringify(out))\n")
+            r_hb = subprocess.run([node_cs, "--no-warnings", os.path.join(td_hb, "hb_check.mts")],
+                                  capture_output=True, text=True, timeout=60)
+            try:
+                hb_out = json.loads(r_hb.stdout.strip().splitlines()[-1])
+            except Exception:
+                hb_out = r_hb.stderr[-200:]
+        finally:
+            shutil.rmtree(td_hb, ignore_errors=True)
+    if not isinstance(hb_out, dict):
+        bad.append("the header badge did not run under node: %r" % (hb_out,))
+        hb_out = {}
+    _vbm = vb_real["nested_answered"]
+    want_hb = {
+        "vb_failed": {"state": "not_assessed", "label": "Not assessed", "shown": "Not assessed"},
+        "vb_not_followed": {"state": "not_assessed", "label": "Not assessed",
+                            "shown": "Not assessed"},
+        "vb_answered": {"state": "completed", "label": None, "shown": "Completed"},
+        "vb_partial_quiet": {"state": "warning", "label": "Partly assessed", "shown": "Warning"},
+        # A partly read chain that still carries a finding shows the finding.
+        "vb_partial_matches": {
+            "state": "critical" if vb_real["vendor_plus_timeout"].get("critical_match_count")
+            else "failed", "label": None,
+            "shown": "Critical" if vb_real["vendor_plus_timeout"].get("critical_match_count")
+            else "Failed"},
+        "vb_stored_with_vendor": {"state": "warning", "label": "Partly assessed",
+                                  "shown": "Warning"},
+        # An outcome the rule does not know is not a measurement, on the badge
+        # as on the panel and the deck (round 11's mutation survivor).
+        "vb_unknown_outcome": {"state": "not_assessed", "label": "Not assessed",
+                               "shown": "Not assessed"},
+        "vb_matches": {"state": "critical" if _vbm.get("critical_match_count") else "failed",
+                       "label": None,
+                       "shown": "Critical" if _vbm.get("critical_match_count") else "Failed"},
+        "vb_stored": {"state": "not_assessed", "label": "Not assessed", "shown": "Not assessed"},
+        "dependency_manifests": {"state": "failed", "label": None, "shown": "Failed"},
+        "credential_correlation": {"state": "not_assessed", "label": None,
+                                   "shown": "Not assessed"},
+        "cms_plugin_sbom": {"state": "completed", "label": None, "shown": "Completed"},
+        "absent": {"state": "not_assessed", "label": "Not in scan", "shown": "Not assessed"},
+    }
+    for k_, w_ in sorted(want_hb.items()):
+        if hb_out.get(k_) != w_:
+            bad.append("the header badge for %s gives %r, want %r" % (k_, hb_out.get(k_), w_))
+    if ("<RelatedDomainsPanel r={r} />" not in page_tsx
+            or "getRelatedDomainsPanel(r)" not in page_tsx):
+        bad.append("the panel is not rendered from getRelatedDomainsPanel")
+    more_ids = _re.search(r"<MoreCheckers r=\{r\} ids=\{\[([^\]]*)\]\}", page_tsx)
+    if more_ids is None or "related_domains" in more_ids.group(1):
+        bad.append("related_domains also shows as a generic checker card")
+    # Every single-quoted string of 12 or more characters in the module's code,
+    # tokenised left to right with the comments and the other string forms, so
+    # a short literal's closing quote never opens another (round 6).
+    code = "\n".join(l for l in mod_src.splitlines()
+                     if not l.lstrip().startswith("import"))
+    wording = [w for w in _re.findall(
+        r"//[^\n]*|/\*.*?\*/|'((?:[^'\\\n]|\\.)*)'|\"(?:[^\"\\\n]|\\.)*\"|`(?:[^`\\]|\\.)*`",
+        code, _re.S) if len(w) >= 12 and "\\" not in w]
+    stale = [w[:40] for w in wording if w not in bundle]
+    if len(wording) < 20 or stale:
+        bad.append("the bundle lacks %d of %d sentences: %r" % (len(stale), len(wording),
+                                                                stale[:2]))
+    # The committed bundle is what a rebuild of the source produces, byte for
+    # byte, so no sentence and no line of logic can be stale (critique round 6,
+    # GS6-4 and CD6-3). The build is deterministic; the base path is the one the
+    # deployed bundle needs.
+    import tempfile as _tempfile
+    fe_dir = os.path.join(SEC, "frontend")
+    vite_js = os.path.join(fe_dir, "node_modules", "vite", "bin", "vite.js")
+    node_v = shutil.which("node")
+    if not (node_v and os.path.isfile(vite_js)):
+        bad.append("cannot rebuild the dashboard to compare with the committed bundle "
+                   "(node or frontend/node_modules missing)")
+    else:
+        out_dir = _tempfile.mkdtemp(prefix="rd_bundle_")
+        try:
+            r_v = subprocess.run([node_v, vite_js, "build", "--outDir", out_dir,
+                                  "--emptyOutDir", "--logLevel", "error"],
+                                 cwd=fe_dir, capture_output=True, text=True, timeout=300,
+                                 env=dict(os.environ, SCANNER_BASE_PATH="/scanner"))
+            if r_v.returncode != 0:
+                bad.append("the dashboard rebuild failed: %s"
+                           % (r_v.stderr or r_v.stdout)[-200:])
+            else:
+                for name in ("app.js", "app.css"):
+                    with open(os.path.join(out_dir, name), "rb") as fh:
+                        fresh = fh.read()
+                    with open(os.path.join(SEC, "static", "dashboard", name), "rb") as fh:
+                        if fh.read() != fresh:
+                            bad.append("static/dashboard/%s is stale: rebuild it with "
+                                       "SCANNER_BASE_PATH=/scanner" % name)
+        finally:
+            shutil.rmtree(out_dir, ignore_errors=True)
+    if bad:
+        failures.append("discovery[dashboard_page]: " + "; ".join(bad))
+    report(not bad, "dashboard_page_and_bundle", "%d sentences" % len(wording))
+
+    node = shutil.which("node")
+    if not node:
+        failures.append("discovery[ts]: node is not on PATH, so the dashboard's "
+                        "related-domains logic cannot be checked against Python")
+        report(False, "dashboard_matches_the_pdf_card", "node missing")
+    else:
+        mod = os.path.join(SEC, "frontend", "src", "data", "relatedDomains.ts")
+        cases = (list(built.values()) + [r for _, r, _ in RD_LEGACY]
+                 + [v[1] for v in got.values()] + [rd_run, rd_to]
+                 + [None, {}, {"status": "completed", "discovery": None},
+                    {"status": "completed", "declared_count": None,
+                     "discovery": {"ran": True, "candidate_count": 2}},
+                    {"status": "unassessed", "declared_count": 0,
+                     "discovery": {"ran": True, "candidate_count": 3}},
+                    {"status": "completed", "declared_count": 0,
+                     "discovery": {"ran": True}}])
+        badge_of = {"critical": ("critical", "Critical"), "red": ("failed", "Below 60"),
+                    "green": ("passed", "Passed"), "amber": ("warning", "Partly assessed")}
+
+        def python_view(rd):
+            rd_ = rd or {}
+            state = ed.related_domains_state(rd)
+            sink, reasons, fallbacks = [], [], []
+            colour = _colour_spy(pc, sink)
+            real_nac = pc.not_assessed_card
+
+            def bcc(title, col, *a, **k):
+                if title == pc._RD_TITLE:
+                    fallbacks.append(k.get("fallback"))
+                return colour(title, col, *a, **k)
+
+            def nac(title, reason, S_):
+                reasons.append(reason)
+                return real_nac(title, reason, S_)
+            with mock.patch.object(pc, "build_cat_card", bcc), \
+                 mock.patch.object(pc, "not_assessed_card", nac):
+                text = _rd_flow_text(pc.cat_related_domains({"related_domains": rd_}, S))
+            flat = " ".join(text.split())
+            # The card's own opening text: the Not assessed reason without the
+            # shared "how related domains are handled" paragraph, or the
+            # fallback sentence of the "none found" card.
+            own_lead = None
+            if state in ("not_run", "degraded", "confirmed_unassessed") and reasons:
+                own_lead = reasons[-1]
+                if own_lead.endswith(" " + pc._RD_HOW):
+                    own_lead = own_lead[: -len(" " + pc._RD_HOW)]
+            elif state == "none_found" and fallbacks:
+                own_lead = fallbacks[-1]
+            more = _re.search(r"and (\d+) more\.", text)
+            notes = ([] if state == "not_run" else
+                     pc._rd_notes(rd_, state in ("confirmed", "confirmed_unassessed")))
+            if state == "confirmed_unassessed":
+                badge = ["not_assessed", "Not assessed"]
+            elif state == "confirmed":
+                badge = list(badge_of.get((sink or ["?"])[-1], ("?", "?")))
+                if badge[0] == "warning" and "discovery" not in rd_:
+                    badge[1] = "Not verified"
+            else:
+                badge = None
+            lead = None
+            if state == "confirmed" and "discovery" in rd_:
+                full = ed.related_domains_fully_assessed(rd)
+                lead = ("The domains confirmed by the broker were assessed." if full else
+                        "The domains confirmed by the broker were only partly assessed; "
+                        "the notes below say what was not.")
+                if _re.search(r"&nbsp;&nbsp;<b>[^<]+</b>:|and \d+ more\.", text):
+                    # Only where the card lists candidates.
+                    lead += (" Domains found on certificate records but not confirmed "
+                             "are listed for confirmation and have not been assessed.")
+            return {
+                "state": state,
+                "full": ed.related_domains_fully_assessed(rd),
+                "notes": notes,
+                # The notes, candidates and count as the card RENDERED them.
+                "notes_rendered": all(" ".join(n.split()) in flat for n in notes),
+                "badge": badge,
+                "pending": _re.findall(r"&nbsp;&nbsp;<b>([^<]+)</b>:", text),
+                "extra": int(more.group(1)) if more else 0,
+                "lead": lead,
+                "own_lead": own_lead,
+                "legacy": "discovery" not in rd_,
+                "submitted": str(rd_.get("submitted_count") or rd_.get("declared_count", 0)),
+                "sources": (list((rd_.get("discovery") or {}).get("sources_ok") or [])
+                            if state in ("none_found", "awaiting_confirmation") else None),
+                "text": flat,
+            }
+
+        py = [python_view(rd) for rd in cases]
+        harness = ("import { readFileSync } from 'node:fs'\n"
+                   "import * as R from './relatedDomains.mts'\n"
+                   "const cases = JSON.parse(readFileSync(process.argv[2], 'utf8'))\n"
+                   "const out = cases.map((rd) => {\n"
+                   "  const m = R.relatedDomainsPanel(rd)\n"
+                   "  return { state: R.relatedDomainsState(rd), full: R.relatedDomainsFullyAssessed(rd),\n"
+                   "    lead: m.lead, notes: m.notes, badge: m.badge ? [m.badge.state, m.badge.label] : null,\n"
+                   "    rows: m.rows.map((x) => [x.label, x.value]), pending: m.pending.map((c) => c.domain),\n"
+                   "    extra: m.extra, sources: m.sources }\n"
+                   "})\n"
+                   "console.log(JSON.stringify(out))\n")
+        detail, ok = "", False
+        with tempfile.TemporaryDirectory() as td:
+            cp = os.path.join(td, "cases.json")
+            with io.open(cp, "w", encoding="utf-8") as fh:
+                json.dump(cases, fh)
+            shutil.copyfile(mod, os.path.join(td, "relatedDomains.mts"))
+            mts = os.path.join(td, "rd_check.mts")
+            with io.open(mts, "w", encoding="utf-8") as fh:
+                fh.write(harness)
+            try:
+                run = subprocess.run([node, "--no-warnings", mts, cp], capture_output=True,
+                                     text=True, timeout=60)
+                line = (run.stdout.strip().splitlines() or [""])[-1]
+                ts = json.loads(line) if line.startswith("[") else None
+                if run.returncode != 0 or ts is None:
+                    detail = "node failed: %s" % (run.stderr.strip()[-300:] or line)
+                else:
+                    diffs = []
+                    for i, (p, t) in enumerate(zip(py, ts)):
+                        for key in ("state", "full", "notes", "badge", "pending", "extra",
+                                    "sources"):
+                            if p[key] != t[key]:
+                                diffs.append((i, key, p[key], t[key]))
+                        if not p["notes_rendered"]:
+                            diffs.append((i, "notes_rendered", p["notes"][:1], None))
+                        # Rows: every label and value as the card prints them.
+                        if p["state"] == "confirmed":
+                            for label, value in t["rows"]:
+                                if ("%s %s" % (label, value)).lower() not in p["text"].lower():
+                                    diffs.append((i, "row", label, value))
+                            if len(t["rows"]) != 4:
+                                diffs.append((i, "rows", 4, len(t["rows"])))
+                        elif p["state"] == "confirmed_unassessed":
+                            if t["rows"] != [["submitted for assessment", p["submitted"]]]:
+                                diffs.append((i, "rows", p["submitted"], t["rows"]))
+                        elif t["rows"]:
+                            diffs.append((i, "rows", [], t["rows"]))
+                        # The lead: the card's own opening where the two share
+                        # one, the card's candidate sentence for candidates
+                        # awaiting confirmation, and the assessed or partly
+                        # assessed wording, or the stored-result sentence,
+                        # for confirmed domains.
+                        lead = " ".join(t["lead"].split())
+                        if p["state"] in ("not_run", "degraded", "none_found",
+                                          "confirmed_unassessed"):
+                            ok_lead = lead == " ".join((p["own_lead"] or "").split())
+                        elif p["state"] == "awaiting_confirmation":
+                            # Every sentence is the card's (its "NOT" is
+                            # capitalised), and none of its key phrases is lost.
+                            sents = [x for x in _re.split(r"(?<=\.)\s+", lead) if x]
+                            need = ["none has been confirmed, so none has been assessed or scored"]
+                            if p["pending"] or p["extra"]:
+                                need += ["have not been assessed and do not affect the score",
+                                         "not evidence that the wider estate is clean"]
+                            ok_lead = (all(x.lower() in p["text"].lower() for x in sents)
+                                       and all(n in lead.lower() for n in need))
+                        elif p["legacy"]:
+                            # The card's own sentence, from What This Means.
+                            ok_lead = lead == pc._RD_LEGACY_CONFIRMED
+                        else:
+                            ok_lead = lead == p["lead"]
+                        if not ok_lead:
+                            diffs.append((i, "lead", p["lead"] or p["text"][:80], t["lead"][:80]))
+                    ok = len(ts) == len(py) and not diffs
+                    detail = "%d cases, %d disagree %s" % (len(ts), len(diffs), diffs[:3])
+            except Exception as exc:
+                detail = "node run raised %r" % exc
+        if not ok:
+            failures.append("discovery[ts]: dashboard vs Python and the PDF card: " + detail)
+        report(ok, "dashboard_matches_the_pdf_card", detail[:60])
+
+    # 12. The price model this contract rests on. A skipped category must price
+    # ABOVE absent: that is the +8.47 inversion the contract prevents. If not,
+    # the scorer changed and this guard no longer describes a real risk.
+    skipped = price({"status": "skipped", "score": 100, "declared_count": 0,
+                     "scanned_count": 0, "critical_count": 0, "high_count": 0,
+                     "dependants": [], "issues": []})
+    ok = skipped > absent
+    if not ok:
+        failures.append("discovery MUTATION is vacuous: status 'skipped' now prices "
+                        "the same as absent (%s vs %s)" % (skipped, absent))
+    report(ok, "MUTATION skipped still prices above absent", "(%s > %s)" % (skipped, absent))
+
+    st = csc.RelatedDomainsChecker().check("acme.co.za", []).get("status")
+    ok = st == "completed"
+    if not ok:
+        failures.append("discovery[checker]: empty confirmed list -> status %r, "
+                        "must be 'completed'" % st)
+    report(ok, "checker_empty_list_status", "-> %s" % st)
+
+
 def _check_cdn_edge_detection(failures):
     """A content delivery network edge must be recognised from its ADDRESS, and
     an edge-only assessment must never claim full confidence.
@@ -4646,6 +8014,7 @@ def main():
     _check_export_mailbox_scope(failures)
     _check_default_cert_verdict(failures)
     _check_tls_port_gate(failures)
+    _check_discovery_parity(failures)
     _check_gate_self_wiring(failures)
     _check_lookalike_ownership(failures)
     _check_lookalike_posture(failures)
