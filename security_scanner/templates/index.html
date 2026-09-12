@@ -665,7 +665,7 @@ function normalizeDomainOnce(raw) {
   if (angle && !/^\s*(?:(?:https?|ftp):\/\/|\/\/|mailto:)/.test(angle[1].toLowerCase())) {
     // A host before the brackets is the target; without one the value is a
     // display name and its address is (the server does the same).
-    const host = angle[1].match(/^\s*["']?(?:[a-z0-9-]+\.)+[a-z]{2,}(?![a-z0-9-])/i);
+    const host = angle[1].match(/^\s*["']?(?:[a-z0-9-]+\.)+[a-z]{2,}(?![a-z0-9-])(?!\.[a-z0-9-])/i);
     s = host ? host[0] : angle[2];
   }
   s = strip(s.replace(/^["'<>]+|["'<>]+$/g, '')).toLowerCase();
@@ -952,17 +952,28 @@ function collectRelatedDomains() {
     // clean to a truthy string, or a line whose host is a company name drops
     // entirely and the confirmed domain is never sent (round 11, IR11-1). A
     // line carrying only an address still yields that domain.
-    const qualifies = (p) => {
-      const d = normalizeDomainInput(p);
-      return !!d && d.includes('.');
-    };
+    // A host is what the API would accept, not merely something with a dot in
+    // it: a date, an amount, an IP, initials or a version number all contain
+    // one, and any of them captured the hosts branch and dropped the broker's
+    // real domain (round 12, IH12-1). Mirrors domain_validation._DOMAIN_RE.
+    const accept = (d) => /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i
+      .test(d || '');
+    const qualifies = (p) => accept(normalizeDomainInput(p));
+    // A contact is an ADDRESS. Testing the whole token for "@" cannot tell one
+    // from URL userinfo, and dropped "https://ops@host/portal" (round 12,
+    // IH12-5); the part before the first "/" still catches a bare address and a
+    // mailto:, and no longer catches a URL that carries a username.
+    const isContact = (p) => p.split('/')[0].includes('@');
     ta.value.split(/[\r\n]+/).forEach(line => {
       const parts = line.split(/[\s,;]+/).filter(Boolean);
-      const hosts = parts.filter(p => !p.includes('@'));
+      const hosts = parts.filter(p => !isContact(p));
       const use = hosts.some(qualifies) ? hosts : parts;
       use.forEach(raw => {
         const d = normalizeDomainInput(raw);
-        if (d && d.includes('.')) set.add(d);
+        // The same rule that picked the branch also accepts the value, so
+        // the form cannot send what the API would discard (round 12,
+        // IH12-1).
+        if (accept(d)) set.add(d);
       });
     });
   }

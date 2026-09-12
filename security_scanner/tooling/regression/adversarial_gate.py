@@ -3741,6 +3741,11 @@ def _check_discovery_parity(failures):
             credited.append(want_grp == "Assessed")
             if outcome_ == "partial" and flagged_ and "lower bound" not in slide:
                 bad.append("%s: %s does not state the lower bound" % (how, name_))
+            if (outcome_ == "partial" and flagged_
+                    and "carry a finding on an SPF chain that was only partly "
+                        "read" not in slide):
+                bad.append("%s: the verdict sub-line omits the partly read "
+                           "finding for %s" % (how, name_))
         if not any(credited) and "positive due-diligence result" in slide:
             bad.append("%s: the deck credits an unmeasured slide" % how)
     # Each deck block reads its own category's field, in mixed outcomes
@@ -3885,17 +3890,23 @@ def _check_discovery_parity(failures):
     # An outcome the rule does not know draws no card either: the allow-list is
     # pinned on the cards, not only on the deck, the row and the dashboard
     # (critique round 11, GS11-1).
+    # A never-list only forbids the spellings it happens to know. The row the
+    # broker reads is pinned outright (critique round 12, GS12-6).
+    if pc._SPF_PARTIAL_ROW != ("SPF chain", "Partly read - the vendors are a lower bound"):
+        bad.append("the partly-read row reads %r" % (pc._SPF_PARTIAL_ROW,))
     unknown_evs_ = dict(measured_evs, spf_lookup="truncated")
     unknown_vb_ = dict(measured_vb, spf_lookup="truncated")
     if (pc.cat_email_vendor_surface({"email_vendor_surface": unknown_evs_}, S)
             or pc.cat_vendor_breach({"vendor_breach": unknown_vb_}, S)):
         bad.append("an outcome the rule does not know draws a technical card")
 
-    def _sc_row(e_, v_):
+    def _sc_row(e_, v_, neighbour=None):
         r_ = with_rd(None)
         for k_ in ("dependency_manifests", "third_party_js", "cms_plugin_sbom",
                    "third_party_correlation", "hudson_rock"):
             r_["categories"][k_] = {"status": "error"}
+        if neighbour is not None:
+            r_["categories"]["dependency_manifests"] = neighbour
         r_["categories"]["email_vendor_surface"] = copy.deepcopy(e_)
         r_["categories"]["vendor_breach"] = copy.deepcopy(v_)
         return _summary_sc_row(pc.build_summary_table(r_, S))
@@ -3915,6 +3926,23 @@ def _check_discovery_parity(failures):
         ok_ = (row_.strip() == "") if want_ == "" else (want_ in row_)
         if not ok_:
             bad.append("summary row for %s reads %r, want %r" % (label_, row_[:140], want_))
+    # A measured neighbour beside an S-4/S-5 nobody read: without one,
+    # sc_any_completed is false and the row's green branch - the branch the
+    # unmeasured guard protects - is never reached, which is why removing that
+    # guard went uncaught (critique round 12, SC-ROW-CLEAN-OVER-UNMEASURED).
+    _clean_neighbour = {"status": "completed", "score": 100, "issues": [],
+                        "high_count": 0, "critical_count": 0, "exposed_manifests": []}
+    # The colour as well as the words: dropping the notes flips the label to
+    # "Clean", but removing the guard leaves the text alone and only turns the
+    # row green, and the row carries its own colour.
+    for label_, e_, v_, want_ in (
+            ("unmeasured_beside_measured", stored_evs, stored_vb, "not assessed"),
+            ("partly_beside_measured", evs_real["quiet_vendor_plus_timeout"],
+             vb_real["quiet_vendor_plus_timeout"], "partly read")):
+        row_n = _sc_row(e_, v_, _clean_neighbour)
+        low_n = row_n.lower()
+        if "clean" in low_n or "#16a34a" in low_n or want_ not in low_n:
+            bad.append("the summary row for %s reads %r" % (label_, row_n[:220]))
     # An outcome this rule does not know is not a measurement (FC10-3), and a
     # six-vendor surface is a finding on every surface (GS10-4).
     future_evs = dict(measured_evs, spf_lookup="truncated")
@@ -4403,6 +4431,9 @@ def _check_discovery_parity(failures):
         # whole and keeps the host, so the form must not also send the
         # contact's domain into the client's scope (round 10, IR10-3).
         tokens_.append("acme.co.za <info@brokerfirm.co.za>")
+        # URL userinfo is not a contact address: both doors keep the URL's host
+        # AND the plain host beside it (critique round 12, IH12-5).
+        tokens_.append("https://ops@group-holdings.com/portal supplier.co.za")
         js_d = (r"""
 const made = [];
 function el(tag) {
@@ -4448,8 +4479,13 @@ globalThis.fetch = async (url, opt) => {
   const contact0 = collectRelatedDomains();
   byId['related-domains'].value = 'Acme Group Holdings <info@acmegroup.co.za>';
   const named0 = collectRelatedDomains();
+  byId['related-domains'].value = 'acme-group.co.za acmeholdings.co.za';
+  const twohosts0 = collectRelatedDomains();
+  byId['related-domains'].value = 'Acme Group Holdings, 01.03.2026, ops@acme.co.za';
+  const dated0 = collectRelatedDomains();
   console.log(JSON.stringify({ boxes: boxes.length, ticked: ticked.length,
     collected: collected0, contact: contact0, named: named0,
+    twohosts: twohosts0, dated: dated0,
     asked: asked.map((a) => a.domain) }));
 })();
 """)
@@ -4468,6 +4504,15 @@ globalThis.fetch = async (url, opt) => {
         if sorted(dom.get("named") or []) != ["acmegroup.co.za"]:
             bad.append("the box drops a line whose host is a company name: %r"
                        % (dom.get("named"),))
+        # Every host on the line, not just the first (critique round 12,
+        # GS12-4), and a token that merely contains a dot is not a host, or it
+        # captures the branch and drops the broker's domain (IH12-1).
+        if sorted(dom.get("twohosts") or []) != ["acme-group.co.za", "acmeholdings.co.za"]:
+            bad.append("the box keeps only some hosts on a line: %r"
+                       % (dom.get("twohosts"),))
+        if sorted(dom.get("dated") or []) != ["acme.co.za"]:
+            bad.append("a dotted non-domain token captured the host branch: %r"
+                       % (dom.get("dated"),))
         want_col = sorted(_dv_form.clean_related_domains(tokens_))
         got_col = sorted(_dv_form.clean_related_domains(dom.get("collected") or []))
         if (dom.get("boxes") != 2 or dom.get("ticked") != 0 or got_col != want_col
@@ -4551,7 +4596,10 @@ globalThis.fetch = async (url, opt) => {
     # These clean to a host of their own, so the fixed pair url_raws asserts is
     # not about them. They are still compared door to door below, and each has
     # its expected host stated outright (GS11-2, IR11-1).
-    host_raws = ["acme.africa <info@brokerfirm.co.za>",
+    host_raws = ["acme-group.co.za <info@brokerfirm.co.za>",
+                 "first-national.co.za, attn Jane <jane@brokerfirm.co.za>",
+                 "acme.co.za1 <accounts@acme.co.za>",
+                 "acme.africa <info@brokerfirm.co.za>",
                  "acme.insurance <accounts@brokerfirm.co.za>",
                  "acme.capetown <ops@brokerfirm.co.za>",
                  "Acme Group Holdings <info@acmegroup.co.za>"]
@@ -4565,7 +4613,15 @@ globalThis.fetch = async (url, opt) => {
             ("acme.capetown <ops@brokerfirm.co.za>", "acme.capetown"),
             ("acme.co.za. <info@brokerfirm.co.za>", "acme.co.za"),
             ("acme.co.za, attn Jane <jane@brokerfirm.co.za>", "acme.co.za"),
-            ("Acme Group Holdings <info@acmegroup.co.za>", "acmegroup.co.za")):
+            ("Acme Group Holdings <info@acmegroup.co.za>", "acmegroup.co.za"),
+            # A hyphen is a host character: narrowing the label class on both
+            # doors kept parity and handed the scan to the contact (GS12-2).
+            ("acme-group.co.za <info@brokerfirm.co.za>", "acme-group.co.za"),
+            ("first-national.co.za, attn Jane <jane@brokerfirm.co.za>",
+             "first-national.co.za"),
+            # A label after the host must not be dropped by backtracking to a
+            # shorter one: this falls through to the address (IH12-2).
+            ("acme.co.za1 <accounts@acme.co.za>", "acme.co.za")):
         got_host_ = _dv_host.normalize_domain(raw_)
         if got_host_ != want_host_:
             bad.append("the cleaner reads %r as %r, want %r"
@@ -4605,6 +4661,23 @@ globalThis.fetch = async (url, opt) => {
                   "sib5.co.za", "sib6.co.za", "sib7.co.za", "sib8.co.za", "sib9.co.za",
                   "sib10.co.za", "sib11.co.za", "sib12.co.za"]:
         bad.append("the API keeps %r" % got_rd)
+    # A contact beside a host, on ONE entry, through the API door: the rule the
+    # form applies must apply here too, or the same pasted text scopes in the
+    # broker's own domain depending on which door it arrives through (critique
+    # round 12, GS12-3). Every entry here is one string, as a client posts it.
+    for entry_, want_rd_ in (
+            ("supplier.co.za jane@brokerfirm.co.za", ["supplier.co.za"]),
+            ("acme.co.za <info@brokerfirm.co.za>", ["acme.co.za"]),
+            ("acme-group.co.za acmeholdings.co.za",
+             ["acme-group.co.za", "acmeholdings.co.za"]),
+            # A dotted non-domain token is not a host, and a display-name entry
+            # still falls through to whole-entry cleaning (IH12-1).
+            ("Acme Group Holdings, 01.03.2026, ops@acme.co.za", ["acme.co.za"]),
+            ("Accounts/Finance <accounts@acme.co.za>", ["acme.co.za"])):
+        got_e_ = _dv.clean_related_domains([entry_])
+        if got_e_ != want_rd_:
+            bad.append("the API reads %r as %r, want %r"
+                       % (entry_, got_e_, want_rd_))
     for raw_, want_ in (("https://www.acme.co.za/contact?email=jane@gmail.com", "www.acme.co.za"),
                         ("acme.co.za/?utm_source=x&to=info@mimecast.com", "acme.co.za"),
                         ("mailto:info@acme.co.za?subject=x", "acme.co.za"),
@@ -5519,6 +5592,21 @@ globalThis.fetch = async (url, opt) => {
     # ST7-2); the Additional Intelligence Sources panels use it.
     if "<CheckerHeader category={c} refine />" not in page_tsx_n:
         bad.append("MoreCheckers does not refine its badges")
+    # Pinning panelShowsCounts in isolation left the caller free: replacing the
+    # one decision line puts the counts back over a chain nobody read, and the
+    # gate stayed green (critique round 12, GS12-1).
+    with io.open(os.path.join(SEC, "frontend", "src", "components", "detail",
+                              "parts.tsx"), encoding="utf-8") as fh:
+        parts_src = fh.read().replace("\r\n", "\n")
+    # Forced with no reason given, the note must fail closed rather than explain
+    # a not-assessed checker as "(passed)" (critique round 12, SC-NOTE-PASSED).
+    if "force ? 'the checker recorded no measurement'" not in parts_src:
+        bad.append("the forced not-assessed note takes its reason from the status")
+    for need_ in ("const unmeasured = !panelShowsCounts(c)",
+                  "<NotAssessedNote category={c} force",
+                  "vendorSurfacePartial(c as unknown as Record<string, unknown>)"):
+        if need_ not in page_tsx_n:
+            bad.append("MoreCheckers does not consume the measurement gate: %r" % need_)
     cs_path = os.path.join(SEC, "frontend", "src", "data", "checkerState.ts")
     node_cs = shutil.which("node")
     if not node_cs:
@@ -5697,6 +5785,15 @@ globalThis.fetch = async (url, opt) => {
         "vb_unknown_outcome": future_vb,
         "vb_matches": vb_real["nested_answered"],
         "vb_stored": stored_vb,
+        # An errored provider leaves its counts at the zeros it initialised
+        # them to, and hb_cases carried no failing status at all until now
+        # (critique round 12, R12-1, R12-4).
+        "intelx_error": {"status": "error", "error": "poll timed out", "issues": [],
+                         "total_results": 0, "paste_count": 0, "leak_count": 0,
+                         "darkweb_count": 0},
+        "hudson_error": {"status": "error", "error": "no answer", "issues": [],
+                         "compromised_employees": 0, "compromised_users": 0,
+                         "third_party_exposures": 0},
         "dependency_manifests": {"status": "completed", "high_count": 1, "critical_count": 0},
         "credential_correlation": {"status": "completed", "severity": "none", "assessed": False},
         "cms_plugin_sbom": {"status": "completed", "is_wordpress": True, "plugin_count": 1,
@@ -5776,6 +5873,9 @@ globalThis.fetch = async (url, opt) => {
         "vb_stored_with_vendor": True, "vb_answered": True, "vb_matches": True,
         "dependency_manifests": True, "cms_plugin_sbom": True,
     }
+    psc_want["intelx_error"] = False
+    psc_want["hudson_error"] = False
+    psc_want["vb_partial_matches"] = True
     psc_got = hb_out.get("__counts") or {}
     for k_, w_ in sorted(psc_want.items()):
         if psc_got.get(k_) != w_:

@@ -184,7 +184,12 @@ export function headerBadge(category: CategoryBase | undefined,
  *  finding of absence, and the broker skimming the panel reads a clean vendor
  *  estate off three zeros (step-5 critique round 11, R11-SC-2). */
 export function panelShowsCounts(category: CategoryBase | undefined): boolean {
-  return headerBadge(category, true).state !== 'not_assessed'
+  // Every non-conclusive state, not just not_assessed: an errored provider
+  // leaves its count fields at the zeros it initialised them to, and "0 leaks"
+  // over a checker that fell over reads exactly like a clean estate (step-5
+  // critique round 12, R12-1).
+  const b = headerBadge(category, true)
+  return b.state !== 'not_assessed' && STATE_META[b.state].conclusive
 }
 
 export function inconclusiveLabel(raw: string | null | undefined): string {

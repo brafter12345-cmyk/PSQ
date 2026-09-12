@@ -1886,6 +1886,31 @@ each is a checker's fidelity rather than discovery parity:
   25, 11, 7, 18 and 29 by hand; nothing stops the next edit to any of those
   tables doing it again. Fix: parse the counts out of manual_parts and the audit
   and assert each against the table the code actually loads.
+- **A detected vendor the breach table cannot cover renders an unqualified clean
+  (R12-S5-CLEAN-WITHOUT-COVERAGE, refuted in round 12 as a round-12 defect).**
+  Where the SPF chain is fully read and every vendor it names falls outside the
+  seven the curated database covers - 18 of the 25 detectable patterns - S-5 is
+  counted as an assessed clean signal on all four surfaces. The manual now says
+  a clean S-5 for such a vendor means there is no row rather than no incident;
+  the surfaces do not. It cannot discount a rate today, because the signal
+  prices at +0 either way, but it reads as a measurement that was never
+  possible. Fix: where every detected vendor is outside the covered set, say so
+  on the deck, the card and the row instead of counting it clean.
+- **An entry the API discards is recorded nowhere (IH12-4, refuted in round 12
+  as pre-existing).** A broker who types "Acme Holdings (acme.co.za)" or
+  "acme.co.za|supplier.co.za" has the entry dropped by clean_related_domains and
+  nothing on any surface says a confirmed domain was rejected; the estate simply
+  renders as though it were never submitted. Fix: return the discarded entries
+  alongside the kept ones and pass them into build_related_domains_category, so
+  they join confirmed_rejected, which every surface already reports.
+- **An address-only line becomes a broker-confirmed domain with no cue (IH12-3,
+  downgraded to low).** A CRM row with a name and an address but no domain
+  column - "Jane Smith <jane@brokerfirm.co.za>" - yields the contact's domain,
+  which is then probed and scored as a confirmed related domain. The rule is
+  deliberate (an address-only line is the broker naming a domain by its
+  address), but nothing echoes the collected list before submit, so the broker
+  never sees what will actually be scanned. Fix: echo the cleaned list under the
+  textarea, or route an address-only line through the candidate-confirmation UI.
 
 ### Step 5 critique round 8 (2026-09-11)
 
@@ -2094,8 +2119,10 @@ refuted ten; round 12 acted on or recorded every one:
   the one surface showing figures. parts.tsx has stated the rule since the
   credential panel - render the note INSTEAD of the numbers - and it was wired
   to one checker. The decision is now one exported function,
-  checkerState.panelShowsCounts, which the gate runs under node on real checker
-  output.
+  checkerState.panelShowsCounts, which the gate runs under node over the checker
+  shapes: the SPF walks are real checker output, the stored and unknown-outcome
+  shapes are derived from it, and an errored provider was added in round 12's
+  critique, which found the case list carried no failing status at all (R12-4).
 - A PARTLY READ SIGNAL WAS COUNTED AS ASSESSED (R11-SC-3, low). A partial walk
   carrying a finding kept its severity, so the deck counted it among the
   assessed signals and named it under "Assessed:" while that same card's
@@ -2145,3 +2172,70 @@ refuted ten; round 12 acted on or recorded every one:
   kernel is fixed above), GS11-6 (the badge severity table), and R11-CVC-1, -2,
   -3, -5 and -6 as underwriting defects - each factual core was true, and each
   is corrected above or recorded in 5af.
+
+### Step 5 critique round 12 (2026-09-12)
+
+A twelfth critique (twenty-eight agents) upheld eighteen findings, two of them
+high, and refuted five. Six of the eighteen were regressions round 12 itself
+introduced, which is the case for running the critique on every round: round 13
+acted on or recorded every one.
+
+- A DOTTED TOKEN COUNTED AS A HOST (IH12-1, high; a round-12 regression). The
+  box qualified a host as anything cleaning to a value with a dot in it, so a
+  date, an amount, an IP, initials or a version number - "01.03.2026", "R1.5m",
+  "196.22.1.5", "s.a", "v2.1" - captured the hosts branch. A pasted supplier row
+  then sent nothing at all and the broker's confirmed domain was dropped with no
+  trace on any surface. A token now qualifies only if it passes the rule the API
+  itself accepts: every label a host label, and a final label of two or more
+  letters.
+- THE HOST RULE BACKTRACKED TO A SHORTER HOST (IH12-2, high; a round-12
+  regression). Round 11's trailing lookahead could be satisfied by giving back
+  characters: "acme.co.za1 <accounts@acme.co.za>" failed at full length and then
+  matched "acme.co" - a different registrable domain - so the scan was silently
+  retargeted. A second lookahead refuses a match that still has a label after
+  it, and the value falls through to the contact as it did before round 12.
+- THE LOWER-BOUND ROW VANISHED BESIDE A FINDING (SC-PANEL-PARTLY,
+  R12-DASH-PARTLY-BESIDE-FINDING, R12-2). Round 12 gated the dashboard's
+  "partly read - the figures above are a lower bound" row on the badge LABEL,
+  and headerBadge drops that label as soon as the result carries a critical or
+  high finding. So exactly when a partly read chain HAD found a breached vendor,
+  the counts printed with no qualifier, while the technical card - which keys on
+  the data - printed it. The row now keys on the same predicate the card does.
+  The gate could not see this because the fixture for that case had its matches
+  stripped, which is the one shape where the old guard still fired.
+- THE PANEL GATE COVERED ONE STATE IN EIGHT (R12-1, medium). panelShowsCounts
+  suppressed counts for "not assessed" only, so an IntelX or Hudson Rock checker
+  that ERRORED still printed four zeros - the very shape round 11 introduced it
+  for. Every non-conclusive state now suppresses them.
+- THE SUMMARY ROW READ CLEAN OVER AN UNMEASURED VENDOR SURFACE
+  (SC-ROW-CLEAN-OVER-UNMEASURED, high; pre-existing, and the same defect round
+  11 refuted as R11-SC-1). The row already refused to COUNT an unmeasured or
+  partly read S-4/S-5 as completed, but as soon as any other supply-chain signal
+  completed the label fell through to a bare green "Clean" over a vendor surface
+  nobody read. The gap is now named in the row's notes, as an incomplete
+  related-domain estate already was, and it can no longer reach the green
+  branch. Fixed rather than recorded, because it is the fail-closed rule itself.
+- THE API DOOR KEPT THE CONTACT (GS12-3, medium; R12-3). Round 12 taught the
+  form that a contact beside a host is a contact and left the API alone, so
+  "supplier.co.za jane@brokerfirm.co.za" posted as one entry still replaced the
+  supplier with the broker firm in the client's scope - and the comment round 12
+  wrote said the opposite. The same per-line rule now applies server side,
+  deliberately narrow: only where an entry has more than one token, one an
+  address and another a name the function would itself accept.
+- SMALLER INPUT AND WORDING DEFECTS (IH12-5, SC-NOTE-PASSED). A token was read
+  as a contact if it contained "@" anywhere, which cannot tell an address from
+  URL userinfo, so "https://ops@host/portal" was dropped; the test now looks
+  only before the first "/". And the not-assessed note, forced with no reason
+  given, fell back to the status label and told the reader "(passed)".
+- GATE (GS12-1, GS12-2, GS12-4, GS12-5, GS12-6, R12-4). The Exposure page must
+  CONSUME the measurement gate, not merely have one available; the partly-read
+  row's words are pinned outright rather than by a list of forbidden spellings;
+  the per-input host table carries a hyphenated host and the backtracking shape;
+  the box is driven with two hosts on one line and with a dotted non-domain
+  token; the deck's verdict sub-line must account for a partly read signal's
+  finding; and the panel gate is asked about an errored provider.
+- REFUTED: SC-DECK-TALLY (the sub-line is two sentences and partitions the
+  flagged set; the finding quoted only the first), SC-ROW-UNKNOWN-OUTCOME,
+  R12-S5-CLEAN-WITHOUT-COVERAGE, IH12-4 and R12-2 as round-12 defects - the last
+  three reproduce but are pre-existing or already corrected above, and the first
+  two are recorded in 5af.

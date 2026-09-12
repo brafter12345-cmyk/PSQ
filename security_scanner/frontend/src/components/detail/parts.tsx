@@ -27,7 +27,12 @@ export function NotAssessedNote({ category, what, why: reason, force = false }:
   // must not print its counts either (step-5 critique round 11, R11-SC-2).
   // reason: where the status is not the reason, the caller supplies it.
   if (!category || (!force && isConclusive(category))) return null
-  const why = (reason || inconclusiveLabel(category.status as string)).toLowerCase()
+  // Forced, with no reason given, the status is not the reason: a completed
+  // checker marked assessed: false would explain itself as "(passed)" under a
+  // heading that says Not assessed (step-5 critique round 12, SC-NOTE-PASSED).
+  const why = (reason
+    || (force ? 'the checker recorded no measurement' : inconclusiveLabel(category.status as string))
+  ).toLowerCase()
   return (
     <div style={{ fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-secondary)',
       background: 'var(--panel-bg-elevated)', border: '1px solid var(--border-emphasis)',

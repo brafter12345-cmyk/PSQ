@@ -4681,6 +4681,14 @@ def build_summary_table(results: dict, S) -> Table:
         and not spf_surface_partial(c) for c in (evs_cat, vb_cat)
     ) or (rd_cat.get("status") == "completed"
           and (rd_cat.get("scanned_count") or 0) > 0)
+    # An S-4/S-5 that was not assessed, or was only partly read, is NAMED here.
+    # Without it this row reads a plain green "Clean" over a vendor surface
+    # nobody measured, as soon as any other supply-chain signal completed
+    # (step-5 critique round 12, SC-ROW-CLEAN-OVER-UNMEASURED).
+    _sc_pairs = (("email-vendor surface", evs_cat),
+                 ("vendor-breach correlation", vb_cat))
+    _sc_gap = [n for n, c in _sc_pairs if spf_surface_unmeasured(c)]
+    _sc_low = [n for n, c in _sc_pairs if spf_surface_partial(c)]
     if (sc_any_completed or any(sc_n.values()) or sc_cross or _rd_note
             or _rd_waiting or _rd_down or _rd_none):
         # Worst severity drives the colour; the cross-correlation can lift it.
@@ -4691,7 +4699,8 @@ def build_summary_table(results: dict, S) -> Table:
         elif sc_n["MEDIUM"] > 0 or _rd_note or (sc_cross and sc_cross[0] == "MEDIUM"):
             # An incomplete related-domain assessment is amber, never green.
             sc_col = C_AMBER
-        elif sc_any_completed and not (_rd_waiting or _rd_down or _rd_none):
+        elif (sc_any_completed and not (_rd_waiting or _rd_down or _rd_none)
+                and not _sc_gap and not _sc_low):
             sc_col = C_GREEN
         else:
             # Candidates awaiting confirmation were not assessed: informational,
@@ -4715,7 +4724,9 @@ def build_summary_table(results: dict, S) -> Table:
             [f"{_rd_waiting} related domain(s) found, awaiting confirmation"]
             if _rd_waiting else []) + (
             ["related-domain discovery could not run"] if _rd_down else []) + (
-            ["no related domains found on certificate records"] if _rd_none else [])
+            ["no related domains found on certificate records"] if _rd_none else []) + (
+            ["the %s was not assessed" % " and the ".join(_sc_gap)] if _sc_gap else []) + (
+            ["the %s was only partly read" % " and the ".join(_sc_low)] if _sc_low else [])
         if bits:
             sc_label = " · ".join(bits + notes)
         elif not notes:

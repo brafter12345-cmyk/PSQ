@@ -36,7 +36,11 @@ _DISPLAY_ADDR_RE = re.compile(r"^(?P<pre>[^<>]*)<(?P<addr>[^<>@\s]*@[^<>\s]*)>\s
 # The host ends where host characters end. An allow-list of the four
 # separators that may follow missed a trailing dot or comma, and the value then
 # fell through to the contact's address (step-5 critique round 11, IR11-2).
-_HOSTLIKE_RE = re.compile(r"\s*[\"']?(?:[a-z0-9-]+\.)+[a-z]{2,}(?![a-z0-9-])", re.I)
+# The second lookahead refuses a SHORTER match: without it "acme.co.za1"
+# backtracks to "acme.co" and retargets the scan at another registrable domain
+# (step-5 critique round 12, IH12-2).
+_HOSTLIKE_RE = re.compile(
+    r"\s*[\"']?(?:[a-z0-9-]+\.)+[a-z]{2,}(?![a-z0-9-])(?!\.[a-z0-9-])", re.I)
 
 # A scheme, or a chain of them (mailto://jane@..., https://http://...).
 _SCHEME_RE = re.compile(r"^(?:(?:https?|ftp)://|//|mailto:)+")
@@ -142,17 +146,39 @@ def clean_related_domains(raw_related) -> list:
     out, seen = [], set()
     if not isinstance(raw_related, list):
         return out
-    for raw in raw_related:
-        d = normalize_domain(str(raw))
+
+    def _clean(value):
+        d = normalize_domain(str(value))
         # A wildcard prefix, in as many layers as were pasted, stripped in one
         # go and normalised again, a bounded number of times.
         for _ in range(4):
             if not d.startswith("*."):
                 break
             d = normalize_domain(d.lstrip("*."))
+        return d
+
+    def _keep(value):
+        d = _clean(value)
         if d and valid_domain(d) and d not in seen:
             seen.add(d)
             out.append(d)
+
+    for raw in raw_related:
+        s = str(raw)
+        # A contact address beside a host, on one entry, is a contact - the rule
+        # the scan form applies, now applied here too, so the same text cannot
+        # scope in the broker's own domain through this door (step-5 critique
+        # round 12, GS12-3). Deliberately narrow: only where the entry carries
+        # more than one token, one of them an address, and another a name this
+        # function would itself accept. Every single-token entry is untouched.
+        toks = [t for t in re.split(r"[\s,;]+", s) if t]
+        if len(toks) > 1:
+            hosts = [t for t in toks if "@" not in t.split("/")[0]]
+            if any(valid_domain(_clean(t)) for t in hosts):
+                for t in hosts:
+                    _keep(t)
+                continue
+        _keep(s)
     return out
 
 
