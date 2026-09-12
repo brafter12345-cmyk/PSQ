@@ -1911,6 +1911,40 @@ each is a checker's fidelity rather than discovery parity:
   address), but nothing echoes the collected list before submit, so the broker
   never sees what will actually be scanned. Fix: echo the cleaned list under the
   textarea, or route an address-only line through the candidate-confirmation UI.
+- **A category missing from the result is priced as a measured clean one, and
+  certified a complete scan (FC13-2, upheld HIGH, pre-existing).**
+  apply_risk_score prices a name in WEIGHTS that is absent from the categories
+  dict exactly as it prices a measured clean one, and the completeness
+  percentage, the reliability flag and the confidence level all read as though
+  the scan were whole. The repo's own baseline fixture is such a result for S-4
+  and S-5. This is the fail-closed rule at the PRICING layer rather than a
+  reporting surface, and the fix moves prices on every scan with a missing
+  category, so it needs an owner decision and a golden re-baseline rather than a
+  quiet change. Fix: treat a missing or unmeasured weighted category as a failed
+  one - excluded, its weight redistributed, and the completeness and reliability
+  figures stated accordingly.
+- **Five Executive-Summary rows print green over a checker that produced no data
+  (FC13-3, upheld HIGH, pre-existing).** dnsbl, exposed_admin,
+  high_risk_protocols, vpn_remote and breaches each render a green traffic light
+  and a zero or "No" when the checker errored, timed out or is absent, so the
+  most-read page of the report states an absence of findings as a finding of
+  absence - including the RDP Exposed row. Email Security and HTTP Security
+  Headers already get the treatment this needs. Fix: render "Not assessed" in
+  the neutral colour for those rows where the category did not complete, plus
+  the _breach_summary_row fallback.
+- **A single entry with a trailing comma is kept by the form and discarded by
+  the API (IH13-6, refuted as a round-13 defect; pre-existing).** "acme.co.za,"
+  pasted out of a spreadsheet cell is sent by the form as acme.co.za, while the
+  API cleans the entry whole, leaves the comma in place, fails valid_domain and
+  drops it with nothing said on any surface. It is surfaced for free once IH12-4
+  is implemented (return the discarded entries so they join confirmed_rejected).
+- **An entry carrying two contact addresses and no host loses one (R13-IN-3,
+  refuted as a round-13 defect; pre-existing).** Through the form both addresses
+  yield their domains; posted to the API as one entry, only the last survives,
+  so a broker-confirmed domain is dropped silently. Fix: give the server the
+  form's fallback - where no token qualifies as a host, clean each token and
+  keep every valid result - and pin both doors with the entry in the gate's
+  per-entry table.
 
 ### Step 5 critique round 8 (2026-09-11)
 
@@ -2239,3 +2273,62 @@ acted on or recorded every one.
   R12-S5-CLEAN-WITHOUT-COVERAGE, IH12-4 and R12-2 as round-12 defects - the last
   three reproduce but are pre-existing or already corrected above, and the first
   two are recorded in 5af.
+
+### Step 5 critique round 13 (2026-09-12)
+
+A thirteenth critique (twenty-seven agents) upheld fifteen findings, two of them
+high, and refuted seven. Several of the fifteen were regressions round 13 itself
+introduced, and one of round 14's own fixes regressed a round-13 fix in turn,
+which the gate caught before it could ship. Round 14 acted on or recorded every
+one:
+
+- A WILDCARD ENTRY SENT NOTHING (IH13-1, R13-IN-1, high; a round-13 regression).
+  The form's accept() mirrored _DOMAIN_RE in isolation, but the API strips a
+  wildcard prefix before validating and caps the length. So "*.acme.co.za" - the
+  shape certificate SANs are written in, and one the API explicitly supports -
+  was rejected, the box sent nothing, and the estate rendered as though the
+  broker had typed nothing. accept() now strips the prefix the same bounded way
+  the server does and applies the same length cap.
+- A SCHEME HID A CONTACT, AND THEN HID A HOST (IH13-2, R13-IN-2, high and
+  medium; a round-13 regression, and a round-14 one on top of it). Testing for
+  "@" before the first "/" let "mailto://jane@x" and "//accounts@x" read as
+  HOSTS, so the broker firm's own domain was scoped into the client's supply
+  chain on both doors. The first fix stripped the scheme chain and then tested -
+  which measured identically for every @-bearing shape and dropped a genuine
+  portal URL carrying a username, regressing round 13's own IH12-5 fix. The
+  scheme is now READ: mailto: is an address; http, https and ftp are URLs whose
+  userinfo is not a contact; a protocol-relative token is a contact only when it
+  carries an address and no path.
+- AN UNREADABLE HOST BECAME THE CONTACT'S DOMAIN (IH13-3, medium; a round-13
+  regression). The doubled lookahead stopped the host rule reading a shorter
+  host, but the call site treated "no host matched" as "this is a display name"
+  and used the bracketed address - so refusing to read "acme.co.za1" handed the
+  scan to the contact. Host-shaped but unreadable now fails closed.
+- THE SUMMARY ROW READ CLEAN OVER AN ERRORED, TIMED-OUT OR ABSENT S-4/S-5
+  (FC13-1, R13-ROW-CLEAN-OVER-ERRORED-S4S5, upheld high; pre-existing). Round
+  12's guard keyed on the two spf_lookup shapes, and both predicates answer no
+  for the three shapes a checker actually fails in, so a single completed
+  neighbour put the row back on green "Clean" over a vendor surface nobody read.
+  The deck filed the same payload under "Not assessed (no scan data)" and the
+  dashboard returned false from its measurement gate; the row was the one
+  surface left out. The predicate is now total: anything that is not a completed
+  or no_data measurement was not measured, a missing category included.
+- THE DECK CREDITED A SCAN THAT MOSTLY DID NOT RUN (FC13-5, medium). With one
+  supply-chain signal assessed and five not, the slide printed "a positive
+  due-diligence result, not an absence of checking" directly above the line
+  naming the five. The credit now states both counts, and the unqualified
+  sentence is kept only where nothing was left unassessed.
+- GATE (GS13-1 to GS13-4). The row's gap guard is exercised with the two signals
+  in DIFFERENT states, so neither half can be deleted green, and with the errored
+  and timed-out shapes it was written for; the panel decision moved into one
+  exported function the gate runs under node, because the caller had been pinned
+  by a substring that appending " && false" satisfies while inverting it; and
+  the URL-userinfo rule is asserted per door rather than only as parity, which
+  both doors can lose together.
+- REFUTED: FC13-4 (the row renders nothing at all when no supply-chain signal
+  completed - real, and a separate question from the green one),
+  R13-DECK-CLEARS-FINDING-ON-UNKNOWN-OUTCOME, IH13-4 (the fixture's contact
+  equalled its expected host - corrected anyway), IH13-5 (the missing length cap
+  - folded into the IH13-1 fix), IH13-6, R13-SC-1 and R13-IN-3. The audit
+  sentence R13-SC-1 called an overclaim is true as written again now that the
+  row's predicate is total.

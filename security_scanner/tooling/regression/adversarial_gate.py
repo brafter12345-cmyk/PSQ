@@ -3835,6 +3835,17 @@ def _check_discovery_parity(failures):
     if ("did not record whether every SPF lookup answered" not in slide
             or "positive due-diligence result" in slide):
         bad.append("stored completed: the deck does not say why, or credits it")
+    # Some signals assessed and others not: the credit is proportionate, and the
+    # unqualified "not an absence of checking" belongs only to a slide with
+    # nothing left unassessed (critique round 13, FC13-5).
+    slide_mixed = slide_of(built["api_ct_outage"],
+                           {"email_vendor_surface": measured_evs,
+                            "vendor_breach": {"status": "error", "error": "boom",
+                                              "issues": []}})
+    if ("could not be assessed on this scan" not in slide_mixed
+            or "not an absence of checking" in slide_mixed):
+        bad.append("the deck credits a scan with signals unassessed: %r"
+                   % (slide_mixed[:220],))
     if (pc.cat_email_vendor_surface({"email_vendor_surface": stored_evs}, S)
             or pc.cat_vendor_breach({"vendor_breach": stored_vb}, S)):
         bad.append("stored completed: the technical report draws a card")
@@ -3938,7 +3949,23 @@ def _check_discovery_parity(failures):
     for label_, e_, v_, want_ in (
             ("unmeasured_beside_measured", stored_evs, stored_vb, "not assessed"),
             ("partly_beside_measured", evs_real["quiet_vendor_plus_timeout"],
-             vb_real["quiet_vendor_plus_timeout"], "partly read")):
+             vb_real["quiet_vendor_plus_timeout"], "partly read"),
+            # Two independent SPF walks differ routinely: one answers while the
+            # other times out. With the signals in the SAME state, half the
+            # guard could be deleted green (critique round 13, GS13-1).
+            ("s4_measured_s5_unmeasured", measured_evs, stored_vb,
+             "the vendor-breach correlation was not assessed"),
+            ("s4_unmeasured_s5_measured", stored_evs, measured_vb,
+             "the email-vendor surface was not assessed"),
+            # The shapes a checker actually fails in, which had no case at all
+            # although the guard exists for them (FC13-1).
+            ("errored_beside_measured",
+             {"status": "error", "error": "boom", "issues": []},
+             {"status": "error", "error": "boom", "issues": []}, "not assessed"),
+            ("timed_out_beside_measured",
+             {"status": "timeout", "error": "Checker timed out after 180s", "issues": []},
+             {"status": "timeout", "error": "Checker timed out after 180s", "issues": []},
+             "not assessed")):
         row_n = _sc_row(e_, v_, _clean_neighbour)
         low_n = row_n.lower()
         if "clean" in low_n or "#16a34a" in low_n or want_ not in low_n:
@@ -3975,8 +4002,19 @@ def _check_discovery_parity(failures):
     # none; a completed, finding-free dependency check is the neighbour).
     neighbour = {"status": "completed", "exposed_manifests": [], "total_critical_cves": 0}
 
-    def sc_row(rd, with_neighbour=False):
+    def sc_row(rd, with_neighbour=False, measured_spf=False):
         r = with_rd(rd)
+        # The baseline fixture carries NO email_vendor_surface and NO
+        # vendor_breach, so every case here runs with an absent vendor surface
+        # unless it asks otherwise. A case that asserts "Clean" in green must
+        # ask, because an absent vendor surface is not assessed and the row now
+        # says so (step-5 critique round 13, FC13-1). A case that asserts the
+        # related-domain wording alone must NOT ask, or "No finding on assessed
+        # signals" becomes true and stops being the false claim its `never`
+        # list forbids.
+        if measured_spf:
+            r["categories"]["email_vendor_surface"] = dict(measured_evs)
+            r["categories"]["vendor_breach"] = dict(measured_vb)
         if with_neighbour:
             r["categories"]["dependency_manifests"] = dict(neighbour)
         return _summary_sc_row(pc.build_summary_table(r, S))
@@ -3991,12 +4029,12 @@ def _check_discovery_parity(failures):
     summary_cases = [
         # (label, category, with neighbour, must contain, must not contain)
         ("awaiting_alone", built["api_ct_answered"], False,
-         ["2 related domain(s) found, awaiting confirmation", BLUE], ["Clean", GREEN, NOFIND]),
+         ["2 related domain(s) found, awaiting confirmation", BLUE], ["Clean", GREEN]),
         # Discovery ran and found nothing: stated, never "Clean" (critique
         # round 6, ST6-6).
         ("none_found_alone", built["api_ct_answered_none_found"], False,
          ["no related domains found on certificate records", BLUE],
-         ["Clean", GREEN, NOFIND]),
+         ["Clean", GREEN]),
         ("none_found_with_neighbour", built["api_ct_answered_none_found"], True,
          ["no related domains found on certificate records", BLUE], ["Clean", GREEN]),
         ("finding_while_discovery_down", built["finding_while_discovery_down"], False,
@@ -4014,8 +4052,10 @@ def _check_discovery_parity(failures):
          ["not fully assessed", "related-domain discovery could not run", AMBER], ["Clean"]),
         ("clean_with_a_candidate_alone", built["confirmed_clean"], False,
          ["1 related domain(s) found, awaiting confirmation", BLUE], ["Clean", GREEN]),
+        # The only kind whose row may read "Clean" - and only where the vendor
+        # surface was actually measured (FC13-1).
         ("clean_no_candidates_alone", built["confirmed_clean_no_candidates"], False,
-         ["Clean", GREEN], ["not fully", "awaiting"]),
+         ["Clean", GREEN], ["not fully", "awaiting"], True),
         ("critical_alone", built["confirmed_finding"], False, ["critical"], ["Clean"]),
         ("high_alone", built["confirmed_high_only"], False, ["high"], ["Clean"]),
         ("partial_alone", built["partial_checks"], False,
@@ -4041,11 +4081,15 @@ def _check_discovery_parity(failures):
         ("legacy_nothing_scanned_with_neighbour", legacy_nothing, True,
          ["confirmed related domains not assessed", AMBER], ["Clean"]),
         ("clean_no_candidates_with_neighbour", built["confirmed_clean_no_candidates"], True,
-         ["Clean", GREEN], ["not fully", "awaiting"]),
+         ["Clean", GREEN], ["not fully", "awaiting"], True),
     ]
     bad = []
-    for label, rd, nb, must, never in summary_cases:
-        row_text = sc_row(rd, nb)
+    for _case in summary_cases:
+        label, rd, nb, must, never = _case[:5]
+        # Measured by DEFAULT: left absent, the vendor-surface gap blocks the
+        # row's green branch and every mutation against that branch is inert
+        # (found by round 14's own mutation run).
+        row_text = sc_row(rd, nb, measured_spf=(_case[5] if len(_case) > 5 else True))
         miss = [m for m in must if m not in row_text]
         hit = [n for n in never if n in row_text]
         if miss or hit:
@@ -4057,6 +4101,11 @@ def _check_discovery_parity(failures):
     # A MEDIUM vendor join beside a clean estate: never "Clean" on the summary
     # row, as it is MEDIUM on the deck and the card (critique round 7, ST7-2).
     r_m = with_rd(built["confirmed_clean_no_candidates"])
+    # Measured, so the row's green branch is REACHABLE: left absent, the
+    # vendor-surface gap keeps the row off green on its own and this assertion
+    # cannot fail (found by round 14's own mutation run).
+    r_m["categories"]["email_vendor_surface"] = dict(measured_evs)
+    r_m["categories"]["vendor_breach"] = dict(measured_vb)
     r_m["categories"]["third_party_correlation"] = {
         "status": "completed", "severity": "medium", "critical_count": 0, "high_count": 0,
         "medium_count": 1, "hudson_rock_third_party_count": 3, "spf_vendor_count": 0,
@@ -4434,6 +4483,15 @@ def _check_discovery_parity(failures):
         # URL userinfo is not a contact address: both doors keep the URL's host
         # AND the plain host beside it (critique round 12, IH12-5).
         tokens_.append("https://ops@group-holdings.com/portal supplier.co.za")
+        # A scheme must not hide a contact, and a wildcard entry is cleaned
+        # rather than dropped: each was asserted on the API door only, so a
+        # form-only change survived (round 13, IH13-1, IH13-2, R13-IN-2).
+        tokens_.append("supplier.co.za mailto://jane@brokerfirm.co.za")
+        tokens_.append("supplier.co.za //accounts@brokerfirm.co.za")
+        # A domain that appears on no other token, so dropping the wildcard
+        # line is observable: acme.co.za is supplied by another entry and
+        # would mask it (round 13, IH13-4, reproduced in round 14).
+        tokens_.append("*.wildcard-sib.co.za")
         js_d = (r"""
 const made = [];
 function el(tag) {
@@ -4483,9 +4541,11 @@ globalThis.fetch = async (url, opt) => {
   const twohosts0 = collectRelatedDomains();
   byId['related-domains'].value = 'Acme Group Holdings, 01.03.2026, ops@acme.co.za';
   const dated0 = collectRelatedDomains();
+  byId['related-domains'].value = ('a'.repeat(60) + '.').repeat(5) + 'co.za';
+  const toolong0 = collectRelatedDomains();
   console.log(JSON.stringify({ boxes: boxes.length, ticked: ticked.length,
     collected: collected0, contact: contact0, named: named0,
-    twohosts: twohosts0, dated: dated0,
+    twohosts: twohosts0, dated: dated0, toolong: toolong0,
     asked: asked.map((a) => a.domain) }));
 })();
 """)
@@ -4513,6 +4573,14 @@ globalThis.fetch = async (url, opt) => {
         if sorted(dom.get("dated") or []) != ["acme.co.za"]:
             bad.append("a dotted non-domain token captured the host branch: %r"
                        % (dom.get("dated"),))
+        # Parity cannot see this one: an over-long value is dropped by the API
+        # on BOTH sides of that comparison, so what the form SENDS is asserted
+        # outright (round 13, IH13-5). Sixty-character labels, because a single
+        # long label is rejected on label length and the cap would never be
+        # what did the work.
+        if (dom.get("toolong") or []) != []:
+            bad.append("the box sends a value the API discards for length: %r"
+                       % (dom.get("toolong"),))
         want_col = sorted(_dv_form.clean_related_domains(tokens_))
         got_col = sorted(_dv_form.clean_related_domains(dom.get("collected") or []))
         if (dom.get("boxes") != 2 or dom.get("ticked") != 0 or got_col != want_col
@@ -4598,7 +4666,7 @@ globalThis.fetch = async (url, opt) => {
     # its expected host stated outright (GS11-2, IR11-1).
     host_raws = ["acme-group.co.za <info@brokerfirm.co.za>",
                  "first-national.co.za, attn Jane <jane@brokerfirm.co.za>",
-                 "acme.co.za1 <accounts@acme.co.za>",
+                 "acme.co.za1 <accounts@brokerfirm.co.za>",
                  "acme.africa <info@brokerfirm.co.za>",
                  "acme.insurance <accounts@brokerfirm.co.za>",
                  "acme.capetown <ops@brokerfirm.co.za>",
@@ -4621,7 +4689,11 @@ globalThis.fetch = async (url, opt) => {
              "first-national.co.za"),
             # A label after the host must not be dropped by backtracking to a
             # shorter one: this falls through to the address (IH12-2).
-            ("acme.co.za1 <accounts@acme.co.za>", "acme.co.za")):
+            # Host-shaped but unreadable fails closed rather than becoming
+            # the contact's domain, and the contact differs from every expected
+            # host so no case here can pass by accident (round 13, IH13-3,
+            # IH13-4).
+            ("acme.co.za1 <accounts@brokerfirm.co.za>", "")):
         got_host_ = _dv_host.normalize_domain(raw_)
         if got_host_ != want_host_:
             bad.append("the cleaner reads %r as %r, want %r"
@@ -4673,7 +4745,16 @@ globalThis.fetch = async (url, opt) => {
             # A dotted non-domain token is not a host, and a display-name entry
             # still falls through to whole-entry cleaning (IH12-1).
             ("Acme Group Holdings, 01.03.2026, ops@acme.co.za", ["acme.co.za"]),
-            ("Accounts/Finance <accounts@acme.co.za>", ["acme.co.za"])):
+            ("Accounts/Finance <accounts@acme.co.za>", ["acme.co.za"]),
+            # URL userinfo is not a contact; a scheme does not hide one; and a
+            # wildcard entry is cleaned rather than dropped (round 13, IH13-2,
+            # R13-IN-2, IH13-1). Stated per door, because parity alone is lost
+            # when both doors change together (GS13-4).
+            ("https://ops@group-holdings.com/portal supplier.co.za",
+             ["group-holdings.com", "supplier.co.za"]),
+            ("supplier.co.za mailto://jane@brokerfirm.co.za", ["supplier.co.za"]),
+            ("supplier.co.za //accounts@brokerfirm.co.za", ["supplier.co.za"]),
+            ("*.acme.co.za", ["acme.co.za"])):
         got_e_ = _dv.clean_related_domains([entry_])
         if got_e_ != want_rd_:
             bad.append("the API reads %r as %r, want %r"
@@ -5602,9 +5683,9 @@ globalThis.fetch = async (url, opt) => {
     # a not-assessed checker as "(passed)" (critique round 12, SC-NOTE-PASSED).
     if "force ? 'the checker recorded no measurement'" not in parts_src:
         bad.append("the forced not-assessed note takes its reason from the status")
-    for need_ in ("const unmeasured = !panelShowsCounts(c)",
+    for need_ in ("notAssessed: !panelShowsCounts(c)",
                   "<NotAssessedNote category={c} force",
-                  "vendorSurfacePartial(c as unknown as Record<string, unknown>)"):
+                  "body.kind === 'note'", "body.lowerBound"):
         if need_ not in page_tsx_n:
             bad.append("MoreCheckers does not consume the measurement gate: %r" % need_)
     cs_path = os.path.join(SEC, "frontend", "src", "data", "checkerState.ts")
@@ -5699,6 +5780,20 @@ globalThis.fetch = async (url, opt) => {
     vp_cases["unknown_outcome"] = future_evs
     vp_cases["wide_surface"] = wide_evs
     vp_cases["error"] = {"status": "error", "error": "no answer", "issues": []}
+    # Driven with the badge decision as a parameter, so this asserts the panel
+    # body and not the badge (round 13, GS13-2).
+    body_cases = {
+        "not_assessed": {"v": vb_real["nested_timeout"],
+                         "opts": {"notAssessed": True, "isSpf": True}},
+        "partial_quiet": {"v": evs_real["quiet_vendor_plus_timeout"],
+                          "opts": {"notAssessed": False, "isSpf": True}},
+        "partial_with_finding": {"v": vb_real["vendor_plus_timeout"],
+                                 "opts": {"notAssessed": False, "isSpf": True}},
+        "measured": {"v": evs_real["nested_answered"],
+                     "opts": {"notAssessed": False, "isSpf": True}},
+        "partial_not_spf": {"v": evs_real["quiet_vendor_plus_timeout"],
+                            "opts": {"notAssessed": False, "isSpf": False}},
+    }
     vp_out = None
     if node_cs:
         td_vp = tempfile.mkdtemp(prefix="vp_")
@@ -5706,11 +5801,16 @@ globalThis.fetch = async (url, opt) => {
             shutil.copyfile(os.path.join(SEC, "frontend", "src", "data", "emailVendorPanel.ts"),
                             os.path.join(td_vp, "emailVendorPanel.mts"))
             with io.open(os.path.join(td_vp, "vp_check.mts"), "w", encoding="utf-8") as fh:
-                fh.write("import { vendorPanel } from './emailVendorPanel.mts'\n"
+                fh.write("import { vendorPanel, panelBody }"
+                         " from './emailVendorPanel.mts'\n"
                          "const cases = " + json.dumps(vp_cases) + "\n"
                          "const out = {}\n"
                          "for (const [k, v] of Object.entries(cases)) out[k] = vendorPanel(v)\n"
                          "out.absent = vendorPanel(undefined)\n"
+                         "const body = " + json.dumps(body_cases) + "\n"
+                         "out.__body = {}\n"
+                         "for (const [k, c] of Object.entries(body))"
+                         " out.__body[k] = panelBody(c.v, c.opts)\n"
                          "console.log(JSON.stringify(out))\n")
             r_vp = subprocess.run([node_cs, "--no-warnings", os.path.join(td_vp, "vp_check.mts")],
                                   capture_output=True, text=True, timeout=60)
@@ -5766,6 +5866,22 @@ globalThis.fetch = async (url, opt) => {
         bad.append("the Email-Vendor panel with no result gives %r" % (vp_out.get("absent"),))
     if "[object" in json.dumps(vp_out):
         bad.append("the Email-Vendor panel prints an object")
+    # The panel's body decision, run under node: a note where nothing was
+    # measured, counts otherwise, and the lower-bound row exactly where the
+    # chain was partly read - including beside a finding, which is where the
+    # badge-label test used to lose it (round 13, GS13-2, GS13-3).
+    body_want = {
+        "not_assessed": {"kind": "note", "lowerBound": False},
+        "partial_quiet": {"kind": "counts", "lowerBound": True},
+        "partial_with_finding": {"kind": "counts", "lowerBound": True},
+        "measured": {"kind": "counts", "lowerBound": False},
+        "partial_not_spf": {"kind": "counts", "lowerBound": False},
+    }
+    body_got = (vp_out.get("__body") or {})
+    for k_, w_ in sorted(body_want.items()):
+        if body_got.get(k_) != w_:
+            bad.append("the panel body for %s gives %r, want %r"
+                       % (k_, body_got.get(k_), w_))
     # Pinned, not derived from the same threshold the module uses (GS10-4).
     if (vp_out.get("wide_surface") or {}).get("badge") != {"state": "warning"}:
         bad.append("a six-vendor surface is not a finding on the dashboard: %r"

@@ -4687,7 +4687,21 @@ def build_summary_table(results: dict, S) -> Table:
     # (step-5 critique round 12, SC-ROW-CLEAN-OVER-UNMEASURED).
     _sc_pairs = (("email-vendor surface", evs_cat),
                  ("vendor-breach correlation", vb_cat))
-    _sc_gap = [n for n, c in _sc_pairs if spf_surface_unmeasured(c)]
+
+    def _sc_unmeasured(c):
+        """Total, not a list of two shapes.
+
+        A checker that raised, that timed out, or that is not in the result at
+        all was not measured either, and the row read a green "Clean" over it
+        while the deck and the dashboard both said not assessed (step-5
+        critique round 13, FC13-1).
+        """
+        if not isinstance(c, dict) or not c:
+            return True
+        if c.get("status") not in ("completed", "no_data"):
+            return True
+        return bool(spf_surface_unmeasured(c))
+    _sc_gap = [n for n, c in _sc_pairs if _sc_unmeasured(c)]
     _sc_low = [n for n, c in _sc_pairs if spf_surface_partial(c)]
     if (sc_any_completed or any(sc_n.values()) or sc_cross or _rd_note
             or _rd_waiting or _rd_down or _rd_none):

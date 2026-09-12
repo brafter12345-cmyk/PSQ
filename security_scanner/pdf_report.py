@@ -1488,10 +1488,22 @@ def _assessment_slide_supply_chain(results):
             ("BOX",          (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
         ])))
     elif assessed:
-        out.append(Paragraph(
-            "No material supply-chain exposure was identified on this scan - "
-            "every assessed external signal is within normal bounds. This is a "
-            "positive due-diligence result, not an absence of checking.", frisk_st))
+        # Proportionate to what was actually assessed: with signals left
+        # unassessed, an unqualified "positive due-diligence result" reads as a
+        # clean bill for a scan that mostly did not run (step-5 critique round
+        # 13, FC13-5). "Not applicable" is a measured answer, not a gap.
+        _un = len(unknown)
+        if _un:
+            out.append(Paragraph(
+                "%d of %d supply-chain signal(s) were assessed and are within "
+                "normal bounds; %d could not be assessed on this scan. A clean "
+                "reading covers only the signals that were assessed."
+                % (len(assessed), len(assessed) + _un, _un), frisk_st))
+        else:
+            out.append(Paragraph(
+                "No material supply-chain exposure was identified on this scan - "
+                "every assessed external signal is within normal bounds. This is a "
+                "positive due-diligence result, not an absence of checking.", frisk_st))
     elif _partly:
         out.append(Paragraph(
             "No supply-chain signal was fully assessed on this scan, so none is "

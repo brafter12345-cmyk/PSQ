@@ -41,6 +41,27 @@ _DISPLAY_ADDR_RE = re.compile(r"^(?P<pre>[^<>]*)<(?P<addr>[^<>@\s]*@[^<>\s]*)>\s
 # (step-5 critique round 12, IH12-2).
 _HOSTLIKE_RE = re.compile(
     r"\s*[\"']?(?:[a-z0-9-]+\.)+[a-z]{2,}(?![a-z0-9-])(?!\.[a-z0-9-])", re.I)
+# Is this token a contact ADDRESS rather than a host or a URL? The scheme is
+# read, not removed: after removal every @-bearing shape looks the same, and a
+# portal URL carrying a username was dropped as if it were an address (step-5
+# critique rounds 12 and 13, IH12-5, IH13-2, R13-IN-2).
+def _is_contact_token(tok: str) -> bool:
+    t = str(tok).strip().lower()
+    if t.startswith("mailto:"):
+        return True
+    if t.startswith(("http://", "https://", "ftp://")):
+        return False
+    if t.startswith("//"):
+        # Protocol-relative: a path makes it a URL, none makes it the address a
+        # mail client autolinked.
+        return "@" in t[2:] and "/" not in t[2:]
+    return "@" in t.split("/")[0]
+
+
+# Host-SHAPED, whether or not the rule above will read it: used to tell "there
+# is no host here" from "there is a host here I refused to read" (round 13,
+# IH13-3).
+_HOSTISH_RE = re.compile(r"\s*[\"']?[a-z0-9-]+\.[a-z0-9-]", re.I)
 
 # A scheme, or a chain of them (mailto://jane@..., https://http://...).
 _SCHEME_RE = re.compile(r"^(?:(?:https?|ftp)://|//|mailto:)+")
@@ -72,7 +93,14 @@ def _normalize_once(raw: str) -> str:
         # "acme.co.za <info@brokerfirm.co.za>": a host before the brackets is
         # the target, and the contact address is not; without a host the value
         # is a display name and its address is (rounds 8 to 10).
-        s = host.group(0) if host else m.group("addr")
+        if host:
+            s = host.group(0)
+        elif _HOSTISH_RE.match(m.group("pre")):
+            # Host-shaped but unreadable: an unreadable target must not become
+            # the contact's domain (step-5 critique round 13, IH13-3).
+            return ""
+        else:
+            s = m.group("addr")
     s = s.strip("\"'<>").strip()
     if not s:
         return ""
@@ -173,7 +201,7 @@ def clean_related_domains(raw_related) -> list:
         # function would itself accept. Every single-token entry is untouched.
         toks = [t for t in re.split(r"[\s,;]+", s) if t]
         if len(toks) > 1:
-            hosts = [t for t in toks if "@" not in t.split("/")[0]]
+            hosts = [t for t in toks if not _is_contact_token(t)]
             if any(valid_domain(_clean(t)) for t in hosts):
                 for t in hosts:
                     _keep(t)

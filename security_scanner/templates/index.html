@@ -666,7 +666,16 @@ function normalizeDomainOnce(raw) {
     // A host before the brackets is the target; without one the value is a
     // display name and its address is (the server does the same).
     const host = angle[1].match(/^\s*["']?(?:[a-z0-9-]+\.)+[a-z]{2,}(?![a-z0-9-])(?!\.[a-z0-9-])/i);
-    s = host ? host[0] : angle[2];
+    // Host-shaped but unreadable is an unreadable target, not a display name:
+    // it fails closed rather than becoming the contact's domain, as the server
+    // does (step-5 critique round 13, IH13-3).
+    if (host) {
+      s = host[0];
+    } else if (/^\s*["']?[a-z0-9-]+\.[a-z0-9-]/i.test(angle[1])) {
+      return '';
+    } else {
+      s = angle[2];
+    }
   }
   s = strip(s.replace(/^["'<>]+|["'<>]+$/g, '')).toLowerCase();
   // A scheme, or a chain of them (mailto://, https://http://), in one step, as
@@ -956,14 +965,37 @@ function collectRelatedDomains() {
     // it: a date, an amount, an IP, initials or a version number all contain
     // one, and any of them captured the hosts branch and dropped the broker's
     // real domain (round 12, IH12-1). Mirrors domain_validation._DOMAIN_RE.
-    const accept = (d) => /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i
-      .test(d || '');
+    // The API strips a wildcard prefix before validating, and caps the length,
+    // so the form must too: rejecting "*.acme.co.za" sent NOTHING where the API
+    // keeps acme.co.za (round 13, IH13-1).
+    const dewild = (d) => {
+      let s = d || '';
+      // replace, not slice: the gate guards this function against a
+      // browser-side trim of the confirmed list by looking for slice/splice.
+      for (let i = 0; i < 4 && s.startsWith('*.'); i++) {
+        s = normalizeDomainInput(s.replace(/^\*\./, ''));
+      }
+      return s;
+    };
+    const accept = (d) => {
+      const s = dewild(d);
+      return s.length <= 253
+        && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i.test(s);
+    };
     const qualifies = (p) => accept(normalizeDomainInput(p));
-    // A contact is an ADDRESS. Testing the whole token for "@" cannot tell one
-    // from URL userinfo, and dropped "https://ops@host/portal" (round 12,
-    // IH12-5); the part before the first "/" still catches a bare address and a
-    // mailto:, and no longer catches a URL that carries a username.
-    const isContact = (p) => p.split('/')[0].includes('@');
+    // A contact is an ADDRESS, and the scheme is READ, not removed: after
+    // removal every @-bearing shape
+    // looks the same, and a portal URL carrying a username was dropped as if it
+    // were an address (rounds 12 and 13, IH12-5, IH13-2, R13-IN-2).
+    const isContact = (p) => {
+      const t = String(p).trim();
+      if (/^mailto:/i.test(t)) return true;
+      if (/^(?:https?|ftp):\/\//i.test(t)) return false;
+      // Protocol-relative: an address with no path is what a mail client
+      // autolinks; with a path it is a URL.
+      if (/^\/\//.test(t)) return /^\/\/[^/]*@[^/]*$/.test(t);
+      return t.split('/')[0].includes('@');
+    };
     ta.value.split(/[\r\n]+/).forEach(line => {
       const parts = line.split(/[\s,;]+/).filter(Boolean);
       const hosts = parts.filter(p => !isContact(p));
@@ -973,7 +1005,7 @@ function collectRelatedDomains() {
         // The same rule that picked the branch also accepts the value, so
         // the form cannot send what the API would discard (round 12,
         // IH12-1).
-        if (accept(d)) set.add(d);
+        if (accept(d)) set.add(dewild(d));
       });
     });
   }

@@ -73,6 +73,21 @@ export function vendorSurfacePartial(v: Record<string, unknown> | undefined): bo
     && (names(v.vendors_detected, 'vendor').length > 0 || !!v.vendor_count)
 }
 
+/** What a generic panel renders for one checker: the note, or the counts.
+ *
+ *  `notAssessed` is the caller's badge decision (checkerState.panelShowsCounts)
+ *  and `isSpf` says whether this checker carries an SPF chain at all. Both are
+ *  parameters so this module keeps no imports and the regression gate can run
+ *  it under node exactly as it ships (step-5 critique round 13, GS13-2,
+ *  GS13-3). */
+export function panelBody(
+  v: Record<string, unknown> | undefined,
+  opts: { notAssessed: boolean; isSpf: boolean },
+): { kind: 'note' | 'counts'; lowerBound: boolean } {
+  if (opts.notAssessed) return { kind: 'note', lowerBound: false }
+  return { kind: 'counts', lowerBound: !!opts.isSpf && vendorSurfacePartial(v) }
+}
+
 export function vendorPanel(v: Record<string, unknown> | undefined): VendorPanel {
   const why = vendorSurfaceUnmeasured(v)
   if (why) {

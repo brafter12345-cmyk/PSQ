@@ -5,7 +5,7 @@ import { PageTitle, CheckerHeader, KV, IssueList, DetailGrid, NotAssessedNote } 
 import { getResults } from '../../data/results'
 import { cat, CATEGORY_LABELS } from '../../data/selectors'
 import { isConclusive, headerBadge, panelShowsCounts } from '../../data/checkerState'
-import { vendorSurfaceUnmeasured, vendorSurfacePartial } from '../../data/emailVendorPanel'
+import { vendorSurfaceUnmeasured, panelBody } from '../../data/emailVendorPanel'
 import CredentialExportPortal from '../../components/overview/CredentialExportPortal'
 import MeetingBriefPanel from '../../components/overview/MeetingBriefPanel'
 import BreachIntelPanel from '../../components/detail/BreachIntelPanel'
@@ -228,14 +228,13 @@ export function MoreCheckers({ r, ids }: { r: Results; ids: string[] }) {
           const badge = headerBadge(c, true)
           // One function, which the regression gate runs under node on real
           // checker output (step-5 critique round 11, R11-SC-2).
-          const unmeasured = !panelShowsCounts(c)
           // Only the two SPF-bearing checkers carry an SPF reason to give.
           const isSpf = id === 'vendor_breach' || id === 'email_vendor_surface'
-          // The data, not the badge label: headerBadge drops the "Partly
-          // assessed" label as soon as the result carries a critical or high
-          // finding, which is precisely when the counts most need the caveat
-          // (step-5 critique round 12, SC-PANEL-PARTLY).
-          const partly = isSpf && vendorSurfacePartial(c as unknown as Record<string, unknown>)
+          // One function, run under node by the gate on real checker output, so
+          // the decision cannot be inverted while the pinned text stays present
+          // (step-5 critique round 13, GS13-2, GS13-3).
+          const body = panelBody(c as unknown as Record<string, unknown>,
+            { notAssessed: !panelShowsCounts(c), isSpf })
           const spfWhy = isSpf
             ? vendorSurfaceUnmeasured(c as unknown as Record<string, unknown>)
             : ''
@@ -245,14 +244,14 @@ export function MoreCheckers({ r, ids }: { r: Results; ids: string[] }) {
                 <span style={{ fontSize: 12, fontWeight: 600 }}>{CATEGORY_LABELS[id] ?? id.replace(/_/g, ' ')}</span>
                 <CheckerHeader category={c} refine />
               </div>
-              {unmeasured ? (
+              {body.kind === 'note' ? (
                 <NotAssessedNote category={c} force
                   what={CATEGORY_LABELS[id] ?? id.replace(/_/g, ' ')}
                   why={spfWhy || (badge.label ?? undefined)} />
               ) : (
                 <>
                   {rows.length > 0 && <KV rows={rows} />}
-                  {partly && <KV rows={[{ label: 'SPF chain',
+                  {body.lowerBound && <KV rows={[{ label: 'SPF chain',
                     value: 'Partly read - the figures above are a lower bound' }]} />}
                 </>
               )}
