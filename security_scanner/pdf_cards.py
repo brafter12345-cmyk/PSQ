@@ -4670,6 +4670,12 @@ def build_summary_table(results: dict, S) -> Table:
     # Discovery ran and found nothing: stated, and never in the colour of Clean
     # (step-5 critique round 6). The deck files it as not assessed.
     _rd_none = _rd_st == "none_found"
+    # The category absent entirely: a result stored before step 5, when the
+    # checker ran only if domains were confirmed, or one a scan never wrote.
+    # Nothing was looked for, so this row may not read Clean over it. It does
+    # NOT force the row to render - that is a separate question, recorded as
+    # FC13-4 (round 15, C1).
+    _rd_missing = not isinstance(rd_cat, dict) or not rd_cat
     # An S-4/S-5 result that measured nothing, or that read only part of the
     # SPF chain, is not a completed signal here either: on its own it may never
     # make this row read "Clean" (step-5 critique round 9). A finding it
@@ -4685,24 +4691,37 @@ def build_summary_table(results: dict, S) -> Table:
     # Without it this row reads a plain green "Clean" over a vendor surface
     # nobody measured, as soon as any other supply-chain signal completed
     # (step-5 critique round 12, SC-ROW-CLEAN-OVER-UNMEASURED).
-    _sc_pairs = (("email-vendor surface", evs_cat),
-                 ("vendor-breach correlation", vb_cat))
+    _SC_MEASURED = ("completed", "no_data")
+    _sc_pairs = (
+        ("email-vendor surface", evs_cat, True, _SC_MEASURED),
+        ("vendor-breach correlation", vb_cat, True, _SC_MEASURED),
+        ("third-party JavaScript", tpjs_cat, False, _SC_MEASURED),
+        ("code dependencies", dm_cat, False, _SC_MEASURED),
+        # "skipped" is the checker saying this site is not WordPress, which IS a
+        # measurement. It also writes "skipped" when every probe timed out or was
+        # refused, and the two cannot be told apart from the result - recorded
+        # for the owner as B2, because separating them means changing a checker's
+        # status semantics and that moves prices (round 15).
+        ("website plugins", cms_cat, False, _SC_MEASURED + ("skipped",)),
+    )
 
-    def _sc_unmeasured(c):
-        """Total, not a list of two shapes.
+    def _sc_unmeasured(c, is_spf, ok_statuses):
+        """Total over SIGNALS as well as over shapes.
 
         A checker that raised, that timed out, or that is not in the result at
         all was not measured either, and the row read a green "Clean" over it
         while the deck and the dashboard both said not assessed (step-5
-        critique round 13, FC13-1).
+        critique round 13, FC13-1). Round 15 found the predicate was total over
+        the SHAPES but ran over a list of TWO signals, so the other four reached
+        the green branch untested (B1, C1).
         """
         if not isinstance(c, dict) or not c:
             return True
-        if c.get("status") not in ("completed", "no_data"):
+        if c.get("status") not in ok_statuses:
             return True
-        return bool(spf_surface_unmeasured(c))
-    _sc_gap = [n for n, c in _sc_pairs if _sc_unmeasured(c)]
-    _sc_low = [n for n, c in _sc_pairs if spf_surface_partial(c)]
+        return bool(is_spf and spf_surface_unmeasured(c))
+    _sc_gap = [n for n, c, s, ok in _sc_pairs if _sc_unmeasured(c, s, ok)]
+    _sc_low = [n for n, c, s, ok in _sc_pairs if s and spf_surface_partial(c)]
     if (sc_any_completed or any(sc_n.values()) or sc_cross or _rd_note
             or _rd_waiting or _rd_down or _rd_none):
         # Worst severity drives the colour; the cross-correlation can lift it.
@@ -4713,7 +4732,8 @@ def build_summary_table(results: dict, S) -> Table:
         elif sc_n["MEDIUM"] > 0 or _rd_note or (sc_cross and sc_cross[0] == "MEDIUM"):
             # An incomplete related-domain assessment is amber, never green.
             sc_col = C_AMBER
-        elif (sc_any_completed and not (_rd_waiting or _rd_down or _rd_none)
+        elif (sc_any_completed
+                and not (_rd_waiting or _rd_down or _rd_none or _rd_missing)
                 and not _sc_gap and not _sc_low):
             sc_col = C_GREEN
         else:
@@ -4739,8 +4759,13 @@ def build_summary_table(results: dict, S) -> Table:
             if _rd_waiting else []) + (
             ["related-domain discovery could not run"] if _rd_down else []) + (
             ["no related domains found on certificate records"] if _rd_none else []) + (
-            ["the %s was not assessed" % " and the ".join(_sc_gap)] if _sc_gap else []) + (
-            ["the %s was only partly read" % " and the ".join(_sc_low)] if _sc_low else [])
+            ["related domains were not assessed"] if _rd_missing else []) + (
+            ["the %s %s not assessed" % (" and the ".join(_sc_gap),
+                                         "was" if len(_sc_gap) == 1 else "were")]
+            if _sc_gap else []) + (
+            ["the %s %s only partly read" % (" and the ".join(_sc_low),
+                                             "was" if len(_sc_low) == 1 else "were")]
+            if _sc_low else [])
         if bits:
             sc_label = " · ".join(bits + notes)
         elif not notes:

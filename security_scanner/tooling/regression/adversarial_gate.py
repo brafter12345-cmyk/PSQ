@@ -3911,11 +3911,20 @@ def _check_discovery_parity(failures):
             or pc.cat_vendor_breach({"vendor_breach": unknown_vb_}, S)):
         bad.append("an outcome the rule does not know draws a technical card")
 
-    def _sc_row(e_, v_, neighbour=None):
-        r_ = with_rd(None)
+    def _sc_row(e_, v_, neighbour=None, others_measured=False):
+        # The row's gap rule is total over SIGNALS now, so a case that asserts
+        # Clean must supply every signal the row summarises. The errored default
+        # stays, because three of these cases exist to prove that an unmeasured
+        # S-4/S-5 renders NO row, which depends on nothing else having completed
+        # (round 15, B1).
+        _clean_ = {"status": "completed", "score": 100, "issues": [],
+                   "high_count": 0, "critical_count": 0}
+        r_ = with_rd(built["confirmed_clean_no_candidates"]
+                     if others_measured else None)
         for k_ in ("dependency_manifests", "third_party_js", "cms_plugin_sbom",
                    "third_party_correlation", "hudson_rock"):
-            r_["categories"][k_] = {"status": "error"}
+            r_["categories"][k_] = (dict(_clean_) if others_measured
+                                    else {"status": "error"})
         if neighbour is not None:
             r_["categories"]["dependency_manifests"] = neighbour
         r_["categories"]["email_vendor_surface"] = copy.deepcopy(e_)
@@ -3925,15 +3934,16 @@ def _check_discovery_parity(failures):
     # partly read signal renders no row of its own, a measured one reads Clean,
     # and a finding renders the row even where nothing counted as completed
     # (critique round 10, GS10-3).
-    for label_, e_, v_, want_ in (
-            ("stored_completed", stored_evs, stored_vb, ""),
-            ("measured", measured_evs, measured_vb, "Clean"),
+    for label_, e_, v_, want_, om_ in (
+            ("stored_completed", stored_evs, stored_vb, "", False),
+            ("measured", measured_evs, measured_vb, "Clean", True),
             ("partial", evs_real["quiet_vendor_plus_timeout"],
-             vb_real["quiet_vendor_plus_timeout"], ""),
-            ("stored_with_vendor", stored_vendor_evs, stored_vendor_vb, "signal(s)"),
+             vb_real["quiet_vendor_plus_timeout"], "", False),
+            ("stored_with_vendor", stored_vendor_evs, stored_vendor_vb,
+             "signal(s)", False),
             ("partial_finding", evs_real["vendor_plus_timeout"],
-             vb_real["vendor_plus_timeout"], "signal(s)")):
-        row_ = _sc_row(e_, v_)
+             vb_real["vendor_plus_timeout"], "signal(s)", False)):
+        row_ = _sc_row(e_, v_, others_measured=om_)
         ok_ = (row_.strip() == "") if want_ == "" else (want_ in row_)
         if not ok_:
             bad.append("summary row for %s reads %r, want %r" % (label_, row_[:140], want_))
@@ -3966,7 +3976,10 @@ def _check_discovery_parity(failures):
              {"status": "timeout", "error": "Checker timed out after 180s", "issues": []},
              {"status": "timeout", "error": "Checker timed out after 180s", "issues": []},
              "not assessed")):
-        row_n = _sc_row(e_, v_, _clean_neighbour)
+        # Every OTHER signal measured, so the gap names exactly the S-4/S-5
+        # under test. Left errored, the row named three signals at once and
+        # these cases stopped isolating the pair they exist for (round 15, B1).
+        row_n = _sc_row(e_, v_, _clean_neighbour, others_measured=True)
         low_n = row_n.lower()
         if "clean" in low_n or "#16a34a" in low_n or want_ not in low_n:
             bad.append("the summary row for %s reads %r" % (label_, row_n[:220]))
@@ -4015,6 +4028,15 @@ def _check_discovery_parity(failures):
         if measured_spf:
             r["categories"]["email_vendor_surface"] = dict(measured_evs)
             r["categories"]["vendor_breach"] = dict(measured_vb)
+            # ...and the other three, for the same reason: the gap rule is total
+            # over signals now, so leaving them absent holds every case off green
+            # regardless of what it asserts, and the mutations against that
+            # branch go inert (round 15, B1). with_neighbour still overrides the
+            # dependency manifest below.
+            for _k in ("dependency_manifests", "third_party_js", "cms_plugin_sbom"):
+                r["categories"][_k] = {"status": "completed", "score": 100,
+                                       "issues": [], "high_count": 0,
+                                       "critical_count": 0}
         if with_neighbour:
             r["categories"]["dependency_manifests"] = dict(neighbour)
         return _summary_sc_row(pc.build_summary_table(r, S))
@@ -4090,10 +4112,10 @@ def _check_discovery_parity(failures):
         # condition, and the no-finding branch was unreachable (round 15, D1,
         # D2, and the two mutations p120 silently made inert).
         ("degraded_alone_unmeasured", built["api_ct_outage"], False,
-         ["related-domain discovery could not run", "was not assessed", BLUE],
+         ["related-domain discovery could not run", "not assessed", BLUE],
          ["Clean", GREEN, NOFIND], False),
         ("none_found_alone_unmeasured", built["api_ct_answered_none_found"], False,
-         ["no related domains found on certificate records", "was not assessed", BLUE],
+         ["no related domains found on certificate records", "not assessed", BLUE],
          ["Clean", GREEN, NOFIND], False),
     ]
     bad = []
@@ -4111,19 +4133,81 @@ def _check_discovery_parity(failures):
         failures.append("discovery[summary]: " + "; ".join(bad))
     report(not bad, "summary_row_follows_the_findings", "%d cases" % len(summary_cases))
 
+    # EVERY signal the row summarises, one at a time. The predicate was total
+    # over the SHAPES a checker fails in but ran over a list of two signals, so
+    # the other four reached the green branch untested and a completed neighbour
+    # carried the row to "Clean" over them (round 15, B1 and C1, found
+    # independently by two critics; the same defect as
+    # SC-ROW-CLEAN-OVER-UNMEASURED and FC13-1 for the third time).
+    def _row_with(overrides, drop_rd=False):
+        r_ = with_rd(None if drop_rd else built["confirmed_clean_no_candidates"])
+        _ok = {"status": "completed", "score": 100, "issues": [],
+               "high_count": 0, "critical_count": 0}
+        for k_ in ("third_party_js", "dependency_manifests", "cms_plugin_sbom"):
+            r_["categories"][k_] = dict(_ok)
+        r_["categories"]["email_vendor_surface"] = dict(measured_evs)
+        r_["categories"]["vendor_breach"] = dict(measured_vb)
+        for k_, v_ in overrides.items():
+            if v_ is None:
+                r_["categories"].pop(k_, None)
+            else:
+                r_["categories"][k_] = dict(v_)
+        return _summary_sc_row(pc.build_summary_table(r_, S))
+
+    bad = []
+    # The control. Without it every case below could pass because the row is
+    # never green for some unrelated reason - which is how two assertions went
+    # inert in round 14.
+    _all_measured = _row_with({})
+    if "Clean" not in _all_measured or GREEN not in _all_measured:
+        bad.append("the all-measured control is not green: %r" % _all_measured[:200])
+    _ERR = {"status": "error", "error": "boom", "issues": []}
+    _TMO = {"status": "timeout", "error": "Checker timed out after 180s", "issues": []}
+    for name_, key_, shape_ in (
+            ("third-party JavaScript", "third_party_js", _ERR),
+            ("third-party JavaScript", "third_party_js", _TMO),
+            ("third-party JavaScript", "third_party_js", None),
+            ("code dependencies", "dependency_manifests", _ERR),
+            ("code dependencies", "dependency_manifests", _TMO),
+            ("code dependencies", "dependency_manifests", None),
+            ("website plugins", "cms_plugin_sbom", _ERR),
+            ("website plugins", "cms_plugin_sbom", _TMO),
+            ("website plugins", "cms_plugin_sbom", None)):
+        row_ = _row_with({key_: shape_})
+        if GREEN in row_ or "Clean" in row_ or name_ not in row_:
+            bad.append("%s %s: %r" % (key_, "absent" if shape_ is None
+                                      else shape_["status"], row_[:200]))
+    # The related-domains category missing entirely: a result stored before
+    # step 5, when the checker ran only if domains were confirmed. Nothing was
+    # looked for, so the row may not read Clean over it.
+    row_rdm = _row_with({}, drop_rd=True)
+    if (GREEN in row_rdm or "Clean" in row_rdm
+            or "related domains were not assessed" not in row_rdm):
+        bad.append("a missing related-domains category: %r" % row_rdm[:200])
+    # "skipped" counts as MEASURED: the plugin checker saying this site is not
+    # WordPress. It writes the same status when every probe timed out or was
+    # refused and the two cannot be told apart, which is recorded as B2 for the
+    # owner. Pinned so the choice stays deliberate and visible.
+    row_skip = _row_with({"cms_plugin_sbom": {"status": "skipped", "issues": []}})
+    if "Clean" not in row_skip or GREEN not in row_skip:
+        bad.append("a skipped plugin scan is read as unmeasured: %r" % row_skip[:200])
+    if bad:
+        failures.append("discovery[summary:signals]: " + "; ".join(bad))
+    report(not bad, "summary_row_names_every_unmeasured_signal", "11 shapes")
+
     # A MEDIUM vendor join beside a clean estate: never "Clean" on the summary
     # row, as it is MEDIUM on the deck and the card (critique round 7, ST7-2).
-    r_m = with_rd(built["confirmed_clean_no_candidates"])
-    # Measured, so the row's green branch is REACHABLE: left absent, the
-    # vendor-surface gap keeps the row off green on its own and this assertion
-    # cannot fail (found by round 14's own mutation run).
-    r_m["categories"]["email_vendor_surface"] = dict(measured_evs)
-    r_m["categories"]["vendor_breach"] = dict(measured_vb)
-    r_m["categories"]["third_party_correlation"] = {
-        "status": "completed", "severity": "medium", "critical_count": 0, "high_count": 0,
-        "medium_count": 1, "hudson_rock_third_party_count": 3, "spf_vendor_count": 0,
-        "suspected_vendors": [], "score": 84, "issues": []}
-    row_m = _summary_sc_row(pc.build_summary_table(r_m, S))
+    # Built through _row_with, so EVERY signal the row summarises is measured
+    # and the green branch is REACHABLE. This block has gone inert twice for the
+    # same reason - once when the vendor surface gained an unmeasured test
+    # (round 14) and again when the other three signals did (round 15) - because
+    # it built its own result and inherited neither fix. Using the helper means
+    # the next signal to gain a test cannot make it inert a third time.
+    row_m = _row_with({"third_party_correlation": {
+        "status": "completed", "severity": "medium", "critical_count": 0,
+        "high_count": 0, "medium_count": 1, "hudson_rock_third_party_count": 3,
+        "spf_vendor_count": 0, "suspected_vendors": [], "score": 84,
+        "issues": []}})
     ok = "cross-vendor MEDIUM" in row_m and "Clean" not in row_m and GREEN not in row_m
     if not ok:
         failures.append("discovery[summary:vendor_join_medium]: %r" % row_m[:160])

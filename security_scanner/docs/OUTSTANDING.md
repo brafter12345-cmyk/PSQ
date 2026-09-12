@@ -2412,20 +2412,48 @@ FIXED in 15a - which domains get scanned:
   restructured collector without weakening the defect each models; 309
   mutations, 0 off-anchor.
 
-STILL OPEN after 15a, with the evidence recorded:
+FIXED in 15b - what the summary row may call clean:
 
-- THE SUMMARY ROW'S GAP PREDICATE IS TOTAL OVER SHAPES, NOT OVER SIGNALS (B1 and
-  C1, high, found independently by two critics). _sc_unmeasured's own docstring
-  reads "Total, not a list of two shapes" directly above a list of exactly two
-  entries. S-1, S-2, S-3 and S-10 have no unmeasured test at all, so a completed
-  neighbour carries the row to a green "Clean" over a third-party-JS that timed
-  out, a dependency manifest that errored, or a related_domains category absent
-  from a pre-step-5 stored result. This is the same defect as
-  SC-ROW-CLEAN-OVER-UNMEASURED and FC13-1, a third time. Fixing it REQUIRES the
-  gate fixtures to supply the other signals as measured, because
-  takealot_baseline.json carries none of the seven supply-chain categories and
-  the green branch would otherwise become unreachable, making the assertions
-  inert - the trap p120 and p122 just escaped.
+- THE GAP PREDICATE WAS TOTAL OVER SHAPES, NOT OVER SIGNALS (B1 and C1, high,
+  found independently by two critics). _sc_unmeasured's own docstring reads
+  "Total, not a list of two shapes" directly above a list of exactly two
+  entries. It WAS total over the shapes a checker fails in - error, timeout,
+  absent - but it ran over S-4 and S-5 only, so S-1, S-2, S-3 and S-10 had no
+  unmeasured test at all and one completed neighbour carried the row to a green
+  "Clean" over a third-party-JS that timed out, a dependency manifest that
+  errored, a plugin scan that never ran, or a related-domains category missing
+  from a result stored before step 5. The same defect as
+  SC-ROW-CLEAN-OVER-UNMEASURED and FC13-1, a third time, because each time the
+  shape in front of me was fixed instead of the rule. The predicate now runs
+  over every signal the row summarises, and a missing related-domains category
+  blocks green and is named. Two limits are deliberate and pinned: "skipped"
+  counts as MEASURED for the plugin scan, because it is the checker saying the
+  site is not WordPress (see B2), and a missing category does NOT force the row
+  to RENDER, which is the separate question recorded and refuted as FC13-4.
+- THE FIXTURES ENCODED THE ASSUMPTION THE DEFECT WAS MADE OF. Both row helpers
+  supplied S-4/S-5 and left the other signals errored or absent, because when
+  they were written only those two had a test. Stated for the next round: a case
+  that asserts a GREEN reading must supply EVERY signal the row summarises, or
+  it is asserting the gap rule and not the thing it names. Six existing
+  mutations were re-anchored to the rewritten guard and note without weakening
+  what each models, and a new block exercises every signal one at a time against
+  an all-measured CONTROL - the control being what stops all eleven shapes
+  passing because the row happens never to be green for an unrelated reason,
+  which is precisely how two assertions went inert in round 14.
+- THE MEDIUM-VENDOR-JOIN CASE WENT INERT FOR THE SECOND TIME IN TWO ROUNDS, and
+  only the FULL sweep found it - a targeted re-run of the previous survivors
+  would have missed it exactly as it did in round 14. The block builds its own
+  result, so it inherited neither round 14's measured vendor surface nor this
+  round's widening to the other three signals; both times the gap rule held the
+  row off green for a reason unrelated to the cross-vendor join it exists to
+  test. It is built through the shared helper now, so the next signal to gain a
+  test cannot make it inert a third time. The general rule, worth applying to
+  any case not yet using a helper: A CASE THAT BUILDS ITS OWN RESULT INHERITS NO
+  FIX MADE TO THE HELPERS.
+- NUMBER AGREEMENT (C6), now that the gap note routinely names more than one
+  signal.
+
+STILL OPEN after 15b, with the evidence recorded:
 - THE S-1 CARD HAS NO "partly" KEY (C2, medium), so a partly assessed S-1 is
   named under "Assessed:" in the deck directly above its own "not fully
   assessed" footnote. S-4 and S-5 set this key precisely so a partly read signal
