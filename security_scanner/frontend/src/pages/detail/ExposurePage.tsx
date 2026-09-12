@@ -4,7 +4,8 @@ import { StatusBadge } from '../../components/primitives/Status'
 import { PageTitle, CheckerHeader, KV, IssueList, DetailGrid, NotAssessedNote } from '../../components/detail/parts'
 import { getResults } from '../../data/results'
 import { cat, CATEGORY_LABELS } from '../../data/selectors'
-import { isConclusive } from '../../data/checkerState'
+import { isConclusive, headerBadge, panelShowsCounts } from '../../data/checkerState'
+import { vendorSurfaceUnmeasured } from '../../data/emailVendorPanel'
 import CredentialExportPortal from '../../components/overview/CredentialExportPortal'
 import MeetingBriefPanel from '../../components/overview/MeetingBriefPanel'
 import BreachIntelPanel from '../../components/detail/BreachIntelPanel'
@@ -221,13 +222,35 @@ export function MoreCheckers({ r, ids }: { r: Results; ids: string[] }) {
             .filter(([k, v]) => !['status', 'issues', 'per_ip', 'score'].includes(k) && (typeof v !== 'object' || v === null))
             .slice(0, 4)
           const rows: KVRow[] = fields.map(([k, v]) => ({ label: k.replace(/_/g, ' '), value: String(v) }))
+          // Counts are only printed where something was measured. A chain that
+          // was never read yields "match count = 0", which reads as a clean
+          // vendor estate (step-5 critique round 11, R11-SC-2).
+          const badge = headerBadge(c, true)
+          // One function, which the regression gate runs under node on real
+          // checker output (step-5 critique round 11, R11-SC-2).
+          const unmeasured = !panelShowsCounts(c)
+          const partly = badge.label === 'Partly assessed'
+          // Only the two SPF-bearing checkers carry an SPF reason to give.
+          const spfWhy = (id === 'vendor_breach' || id === 'email_vendor_surface')
+            ? vendorSurfaceUnmeasured(c as unknown as Record<string, unknown>)
+            : ''
           return (
             <div key={id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <span style={{ fontSize: 12, fontWeight: 600 }}>{CATEGORY_LABELS[id] ?? id.replace(/_/g, ' ')}</span>
                 <CheckerHeader category={c} refine />
               </div>
-              {rows.length > 0 && <KV rows={rows} />}
+              {unmeasured ? (
+                <NotAssessedNote category={c} force
+                  what={CATEGORY_LABELS[id] ?? id.replace(/_/g, ' ')}
+                  why={spfWhy || (badge.label ?? undefined)} />
+              ) : (
+                <>
+                  {rows.length > 0 && <KV rows={rows} />}
+                  {partly && <KV rows={[{ label: 'SPF chain',
+                    value: 'Partly read - the figures above are a lower bound' }]} />}
+                </>
+              )}
             </div>
           )
         })}

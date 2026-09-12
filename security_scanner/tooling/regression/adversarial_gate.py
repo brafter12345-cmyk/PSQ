@@ -3045,9 +3045,12 @@ def _deck_group(text, name="Related domains"):
     m = re.search(re.escape(name) + r": (not fully assessed|not assessed) \(", text)
     if m:
         return "own: " + m.group(1)
-    for m in re.finditer(r"(Not assessed \(no scan data\)|Not applicable|Assessed):\s*([^.]*)", text):
+    for m in re.finditer(r"(Not assessed \(no scan data\)|Not applicable|"
+                         r"Partly assessed|Fully assessed|Assessed):\s*([^.]*)", text):
         if name in m.group(2):
-            return m.group(1)
+            # "Fully assessed" is the same group under a heading the slide uses
+            # when something else on it was only partly read.
+            return "Assessed" if m.group(1) == "Fully assessed" else m.group(1)
     return None
 
 
@@ -3713,8 +3716,24 @@ def _check_discovery_parity(failures):
                 want_grp = "own: not assessed"
             elif outcome_ == "partial" and not flagged_:
                 want_grp = "own: not fully assessed"
+            elif outcome_ == "partial":
+                # The finding it carries still loads and still sets the verdict,
+                # but the signal is named as partly assessed, never as assessed
+                # (step-5 critique round 11, R11-SC-3).
+                want_grp = "Partly assessed"
             else:
                 want_grp = "Assessed"
+            if outcome_ == "partial" and not flagged_:
+                # The reason, not just the heading it opens with: the
+                # parenthetical could state the opposite and pass (GS11-5).
+                import re as _re_g
+                m_r = _re_g.search(_re_g.escape(name_)
+                                   + r": not fully assessed \(([^)]*)\)", slide)
+                reason_ = m_r.group(1).lower() if m_r else ""
+                if ("lower bound" not in reason_
+                        or "complete sending surface" in reason_):
+                    bad.append("%s/%s: the reason reads %r"
+                               % (how, name_, reason_[:140]))
             grp_ = _deck_group(slide, name_)
             if grp_ != want_grp:
                 bad.append("%s/%s: %s filed under %r, want %r"
@@ -3846,13 +3865,31 @@ def _check_discovery_parity(failures):
              stored_vendor_vb)):
         col_, text_ = _card_of(builder_, key_, payload_)
         low_ = text_.lower()
-        want_ = [pc._SPF_PARTIAL_ROW[1].lower(), "never read"]
+        # Literals, not the module's own strings. Reading _SPF_PARTIAL_ROW back
+        # out of pdf_cards asserts only that the card says whatever the module
+        # says, so the row could be reworded to claim the chain was fully read
+        # and stay green (critique round 11, GS11-3, GS11-4).
+        want_ = ["partly read", "lower bound", "never read",
+                 "not a complete assessment of the sending surface", "re-scan"]
         # The fallback line renders only where the card carries no issues.
         if not payload_.get("issues"):
             want_.append("part of the spf chain was not read")
+        never_ = ["fully read", "every sending vendor was identified",
+                  "complete sending surface", "no re-scan is needed",
+                  "authorise no further senders"]
         missing_ = [w for w in want_ if w not in low_]
-        if col_ is None or col_ is pc.C_GREEN or missing_:
-            bad.append("the %s card is %r and omits %r" % (label_, col_, missing_))
+        said_ = [w for w in never_ if w in low_]
+        if col_ is None or col_ is pc.C_GREEN or missing_ or said_:
+            bad.append("the %s card is %r, omits %r and says %r"
+                       % (label_, col_, missing_, said_))
+    # An outcome the rule does not know draws no card either: the allow-list is
+    # pinned on the cards, not only on the deck, the row and the dashboard
+    # (critique round 11, GS11-1).
+    unknown_evs_ = dict(measured_evs, spf_lookup="truncated")
+    unknown_vb_ = dict(measured_vb, spf_lookup="truncated")
+    if (pc.cat_email_vendor_surface({"email_vendor_surface": unknown_evs_}, S)
+            or pc.cat_vendor_breach({"vendor_breach": unknown_vb_}, S)):
+        bad.append("an outcome the rule does not know draws a technical card")
 
     def _sc_row(e_, v_):
         r_ = with_rd(None)
@@ -4406,8 +4443,14 @@ globalThis.fetch = async (url, opt) => {
   await runPreflight();
   const boxes = made.filter((e) => e.tagName === 'input');
   const ticked = boxes.filter((e) => e.checked || e.defaultChecked || 'checked' in e.attrs);
+  const collected0 = collectRelatedDomains();
+  byId['related-domains'].value = 'supplier.co.za jane@brokerfirm.co.za';
+  const contact0 = collectRelatedDomains();
+  byId['related-domains'].value = 'Acme Group Holdings <info@acmegroup.co.za>';
+  const named0 = collectRelatedDomains();
   console.log(JSON.stringify({ boxes: boxes.length, ticked: ticked.length,
-    collected: collectRelatedDomains(), asked: asked.map((a) => a.domain) }));
+    collected: collected0, contact: contact0, named: named0,
+    asked: asked.map((a) => a.domain) }));
 })();
 """)
         r_d = _node_file(js_d) if (m_col and m_pre and m_k1 and m_k2) else None
@@ -4415,6 +4458,16 @@ globalThis.fetch = async (url, opt) => {
             dom = json.loads(r_d.stdout.strip().splitlines()[-1])
         except Exception:
             dom = {}
+        # A contact on the line is a contact whether or not it wears brackets,
+        # and a line whose host is a company name must still send the domain it
+        # names: qualifying a host by truthiness dropped the whole line
+        # (critique round 11, IR11-3, IR11-1).
+        if sorted(dom.get("contact") or []) != ["supplier.co.za"]:
+            bad.append("the box sends a bare contact address: %r"
+                       % (dom.get("contact"),))
+        if sorted(dom.get("named") or []) != ["acmegroup.co.za"]:
+            bad.append("the box drops a line whose host is a company name: %r"
+                       % (dom.get("named"),))
         want_col = sorted(_dv_form.clean_related_domains(tokens_))
         got_col = sorted(_dv_form.clean_related_domains(dom.get("collected") or []))
         if (dom.get("boxes") != 2 or dom.get("ticked") != 0 or got_col != want_col
@@ -4490,7 +4543,34 @@ globalThis.fetch = async (url, opt) => {
                 "https://www.acme.co.za/ (broker: Jane <jane@brokerfirm.co.za>)",
                 "acme.co.za <info@brokerfirm.co.za>",
                 "https://acme.co.za\\@attacker.com"]
-    raws = raws + addr_raws + url_raws
+    # A host ends where host characters end: a trailing dot or comma must not
+    # hand the scan to the contact (critique round 11, IR11-2). Both still clean
+    # to acme.co.za, so they belong in the list above.
+    url_raws += ["acme.co.za. <info@brokerfirm.co.za>",
+                 "acme.co.za, attn Jane <jane@brokerfirm.co.za>"]
+    # These clean to a host of their own, so the fixed pair url_raws asserts is
+    # not about them. They are still compared door to door below, and each has
+    # its expected host stated outright (GS11-2, IR11-1).
+    host_raws = ["acme.africa <info@brokerfirm.co.za>",
+                 "acme.insurance <accounts@brokerfirm.co.za>",
+                 "acme.capetown <ops@brokerfirm.co.za>",
+                 "Acme Group Holdings <info@acmegroup.co.za>"]
+    # Parity between the two doors would survive a rule narrowed identically on
+    # both sides, so the host each value must clean to is stated (critique round
+    # 11, GS11-2, IR11-1, IR11-2).
+    import domain_validation as _dv_host
+    for raw_, want_host_ in (
+            ("acme.africa <info@brokerfirm.co.za>", "acme.africa"),
+            ("acme.insurance <accounts@brokerfirm.co.za>", "acme.insurance"),
+            ("acme.capetown <ops@brokerfirm.co.za>", "acme.capetown"),
+            ("acme.co.za. <info@brokerfirm.co.za>", "acme.co.za"),
+            ("acme.co.za, attn Jane <jane@brokerfirm.co.za>", "acme.co.za"),
+            ("Acme Group Holdings <info@acmegroup.co.za>", "acmegroup.co.za")):
+        got_host_ = _dv_host.normalize_domain(raw_)
+        if got_host_ != want_host_:
+            bad.append("the cleaner reads %r as %r, want %r"
+                       % (raw_, got_host_, want_host_))
+    raws = raws + addr_raws + url_raws + host_raws
     r_n = (_node_file(m_n1.group(0) + m_n2.group(0)
                       + "console.log(JSON.stringify(%s.map(normalizeDomainInput)));\n"
                       % json.dumps(raws)) if (m_n1 and m_n2) else None)
@@ -5628,7 +5708,8 @@ globalThis.fetch = async (url, opt) => {
         try:
             shutil.copyfile(cs_path, os.path.join(td_hb, "checkerState.mts"))
             with io.open(os.path.join(td_hb, "hb_check.mts"), "w", encoding="utf-8") as fh:
-                fh.write("import { headerBadge as h, STATE_META as M } from './checkerState.mts'\n"
+                fh.write("import { headerBadge as h, STATE_META as M,"
+                         " panelShowsCounts as psc } from './checkerState.mts'\n"
                          "const cases = " + json.dumps(hb_cases) + "\n"
                          "const out = {}\n"
                          "for (const [k, v] of Object.entries(cases)) {\n"
@@ -5639,6 +5720,8 @@ globalThis.fetch = async (url, opt) => {
                          "const n = h(undefined, true)\n"
                          "out.absent = { state: n.state, label: n.label ?? null,"
                          " shown: M[n.state].label }\n"
+                         "out.__counts = Object.fromEntries(Object.entries(cases)"
+                         ".map(([k, v]) => [k, psc(v)]))\n"
                          "console.log(JSON.stringify(out))\n")
             r_hb = subprocess.run([node_cs, "--no-warnings", os.path.join(td_hb, "hb_check.mts")],
                                   capture_output=True, text=True, timeout=60)
@@ -5683,6 +5766,21 @@ globalThis.fetch = async (url, opt) => {
     for k_, w_ in sorted(want_hb.items()):
         if hb_out.get(k_) != w_:
             bad.append("the header badge for %s gives %r, want %r" % (k_, hb_out.get(k_), w_))
+    # A generic panel prints counts only where something was measured: "match
+    # count = 0" over a chain nobody read reads as a clean vendor estate
+    # (critique round 11, R11-SC-2).
+    psc_want = {
+        "vb_failed": False, "vb_not_followed": False, "vb_stored": False,
+        "vb_unknown_outcome": False, "credential_correlation": False,
+        "vb_partial_quiet": True, "vb_partial_matches": True,
+        "vb_stored_with_vendor": True, "vb_answered": True, "vb_matches": True,
+        "dependency_manifests": True, "cms_plugin_sbom": True,
+    }
+    psc_got = hb_out.get("__counts") or {}
+    for k_, w_ in sorted(psc_want.items()):
+        if psc_got.get(k_) != w_:
+            bad.append("the panel's measurement gate for %s gives %r, want %r"
+                       % (k_, psc_got.get(k_), w_))
     if ("<RelatedDomainsPanel r={r} />" not in page_tsx
             or "getRelatedDomainsPanel(r)" not in page_tsx):
         bad.append("the panel is not rendered from getRelatedDomainsPanel")

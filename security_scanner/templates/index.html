@@ -665,7 +665,7 @@ function normalizeDomainOnce(raw) {
   if (angle && !/^\s*(?:(?:https?|ftp):\/\/|\/\/|mailto:)/.test(angle[1].toLowerCase())) {
     // A host before the brackets is the target; without one the value is a
     // display name and its address is (the server does the same).
-    const host = angle[1].match(/^\s*["']?(?:[a-z0-9-]+\.)+[a-z]{2,}(?:[/?#:]|\s|$)/i);
+    const host = angle[1].match(/^\s*["']?(?:[a-z0-9-]+\.)+[a-z]{2,}(?![a-z0-9-])/i);
     s = host ? host[0] : angle[2];
   }
   s = strip(s.replace(/^["'<>]+|["'<>]+$/g, '')).toLowerCase();
@@ -944,15 +944,22 @@ function collectRelatedDomains() {
   if (ta && ta.value.trim()) {
     // The server's cleaner, so an entry the API would keep is never dropped
     // here unseen (step-5 critique round 9).
-    // A bracketed contact address beside a host on the same line is a
-    // contact, not a related domain: the API cleans the line as one entry and
-    // keeps the host, and the form used to send the contact's own domain into
-    // the client's supply-chain scope. A line carrying only an address still
-    // yields that domain (step-5 critique round 10, IR10-3).
+    // A contact address beside a host on the same line is a contact, not a
+    // related domain: the API cleans the line as one entry and keeps the host,
+    // and the form used to send the contact's own domain into the client's
+    // supply-chain scope. Bracketed or bare, since a broker pastes both
+    // (round 11, IR11-3). A host must QUALIFY as a domain rather than merely
+    // clean to a truthy string, or a line whose host is a company name drops
+    // entirely and the confirmed domain is never sent (round 11, IR11-1). A
+    // line carrying only an address still yields that domain.
+    const qualifies = (p) => {
+      const d = normalizeDomainInput(p);
+      return !!d && d.includes('.');
+    };
     ta.value.split(/[\r\n]+/).forEach(line => {
       const parts = line.split(/[\s,;]+/).filter(Boolean);
-      const hosts = parts.filter(p => !/^<[^<>@\s]*@[^<>\s]*>$/.test(p));
-      const use = hosts.some(p => normalizeDomainInput(p)) ? hosts : parts;
+      const hosts = parts.filter(p => !p.includes('@'));
+      const use = hosts.some(qualifies) ? hosts : parts;
       use.forEach(raw => {
         const d = normalizeDomainInput(raw);
         if (d && d.includes('.')) set.add(d);

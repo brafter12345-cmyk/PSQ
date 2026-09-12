@@ -1859,6 +1859,33 @@ each is a checker's fidelity rather than discovery parity:
   9), and nor does the Email-Vendor panel, whose badge follows what the panel
   says (round 10). Fix: derive each page's header from its own verdict, as
   those two do.
+- **An unanswered DMARC lookup reads as "p=missing" (FC11-1, refuted in round 11
+  as out of scope).** EmailVendorSurfaceChecker._fetch_dmarc_policy swallows a
+  resolver error and returns "", so a timeout or SERVFAIL on _dmarc.<domain> is
+  indistinguishable from a domain that publishes no DMARC record: weak_dmarc is
+  set, the card reads red, an RSI factor and a remediation action fire, and the
+  rate loads - all off a lookup that did not answer. The SPF walk beside it
+  records its own outcome; this one does not. It predates step 5, which is the
+  ground the skeptic refuted it on. Fix: separate NXDOMAIN and NoAnswer
+  (genuinely no record) from Timeout and NoNameservers (not measured), record a
+  dmarc_lookup outcome as the SPF walk does, and render an unmeasured policy as
+  not assessed rather than as missing.
+- **Seven true statements in copy no deck renders (R11-CVC-4).** Each
+  supply-chain card dict in pdf_report carries a "support" line and no slide
+  renders the key. The S-5 one read "Curated 14-incident database" against an
+  11-row file (corrected in round 12), and round 11's commit message claimed the
+  corrected vendor count appears "on the deck's S-4 card" - text no reader can
+  reach. Fix: render support on the slide, or delete the key from all seven
+  dicts. An unrendered field that six other true statements also live in is a
+  standing invitation to correct the wrong copy.
+- **No gate guards a documented count (R11-CVC-5).** Every count claim in the
+  manual and the heuristics audit - vendor patterns, breach rows and vendors,
+  takeover signatures, manifest paths, plugin slugs - is hand-maintained, and
+  each rotted silently between the round that wrote it and the round that
+  re-derived it while the pre-push gate passed throughout. Round 12 corrected
+  25, 11, 7, 18 and 29 by hand; nothing stops the next edit to any of those
+  tables doing it again. Fix: parse the counts out of manual_parts and the audit
+  and assert each against the table the code actually loads.
 
 ### Step 5 critique round 8 (2026-09-11)
 
@@ -2050,3 +2077,71 @@ one:
   form self-heals - the blur listener the reviewer's harness omitted re-runs the
   pre-flight and detaches the ticked boxes; the surviving variant renders
   identically on the committed pre-image, so it is not a step-5 defect).
+
+### Step 5 critique round 11 (2026-09-12)
+
+An eleventh critique (twenty-five agents: five reviewers and twenty skeptics)
+upheld ten findings, six of them medium and none high after verification, and
+refuted ten; round 12 acted on or recorded every one:
+
+- THE DASHBOARD PRINTED COUNTS OVER A CHAIN NOBODY READ (R11-SC-2, medium). The
+  Exposure page's generic panels print a checker's first four scalar fields, so
+  a vendor-breach result whose SPF chain never answered rendered "match count =
+  0, critical match count = 0, high match count = 0" beside a correct "Not
+  assessed" badge, and a broker skimming the panel read a clean vendor estate
+  off three numbers nobody measured. On the same payload the technical report
+  drew no card and the deck said the lookup did not answer, so the dashboard was
+  the one surface showing figures. parts.tsx has stated the rule since the
+  credential panel - render the note INSTEAD of the numbers - and it was wired
+  to one checker. The decision is now one exported function,
+  checkerState.panelShowsCounts, which the gate runs under node on real checker
+  output.
+- A PARTLY READ SIGNAL WAS COUNTED AS ASSESSED (R11-SC-3, low). A partial walk
+  carrying a finding kept its severity, so the deck counted it among the
+  assessed signals and named it under "Assessed:" while that same card's
+  footnote called the vendors a lower bound. It stays in the flagged group, so
+  the finding still loads and still sets the verdict, and it is out of the
+  assessed count and list; the slide names it under "Partly assessed", since
+  naming it in no group at all would leave the reader to infer its state from an
+  absence.
+- THE BOX DROPPED A LINE WHOSE HOST IS A COMPANY NAME (IR11-1, medium; a
+  regression of round 11). Round 11 qualified a host by truthiness, so "Acme
+  Group Holdings <info@acmegroup.co.za>" found a truthy "acme", took the hosts
+  branch and sent nothing at all: a broker-confirmed sibling was dropped in
+  silence, neither scanned nor listed as unassessed. A host now qualifies the
+  way the collector qualifies its own output - cleaned, and carrying a dot.
+- A CONTACT WEARING NO BRACKETS (IR11-3, medium). The contact rule recognised
+  only a bracketed address, so a row pasted out of a CSV or a mail client
+  ("supplier.co.za jane@brokerfirm.co.za") still sent the broker firm's own
+  domain into the client's supply-chain scope. Any token carrying "@" beside a
+  qualifying host on the line is a contact.
+- THE HOST ENDED ON AN ALLOW-LIST (IR11-2, refuted as framed; its kernel fixed).
+  A trailing dot or comma - "acme.co.za. <info@brokerfirm.co.za>" - did not
+  match the host rule, and the value fell through to the contact's domain on
+  both doors. A host now ends where host characters end.
+- GATE (GS11-1 to GS11-5). The cards refuse an outcome the rule does not know,
+  as the deck, the row and the dashboard already did; the card assertions read
+  fixed literals rather than the module's own strings, with the note's
+  load-bearing clauses and a list of things it must never say, so a row reworded
+  to claim the chain was fully read no longer passes; the deck's "not fully
+  assessed" reason is read inside its parentheses rather than by the words it
+  opens with; the host rule is pinned per input, on TLDs longer than two letters
+  and on what follows the host, rather than by a parity both doors could lose
+  together; and what the box sends is driven line by line in the stub DOM.
+- DOCUMENTS (R11-CVC-1 to R11-CVC-6). The manual's breach-database sentence is
+  re-derived from the file: 11 confirmed breaches across 7 vendors, with
+  SendGrid, Constant Contact and Marketo removed, since they have no rows and a
+  broker was being told the correlation covers vendors it can never match. It
+  now also says that 18 of the 25 detected patterns have no breach row at all,
+  so a clean S-5 result for such a vendor means there is no row, not that there
+  was no incident. The deck's S-5 card says 11 incidents; the audit's
+  recommendation cell says 18/25 rather than still advising that 20/28 be
+  documented; its S-5 row carries the table's real _meta.version; and the
+  takeover-signature count is the 29 the table holds.
+- REFUTED: FC11-1 (an unanswered DMARC lookup read as p=missing - real,
+  pre-existing, now recorded in 5af), FC11-2 (the SPF walk's depth and
+  ten-include cut, already 5af's open bullet), R11-SC-1 (the summary row's
+  "Clean" over an unread chain, unchanged by step 5), IR11-2 as framed (its true
+  kernel is fixed above), GS11-6 (the badge severity table), and R11-CVC-1, -2,
+  -3, -5 and -6 as underwriting defects - each factual core was true, and each
+  is corrected above or recorded in 5af.

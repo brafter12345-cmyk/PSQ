@@ -1227,6 +1227,9 @@ def _assessment_slide_supply_chain(results):
         "headline": "Phishing-via-supplier when DMARC is weak",
         "severity": sev,
         "metric": metric,
+        # Partly read: the finding it carries still loads, but the signal is not
+        # counted or named among those assessed (step-5 round 11, R11-SC-3).
+        "partly": _spf_partial(evs),
         "support": "Walks the SPF include: chain; classifies against 25 known "
                    "email-SaaS patterns; cross-references DMARC policy.",
         "footer": _evs_foot,
@@ -1297,7 +1300,8 @@ def _assessment_slide_supply_chain(results):
         "headline": "Customer-key rotation often incomplete post-breach",
         "severity": sev,
         "metric": metric,
-        "support": "Curated 14-incident database (Mailchimp 2022/23, Okta 22/23, "
+        "partly": _spf_partial(vb),
+        "support": "Curated 11-incident database (Mailchimp 2022/23, Okta 22/23, "
                    "MS365 Storm-0558, etc.). 5-year lookback with age decay.",
         "footer": _vb_foot,
         "footnote": _vb_note,
@@ -1392,19 +1396,34 @@ def _assessment_slide_supply_chain(results):
     na = [c for c in cards if c["severity"] == "NA"]
     unknown = [c for c in cards if c["severity"] not in
                ("CRITICAL", "HIGH", "MEDIUM", "LOW", "CLEAN", "NA")]
-    assessed = flagged + clean
+    # A partly read signal is not fully assessed, whatever it found. It stays
+    # in `flagged`, so the finding still loads and still sets the verdict, and
+    # out of `assessed`, so it is neither counted nor named as one this scan
+    # assessed (step-5 critique round 11, R11-SC-3).
+    partly_cards = [c for c in cards if c.get("partly")]
+    flagged_full = [c for c in flagged if not c.get("partly")]
+    flagged_partly = [c for c in flagged if c.get("partly")]
+    assessed = flagged_full + clean
     # A signal that was partly assessed says so in its own footer; with nothing
     # assessed in full, "none could be assessed" would contradict it (step-5
     # critique round 6).
-    _partly = any(str(c.get("footer") or "").startswith("not fully assessed")
-                  for c in unknown)
+    _partly = bool(partly_cards) or any(
+        str(c.get("footer") or "").startswith("not fully assessed")
+        for c in unknown)
     flagged.sort(key=lambda c: -_SEV_ORDER.get(c["severity"], 0))
 
     if flagged:
         worst = flagged[0]["severity"]
         verdict_text, vhex = worst + " EXPOSURE", _SC_SEV_HEX.get(worst, "#475569")
-        sub = (str(len(flagged)) + " of " + str(len(assessed)) +
-               " assessed supply-chain signal(s) flagged for attention.")
+        _bits = []
+        if flagged_full:
+            _bits.append(str(len(flagged_full)) + " of " + str(len(assessed)) +
+                         " assessed supply-chain signal(s) flagged for attention.")
+        if flagged_partly:
+            _bits.append(str(len(flagged_partly)) + " signal(s) carry a finding "
+                         "on an SPF chain that was only partly read, so what "
+                         "they report is a lower bound.")
+        sub = " ".join(_bits)
     elif assessed:
         verdict_text, vhex = "LOW EXPOSURE", _SC_SEV_HEX["LOW"]
         sub = "All " + str(len(assessed)) + " assessed supply-chain signal(s) are clean."
@@ -1489,8 +1508,15 @@ def _assessment_slide_supply_chain(results):
                           for c in cardlist) or "none"
     # With nothing assessed in full, a partly assessed signal is not "none":
     # say what the list is (step-5 critique round 7).
-    foot = (("<b>Fully assessed:</b> " if _partly and not assessed else "<b>Assessed:</b> ")
+    foot = (("<b>Fully assessed:</b> " if _partly else "<b>Assessed:</b> ")
             + _plain_names(assessed) + ". ")
+    # A signal read only in part belongs to a group of its own: naming it in
+    # none leaves the reader to infer its state from an absence (step-5 critique
+    # round 11, R11-SC-3). One that already carries its own sentence below is
+    # not repeated here.
+    _partly_named = [c for c in partly_cards if not c.get("footer")]
+    if _partly_named:
+        foot += "<b>Partly assessed:</b> " + _plain_names(_partly_named) + ". "
     if na:
         foot += "<b>Not applicable:</b> " + _plain_names(na) + ". "
     # A signal that gathered data but was not (fully) assessed says so in a

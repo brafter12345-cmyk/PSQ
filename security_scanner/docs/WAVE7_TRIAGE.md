@@ -85,7 +85,7 @@ boundary; dead SORBS list removed + `PORT_INTEL`/`RANSOMWARE_CVE_MAP` staleness 
 | `S-2 KNOWN_COMPROMISED_HOSTS` tight allow-deny (new-incident lag) | checkers_supply_chain.py:526-531 | D | Magecart +60 penalty + uplift (coverage) | feature-build (threat-feed refresh) | M |
 | `S-10 POPULAR_PLUGINS` 25-slug list (coverage) | checkers_supply_chain.py:849-875 | D | plugin SBOM coverage (readme-gated) | feature-build (refresh from wordpress.org) | S |
 | `vendor_breaches.json` SA-exposure coverage gaps | `vendor_breaches.json` + S-4:681-724 | D | S-5 breach correlation (coverage) | feature-build (add SA vendors) | M |
-| S-4 `VENDOR_PATTERNS` ↔ breaches.json asymmetry (20/28 no breach row) | checkers_supply_chain.py:681-724 | D | S-4/S-5 correlation completeness | feature-build (add Mimecast/Proofpoint/Pinpoint) | M |
+| S-4 `VENDOR_PATTERNS` ↔ breaches.json asymmetry (18/25 no breach row) | checkers_supply_chain.py:681-724 | D | S-4/S-5 correlation completeness | feature-build (add Mimecast/Proofpoint/Pinpoint) | M |
 | S-1 uplift dormant absent broker list (cert-SAN auto-promote) | checkers_supply_chain.py:38-55; flag_inference.py:539-554 | D | Civil-liability +0.04 (dormant — feature) | feature-build (TLS-cert-match auto-promote) | L |
 | S-1 `high_count` `<60` cutoff (cosmetic) | checkers_supply_chain.py:116-117 | B | issue string + remediation row (not uplift) | document-rationale | S |
 

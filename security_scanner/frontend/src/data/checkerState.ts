@@ -177,6 +177,16 @@ export function headerBadge(category: CategoryBase | undefined,
 }
 
 /** Friendlier label for inconclusive states, with the no-API-key nuance. */
+/** May a generic panel print this checker's counts?
+ *
+ *  A result the badge calls not assessed has no counts to print: "match count =
+ *  0" over an SPF chain nobody read is the absence of findings dressed as a
+ *  finding of absence, and the broker skimming the panel reads a clean vendor
+ *  estate off three zeros (step-5 critique round 11, R11-SC-2). */
+export function panelShowsCounts(category: CategoryBase | undefined): boolean {
+  return headerBadge(category, true).state !== 'not_assessed'
+}
+
 export function inconclusiveLabel(raw: string | null | undefined): string {
   const r = String(raw ?? '').toLowerCase().trim()
   if (r === 'no_api_key' || r === 'no_key' || r === 'missing_api_key') return 'No API key'

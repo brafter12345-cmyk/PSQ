@@ -510,7 +510,7 @@ def build(doc):
         "Phase 3, Subdomain Takeover Detection: ",
         "For every discovered subdomain, the scanner checks the CNAME "
         "record to determine whether it points to a third-party cloud "
-        "service. If the CNAME target matches one of 28 known takeover "
+        "service. If the CNAME target matches one of 29 known takeover "
         "signatures (GitHub Pages, AWS S3, Heroku, Azure Web Sites, Azure "
         "Blob, Azure Traffic Manager, Netlify, Vercel, Shopify, Ghost, "
         "Surge, Bitbucket, WordPress.com, Pantheon, Unbounce, Zendesk, "
@@ -1846,12 +1846,15 @@ def build(doc):
         "The scanner re-extracts the email-vendor surface (same SPF "
         "include-chain walk as S-4) and cross-references each "
         "detected vendor against a curated editorial breach database "
-        "(vendor_breaches.json). The current database carries 14 "
-        "confirmed public-record breaches across 10 vendors: "
-        "Mailchimp (2022 x2 + 2023), Salesforce/Heroku (2022 + 2023), "
+        "(vendor_breaches.json). The current database carries 11 "
+        "confirmed public-record breaches across 7 vendors: "
+        "Mailchimp (2022 + 2023), Salesforce/Heroku (2022 + 2023), "
         "Okta (2022 + 2023), Microsoft 365 (Storm-0558 2023, Midnight "
-        "Blizzard 2024), HubSpot, Intercom, Zendesk, SendGrid, "
-        "Constant Contact, and Marketo."
+        "Blizzard 2024), HubSpot (2022), Intercom (2023) and Zendesk "
+        "(2022). A vendor S-4 can detect is not necessarily a vendor "
+        "S-5 can correlate: 18 of the 25 detected patterns have no "
+        "breach row at all, so a clean S-5 result for such a vendor "
+        "means there is no row, not that there was no incident."
     )
 
     add_bold_body(

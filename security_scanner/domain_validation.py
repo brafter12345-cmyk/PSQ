@@ -33,7 +33,10 @@ _MAX_PASSES = 8
 # fragment is not one, or the host would lose to a third party's domain (step-5
 # critique rounds 7 and 9).
 _DISPLAY_ADDR_RE = re.compile(r"^(?P<pre>[^<>]*)<(?P<addr>[^<>@\s]*@[^<>\s]*)>\s*$")
-_HOSTLIKE_RE = re.compile(r"\s*[\"']?(?:[a-z0-9-]+\.)+[a-z]{2,}(?:[/?#:]|\s|$)", re.I)
+# The host ends where host characters end. An allow-list of the four
+# separators that may follow missed a trailing dot or comma, and the value then
+# fell through to the contact's address (step-5 critique round 11, IR11-2).
+_HOSTLIKE_RE = re.compile(r"\s*[\"']?(?:[a-z0-9-]+\.)+[a-z]{2,}(?![a-z0-9-])", re.I)
 
 # A scheme, or a chain of them (mailto://jane@..., https://http://...).
 _SCHEME_RE = re.compile(r"^(?:(?:https?|ftp)://|//|mailto:)+")
