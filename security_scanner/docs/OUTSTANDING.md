@@ -2453,20 +2453,40 @@ FIXED in 15b - what the summary row may call clean:
 - NUMBER AGREEMENT (C6), now that the gap note routinely names more than one
   signal.
 
-STILL OPEN after 15b, with the evidence recorded:
-- THE S-1 CARD HAS NO "partly" KEY (C2, medium), so a partly assessed S-1 is
+FIXED in 15c - what the deck may call assessed:
+
+- THE S-1 CARD SET NO "partly" KEY (C2, medium), so a partly assessed estate was
   named under "Assessed:" in the deck directly above its own "not fully
-  assessed" footnote. S-4 and S-5 set this key precisely so a partly read signal
-  is neither counted nor named; S-1 does not.
-- THE DECK'S "POSITIVE DUE-DILIGENCE RESULT" PINS ARE ALL INERT (D3,
-  medium-high, with a surviving mutation). No fixture this function renders ever
-  produces that sentence, because takealot_baseline.json carries none of the
-  supply-chain categories, so _classify maps them all to UNKNOWN and the
-  proportionate paragraph is always the one taken. All seven references to the
-  sentence can therefore be reworded freely without any assertion noticing.
-- FIXTURE MASKING PERSISTS FOR THREE TOKENS (D4, medium): four box tokens all
-  supply supplier.co.za, so dropping any one is unobservable in the drop
-  direction.
+  assessed" footnote, and counted in the "N of M assessed" figure. S-4 and S-5
+  carry that key precisely so a partly read signal is neither counted nor named
+  (round 11, R11-SC-3); the related-domains card never gained it. The assertion
+  was added BEFORE the fix and the gate FAILED on partial_with_critical and
+  partial_with_high, so the defect is proved by the gate rather than asserted by
+  me. The existing helper could not see it: _deck_group returns the card's own
+  sentence first and returns early, so it reported "own: not fully assessed" and
+  never noticed the same name also sitting in the Assessed list.
+- THE DECK'S STRONGEST POSITIVE CLAIM WAS NEVER PRODUCED (D3, medium-high, with
+  a surviving mutation). All seven references to "positive due-diligence result"
+  are must-NOT pins, and no fixture this function renders ever produced the
+  sentence: the baseline carries none of the supply-chain categories, an absent
+  one classifies as UNKNOWN, so `unknown` never emptied and the proportionate
+  paragraph was always the one taken. A never-list cannot catch a rewording, so
+  the claim is now PRODUCED by a fully measured case and pinned positively, with
+  the one-signal-short case pinned alongside it so the pair cannot both be
+  satisfied by a constant.
+- FIXTURE MASKING (D4, medium): four box tokens all supplied supplier.co.za, so
+  dropping any one of the three added for a specific rule was unobservable in
+  the DROP direction - the leak direction still bit, which is why the mutations
+  still died. Each now names a domain no other token supplies.
+- A RE-ASSIGNMENT THAT REPEATED THE DICT ENTRY ABOVE IT (D5, low).
+
+STILL OPEN, with the evidence recorded:
+
+- D3's COLLATERAL (low). The nine-case deck_vendor_join_clean_only_when_measured
+  loop computes says_clean as a disjunction whose FIRST arm - the positive
+  sentence - is never true for those fixtures, so the loop tests the footer
+  string only. It is not inert, since the second arm does the work, but it tests
+  one thing where it reads as testing two.
 
 RECORDED, NOT FIXED - owner decisions or outside discovery parity:
 

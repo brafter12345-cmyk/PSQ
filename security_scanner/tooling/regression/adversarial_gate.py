@@ -3846,6 +3846,67 @@ def _check_discovery_parity(failures):
             or "not an absence of checking" in slide_mixed):
         bad.append("the deck credits a scan with signals unassessed: %r"
                    % (slide_mixed[:220],))
+    # ...and the other side of that pair, which nothing produced. Every
+    # reference to "positive due-diligence result" in this function is a must-NOT
+    # pin, and no fixture here ever rendered the sentence, because the baseline
+    # carries none of the supply-chain categories and an absent one classifies as
+    # UNKNOWN - so the proportionate paragraph was always the one taken and
+    # rewording the claim changed nothing any assertion could see (round 15, D3).
+    # A never-list cannot catch a rewording: the claim must be PRODUCED.
+    _deck_clean_signal = {"status": "completed", "score": 100, "issues": [],
+                          "high_count": 0, "critical_count": 0}
+    _deck_all_measured = {
+        "email_vendor_surface": dict(measured_evs),
+        "vendor_breach": dict(measured_vb),
+        "third_party_js": dict(_deck_clean_signal),
+        "dependency_manifests": dict(_deck_clean_signal, exposed_manifests=[]),
+        # Completed and not WordPress is "Not applicable" - a measured answer,
+        # which is what lets `unknown` empty at all.
+        "cms_plugin_sbom": dict(_deck_clean_signal, is_wordpress=False),
+        "third_party_correlation": dict(
+            _deck_clean_signal, medium_count=0, suspected_vendors=[],
+            hudson_rock_third_party_count=0, spf_vendor_count=0,
+            severity="none"),
+        "hudson_rock": {"status": "completed", "third_party_exposures": 0,
+                        "score": 100, "issues": []},
+    }
+    slide_pos = slide_of(built["confirmed_clean_no_candidates"],
+                         _deck_all_measured)
+    if ("positive due-diligence result" not in slide_pos
+            or "could not be assessed on this scan" in slide_pos):
+        bad.append("a fully measured supply-chain surface does not read as a "
+                   "positive result: %r" % (slide_pos[:260],))
+    # And one signal short of that flips it back, so the pair cannot both be
+    # satisfied by a constant.
+    slide_one_short = slide_of(
+        built["confirmed_clean_no_candidates"],
+        dict(_deck_all_measured,
+             third_party_js={"status": "error", "error": "boom", "issues": []}))
+    if ("positive due-diligence result" in slide_one_short
+            or "could not be assessed on this scan" not in slide_one_short):
+        bad.append("one unassessed signal still reads as a positive result: %r"
+                   % (slide_one_short[:260],))
+
+    # A partly assessed estate must not be NAMED among the signals this scan
+    # assessed, exactly as a partly read SPF chain is not (round 11, R11-SC-3).
+    # _deck_group could not see this: it returns the card's own sentence first,
+    # so it reported "own: not fully assessed" and never noticed the same name
+    # ALSO listed under "Assessed:", directly above that very footnote
+    # (round 15, C2).
+    def _deck_named_in(text_, group_, name_="Related domains"):
+        for m_ in _re.finditer(
+                r"(Not assessed \(no scan data\)|Not applicable|Partly assessed|"
+                r"Fully assessed|Assessed):\s*([^.]*)", text_):
+            if m_.group(1) == group_ and name_ in m_.group(2):
+                return True
+        return False
+
+    for _lbl_c2 in ("partial_with_critical", "partial_with_high"):
+        _slide_c2 = slide_of(built[_lbl_c2])
+        if _deck_named_in(_slide_c2, "Assessed"):
+            bad.append("%s: a partly assessed estate is named among the signals "
+                       "this scan assessed, above its own not-fully-assessed "
+                       "footnote: %r" % (_lbl_c2, _slide_c2[:260]))
     if (pc.cat_email_vendor_surface({"email_vendor_surface": stored_evs}, S)
             or pc.cat_vendor_breach({"vendor_breach": stored_vb}, S)):
         bad.append("stored completed: the technical report draws a card")
@@ -4579,12 +4640,16 @@ def _check_discovery_parity(failures):
         tokens_.append("acme.co.za <info@brokerfirm.co.za>")
         # URL userinfo is not a contact address: both doors keep the URL's host
         # AND the plain host beside it (critique round 12, IH12-5).
-        tokens_.append("https://ops@group-holdings.com/portal supplier.co.za")
+        tokens_.append("https://ops@group-holdings.com/portal "
+                       "supplier-userinfo.co.za")
         # A scheme must not hide a contact, and a wildcard entry is cleaned
         # rather than dropped: each was asserted on the API door only, so a
         # form-only change survived (round 13, IH13-1, IH13-2, R13-IN-2).
-        tokens_.append("supplier.co.za mailto://jane@brokerfirm.co.za")
-        tokens_.append("supplier.co.za //accounts@brokerfirm.co.za")
+        # A domain no other token supplies, so DROPPING the rule each of these
+        # tests is observable and not merely the leak direction (round 15, D4;
+        # the defect p121 fixed for the wildcard token, and IH13-4 before that).
+        tokens_.append("supplier-mailto.co.za mailto://jane@brokerfirm.co.za")
+        tokens_.append("supplier-protorel.co.za //accounts@brokerfirm.co.za")
         # A domain that appears on no other token, so dropping the wildcard
         # line is observable: acme.co.za is supplied by another entry and
         # would mask it (round 13, IH13-4, reproduced in round 14).
@@ -6121,7 +6186,6 @@ globalThis.fetch = async (url, opt) => {
     }
     psc_want["intelx_error"] = False
     psc_want["hudson_error"] = False
-    psc_want["vb_partial_matches"] = True
     psc_got = hb_out.get("__counts") or {}
     for k_, w_ in sorted(psc_want.items()):
         if psc_got.get(k_) != w_:

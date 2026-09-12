@@ -1137,6 +1137,14 @@ def _assessment_slide_supply_chain(results):
                    "broker-confirmed domains are scanned (LITE mode) and scored.",
         "footer": _rd_foot,
         "footnote": "; ".join(_rd_note_bits) or None,
+        # A partly assessed estate is neither counted nor NAMED among the
+        # signals this scan assessed, exactly as S-4 and S-5 treat a partly read
+        # SPF chain (round 11, R11-SC-3). Without this key the deck listed
+        # Related domains under "Assessed:" directly above its own "not fully
+        # assessed" footnote (round 15, C2). Confirmed-and-not-fully-assessed is
+        # the only state that reaches here: the others already classify as
+        # UNKNOWN and never join the assessed groups.
+        "partly": _rd_state == "confirmed" and not _rd_full(rd),
     })
 
     # S-3 Dependency Manifests
