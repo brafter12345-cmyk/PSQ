@@ -2227,7 +2227,11 @@ acted on or recorded every one.
   characters: "acme.co.za1 <accounts@acme.co.za>" failed at full length and then
   matched "acme.co" - a different registrable domain - so the scan was silently
   retargeted. A second lookahead refuses a match that still has a label after
-  it, and the value falls through to the contact as it did before round 12.
+  it. (Round 13 then reversed what happens next, deliberately: a value that is
+  host-shaped but unreadable now fails CLOSED rather than falling through to
+  the contact - see IH13-3. This record described round 12 only and was left
+  contradicting the file's own round-13 section on the same input; corrected in
+  round 15.)
 - THE LOWER-BOUND ROW VANISHED BESIDE A FINDING (SC-PANEL-PARTLY,
   R12-DASH-PARTLY-BESIDE-FINDING, R12-2). Round 12 gated the dashboard's
   "partly read - the figures above are a lower bound" row on the badge LABEL,
@@ -2332,3 +2336,128 @@ one:
   - folded into the IH13-1 fix), IH13-6, R13-SC-1 and R13-IN-3. The audit
   sentence R13-SC-1 called an overclaim is true as written again now that the
   row's predicate is total.
+
+### Step 5, critique round 15
+
+Five independent critics against commit 942ea5e. Round 14 was committed with all
+twelve pre-push gates green and all 305 mutations killed; that green was not
+sufficient, and one of the HIGH findings is a regression round 14 introduced.
+
+FIXED in 15a - which domains get scanned:
+
+- THE NEAR-MISS GUARD ATE EVERY DOTTED FIRST TOKEN (E1, high; a round-14
+  regression). Round 14 added a fail-closed branch for a target that is
+  host-shaped but unreadable, guarded by its own looser pattern rather than by
+  the host rule. It matched every dotted first token, so exactly the values
+  round 12 established are NOT hosts - a date, an amount, an IP, a version,
+  initials - stopped resolving to the bracketed address, and the broker's
+  confirmed domain was dropped at the API with nothing said on any surface.
+  Measured across the four commits: "A.B. Electrical <accounts@abelectrical.co.za>"
+  cleaned to abelectrical.co.za at rounds 11, 12 and 13 and to "" at round 14.
+  Under the fail-closed rule a domain that is never scanned has its absence of
+  findings discount the rate. The guard is now DERIVED from the host rule - that
+  rule minus the two lookaheads that stop it reading a shorter host - so the two
+  cannot drift apart. Wrong on 7 of 13 measured cases before, 0 of 13 after.
+- THE FORM WALKED AROUND ITS OWN FAIL-CLOSED RULE (A1, high). When no token
+  qualifies as a host the API falls back to _keep(s) on the WHOLE entry; the form
+  fell back to each TOKEN. Only the whole entry reaches the display-name rule, so
+  the form never got there: an unreadable host beside a contact collected the
+  BROKER's own domain, which the API then accepted when it re-cleaned the list,
+  while the API given the same raw text failed closed. Round 14's claim that the
+  guard "fails closed on both doors" was false as written - it existed only for
+  direct API callers. The form now falls back to the whole entry, as the server
+  does.
+- THE TWO DOORS SPLIT ON DIFFERENT WHITESPACE (A3, medium). The form split on
+  [\s,;]+, but Python's \s also matches U+001C to U+001F and U+0085, so a
+  control character between a host and an address split the entry on the server
+  and not in the form, and the form sent the contact's domain where the server
+  kept the host. The file already knew this set - the strip helper uses
+  [\s\x1c-\x1f\x85] with a round-8 comment saying exactly why - the lesson
+  simply never reached the splitter added later.
+- THE WILDCARD STRIP DISAGREED ON DEPTH (A2, medium). The server strips every
+  pasted layer in one go; the form stripped one layer per pass. So "*..host" and
+  deep runs were kept by the server and rejected by the form, and on a line
+  carrying a contact the form then sent the broker's domain. NOTE: the critique
+  recommended the opposite fix - making the server strip a prefix - and the gate
+  refuted it within one run, because line 4735 pins "*." * 3000 + "sib12.co.za"
+  and the server's own comment states the one-go intent. The server is the
+  authority and the form was corrected.
+- THE ROW'S OWN CONDITION AND ITS NO-FINDING BRANCH WERE BOTH UNREACHABLE (D1
+  and D2, high, each with a surviving mutation). Round 14's p120 gave every
+  summary case a measured vendor surface so the row's GREEN branch would be
+  reachable. It was right about that and wrong about the cost: a measured signal
+  in every case makes sc_any_completed true in every case, so the row rendered
+  whatever its rendering condition said, the label always took the
+  "elif sc_any_completed" branch, and NOFIND - the constant naming the claim the
+  row actually leads with - was removed from both never-lists and left defined
+  but never used. Rewording "No finding on assessed signals" changed nothing any
+  assertion could see. Two UNMEASURED cases restore reachability, and NOFIND is
+  now pinned where it MUST appear as well as forbidden where it must not, since
+  a never-list alone cannot catch a rewording.
+- THE PREVIOUS COMMIT'S VERIFICATION CLAIM WAS FALSE. It reported "305 targeted
+  mutations, all caught". After p120 only the SURVIVORS were re-run, never the
+  whole set, so the two mutations p120 had just made inert still counted as
+  killed from the earlier run. The round-15 full run found them surviving; the
+  round-14 logs show both KILLED before p120. The commit was NOT amended to hide
+  this - a rewritten history that conceals a false verification claim is worse
+  than an honest correction. The lesson is the same one this round keeps
+  teaching: verify the whole artifact, not the delta.
+- GATE. E1 shipped through a green gate and parity could never have caught it,
+  because the rule was narrowed identically on BOTH doors, so they agreed with
+  each other while both were wrong. The ANSWER is now stated outright per input
+  for seven dotted-first-token shapes, alongside the existing parity comparison.
+  The collector's fallback, the splitter's whitespace set and the wildcard depth
+  each gained a box probe whose domain appears on no other token, so the drop
+  direction cannot be masked. Four existing mutations were re-anchored to the
+  restructured collector without weakening the defect each models; 309
+  mutations, 0 off-anchor.
+
+STILL OPEN after 15a, with the evidence recorded:
+
+- THE SUMMARY ROW'S GAP PREDICATE IS TOTAL OVER SHAPES, NOT OVER SIGNALS (B1 and
+  C1, high, found independently by two critics). _sc_unmeasured's own docstring
+  reads "Total, not a list of two shapes" directly above a list of exactly two
+  entries. S-1, S-2, S-3 and S-10 have no unmeasured test at all, so a completed
+  neighbour carries the row to a green "Clean" over a third-party-JS that timed
+  out, a dependency manifest that errored, or a related_domains category absent
+  from a pre-step-5 stored result. This is the same defect as
+  SC-ROW-CLEAN-OVER-UNMEASURED and FC13-1, a third time. Fixing it REQUIRES the
+  gate fixtures to supply the other signals as measured, because
+  takealot_baseline.json carries none of the seven supply-chain categories and
+  the green branch would otherwise become unreachable, making the assertions
+  inert - the trap p120 and p122 just escaped.
+- THE S-1 CARD HAS NO "partly" KEY (C2, medium), so a partly assessed S-1 is
+  named under "Assessed:" in the deck directly above its own "not fully
+  assessed" footnote. S-4 and S-5 set this key precisely so a partly read signal
+  is neither counted nor named; S-1 does not.
+- THE DECK'S "POSITIVE DUE-DILIGENCE RESULT" PINS ARE ALL INERT (D3,
+  medium-high, with a surviving mutation). No fixture this function renders ever
+  produces that sentence, because takealot_baseline.json carries none of the
+  supply-chain categories, so _classify maps them all to UNKNOWN and the
+  proportionate paragraph is always the one taken. All seven references to the
+  sentence can therefore be reworded freely without any assertion noticing.
+- FIXTURE MASKING PERSISTS FOR THREE TOKENS (D4, medium): four box tokens all
+  supply supplier.co.za, so dropping any one is unobservable in the drop
+  direction.
+
+RECORDED, NOT FIXED - owner decisions or outside discovery parity:
+
+- "SKIPPED" MEANS BOTH "NOT APPLICABLE" AND "COULD NOT BE READ" (B2, medium).
+  CMSPluginSBOMChecker writes status "skipped" when the site genuinely is not
+  WordPress AND when every probe times out or is 403'd, and the deck renders
+  that unconditionally as a measured "Not applicable", dropping it from the
+  credit denominator - which can restore the unqualified "positive due-diligence
+  result" sentence over a signal nobody read. Fixing it means changing a
+  checker's status semantics, which moves prices. Same class as FC13-2.
+- THE DECK'S VERDICT PILL HAS NO PROPORTIONALITY GATE (B3, medium): one assessed
+  signal out of seven still prints a green LOW EXPOSURE, with the body line
+  immediately below reading "1 of 7 ... 6 could not be assessed".
+- ONE CERTIFICATE SOURCE OF TWO READS AS COMPLETE (C3, medium): discovery's
+  "ran" is true if EITHER crt.sh or CertSpotter answered, and no surface
+  distinguishes the two cases, so "2 related domains found" can mean the richer
+  source returned nothing.
+- BLUE IS THE ONE COLOUR THE LEGEND DOES NOT DEFINE (C4, low), and it is the one
+  that means "not measured". Fixing it needs a pdf_snapshot re-baseline.
+- THE TWO REGEX COPIES ARE NOT EQUIVALENT (A4, low): Python's re.I makes [a-z]
+  match U+0130, U+0131, U+017F and U+212A; JavaScript's /i does not. Exotic to
+  trigger; recorded because it proves the two copies can diverge silently.

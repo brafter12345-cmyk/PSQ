@@ -671,7 +671,7 @@ function normalizeDomainOnce(raw) {
     // does (step-5 critique round 13, IH13-3).
     if (host) {
       s = host[0];
-    } else if (/^\s*["']?[a-z0-9-]+\.[a-z0-9-]/i.test(angle[1])) {
+    } else if (/^\s*["']?(?:[a-z0-9-]+\.)+[a-z]{2,}/i.test(angle[1])) {
       return '';
     } else {
       s = angle[2];
@@ -972,8 +972,13 @@ function collectRelatedDomains() {
       let s = d || '';
       // replace, not slice: the gate guards this function against a
       // browser-side trim of the confirmed list by looking for slice/splice.
+      // Every layer that was pasted, in ONE pass, exactly as the server's
+      // lstrip("*.") does. One layer per pass left the form rejecting
+      // "*..host" and deep runs the server keeps, and on a line carrying a
+      // contact the form then sent the BROKER's domain where the server kept
+      // the client's (round 15).
       for (let i = 0; i < 4 && s.startsWith('*.'); i++) {
-        s = normalizeDomainInput(s.replace(/^\*\./, ''));
+        s = normalizeDomainInput(s.replace(/^[*.]+/, ''));
       }
       return s;
     };
@@ -997,16 +1002,31 @@ function collectRelatedDomains() {
       return t.split('/')[0].includes('@');
     };
     ta.value.split(/[\r\n]+/).forEach(line => {
-      const parts = line.split(/[\s,;]+/).filter(Boolean);
-      const hosts = parts.filter(p => !isContact(p));
-      const use = hosts.some(qualifies) ? hosts : parts;
-      use.forEach(raw => {
+      // The SERVER's whitespace set, not trim()'s: Python's \s also matches
+      // U+001C to U+001F and U+0085, so a control character between a host and
+      // an address split the entry on the server and not here, and the form
+      // sent the contact's domain where the server kept the host. The strip
+      // helper above already knew this set (round 8); the splitter did not
+      // (round 15).
+      const parts = line.split(/[\s\x1c-\x1f\x85,;]+/).filter(Boolean);
+      const add = (raw) => {
         const d = normalizeDomainInput(raw);
         // The same rule that picked the branch also accepts the value, so
         // the form cannot send what the API would discard (round 12,
         // IH12-1).
         if (accept(d)) set.add(dewild(d));
-      });
+      };
+      const hosts = parts.length > 1 ? parts.filter(p => !isContact(p)) : [];
+      if (parts.length > 1 && hosts.some(qualifies)) {
+        hosts.forEach(add);
+        return;
+      }
+      // Otherwise the WHOLE entry, exactly as clean_related_domains falls back
+      // to _keep(s). Cleaning each token on its own never reaches the
+      // display-name rule, so an unreadable host beside a contact handed the
+      // scan the BROKER's own domain while the server failed closed
+      // (round 15).
+      add(line);
     });
   }
   // Not trimmed here: the server assesses at most 10, after dropping the

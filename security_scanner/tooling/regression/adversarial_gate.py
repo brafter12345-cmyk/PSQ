@@ -4029,11 +4029,12 @@ def _check_discovery_parity(failures):
     summary_cases = [
         # (label, category, with neighbour, must contain, must not contain)
         ("awaiting_alone", built["api_ct_answered"], False,
-         ["2 related domain(s) found, awaiting confirmation", BLUE], ["Clean", GREEN]),
+         [NOFIND, "2 related domain(s) found, awaiting confirmation", BLUE],
+         ["Clean", GREEN]),
         # Discovery ran and found nothing: stated, never "Clean" (critique
         # round 6, ST6-6).
         ("none_found_alone", built["api_ct_answered_none_found"], False,
-         ["no related domains found on certificate records", BLUE],
+         [NOFIND, "no related domains found on certificate records", BLUE],
          ["Clean", GREEN]),
         ("none_found_with_neighbour", built["api_ct_answered_none_found"], True,
          ["no related domains found on certificate records", BLUE], ["Clean", GREEN]),
@@ -4082,6 +4083,18 @@ def _check_discovery_parity(failures):
          ["confirmed related domains not assessed", AMBER], ["Clean"]),
         ("clean_no_candidates_with_neighbour", built["confirmed_clean_no_candidates"], True,
          ["Clean", GREEN], ["not fully", "awaiting"], True),
+        # Nothing measured at all: the row must still RENDER, because discovery
+        # having failed or found nothing is itself the thing to report, and it
+        # must NOT claim a finding-free reading of signals nobody read. With a
+        # measured surface in every case the row rendered regardless of its own
+        # condition, and the no-finding branch was unreachable (round 15, D1,
+        # D2, and the two mutations p120 silently made inert).
+        ("degraded_alone_unmeasured", built["api_ct_outage"], False,
+         ["related-domain discovery could not run", "was not assessed", BLUE],
+         ["Clean", GREEN, NOFIND], False),
+        ("none_found_alone_unmeasured", built["api_ct_answered_none_found"], False,
+         ["no related domains found on certificate records", "was not assessed", BLUE],
+         ["Clean", GREEN, NOFIND], False),
     ]
     bad = []
     for _case in summary_cases:
@@ -4492,6 +4505,20 @@ def _check_discovery_parity(failures):
         # line is observable: acme.co.za is supplied by another entry and
         # would mask it (round 13, IH13-4, reproduced in round 14).
         tokens_.append("*.wildcard-sib.co.za")
+        # The form's fallback must clean the WHOLE entry, as the server's
+        # _keep(s) does. Cleaning each token separately never reaches the
+        # display-name rule, so an unreadable host beside a contact collected
+        # the BROKER's own domain, which the server then accepted when it
+        # re-cleaned the list (round 15, A1).
+        tokens_.append("a1-unreadable.co.za1 <accounts@a1-leak.co.za>")
+        # Python's \s also matches U+001C to U+001F and U+0085, so the server
+        # split this entry and the form did not, and the form sent the
+        # contact's domain where the server kept the host (round 15, A3).
+        tokens_.append("a3-probe.co.za\u0085accounts@a3-leak.co.za")
+        # Every layer that was pasted, stripped in one go on BOTH doors: one
+        # layer per pass left the form rejecting what the server keeps
+        # (round 15, A2).
+        tokens_.append("*..a2-deep-sib.co.za")
         js_d = (r"""
 const made = [];
 function el(tag) {
@@ -4670,7 +4697,13 @@ globalThis.fetch = async (url, opt) => {
                  "acme.africa <info@brokerfirm.co.za>",
                  "acme.insurance <accounts@brokerfirm.co.za>",
                  "acme.capetown <ops@brokerfirm.co.za>",
-                 "Acme Group Holdings <info@acmegroup.co.za>"]
+                 "Acme Group Holdings <info@acmegroup.co.za>",
+                 # A dotted first token that is NOT a host: the near-miss guard
+                 # must not eat it (round 15, E1).
+                 "01.03.2026 <jane@supplier.co.za>",
+                 "196.22.1.5 <jane@supplier.co.za>",
+                 "v2.1 <jane@supplier.co.za>",
+                 "A.B. Electrical <accounts@abelectrical.co.za>"]
     # Parity between the two doors would survive a rule narrowed identically on
     # both sides, so the host each value must clean to is stated (critique round
     # 11, GS11-2, IR11-1, IR11-2).
@@ -4693,7 +4726,20 @@ globalThis.fetch = async (url, opt) => {
             # the contact's domain, and the contact differs from every expected
             # host so no case here can pass by accident (round 13, IH13-3,
             # IH13-4).
-            ("acme.co.za1 <accounts@brokerfirm.co.za>", "")):
+            ("acme.co.za1 <accounts@brokerfirm.co.za>", ""),
+            # ...and the near-miss guard is the HOST rule minus its two
+            # lookaheads, so it catches only a host it refused to read. Written
+            # as its own looser pattern it matched every dotted first token and
+            # dropped the broker's confirmed domain with nothing said on any
+            # surface, undoing IH12-1 through a green gate (round 15, E1).
+            ("01.03.2026 <jane@supplier.co.za>", "supplier.co.za"),
+            ("196.22.1.5 <jane@supplier.co.za>", "supplier.co.za"),
+            ("v2.1 <jane@supplier.co.za>", "supplier.co.za"),
+            ("R1.5m <accounts@supplier.co.za>", "supplier.co.za"),
+            ("s.a <jane@supplier.co.za>", "supplier.co.za"),
+            ("No.1 Logistics <ops@no1log.co.za>", "no1log.co.za"),
+            ("A.B. Electrical <accounts@abelectrical.co.za>",
+             "abelectrical.co.za")):
         got_host_ = _dv_host.normalize_domain(raw_)
         if got_host_ != want_host_:
             bad.append("the cleaner reads %r as %r, want %r"

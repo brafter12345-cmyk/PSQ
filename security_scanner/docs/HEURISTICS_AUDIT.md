@@ -484,9 +484,13 @@ total=31 justified=14 fragile=8 arbitrary=1 calibration-gated=8
    detection≠breach-history asymmetry. Bucket-1.
 
 2. **S-1 uplift is dormant in unattended scans (fragile, architecture-aware).**
-   `RelatedDomainsChecker.check` only runs on a broker-supplied list;
-   cert-SAN auto-discovery stays in pre-flight and never feeds the scan, so
-   the +0.04 Civil-liability factor effectively never fires autonomously. Per
+   `RelatedDomainsChecker.check` only ASSESSES broker-confirmed domains. Since
+   step 5, auto-discovery does run on every scan, but what it finds is listed
+   as unconfirmed and never assessed, so the +0.04 Civil-liability factor still
+   effectively never fires autonomously. (The reason given here until round 15
+   - that discovery stays in pre-flight and never feeds the scan - stopped
+   being true at step 5, as line 442 of this file already noted. The conclusion
+   did not change.) Per
    the autonomous-verification memo, TLS-cert-match auto-promotion of
    high-confidence candidates would let S-1 contribute without a human —
    respects observed→uplift + no-double-count.

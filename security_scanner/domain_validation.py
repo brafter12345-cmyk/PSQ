@@ -60,8 +60,13 @@ def _is_contact_token(tok: str) -> bool:
 
 # Host-SHAPED, whether or not the rule above will read it: used to tell "there
 # is no host here" from "there is a host here I refused to read" (round 13,
-# IH13-3).
-_HOSTISH_RE = re.compile(r"\s*[\"']?[a-z0-9-]+\.[a-z0-9-]", re.I)
+# IH13-3). DERIVED from the host rule - it is that rule minus the two lookaheads
+# that stop it reading a shorter host - so the two cannot drift apart. Written
+# as its own looser pattern it matched every dotted first token, so a date, an
+# amount, an IP, a version or initials before the brackets read as an unreadable
+# host and the broker's confirmed domain was dropped with nothing said on any
+# surface, undoing round 12's IH12-1 (round 15).
+_HOSTISH_RE = re.compile(r"\s*[\"']?(?:[a-z0-9-]+\.)+[a-z]{2,}", re.I)
 
 # A scheme, or a chain of them (mailto://jane@..., https://http://...).
 _SCHEME_RE = re.compile(r"^(?:(?:https?|ftp)://|//|mailto:)+")
