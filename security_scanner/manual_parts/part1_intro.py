@@ -141,8 +141,8 @@ def _build_cover(doc):
     # Metadata block
     meta_lines = [
         "Administrator: Phishield UMA (Pty) Ltd",
-        "Version 2.0",
-        "July 2026",
+        "Version 2.1 sandbox review",
+        "16 September 2026",
         "Confidential",
     ]
     for line in meta_lines:
@@ -384,9 +384,9 @@ def _build_section_1(doc):
 
     _h("add_bold_body")(doc, "Phase 5: Scoring. ",
         "Each checker produces a normalised score. These are combined using category-level "
-        "weighting to produce an overall risk score from 0 (critical risk) to 100 (excellent "
-        "posture). The risk level is then classified as Critical, High, Medium, Low, or "
-        "Excellent based on defined thresholds."
+        "weighting to produce an overall risk score from 0 to 1000, with higher values "
+        "indicating greater risk. The risk level is Low, Medium, High, or Critical. "
+        "Coverage qualifications must be read alongside the score."
     )
 
     _h("add_bold_body")(doc, "Phase 6: Insurance Analytics. ",

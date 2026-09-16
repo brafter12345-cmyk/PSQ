@@ -37,6 +37,12 @@ def build(doc):
     # 6.0 Reading a report: assessed vs unassessed ---------------------- #
     add_h2(doc, "6.0 Reading a report: \"not assessed\" is not \"clean\"")
 
+    add_body(doc, 'September 2026 sandbox update: the eight deferred review findings are implemented at checkpoint b3cf0c8. This describes the sandbox, not a deployment to live. The local verification passed all 12 gates and detected 347 mutations, including two gate crashes recorded separately.')
+    add_body(doc, 'Read the coverage notice beside the score. Missing and failed raw checks are unassessed, not clean. The dashboard names them separately, shows assessment completeness, and retains the reason the score is qualified. A missing check does not imply WAF blocking. PDF summary and full reports show the qualification beside the score; the assessment deck shows completeness and the missing-check count below its KPIs.')
+    add_body(doc, 'Five Executive Summary rows now use neutral Not assessed values when measurement is missing: known data breaches, exposed admin panels, database or service exposure, blacklist status, and RDP exposure. The three corresponding exposure KPIs use n/a. Positive observed findings remain visible even when a check is incomplete. The legend defines the neutral state.')
+    add_body(doc, 'A partly assessed supply chain cannot claim an overall green low-exposure verdict merely because its measured subset is clean. Certificate discovery states how many of its two sources answered. Even two answers do not prove a complete asset inventory. Unconfirmed certificate names are candidates for broker review, not automatically owned or scored assets.')
+    add_body(doc, 'Known limitation still open: the full technical PDF cards for IntelX, VirusTotal, and fraudulent domains can show benign text when their category data is absent. Do not rely on their negative statements without confirming completed measurement. The top-level coverage warning does not correct those detailed statements. These three cards are outside the five corrected Executive Summary rows.')
+
     add_body(
         doc,
         "Before any individual card, one distinction governs how every report "
@@ -828,6 +834,8 @@ def build(doc):
 
     # 7.3 Scan Completeness -------------------------------------------- #
     add_h2(doc, "7.3 Scan Completeness")
+    add_body(doc, "Approved missing-check policy: absent raw weighted categories are excluded from scoring and their weight is redistributed over available signals. They count against completeness. The derived ransomware risk, data-breach index, and financial-impact metrics are exempt from the missing-probe rule. This changes confidence and can change annual-loss estimates; it does not add a new observed finding.")
+    add_body(doc, "Measured reference effects: the finance R10m fixture changes from score 282 to 372, completeness 90% to 67%, and estimated annual loss R447,252 to R509,411. The retail R13.5bn fixture changes from 205 to 262, 100% to 77%, and R67,728,866 to R69,120,780. The 100-, 200-, and 250-year loss totals are unchanged for these fixtures. These are fixture-specific effects, not universal premium adjustments. Stored production scores remain unchanged until explicitly rescored.")
 
     add_body(
         doc,
@@ -847,7 +855,7 @@ def build(doc):
         "configured to run (i.e., total checkers minus those skipped "
         "due to missing API keys or being disabled), and 'Failed' is "
         "the number of assessable checkers that returned an error or "
-        "timed out.",
+        "timed out, were unreachable, or have no stored raw checker result.",
     )
 
     add_bullet(
@@ -1780,6 +1788,8 @@ def build(doc):
     #  SECTION 11 -- VERSION HISTORY                                     #
     # ------------------------------------------------------------------ #
     add_h1(doc, "11. Version History")
+    add_bold_body(doc, "v2.1 sandbox review 16 September 2026", " Reporting and coverage corrections.")
+    add_body(doc, "Documents checkpoint b3cf0c8: missing-check pricing and completeness, CMS probe failure versus non-applicability, neutral summary values, partial supply-chain verdicts, certificate-source coverage, neutral legend, consistent Unicode domain-input handling, and independent assertions for positive due-diligence claims and measured footers. The three detailed-card gaps remain open. Master and live were not changed.")
 
     add_bold_body(doc, "v2.0: July 2026", " Major revision.")
     add_body(
