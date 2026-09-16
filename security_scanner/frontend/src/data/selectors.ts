@@ -102,6 +102,12 @@ export interface CoverageSummary {
   evidence: string
   affectedCheckers: string[]
   affectedCount: number
+  missingCheckers: string[]
+  failedCheckers: string[]
+  completenessPct: number | null
+  confidenceLevel: string | null
+  scoreQualified: boolean | null
+  disclaimer: string | null
   probeCodes: Record<string, number>
   probeSummary: string
 }
@@ -121,6 +127,12 @@ export function getCoverageSummary(r: Results | null): CoverageSummary {
     evidence: waf?.evidence ?? '',
     affectedCheckers: affected,
     affectedCount: affected.length,
+    missingCheckers: sc?.missing_checkers ?? [],
+    failedCheckers: (sc?.failed_checkers ?? []).filter(name => !(sc?.missing_checkers ?? []).includes(name)),
+    completenessPct: sc?.completeness_pct ?? null,
+    confidenceLevel: sc?.confidence_level ?? null,
+    scoreQualified: sc?.score_qualified ?? null,
+    disclaimer: sc?.disclaimer ?? null,
     probeCodes: codes,
     probeSummary: totalProbes
       ? `${blockedProbes} of ${totalProbes} probes returned 403 / 406 / 451`

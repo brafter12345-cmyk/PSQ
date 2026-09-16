@@ -714,6 +714,8 @@ class RiskScorer:
     # low-confidence (see _scan_completeness in calculate()).
     COVERAGE_FLOOR = 0.30
     MUST_HAVE_CHECKERS = ("ssl", "http_headers", "exposed_admin", "shodan_vulns")
+    # Derived metrics are computed from raw evidence, not independent probes.
+    DERIVED_CATEGORIES = frozenset({"ransomware_risk", "data_breach_index", "financial_impact"})
 
     WEIGHTS = {
         "ssl":                  0.09,
@@ -861,9 +863,14 @@ class RiskScorer:
         # Skipped (no_api_key/disabled): intentionally not run — not a failure.
         # Both are excluded from weighting, but only failures trigger the
         # incomplete scan warning.
-        failed_checkers = []   # Genuine failures — flag in warning
+        failed_checkers = []   # Failed or absent raw measurements
+        missing_checkers = []
         skipped_checkers = []  # Intentionally skipped — no warning
         for name in self.WEIGHTS:
+            if name not in results and name not in self.DERIVED_CATEGORIES:
+                missing_checkers.append(name)
+                failed_checkers.append(name)
+                continue
             data = results.get(name, {})
             if isinstance(data, dict):
                 if self._is_failed(data):
@@ -1328,6 +1335,7 @@ class RiskScorer:
             "total_checkers": len(self.WEIGHTS),
             "assessable_checkers": assessable,
             "failed_checkers": failed_checkers,
+            "missing_checkers": missing_checkers,
             "skipped_checkers": skipped_checkers,
             "failed_count": len(failed_checkers),
             "completeness_pct": round((1 - len(failed_checkers) / assessable) * 100) if assessable > 0 else 100,
@@ -1382,6 +1390,12 @@ class RiskScorer:
                     "re-scan." if confidence == "low_confidence" else
                     "qualified — re-scan recommended for a complete assessment.")),
         }
+        if missing_checkers:
+            scan_completeness["disclaimer"] += (
+                " Missing raw checks are not assessed, not measured clean: "
+                + ", ".join(name.replace("_", " ") for name in missing_checkers)
+                + ". Their weights are excluded and redistributed over available signals."
+            )
         # Store in results so it can be accessed by PDF/HTML
         results["_scan_completeness"] = scan_completeness
 

@@ -1153,7 +1153,7 @@ class CMSPluginSBOMChecker:
     README_VERSION_RE = re.compile(
         r"^stable tag:\s*([0-9][\w.\-]*)", re.IGNORECASE | re.MULTILINE)
 
-    def _is_wordpress(self, domain: str) -> bool:
+    def _is_wordpress(self, domain: str) -> "bool | None":
         from http_client import HTTP
         # Robust discriminator. The previous version accepted ANY
         # 200/301/302/401/403 on /wp-content/ etc., so a CDN/WAF catch-all
@@ -1170,6 +1170,8 @@ class CMSPluginSBOMChecker:
         import secrets
         rand_path = f"/{secrets.token_hex(8)}-notreal.txt"
         catch_all_body = ""
+        home_usable = False
+        login_usable = False
         try:
             ctrl = HTTP.get(base + rand_path, timeout=6, allow_redirects=False)
             if ctrl is not None and ctrl.status_code == 200:
@@ -1185,6 +1187,8 @@ class CMSPluginSBOMChecker:
         try:
             home = HTTP.get(base + "/", timeout=8, allow_redirects=True)
             if home is not None and home.status_code == 200:
+                body = home.text or ""
+                home_usable = bool(body.strip()) and body[:2000] != catch_all_body
                 html = (home.text or "").lower()
                 if ('content="wordpress' in html
                         or "/wp-content/" in html
@@ -1198,6 +1202,8 @@ class CMSPluginSBOMChecker:
         try:
             login = HTTP.get(base + "/wp-login.php", timeout=6,
                              allow_redirects=False)
+            if login is not None and login.status_code in (200, 404, 410):
+                login_usable = True
             if login is not None and login.status_code == 200:
                 body = (login.text or "")
                 low = body.lower()
@@ -1209,7 +1215,8 @@ class CMSPluginSBOMChecker:
         except Exception:
             pass
 
-        return False
+        # Negative requires usable homepage and login evidence.
+        return False if home_usable and login_usable else None
 
     def _probe_plugin(self, base: str, dirname: str) -> dict:
         from http_client import HTTP
@@ -1259,8 +1266,15 @@ class CMSPluginSBOMChecker:
             "score": 100,
             "issues": [],
         }
-        if not self._is_wordpress(domain):
+        wp = self._is_wordpress(domain)
+        if wp is False:
             result["status"] = "skipped"
+            result["probe_status"] = "confirmed_non_wordpress"
+            return result
+        if wp is None:
+            result.pop("score", None)
+            result.update(status="unreachable", is_wordpress=None, probe_status="probe_failed",
+                          issues=["CMS fingerprint probes did not return a usable response; WordPress status is not assessed."])
             return result
         result["is_wordpress"] = True
         base = f"https://{domain}"

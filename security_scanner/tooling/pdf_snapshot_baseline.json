@@ -1,38 +1,38 @@
 {
   "phishield_R10M_finance_2026-05-15::assessment": {
-    "sha256": "a6cf6439a03a451f2a0bfc50dc238217d01e90ed7dd936aca92b4f67a17ae61d",
-    "bytes": 16200
+    "sha256": "e6581aad518f5bf800cf2e2d1132befe4f9b47b9424d10cc59e789d7383596cf",
+    "bytes": 16208
   },
   "phishield_R10M_finance_2026-05-15::summary": {
-    "sha256": "da55642c25707a0c1cafde9a6ac06f0a3b9823b3f59a9bb16adfb800531438bd",
-    "bytes": 18134
+    "sha256": "c66ae9e3e205c8d6d896fc707129f63e355d9c1480e20b3a41f1be0a08b41b89",
+    "bytes": 19386
   },
   "phishield_R10M_finance_2026-05-15::full": {
-    "sha256": "8f6bc4e8a5efcea86cd8152bff0eefc9aa89150c476cd9b0674c682a246716f2",
-    "bytes": 89237
+    "sha256": "929fdd84f4d2d5fec0dca057a12afec929c8bb078f42ff0a21b0679df8ea8585",
+    "bytes": 90493
   },
   "takealot_baseline::assessment": {
     "sha256": "5f8d39e2e5faec95a30f81241d9408d933ada7cfdf89a8dfe43cdce978ef852b",
     "bytes": 16059
   },
   "takealot_baseline::summary": {
-    "sha256": "63f97ac5d640f276b9b31c588c3a3e5eeeb82ea0fa11f219d699e42ca38674ac",
-    "bytes": 13746
+    "sha256": "97e5d8544685edffc9799b607d7968fd7bfca2f0149e2145e748e0a6f41d8113",
+    "bytes": 14984
   },
   "takealot_baseline::full": {
-    "sha256": "10afc5d3cd9b7c08665300bb6436ba5f03dc710e19820d31dc70071ea9553f4e",
-    "bytes": 80735
+    "sha256": "fc2245d726706bb0040abb972468b5a7ae9429dee4a765a05010833e7330c773",
+    "bytes": 81980
   },
   "vendor_estate_baseline::assessment": {
     "sha256": "7a4fcec67077db49dfdd82c5b3567ec2d17b2b4144829d5fbf33f163b12351fc",
     "bytes": 16060
   },
   "vendor_estate_baseline::summary": {
-    "sha256": "742754ab12a4b9eba9ee88c649b82625285cb539db3b00797a005a3bc06d0f8f",
-    "bytes": 16522
+    "sha256": "41162c7bbe64ef814ba75accc9e7a6fa8865648e42e4377b2dbe8ca7abd628e5",
+    "bytes": 17760
   },
   "vendor_estate_baseline::full": {
-    "sha256": "b9d436bde1f84772f5efc9810e3177b4ad9f50efe42beaa26c51e96d28ebb71a",
-    "bytes": 82114
+    "sha256": "1263ab349f0967b683d04cde29d02c843b5def755447a95bafd9ba4534b5468a",
+    "bytes": 83349
   }
 }

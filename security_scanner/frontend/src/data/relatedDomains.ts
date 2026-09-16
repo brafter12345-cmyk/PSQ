@@ -42,6 +42,7 @@ export interface RelatedDomainsDiscovery {
   fullyAssessed: boolean
   unassessedReason: string
   sourcesOk: string[]
+  sourceCoverageNote: string | null
   discovered: DiscoveredDomain[]
   candidateCount: number
   notListedUnconfirmedCount: number
@@ -104,6 +105,16 @@ export function relatedDomainsFullyAssessed(rd: Record<string, unknown> | null):
   return na === 0 && oc === 0 && partial === 0
 }
 
+export function relatedDomainsCertificateCoverage(rd: Record<string, unknown> | null): string | null {
+  if (!rd || !('discovery' in rd)) return null
+  const disc = rd.discovery as Record<string, unknown> | null
+  if (!disc || !Array.isArray(disc.sources_ok)) return 'Certificate-source coverage was not recorded for this scan.'
+  const answered = new Set(disc.sources_ok.filter((x) => x === 'crtsh' || x === 'certspotter'))
+  const count = answered.size
+  const qualifier = count < 2 ? 'discovery coverage is partial' : 'this does not prove a complete estate'
+  return `Certificate discovery: ${count} of 2 sources answered; ${qualifier}.`
+}
+
 export function relatedDomainsDiscovery(rd: Record<string, unknown> | null): RelatedDomainsDiscovery {
   const hasDiscovery = !!rd && 'discovery' in rd
   const disc = ((rd?.discovery ?? {}) as Record<string, unknown>)
@@ -133,6 +144,7 @@ export function relatedDomainsDiscovery(rd: Record<string, unknown> | null): Rel
     fullyAssessed: relatedDomainsFullyAssessed(rd),
     unassessedReason: String(rd?.unassessed_reason ?? ''),
     sourcesOk: strList(disc.sources_ok),
+    sourceCoverageNote: relatedDomainsCertificateCoverage(rd),
     discovered: list,
     candidateCount: Number(disc.candidate_count ?? 0),
     notListedUnconfirmedCount: Number(unlisted),
@@ -171,7 +183,7 @@ const RD_WHY: Record<string, string> = {
 
 /** The sentences the PDF card adds about what was NOT assessed (pdf_cards._rd_notes). */
 export function relatedDomainsNotes(d: RelatedDomainsDiscovery, includeDiscovery: boolean): string[] {
-  const out: string[] = []
+  const out: string[] = d.sourceCoverageNote ? [d.sourceCoverageNote] : []
   if (includeDiscovery) {
     if (!d.hasDiscovery) out.push('This scan was run before related-domain discovery was added, so other related domains were not looked for.')
     else if (!d.discoveryRan) out.push('Related-domain discovery could not run on this scan, so other related domains were not looked for. That is not a finding that none exist.')

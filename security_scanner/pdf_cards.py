@@ -2152,8 +2152,9 @@ def _rd_notes(rd, include_discovery):
     The dashboard (frontend/src/data/relatedDomains.ts, relatedDomainsNotes)
     prints the same sentences, so the two surfaces say the same thing.
     """
-    from estate_discovery import MAX_CONFIRMED
-    notes = []
+    from estate_discovery import MAX_CONFIRMED, related_domains_certificate_coverage
+    coverage = related_domains_certificate_coverage(rd)
+    notes = [coverage] if coverage else []
     if include_discovery:
         if "discovery" not in rd:
             notes.append("This scan was run before related-domain discovery was "
@@ -2230,7 +2231,7 @@ def cat_related_domains(d, S):
     summary = ("%d found, awaiting confirmation" % found if found
                else "None found on certificate records")
     rows = [("Certificate sources that answered",
-             ", ".join(disc.get("sources_ok") or []) or "n/a"),
+             ", ".join(x for x in (disc.get("sources_ok") or []) if isinstance(x, str)) or "n/a"),
             ("Candidates found", found),
             ("Submitted for assessment", rd.get("submitted_count") or 0)]
     fb = ("%d related domain(s) found on certificate records. None has been "
@@ -2620,6 +2621,14 @@ def cat_email_vendor_surface(d, S):
 
 def cat_cms_plugin_sbom(d, S):
     cms = d.get("cms_plugin_sbom", {})
+    if cms.get("probe_status") == "probe_failed":
+        return build_cat_card("CMS Plugin Surface (WordPress)", C_BLUE,
+                              "Not assessed", [("WordPress status", "Unknown")],
+                              [], S, fallback="CMS fingerprint probes were unavailable. This is not evidence that WordPress is absent or that plugins are safe.")
+    if cms.get("probe_status") == "confirmed_non_wordpress":
+        return build_cat_card("CMS Plugin Surface (WordPress)", C_BLUE,
+                              "Not applicable", [("WordPress fingerprint", "Not detected on answered probes")],
+                              [], S, fallback="Usable homepage and login responses did not identify WordPress. The WordPress-only plugin check was skipped.")
     if cms.get("status") == "skipped" or not cms.get("is_wordpress"):
         return []
     plugins = cms.get("plugins_detected", []) or []
@@ -3766,6 +3775,21 @@ def peer_benchmark_card(results, S):
     ]
 
 
+def assessment_coverage_notice(results, S):
+    """Explain qualified scores even when no WAF intervention was observed."""
+    from xml.sax.saxutils import escape
+    sc = results.get("_scan_completeness") or (results.get("categories") or {}).get("_scan_completeness") or {}
+    if not sc.get("score_qualified"):
+        return []
+    body = escape(sc.get("disclaimer") or "Assessment incomplete: unavailable checks are not evidence of low risk.")
+    failed = sc.get("failed_checkers") or []
+    if failed:
+        body += " Unassessed checks: " + escape(", ".join(name.replace("_", " ") for name in failed)) + "."
+    return [Spacer(1, 2 * mm),
+            Paragraph("<b>Assessment coverage incomplete</b>", S["cat_title"]),
+            Paragraph(body, S["body"]), Spacer(1, 2 * mm)]
+
+
 def waf_coverage_notice(results, S):
     """Top-level Partial Coverage Notice rendered when the WAFTracker
     flagged the target apex as protected during the scan. Appears
@@ -4303,6 +4327,7 @@ def _build_legend(S) -> Table:
         (C_AMBER, "Medium Risk", "Monitor / improve when feasible"),
         (C_RED, "High Risk", "Remediation recommended"),
         (C_CRITICAL, "Critical Risk", "Immediate action required"),
+        (C_BLUE, "Not assessed", "Measurement unavailable or incomplete; not evidence of low risk"),
     ]
     legend_rows = []
     for col, label, desc in legend_items:
@@ -4446,9 +4471,13 @@ def _breach_summary_row(cats: dict, br_count: int):
     """
     bi = cats.get("breach_intel") or {}
     status, verdict = bi.get("status"), bi.get("verdict")
-    if bi and status != "completed":
-        return ("Known Data Breaches", "Not assessed", _tl(False, True))
-    if bi and status == "completed" and verdict in ("confirmed", "reported"):
+    # Preserve explicit adverse evidence while keeping an incomplete
+    # zero/absent result neutral.
+    if bi and status != "completed" and verdict not in ("confirmed", "reported"):
+        if br_count <= 0:
+            return ("Known Data Breaches", "Not assessed", _tl(False, True))
+        return ("Known Data Breaches", br_count, _tl(False, br_count <= 3))
+    if bi and verdict in ("confirmed", "reported"):
         months = bi.get("months_since_most_recent")
         if months is None:
             val = f"{verdict.title()} — date unestablished"
@@ -4463,7 +4492,11 @@ def _breach_summary_row(cats: dict, br_count: int):
                 _tl(False, months is not None and months > 36))
     if bi and status == "completed" and verdict == "none":
         return ("Known Data Breaches", "None found (researched)", _tl(True, True))
-    # No researched result at all -> fall back to the legacy HIBP count.
+    # No researched result at all: an absent/inconclusive HIBP result
+    # cannot turn its default zero into a green finding of absence.
+    hibp = cats.get("breaches") or {}
+    if hibp.get("status") != "completed" and br_count <= 0:
+        return ("Known Data Breaches", "Not assessed", _tl(False, True))
     return ("Known Data Breaches", br_count, _tl(br_count == 0, br_count <= 3))
 
 
@@ -4496,7 +4529,18 @@ def build_summary_table(results: dict, S) -> Table:
     hrp_c     = cats.get("high_risk_protocols", {}).get("critical_count", 0)
     bl        = cats.get("dnsbl", {}).get("blacklisted", False)
     waf       = cats.get("waf", {}).get("detected", False)
-    vpn_rdp   = cats.get("vpn_remote", {}).get("rdp_exposed", False)
+    vpn_cat   = cats.get("vpn_remote") or {}
+    vpn_rdp   = vpn_cat.get("rdp_exposed", False)
+    # A zero/false value is conclusive only after the checker completed.
+    # Explicit adverse evidence still surfaces when status is partial,
+    # errored, timed out, or otherwise inconclusive.
+    adm_known = (cats.get("exposed_admin", {}).get("status") == "completed"
+                 or adm_c > 0 or adm_h > 0)
+    hrp_known = (cats.get("high_risk_protocols", {}).get("status") == "completed"
+                 or hrp_c > 0)
+    bl_known = (cats.get("dnsbl", {}).get("status") == "completed"
+                or bool(bl))
+    rdp_known = (vpn_cat.get("status") == "completed" or bool(vpn_rdp))
 
     # Insurance analytics
     ins       = results.get("insurance", {})
@@ -4513,16 +4557,16 @@ def build_summary_table(results: dict, S) -> Table:
             f"{hh_score}%" if hh_score is not None else "Not assessed",
             C_GREY_4 if hh_score is None else _tl(hh_score >= 80, hh_score >= 50)),
         row(*_breach_summary_row(cats, br_count)),
-        row("Exposed Admin Panels",  adm_c + adm_h,
-            _tl(adm_c + adm_h == 0, adm_c == 0)),
-        row("DB/Service Exposure",   f"{hrp_c} critical service(s)",
-            C_CRITICAL if hrp_c > 0 else C_GREEN),
-        row("IP/Domain Blacklisted", "YES" if bl else "No",
-            C_CRITICAL if bl else C_GREEN),
+        row("Exposed Admin Panels",  adm_c + adm_h if adm_known else "Not assessed",
+            _tl(adm_c + adm_h == 0, adm_c == 0) if adm_known else C_GREY_4),
+        row("DB/Service Exposure",   f"{hrp_c} critical service(s)" if hrp_known else "Not assessed",
+            C_CRITICAL if hrp_c > 0 else C_GREEN if hrp_known else C_GREY_4),
+        row("IP/Domain Blacklisted", "YES" if bl else "No" if bl_known else "Not assessed",
+            C_CRITICAL if bl else C_GREEN if bl_known else C_GREY_4),
         row("WAF Protection",        "Detected" if waf else "Not detected",
             C_GREEN if waf else C_AMBER),
-        row("RDP Exposed",           "YES — CRITICAL" if vpn_rdp else "No",
-            C_CRITICAL if vpn_rdp else C_GREEN),
+        row("RDP Exposed",           "YES — CRITICAL" if vpn_rdp else "No" if rdp_known else "Not assessed",
+            C_CRITICAL if vpn_rdp else C_GREEN if rdp_known else C_GREY_4),
     ]
 
     # Add insurance rows if available
@@ -4775,6 +4819,11 @@ def build_summary_table(results: dict, S) -> Table:
         else:
             sc_label = " · ".join(notes)
         rows.append(row("Supply-Chain Risk", sc_label, sc_col))
+
+    from estate_discovery import related_domains_certificate_coverage
+    coverage = related_domains_certificate_coverage(rd_cat)
+    if coverage:
+        rows.append(row("Certificate discovery coverage", coverage, C_BLUE))
 
     # Spotlight rows — only when the underwriter genuinely benefits.
     if tpjs_cat.get("compromised_host_count", 0) > 0:

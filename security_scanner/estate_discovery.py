@@ -499,6 +499,20 @@ def related_domains_gaps(rd):
     return na, oc, partial
 
 
+def related_domains_certificate_coverage(rd):
+    """Describe source response coverage without claiming estate completeness."""
+    if "discovery" not in (rd or {}):
+        return None
+    disc = rd.get("discovery")
+    if not isinstance(disc, dict) or not isinstance(disc.get("sources_ok"), list):
+        return "Certificate-source coverage was not recorded for this scan."
+    answered = {x for x in disc["sources_ok"] if isinstance(x, str)} & {"crtsh", "certspotter"}
+    count = len(answered)
+    qualifier = ("discovery coverage is partial" if count < 2 else
+                 "this does not prove a complete estate")
+    return "Certificate discovery: %d of 2 sources answered; %s." % (count, qualifier)
+
+
 def related_domains_fully_assessed(rd):
     """True only when every confirmed domain was assessed by every check.
 

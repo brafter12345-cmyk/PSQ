@@ -3159,6 +3159,169 @@ def _fake_dns(v4, v6=(), per=None):
     return resolve, get_ip
 
 
+def _check_review17_reporting(failures):
+    """Deferred reporting findings, asserted against the real renderer paths."""
+    import re
+    import pdf_cards as pc
+    import pdf_report as pr
+    import estate_discovery as ed
+    S = pr.build_styles()
+    bad = []
+    def check(ok, detail):
+        if not ok:
+            bad.append(detail)
+    def text(obj):
+        if isinstance(obj, (list, tuple)):
+            return " ".join(text(x) for x in obj)
+        return str(getattr(obj, "text", "")) + " " + text(getattr(obj, "_cellvalues", []))
+    labels = ("Known Data Breaches", "Exposed Admin Panels", "DB/Service Exposure",
+              "IP/Domain Blacklisted", "RDP Exposed")
+    keys = ("breaches", "exposed_admin", "high_risk_protocols", "dnsbl", "vpn_remote")
+    for status in (None, "error", "timeout", "no_api_key", "unknown", "completed"):
+        for adverse in (False, True):
+            cats = {key: {"status": status} for key in keys} if status else {}
+            if adverse:
+                cats = {key: {"status": status} for key in keys}
+                cats["breaches"]["breach_count"] = 2
+                cats["exposed_admin"]["critical_count"] = 2
+                cats["high_risk_protocols"].update(critical_count=2, exposed_services=[{"port": 3306}, {"port": 5432}])
+                cats["dnsbl"]["blacklisted"] = True
+                cats["vpn_remote"]["rdp_exposed"] = True
+            rows = {re.sub(r"</?b>", "", getattr(r[1], "text", "")): getattr(r[2], "text", "")
+                    for r in pc.build_summary_table({"categories": cats}, S)._cellvalues}
+            expected = (("2", "2", "2 critical service(s)", "YES", "YES") if adverse else
+                        ("0", "0", "0 critical service(s)", "No", "No") if status == "completed" else
+                        ("Not assessed",) * 5)
+            for label, value in zip(labels, expected):
+                raw = rows[label]
+                visible = re.sub(r"<[^>]+>", "", raw).split("—", 1)[0].strip()
+                check(visible == value, "FC13-3 %s/%s %s value %r != %r" % (status, adverse, label, visible, value))
+                check(("#16a34a" in raw) == (not adverse and status == "completed"),
+                      "FC13-3 %s/%s %s colour" % (status, adverse, label))
+            kpis = {k["label"]: k for k in pr._assessment_extract_kpis({"categories": cats})}
+            for label, value in zip(("Exposed Admin Panels", "Critical DB Exposed", "RDP Exposed"),
+                                    ("2", "2", "Yes") if adverse else ("0", "0", "No") if status == "completed" else ("n/a",) * 3):
+                check(kpis[label]["value"] == value, "FC13-3 KPI %s/%s %s value" % (status, adverse, label))
+                check(kpis[label]["severity"] == ("bad" if adverse else "ok" if status == "completed" else "unknown"),
+                      "FC13-3 KPI %s/%s %s severity" % (status, adverse, label))
+    for sources, count in (([], 0), (["crtsh"], 1), (["certspotter"], 1), (["crtsh", "certspotter"], 2),
+                           (["crtsh", "crtsh", "future-source", {}], 1)):
+        for confirmed in (False, True):
+            rd = {"status": "completed", "declared_count": int(confirmed), "scanned_count": int(confirmed),
+                  "dependants": [{"domain": "partner.example", "measured": True, "not_measured": []}] if confirmed else [],
+                  "discovery": {"ran": bool(sources), "sources_ok": sources, "candidate_count": 0}}
+            expected = "Certificate discovery: %d of 2 sources answered; %s." % (
+                count, "discovery coverage is partial" if count < 2 else "this does not prove a complete estate")
+            check(ed.related_domains_certificate_coverage(rd) == expected, "C3 helper source count")
+            for surface, rendered in (
+                    ("card", pc.cat_related_domains({"related_domains": rd}, S)),
+                    ("summary", pc.build_summary_table({"categories": {"related_domains": rd}}, S)),
+                    ("deck", pr._assessment_slide_supply_chain({"categories": {"related_domains": rd}}))):
+                check(expected in text(rendered), "C3 %s/%s/%s missing source coverage" % (count, confirmed, surface))
+    check(ed.related_domains_certificate_coverage({}) is None, "C3 legacy fabricated coverage")
+    check(ed.related_domains_certificate_coverage({"discovery": {}}) == "Certificate-source coverage was not recorded for this scan.",
+          "C3 unrecorded coverage fabricated")
+    if bad:
+        failures.append("review17[reporting]: " + "; ".join(bad))
+    print("  [%s] review17 reporting: 12 status/finding cases and 10 provider/state cases" % ("FAIL" if bad else "PASS"))
+
+
+def _check_review18_missing(failures):
+    try:
+        import copy
+        from scoring_analytics import RiskScorer
+        derived = {'ransomware_risk', 'data_breach_index', 'financial_impact'}
+        base = {name: {'status': 'completed', 'score': 100} for name in RiskScorer.WEIGHTS}
+        problems = []
+        for name in RiskScorer.WEIGHTS:
+            absent = copy.deepcopy(base)
+            del absent[name]
+            absent_score = RiskScorer().calculate(absent)
+            sc = absent['_scan_completeness']
+            if name in derived:
+                if name in sc['failed_checkers']:
+                    problems.append(name + ': derived metric treated as raw probe')
+                continue
+            errored = copy.deepcopy(base)
+            errored[name] = {'status': 'error'}
+            error_score = RiskScorer().calculate(errored)
+            if absent_score[0] != error_score[0]:
+                problems.append(name + ': missing and unassessed scores differ')
+            if name not in sc.get('missing_checkers', []):
+                problems.append(name + ': missing metadata absent')
+            if name not in sc['failed_checkers'] or sc['completeness_pct'] >= 100:
+                problems.append(name + ': missing check counted complete')
+            if 'not measured clean' not in sc['disclaimer']:
+                problems.append(name + ': explanation absent')
+        print('raw_cases=28 derived_controls=3 failures=' + str(len(problems)))
+        for failure in problems:
+            print(failure)
+        assert not problems, problems
+    except Exception as exc:
+        failures.append("review18[missing]: " + str(exc))
+
+
+def _check_review18_cms(failures):
+    try:
+        import http_client
+        import checkers_supply_chain as cs
+        import pdf_cards as pc
+        from pdf_helpers import build_styles
+        class Resp:
+            def __init__(self,status,text=''): self.status_code=status; self.text=text
+        class FakeHTTP:
+            def __init__(self,mode): self.mode=mode
+            def get(self,url,**kwargs):
+                m=self.mode
+                if m=='failed': return None
+                if m=='exception': raise OSError('offline probe failure')
+                if m in ('403','429','500'): return Resp(int(m),'blocked')
+                if m=='control_only': return Resp(404,'not found') if 'notreal' in url else None
+                if m=='home_only_failure': return Resp(404,'not found') if 'wp-login' in url else None
+                if m=='login_only_failure': return Resp(200,'ordinary homepage') if url.endswith('/') else None
+                if m in ('nonwp404','nonwp410'):
+                    return Resp(200,'<html>ordinary</html>') if url.endswith('/') else Resp(404 if m=='nonwp404' else 410,'not found')
+                if m=='catchall': return Resp(200,'same shell')
+                if m=='wp_home': return Resp(200,'<link href="/wp-content/plugins/x.css">') if url.endswith('/') else Resp(404,'not found')
+                if m=='wp_login':
+                    if 'notreal' in url: return Resp(404,'not found')
+                    return Resp(404,'not found') if url.endswith('/') else Resp(200,'<form><input name="user_login"></form>')
+                raise AssertionError(m)
+        def check_mode(mode):
+            old_http=http_client.HTTP; old_probe=cs.CMSPluginSBOMChecker._probe_plugin
+            http_client.HTTP=FakeHTTP(mode); cs.CMSPluginSBOMChecker._probe_plugin=lambda self,base,dirname: None
+            try: return cs.CMSPluginSBOMChecker().check('example.test')
+            finally: http_client.HTTP=old_http; cs.CMSPluginSBOMChecker._probe_plugin=old_probe
+        unknown=['failed','exception','403','429','500','control_only','home_only_failure','login_only_failure','catchall']
+        rows={m:check_mode(m) for m in unknown+['nonwp404','nonwp410','wp_home','wp_login']}
+        for m in unknown:
+            r=rows[m]; assert r['status']=='unreachable' and 'score' not in r and r.get('is_wordpress') is None and r.get('probe_status')=='probe_failed',(m,r)
+        for m in ['nonwp404','nonwp410']:
+            r=rows[m]; assert r['status']=='skipped' and r.get('probe_status')=='confirmed_non_wordpress',(m,r)
+        for m in ['wp_home','wp_login']:
+            r=rows[m]; assert r['status']=='completed' and r.get('is_wordpress') is True,(m,r)
+        S=build_styles()
+        def txt(parts):
+            out=[]
+            def walk(p):
+                t=getattr(p,'text',None) or (p.getPlainText() if hasattr(p,'getPlainText') else '')
+                if t: out.append(t)
+                for row in getattr(p,'_cellvalues',[]) or []:
+                    for cell in row:
+                        if isinstance(cell,(list,tuple)): walk(cell)
+                        else: walk(cell)
+                for child in getattr(p,'_flowables',[]) or []: walk(child)
+                for child in getattr(p,'_content',[]) or []: walk(child)
+            for p in parts: walk(p)
+            return ' '.join(out)
+        up=pc.cat_cms_plugin_sbom({'cms_plugin_sbom':rows['failed']},S); np=pc.cat_cms_plugin_sbom({'cms_plugin_sbom':rows['nonwp404']},S)
+        u=txt(up); n=txt(np)
+        assert 'Not assessed' in u and 'fingerprint probes were unavailable' in u
+        assert 'Not applicable' in n and 'Not detected on answered probes' in n
+    except Exception as exc:
+        failures.append("review18[cms]: " + str(exc))
+
+
 def _check_discovery_parity(failures):
     import importlib, ast, json, copy, shutil, subprocess, tempfile
     import re as _re
@@ -3170,6 +3333,21 @@ def _check_discovery_parity(failures):
     import http_client as _hc
     from scoring_pipeline import apply_risk_score
     S = pr.build_styles()
+    _check_review17_reporting(failures)
+    _check_review18_missing(failures)
+    _check_review18_cms(failures)
+    coverage_case = {"overall_risk_score": 372, "risk_level": "Medium", "categories": {},
+                     "_scan_completeness": {"score_qualified": True, "completeness_pct": 67,
+                         "missing_checkers": ["related_domains"], "failed_checkers": ["related_domains", "cms_plugin_sbom"],
+                         "disclaimer": "Unavailable checks are not measured clean."}}
+    coverage_text = _rd_flow_text(pc.assessment_coverage_notice(coverage_case, S))
+    deck_coverage = _rd_flow_text(pr._assessment_slide_score_and_kpis(coverage_case))
+    if not all(text in coverage_text for text in ("Assessment coverage incomplete", "not measured clean", "cms plugin sbom")):
+        failures.append("review18[coverage]: PDF qualification missing")
+    if not all(text in deck_coverage for text in ("Score qualified", "67%", "1 raw check(s) missing")):
+        failures.append("review18[coverage]: deck qualification missing")
+    if pc.assessment_coverage_notice({"_scan_completeness": {"score_qualified": False}}, S):
+        failures.append("review18[coverage]: completed control falsely qualified")
 
     def report(ok, label, detail=""):
         print("  [%s] discovery:%-46s %s" % ("PASS" if ok else "FAIL", label, detail))
@@ -3240,7 +3418,10 @@ def _check_discovery_parity(failures):
         apply_risk_score(r)
         return r.get("overall_risk_score") or 0
 
-    absent = price(None)
+    # FC13-2: absence now excludes a raw checker from weighting. Discovery's
+    # no-adverse-finding contract compares with an explicit neutral result;
+    # the missing-category policy is tested separately for every raw checker.
+    neutral = price({"status": "completed", "score": 100})
 
     # 3. The builder scan() calls: every state, priced, and rendered.
     built = {}
@@ -3275,10 +3456,10 @@ def _check_discovery_parity(failures):
             bad.append("fully_assessed=%r" % ed.related_domains_fully_assessed(rd))
         p = price(rd)
         if want.get("loads"):
-            if not p > absent:
-                bad.append("a confirmed finding priced %s, not above absent %s" % (p, absent))
-        elif p != absent:
-            bad.append("priced %s against absent %s" % (p, absent))
+            if not p > neutral:
+                bad.append("a confirmed finding priced %s, not above neutral %s" % (p, neutral))
+        elif p != neutral:
+            bad.append("priced %s against neutral %s" % (p, neutral))
         seen_col = []
         with mock.patch.object(pc, "build_cat_card", _colour_spy(pc, seen_col)):
             text = _rd_flow_text(pc.cat_related_domains({"related_domains": rd}, S)).lower()
@@ -3482,12 +3663,16 @@ def _check_discovery_parity(failures):
             r_["categories"]["hudson_rock"] = {"status": hr_status, "third_party_exposures": 0}
         r_["categories"]["third_party_correlation"] = dict(tpc_no_data)
         text = _pdf_visible_text(pr.generate_pdf(r_, report_type="assessment"))
-        says_clean = ("positive due-diligence result" in text
-                      or "Assessed: Cross-checked vendor exposure" in text)
-        if says_clean != clean_:
-            bad.append("Hudson Rock %s -> the deck %s" % (
-                hr_status, "calls the vendor join clean" if says_clean
-                else "does not credit a measured clean"))
+        positive_claim = "positive due-diligence result" in text
+        measured_footer = "Assessed: Cross-checked vendor exposure" in text
+        # The nine Hudson Rock cases never produce the strongest positive
+        # paragraph; assert that absence independently from the footer.
+        if positive_claim:
+            bad.append("Hudson Rock %s -> the deck emitted an unearned "
+                       "positive due-diligence result" % hr_status)
+        if measured_footer != clean_:
+            bad.append("Hudson Rock %s -> measured vendor footer=%r, expected=%r"
+                       % (hr_status, measured_footer, clean_))
     if bad:
         failures.append("discovery[deck:vendor_join]: " + "; ".join(bad))
     report(not bad, "deck_vendor_join_clean_only_when_measured")
@@ -3532,6 +3717,11 @@ def _check_discovery_parity(failures):
         if words.startswith("NOT "):
             return vp, fill == "#475569" and fill not in verdict_fills
         return vp, bool(sev_hex_) and fill == sev_hex_.get(words.split()[0])
+    # The neutral measurement state must be explained alongside risk colours.
+    _legend17 = pc._build_legend(S)
+    _legend17_labels = [getattr(r[1], "text", "") for r in _legend17._cellvalues]
+    if "<b>Not assessed</b>" not in _legend17_labels:
+        failures.append("discovery[legend]: the unmeasured state has no legend entry")
     verdicts = [
         ("nothing_assessed", built["api_ct_answered_none_found"], None,
          ["NOT ASSESSED", "No external supply-chain signals could be assessed on this scan."],
@@ -3545,8 +3735,8 @@ def _check_discovery_parity(failures):
         ("vendor_join_measured", built["api_ct_outage"],
          {"hudson_rock": {"status": "completed", "third_party_exposures": 0},
           "third_party_correlation": dict(tpc_no_data)},
-         ["LOW EXPOSURE", "All 1 assessed supply-chain signal(s) are clean."],
-         ["NOT ASSESSED"]),
+         ["NOT FULLY ASSESSED", "All 1 assessed supply-chain signal(s) are clean."],
+         ["LOW EXPOSURE", "NOT ASSESSED"]),
         ("vendor_join_unmeasured", built["api_ct_outage"],
          {"hudson_rock": {"status": "timeout"}, "third_party_correlation": dict(tpc_no_data)},
          ["NOT ASSESSED"], ["LOW EXPOSURE", "positive due-diligence result"]),
@@ -3613,7 +3803,9 @@ def _check_discovery_parity(failures):
                                      "issues": [], "vendors_detected": [], "vendor_count": 0},
             "vendor_breach": {"status": "no_data", "spf_lookup": how, "score": 100,
                               "issues": [], "matches": [], "match_count": 0}})
-        credited = "LOW EXPOSURE" in slide or "positive due-diligence result" in slide
+        # A measured SPF pair is credited as measured, not as a clean estate.
+        credited = all(_deck_group(slide, name) == "Assessed" for name in
+                       ("Email service providers", "Known vendor breaches"))
         if credited != (how == "answered"):
             bad.append("SPF lookup %s -> the deck %s" % (
                 how, "calls S-4/S-5 clean" if credited else "does not credit a measured result"))
@@ -3875,6 +4067,9 @@ def _check_discovery_parity(failures):
     }
     slide_pos = slide_of(built["confirmed_clean_no_candidates"],
                          _deck_all_measured)
+    _vp17, _fill17 = verdict_pill()
+    if not _fill17 or not _vp17 or _vp17[0][0] != "LOW EXPOSURE":
+        bad.append("a fully measured clean estate lacks its correctly coloured LOW verdict")
     if ("positive due-diligence result" not in slide_pos
             or "could not be assessed on this scan" in slide_pos):
         bad.append("a fully measured supply-chain surface does not read as a "
@@ -4860,6 +5055,14 @@ globalThis.fetch = async (url, opt) => {
     host_raws = ["acme-group.co.za <info@brokerfirm.co.za>",
                  "first-national.co.za, attn Jane <jane@brokerfirm.co.za>",
                  "acme.co.za1 <accounts@brokerfirm.co.za>",
+                 "foo.ſom1 <user@broker.co.za>",
+                 "foo.Kom1 <user@broker.co.za>",
+                 "foſ.com1 <user@broker.co.za>",
+                 "foo.comſ <user@broker.co.za>",
+                 "foİ.com1 <user@broker.co.za>",
+                 "foo.comİ <user@broker.co.za>",
+                 "foı.com1 <user@broker.co.za>",
+                 "foo.comı <user@broker.co.za>",
                  "acme.africa <info@brokerfirm.co.za>",
                  "acme.insurance <accounts@brokerfirm.co.za>",
                  "acme.capetown <ops@brokerfirm.co.za>",
@@ -4893,6 +5096,17 @@ globalThis.fetch = async (url, opt) => {
             # host so no case here can pass by accident (round 13, IH13-3,
             # IH13-4).
             ("acme.co.za1 <accounts@brokerfirm.co.za>", ""),
+            # Unicode letters accepted by Python re.I must be host-shaped in
+            # the browser too; malformed near-misses fail closed, never to the
+            # contact domain. These entries kill an ASCII-only JS guard.
+            ("foo.ſom1 <user@broker.co.za>", ""),
+            ("foo.Kom1 <user@broker.co.za>", ""),
+            ("foſ.com1 <user@broker.co.za>", ""),
+            ("foo.comſ <user@broker.co.za>", "foo.comſ"),
+            ("foİ.com1 <user@broker.co.za>", ""),
+            ("foo.comİ <user@broker.co.za>", "foo.comi̇"),
+            ("foı.com1 <user@broker.co.za>", ""),
+            ("foo.comı <user@broker.co.za>", "foo.comı"),
             # ...and the near-miss guard is the HOST rule minus its two
             # lookaheads, so it catches only a host it refused to read. Written
             # as its own looser pattern it matched every dotted first token and
@@ -5451,31 +5665,31 @@ globalThis.fetch = async (url, opt) => {
                    % (r["scanned_count"], n_calls, dep.get("issues")))
     r, c, dep, _n = got["hung_tls_on_443"]
     if not (dep.get("ssl_score") is None and "ssl" in dep.get("not_measured", [])
-            and price(c) == absent):
+            and price(c) == neutral):
         bad.append("a TLS handshake that timed out on an open 443 was scored: ssl_score=%r "
                    "not_measured=%r price=%s/%s" % (dep.get("ssl_score"),
-                                                  dep.get("not_measured"), price(c), absent))
+                                                  dep.get("not_measured"), price(c), neutral))
     for label in ("tls_eof_on_443", "http_on_443", "connect_timeout_443_filtered_80_open",
                   "reset_on_443", "forcibly_closed_on_443", "hang_then_plain_http",
                   "http_on_443_port_check_failed", "http_on_443_no_ports_listed",
                   "reset_on_443_port_check_failed"):
         r, c, dep, _n = got[label]
-        if not (dep.get("ssl_score") == 0 and price(c) > absent):
+        if not (dep.get("ssl_score") == 0 and price(c) > neutral):
             bad.append("%s lost its no-TLS finding: ssl_score=%r price=%s/%s"
-                       % (label, dep.get("ssl_score"), price(c), absent))
+                       % (label, dep.get("ssl_score"), price(c), neutral))
     for label in ("hung_tls_probe_missed_443", "connect_timeout_on_open_443"):
         r, c, dep, _n = got[label]
         if not (dep.get("ssl_score") is None and "ssl" in dep.get("not_measured", [])
-                and price(c) == absent):
+                and price(c) == neutral):
             bad.append("%s was scored: ssl_score=%r price=%s/%s"
-                       % (label, dep.get("ssl_score"), price(c), absent))
+                       % (label, dep.get("ssl_score"), price(c), neutral))
     for l, _s, _d, finding in tls_table:
         r, c, dep, _n = got["tls_table:" + l]
-        ok_ = ((dep.get("ssl_score") == 0 and price(c) > absent) if finding else
+        ok_ = ((dep.get("ssl_score") == 0 and price(c) > neutral) if finding else
                (dep.get("ssl_score") is None and "ssl" in dep.get("not_measured", [])))
         if not ok_:
             bad.append("%s: ssl_score=%r price=%s/%s, %s expected"
-                       % (l, dep.get("ssl_score"), price(c), absent,
+                       % (l, dep.get("ssl_score"), price(c), neutral,
                           "a finding" if finding else "not assessed"))
     r, c, dep, n_calls = got["dual_stack_public"]
     if not (r["scanned_count"] == 1 and n_calls == 6 and r["score"] == 0):
@@ -5485,11 +5699,11 @@ globalThis.fetch = async (url, opt) => {
         for how, want_nm in (("dns_down", ["dns"]), ("no_ports", [])):
             r, c, dep, _n = got["tls:%s:%s" % (n, how)]
             if not (dep.get("ssl_score") == want_score and r["high_count"] == 1
-                    and dep.get("not_measured") == want_nm and price(c) > absent):
+                    and dep.get("not_measured") == want_nm and price(c) > neutral):
                 bad.append("TLS reached (%s, DNS %s) lost its finding: ssl_score=%r high=%s "
                            "not_measured=%r price=%s/%s"
                            % (n, how, dep.get("ssl_score"), r["high_count"],
-                              dep.get("not_measured"), price(c), absent))
+                              dep.get("not_measured"), price(c), neutral))
     if bad:
         failures.append("discovery[checker]: " + "; ".join(bad))
     report(not bad, "checker_measures_only_what_answered", "%d cases" % len(checker_cases))
@@ -5590,7 +5804,7 @@ globalThis.fetch = async (url, opt) => {
             and rd_run.get("confirmed_not_assessed") == ["slow.co.za"]
             and rd_run.get("timed_out") == ["slow.co.za"]
             and ck.name == "related_domains" and ck.saved is True
-            and price(rd_run) > absent):
+            and price(rd_run) > neutral):
         bad.append("one slow domain: returned=%s status=%r critical=%r not_assessed=%r "
                    "timed_out=%r checkpointed=%r"
                    % (returned, rd_run.get("status"), rd_run.get("critical_count"),
@@ -6431,17 +6645,17 @@ globalThis.fetch = async (url, opt) => {
             failures.append("discovery[ts]: dashboard vs Python and the PDF card: " + detail)
         report(ok, "dashboard_matches_the_pdf_card", detail[:60])
 
-    # 12. The price model this contract rests on. A skipped category must price
-    # ABOVE absent: that is the +8.47 inversion the contract prevents. If not,
-    # the scorer changed and this guard no longer describes a real risk.
+    # 12. Exclusion must still differ from an explicit neutral result on this
+    # fixture. A mutation that skips an answered discovery category must be
+    # caught, even though FC13-2 now also excludes genuinely absent raw checks.
     skipped = price({"status": "skipped", "score": 100, "declared_count": 0,
                      "scanned_count": 0, "critical_count": 0, "high_count": 0,
                      "dependants": [], "issues": []})
-    ok = skipped > absent
+    ok = skipped > neutral
     if not ok:
         failures.append("discovery MUTATION is vacuous: status 'skipped' now prices "
-                        "the same as absent (%s vs %s)" % (skipped, absent))
-    report(ok, "MUTATION skipped still prices above absent", "(%s > %s)" % (skipped, absent))
+                        "the same as neutral (%s vs %s)" % (skipped, neutral))
+    report(ok, "MUTATION skipped still prices above neutral", "(%s > %s)" % (skipped, neutral))
 
     st = csc.RelatedDomainsChecker().check("acme.co.za", []).get("status")
     ok = st == "completed"
@@ -6510,7 +6724,7 @@ def _check_cdn_edge_detection(failures):
     # Confidence cap. Same checker set, same completeness; the ONLY difference
     # is whether an origin was verified behind the detected edge.
     from scoring_analytics import RiskScorer
-    def _conf(cdn_detected, verified):
+    def _conf(cdn_detected, verified, missing_ssl=False):
         cats = {
             "ssl": {"status": "completed", "grade": "A", "score": 95},
             "http_headers": {"status": "completed", "score": 90},
@@ -6522,6 +6736,13 @@ def _check_cdn_edge_detection(failures):
             "origin_discovery": {"status": "completed",
                                  "verified": ["1.2.3.4"] if verified else []},
         }
+        # Isolate the estate-confidence cap from missing-check qualification.
+        # FC13-2 requires explicit completion rather than an absent-data default.
+        for name in RiskScorer.WEIGHTS:
+            if name not in RiskScorer.DERIVED_CATEGORIES:
+                cats.setdefault(name, {"status": "completed"})
+        if missing_ssl:
+            cats.pop("ssl")
         RiskScorer().calculate(cats)
         sc = cats.get("_scan_completeness") or {}
         return sc.get("confidence_level"), sc.get("estate_confidence")
@@ -6542,6 +6763,8 @@ def _check_cdn_edge_detection(failures):
                 % (label, conf, estate, want_conf, want_estate))
         print("  [%s] cdn_edge:confidence %-20s %s / %s"
               % ("PASS" if ok else "FAIL", label, conf, estate))
+    if _conf(True, False, missing_ssl=True) != ("low_confidence", "origin_not_reached"):
+        failures.append("cdn_edge[missing]: edge qualification must not erase missing-check low confidence")
 
 
 def _check_lookalike_ownership(failures):

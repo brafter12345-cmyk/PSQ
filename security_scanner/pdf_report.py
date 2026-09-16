@@ -49,7 +49,7 @@ from pdf_cards import (
     cat_rsi, cat_dbi, cat_remediation, cat_financial_impact,
     loss_exposure_scenarios_block, risk_probability_block, cover_ladder_block,
     records_assumption_disclosure, civil_liability_disclosure,
-    peer_benchmark_card, waf_coverage_notice, waf_card_disclaimer,
+    peer_benchmark_card, waf_coverage_notice, waf_card_disclaimer, assessment_coverage_notice,
     estate_edge_notice,
     vendor_estate_notice,
     origin_exposure_notice,
@@ -134,7 +134,13 @@ def _assessment_extract_kpis(results: dict) -> list:
     hrp_services = cats.get("high_risk_protocols", {}).get("exposed_services", [])
     db_ports = {3306, 5432, 27017, 6379, 9200, 1433}
     db_count = sum(1 for s in hrp_services if s.get("port") in db_ports)
-    rdp_exposed = cats.get("vpn_remote", {}).get("rdp_exposed", False)
+    vpn_cat = cats.get("vpn_remote") or {}
+    rdp_exposed = vpn_cat.get("rdp_exposed", False)
+    adm_cat = cats.get("exposed_admin") or {}
+    hrp_cat = cats.get("high_risk_protocols") or {}
+    adm_known = (adm_cat.get("status") == "completed" or adm_total > 0)
+    hrp_known = (hrp_cat.get("status") == "completed" or db_count > 0)
+    rdp_known = (vpn_cat.get("status") == "completed" or bool(rdp_exposed))
 
     def ssl_sev(g):
         if g in ("A+", "A"): return "ok"
@@ -152,9 +158,15 @@ def _assessment_extract_kpis(results: dict) -> list:
         {"value": f"{hh_score}%" if hh_score is not None else "n/a",
          "label": "HTTP Sec. Headers",     "description": "Web app exposure",
          "severity": "unknown" if hh_score is None else "ok" if hh_score >= 80 else "warn" if hh_score >= 50 else "bad"},
-        {"value": str(adm_total),     "label": "Exposed Admin Panels", "description": "Direct entry points",        "severity": "bad" if adm_total > 0 else "ok"},
-        {"value": str(db_count),      "label": "Critical DB Exposed",  "description": "Database internet-facing",   "severity": "bad" if db_count > 0 else "ok"},
-        {"value": "Yes" if rdp_exposed else "No", "label": "RDP Exposed", "description": "Top ransomware vector",    "severity": "bad" if rdp_exposed else "ok"},
+        {"value": str(adm_total) if adm_known else "n/a",
+         "label": "Exposed Admin Panels", "description": "Direct entry points",
+         "severity": "bad" if adm_total > 0 else "ok" if adm_known else "unknown"},
+        {"value": str(db_count) if hrp_known else "n/a",
+         "label": "Critical DB Exposed", "description": "Database internet-facing",
+         "severity": "bad" if db_count > 0 else "ok" if hrp_known else "unknown"},
+        {"value": "Yes" if rdp_exposed else "No" if rdp_known else "n/a",
+         "label": "RDP Exposed", "description": "Top ransomware vector",
+         "severity": "bad" if rdp_exposed else "ok" if rdp_known else "unknown"},
     ]
 
 
@@ -802,6 +814,8 @@ def _assessment_slide_score_and_kpis(results):
             Paragraph(k["description"], desc_st),
         ]
 
+    coverage = results.get("_scan_completeness") or (results.get("categories") or {}).get("_scan_completeness") or {}
+    qualified = bool(coverage.get("score_qualified"))
     # Build a 2x3 grid. Each cell gets a coloured LEFT line via per-cell style.
     cell_contents = [
         [kpi_cell(kpis[0]), kpi_cell(kpis[1]), kpi_cell(kpis[2])],
@@ -811,7 +825,7 @@ def _assessment_slide_score_and_kpis(results):
     right_inner_w = ASX_INNER_W + ASX_MARGIN - 330 - 50  # post-navy width
     kpi_grid = Table(cell_contents,
                       colWidths=[right_inner_w / 3] * 3,
-                      rowHeights=[160, 160])
+                      rowHeights=[140, 140] if qualified else [160, 160])
 
     style_cmds = [
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -844,6 +858,17 @@ def _assessment_slide_score_and_kpis(results):
         Spacer(1, 8),
         kpi_grid,
     ]
+
+    if qualified:
+        missing = len(coverage.get("missing_checkers") or [])
+        pct = coverage.get("completeness_pct")
+        message = f"Score qualified. Assessment completeness: {pct}%" if pct is not None else "Score qualified."
+        message += f". {missing} raw check(s) missing." if missing else "."
+        message += " Unavailable checks are not measured clean. Re-scan recommended before underwriting."
+        right_col.append(Spacer(1, 6))
+        right_col.append(Paragraph(message, ParagraphStyle(
+            "coverage_qualification", fontSize=9, leading=11,
+            fontName=ASX_SANS, textColor=ASX_GREY_MUTED)))
 
     # The navy panel needs to bleed to the left edge — use a 2-column container
     # with no padding on the left side.
@@ -1103,6 +1128,8 @@ def _assessment_slide_supply_chain(results):
     # What a LOW or flagged S-1 card would otherwise leave unsaid: confirmed
     # domains not fully assessed beside a finding, candidates still awaiting
     # confirmation, or a discovery that could not run.
+    from estate_discovery import related_domains_certificate_coverage
+    _rd_coverage = related_domains_certificate_coverage(rd)
     _rd_note_bits = []
     if not _rd_foot and _rd_state == "confirmed":
         if sev in ("CRITICAL", "HIGH") and not _rd_full(rd):
@@ -1127,6 +1154,8 @@ def _assessment_slide_supply_chain(results):
         elif _rd_down:
             _rd_note_bits.append("related-domain discovery could not run on this "
                                  "scan, so other related domains were not looked for")
+    if _rd_coverage:
+        _rd_note_bits.append(_rd_coverage.rstrip("."))
     cards.append({
         "label": "S-1 Related Domains",
         "headline": "Civil-liability inflator — supplier-domain compromise",
@@ -1437,6 +1466,9 @@ def _assessment_slide_supply_chain(results):
         sub = " ".join(_bits)
     elif assessed:
         verdict_text, vhex = "LOW EXPOSURE", _SC_SEV_HEX["LOW"]
+        # A clean measured subset does not clear the unmeasured remainder.
+        if unknown or partly_cards:
+            verdict_text, vhex = "NOT FULLY ASSESSED", "#475569"
         sub = "All " + str(len(assessed)) + " assessed supply-chain signal(s) are clean."
     elif _partly:
         verdict_text, vhex = "NOT FULLY ASSESSED", "#475569"
@@ -2209,6 +2241,7 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         ("ROUNDEDCORNERS",(0, 0), (-1, -1), [6, 6, 6, 6]),
     ]))
     story.append(score_tbl)
+    story += assessment_coverage_notice(results, S)
     story.append(Spacer(1, 5 * mm))
 
     # Gauge

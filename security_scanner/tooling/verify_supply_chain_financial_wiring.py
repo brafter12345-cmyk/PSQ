@@ -24,7 +24,7 @@ Run this AFTER any change to:
 
 Workflow:
   1. Load a baseline fixture (takealot R13.5B by default).
-  2. Strip every supply-chain category — establishes a "before" baseline.
+  2. Use explicitly completed clean supply-chain results as the control.
   3. Re-run RiskScorer + RansomwareIndex + DataBreachIndex +
      FinancialImpactCalculator + RemediationSimulator.
   4. Re-inject supply-chain category data one checker at a time and verify
@@ -171,10 +171,15 @@ WORST_CASE_PAYLOADS = {
 }
 
 
-def _strip_supply_chain(cats: dict) -> dict:
+def _neutral_supply_chain(cats: dict) -> dict:
+    # FC13-2 excludes absent raw checks. Wiring must compare adverse findings
+    # with explicit clean measurements, not with missing evidence whose weight
+    # is redistributed. Keep all existing increase thresholds unchanged.
     out = copy.deepcopy(cats)
     for k in SUPPLY_CHAIN_KEYS:
-        out.pop(k, None)
+        out[k] = {"status": "completed", "score": 100}
+    out["cms_plugin_sbom"].update(is_wordpress=True, plugin_count=0, versioned_count=0)
+    out["email_vendor_surface"].update(vendor_count=0, weak_dmarc=False, dmarc_policy="reject")
     return out
 
 
@@ -389,8 +394,8 @@ def run(industry: str = "retail",
         data = json.load(f)
     cats = data.get("categories", {})
 
-    cats_baseline = _strip_supply_chain(cats)
-    print(f"Baseline: stripping {len(SUPPLY_CHAIN_KEYS)} supply-chain keys")
+    cats_baseline = _neutral_supply_chain(cats)
+    print(f"Baseline: {len(SUPPLY_CHAIN_KEYS)} explicitly completed clean supply-chain controls")
     baseline = _run_pipeline(cats_baseline, industry=industry,
                               revenue_zar=revenue_zar)
     print(f"  baseline overall_risk_score = {baseline['overall_risk_score']}")

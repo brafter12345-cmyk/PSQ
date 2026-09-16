@@ -5,6 +5,60 @@ security scanner. It is mounted *inside* the existing Flask app — not a separa
 SPA — so every backend route, the PDF pipeline, and the SSE scan-progress stream
 are untouched.
 
+## Assessment coverage policy (2026-09-16)
+
+An absent raw checker result is **not assessed**, rather than a clean finding.
+The scorer excludes its weight and redistributes it over the remaining signals;
+it counts the missing check against completeness. The derived metrics
+`ransomware_risk`, `data_breach_index`, and `financial_impact` are exempt from
+this missing-probe rule. No weights or measured findings were changed.
+
+The dashboard coverage banner shows score qualification, missing raw checks,
+and failed raw checks. Missing checks are not described as WAF blocking.
+The PDF summary/full report shows the qualification beside its overall score,
+and the assessment deck shows completeness and missing-check count below its KPIs.
+Unavailable summary values and KPIs are neutral, not green zeroes.
+
+CMS fingerprinting distinguishes usable non-WordPress evidence from unavailable
+probes. A usable homepage and login response without a WordPress fingerprint
+produce `skipped` / `confirmed_non_wordpress`. Failed, blocked, or inconclusive
+probes produce `unreachable` / `probe_failed`, with unknown WordPress status and
+no score. The PDF CMS card and dashboard coverage notice expose this uncertainty.
+Historical `skipped` results cannot reveal whether old probes failed; rerunning
+the checker is required to establish that fact. Rescoring alone cannot recover it.
+
+The owner approved this pricing policy after offline fixture comparisons:
+
+| Reference fixture | Score before → after | Completeness | Estimated annual loss (ZAR) |
+| --- | --- | --- | --- |
+| Finance R10m | 282 → 372 | 90% → 67% | 447,252 → 509,411 |
+| Retail R13.5bn | 205 → 262 | 100% → 77% | 67,728,866 → 69,120,780 |
+
+Return-period loss totals were unchanged in these comparisons. These are
+fixture-specific effects, not a promise of the same price change for other scans.
+Stored results retain their old scores until explicitly rescored; this sandbox
+change does not rewrite production scan history.
+
+Certificate-discovery notes distinguish zero, one, and two answered sources.
+Even two answered sources do not establish a complete asset inventory. Partly
+assessed supply chains retain their adverse findings and cannot claim a green
+overall exposure verdict. The legend defines the neutral “Not assessed” state.
+
+Build the committed dashboard using the lockfile and
+`SCANNER_BASE_PATH=/scanner`; verify byte equality against an isolated rebuild.
+Offline verification does not establish that a fresh dependency installation
+will succeed without a populated package cache.
+
+### Remaining detailed-report gap
+
+The full technical PDF cards for IntelX, VirusTotal, and fraudulent domains
+still render absent category data like completed zero-findings data. This was
+reproduced separately during visual review. It is outside the five Executive
+Summary rows addressed by FC13-3 and remains unresolved; the top-level coverage
+notice does not make those detailed clean statements reliable. Follow-up work
+must gate their negative claims on completed measurement while preserving
+positive evidence, then add renderer regressions and review PDF snapshots.
+
 ## How it's wired
 
 - Flask serves `templates/results.html`, a thin shell that injects
