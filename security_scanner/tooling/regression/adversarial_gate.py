@@ -8888,6 +8888,49 @@ def _check_technical_card_measurement(failures):
     print("  [%s] technical_card:measurement_and_rendering" %
           ("FAIL" if any(item.startswith("technical_card[") for item in failures) else "PASS"))
 
+def _check_origin_candidate_boundary(failures):
+    """No internal targets or over-broad certificate names enter the origin pool."""
+    import origin_discovery as od
+    from unittest.mock import patch
+    bad = ["10.0.0.1", "127.0.0.1", "169.254.1.2", "192.168.1.1",
+           "172.16.0.1", "100.64.0.1", "0.0.0.0", "192.0.2.1",
+           "224.0.0.1", "240.0.0.1", "::1", "2001:4860:4860::8888",
+           "internal.example.test", "not-an-ip"]
+    public = "93.184.216.34"
+    start = len(failures)
+    for source in ("local", "history", "shodan"):
+        attempted = []
+        with patch.object(od, "_fetch_historical_a", return_value=bad + [public]), \
+             patch.object(od, "_shodan_cert_hosts", return_value=(15, bad + [public], True)), \
+             patch.object(od, "_verify_origin", side_effect=lambda ip, domain: attempted.append(ip) or True):
+            args = {"extra_candidates": bad + [public]} if source == "local" else (
+                {"securitytrails_api_key": "synthetic"} if source == "history" else
+                {"shodan_api_key": "synthetic"})
+            result = od.discover_origin_ips("example.test", **args)
+        if attempted != [public] or result["verified"] != [public] or result["candidates"] != [public]:
+            failures.append("origin_boundary[%s]: non-public or non-literal candidate reached verification" % source)
+    for ip in bad:
+        with patch.object(od.ssl, "create_default_context") as context, \
+             patch.object(od.socket, "create_connection") as connect:
+            result = od._verify_origin(ip, "example.test")
+        if result or context.called or connect.called:
+            failures.append("origin_boundary[direct/%s]: verifier did not reject before socket/TLS setup" % ip)
+    cases = [
+        ("example.test", {"*.example.test"}, False),
+        ("a.example.test", {"*.example.test"}, True),
+        ("a.b.example.test", {"*.example.test"}, False),
+        ("badexample.test", {"*.example.test"}, False),
+        ("example.test", {"example.test"}, True),
+        ("EXAMPLE.TEST.", {"EXAMPLE.TEST."}, True),
+        ("a.example.test", {"other.test"}, False),
+        ("a.example.test", {"*example.test"}, False),
+    ]
+    for domain, names, expected in cases:
+        if od._name_covers(domain, names) is not expected:
+            failures.append("origin_boundary[certificate/%s/%s]: incorrect hostname coverage" % (domain, names))
+    print("  [%s] origin_boundary:25 synthetic cases" % ("PASS" if len(failures) == start else "FAIL"))
+
+
 def main():
     failures = []
     _install_paid_egress_guard()   # must be first: the gate is offline by contract
@@ -8908,6 +8951,7 @@ def main():
     _check_attribution_confidence(failures)
     _check_cdn_feed_table(failures)
     _check_origin_exposure(failures)
+    _check_origin_candidate_boundary(failures)
     _check_single_asn_measured(failures)
     _check_sa_second_level_domains(failures)
     _check_export_mailbox_scope(failures)

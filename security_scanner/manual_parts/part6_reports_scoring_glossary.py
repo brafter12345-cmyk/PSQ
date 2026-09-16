@@ -21,6 +21,15 @@ def build(doc):
         add_note,
     )
 
+    # Section labels with no inline body must stay with the paragraph that
+    # explains them; otherwise Word can strand a bold heading at a page bottom.
+    _add_bold_body = add_bold_body
+    def add_bold_body(doc_, bold_text, normal_text):
+        paragraph = _add_bold_body(doc_, bold_text, normal_text)
+        if normal_text == "":
+            paragraph.paragraph_format.keep_with_next = True
+        return paragraph
+
     # ------------------------------------------------------------------ #
     #  SECTION 6 -- PDF REPORTS                                          #
     # ------------------------------------------------------------------ #
@@ -35,6 +44,10 @@ def build(doc):
     )
 
     # 6.0 Reading a report: assessed vs unassessed ---------------------- #
+
+    add_body(doc, 'Origin discovery safety update September 2026: only public IPv4 literals are eligible for origin TLS verification. Private, loopback, link-local, reserved, multicast, IPv6, and hostname candidates are rejected before a connection is attempted. A wildcard certificate such as *.example.test covers a.example.test, but neither example.test nor a.b.example.test. A matching certificate is evidence of a service presenting that name; it does not establish who operates the host. Operator attribution and complete IPv6 support remain separate open work.')
+    add_body(doc, 'The sandbox outstanding-work register has been reconciled with the canonical main working copy, including asset-discovery item 5n. Earlier review history is preserved in its linked archive. Known exceptions still needing reproduction or a pricing decision include rate-limited provider results and some entirely unanswered probe sets: do not infer complete assessment merely from a displayed score or a passing regression suite. The approved absent-raw-check policy does not settle every present-but-unmeasured result.')
+
     add_h2(doc, "6.0 Reading a report: \"not assessed\" is not \"clean\"")
 
     add_body(doc, 'September 2026 sandbox update: the eight deferred review findings are implemented at checkpoint b3cf0c8. This describes the sandbox, not a deployment to live. The local verification passed all 12 gates and detected 347 mutations, including two gate crashes recorded separately.')
@@ -879,8 +892,10 @@ def build(doc):
 
     add_tip(
         doc,
-        "A completeness of 100% means every configured checker ran "
-        "successfully. If completeness drops below 80%, consider "
+        "A displayed completeness of 100% means no missing or failed checks "
+        "were recognized by the current status rules; it does not guarantee "
+        "complete assessment where known status-handling gaps remain. If "
+        "completeness drops below 80%, consider "
         "re-scanning after a short delay, transient API issues or "
         "rate limiting may have resolved.",
     )
@@ -1825,47 +1840,42 @@ def build(doc):
     add_bold_body(doc, "v1.0: April 2026", " Initial Release")
     add_body(
         doc,
-        "First public release of the Phishield Cyber Risk Scanner User "
-        "Manual, covering all scanner capabilities delivered through "
-        "Phase 3 implementation. This version includes:",
+        "Initial manual for the Phase 3 scanner, covering:",
     )
     add_bullet(
         doc,
-        "Detailed explanations of all 25+ security checkers across six "
-        "categories (Email Security, Network Security, Web Application "
+        "Explanations of all 25+ security checkers across six categories "
+        "(Email Security, Network Security, Web Application "
         "Security, Reputation & Intelligence, Identity & Access, "
         "Compliance & Privacy).",
     )
     add_bullet(
         doc,
-        "Insurance analytics methodology documentation including RSI, "
-        "DBI, hybrid financial impact model with Monte Carlo simulation, and the "
-        "remediation roadmap generation logic.",
+        "Insurance analytics methodology including RSI, DBI, the hybrid "
+        "financial-impact model with Monte Carlo simulation, and remediation "
+        "roadmap logic.",
     )
     add_bullet(
         doc,
-        "Complete scoring methodology with category weights, failsafe "
-        "behaviour, scan completeness calculation, and score reliability "
-        "guidance.",
+        "Scoring methodology with category weights, failsafe behaviour, scan "
+        "completeness calculation, and score-reliability guidance.",
     )
     add_bullet(
         doc,
-        "API integration guide covering all ten external data sources "
-        "with cost models, data provided, and toggle availability.",
+        "API integration guide for all ten external data sources, with cost "
+        "models, data provided, and toggle availability.",
     )
     add_bullet(
         doc,
-        "PDF report format documentation for both the Full Technical "
-        "Report and Broker Summary, including guidance on reading and "
-        "interpreting report content.",
+        "PDF format documentation for the Full Technical Report and Broker "
+        "Summary, including guidance on interpretation.",
     )
     add_bullet(
         doc,
-        "Known limitations and planned improvements referencing the "
-        "Phase 4-6 roadmap.",
+        "Known limitations and planned improvements from the Phase 4-6 "
+        "roadmap.",
     )
     add_bullet(
         doc,
-        "Comprehensive glossary of 40+ technical terms written for "
-        "non-technical readers.",
+        "A glossary of 40+ technical terms for non-technical readers.",
     )

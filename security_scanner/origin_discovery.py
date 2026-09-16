@@ -22,6 +22,7 @@ The cert-match step is the standard origin-confirmation technique used by
 origin-discovery tooling (CloudFail, Censys/Shodan cert pivots).
 """
 import socket
+import ipaddress
 import ssl
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -142,14 +143,27 @@ def _name_covers(domain: str, names: set) -> bool:
     """True if any cert name equals the domain or is a wildcard covering it."""
     domain = domain.lower().strip(".")
     for n in names:
-        n = n.strip(".")
+        n = n.lower().strip(".")
         if n == domain:
             return True
         if n.startswith("*."):
             base = n[2:]
-            if domain == base or domain.endswith("." + base):
+            if (domain.endswith("." + base)
+                    and domain.count(".") == base.count(".") + 1):
                 return True
     return False
+
+
+def _public_ipv4(ip: str) -> bool:
+    """Origin TLS probes only accept public IPv4 literals, never names or internal IPs."""
+    if not isinstance(ip, str):
+        return False
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return (address.version == 4 and address.is_global
+            and not address.is_multicast and not address.is_reserved)
 
 
 def _verify_origin(ip: str, domain: str) -> bool:
@@ -157,6 +171,8 @@ def _verify_origin(ip: str, domain: str) -> bool:
     presented certificate covers the domain. Chain validation is disabled
     on purpose — we connect by IP and judge identity solely by the cert's
     CN/SAN, which is what proves the IP currently serves THIS domain."""
+    if not _public_ipv4(ip):
+        return False
     ctx = ssl.create_default_context()
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
@@ -213,7 +229,7 @@ def discover_origin_ips(domain: str,
     local = []
     for ip in (extra_candidates or []):
         ip = str(ip).strip()
-        if not ip or ":" in ip:          # verification is an IPv4 TLS connect
+        if not _public_ipv4(ip):         # reject before any TLS probe or DNS resolution
             continue
         if is_edge_ip(ip):
             continue                     # the edge is what we are trying to bypass
@@ -227,7 +243,8 @@ def discover_origin_ips(domain: str,
 
     def _add(ips, source):
         for ip in ips or []:
-            if ip and ip not in seen:
+            ip = str(ip).strip()
+            if _public_ipv4(ip) and not is_edge_ip(ip) and ip not in seen:
                 seen.add(ip)
                 candidates.append(ip)
                 sources[ip] = source
