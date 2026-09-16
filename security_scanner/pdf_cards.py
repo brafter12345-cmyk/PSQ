@@ -1414,17 +1414,79 @@ def cat_hudson_rock(d, S):
     return parts
 
 
+def _incomplete_intelligence_card(data, title, counters, records, required, S, sample_keys=()):
+    """Require recorded completion before making negative intelligence claims.
+
+    Incomplete results may contain findings: retain those facts without filling
+    absent fields with zero or applying the complete-result interpretation.
+    """
+    from xml.sax.saxutils import escape
+    def count(value):
+        return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+    measured = (data.get("status") == "completed"
+                and all(count(data.get(key)) for key in required)
+                and (not sample_keys or any(count(data.get(key)) and data[key] > 0
+                                            for key in sample_keys)))
+    if "resolved_count" in required:
+        domains = data.get("fraudulent_domains")
+        measured = (measured and isinstance(domains, list)
+                    and all(isinstance(item, dict) for item in domains)
+                    # The checker preserves a maximum of twenty display records.
+                    and min(data["resolved_count"], 20) == len(domains)
+                    and data["resolved_count"] <= data["total_permutations"])
+    if "total_results" in required:
+        measured = (measured and all(data[key] <= data["total_results"]
+                                    for key in ("darkweb_count", "paste_count", "leak_count")))
+    if measured:
+        return None
+    rows = [(label, str(data[key])) for key, label in counters
+            if count(data.get(key)) and data[key] > 0]
+    for key, fields in records:
+        values = data.get(key)
+        for item in (values if isinstance(values, list) else [])[:8]:
+            if isinstance(item, dict):
+                detail = " | ".join(
+                    field.replace("_", " ").capitalize() + ": "
+                    + ("Yes" if item[field] is True else "No" if item[field] is False else str(item[field]))
+                    for field in fields if item.get(field) is not None)
+                if detail:
+                    rows.append(("Recorded finding", escape(detail)))
+    color = C_AMBER if rows else C_BLUE
+    if count(data.get("darkweb_count")) and data["darkweb_count"] > 0:
+        color = C_CRITICAL
+    elif count(data.get("paste_count")) and data["paste_count"] > 5:
+        color = C_RED
+    if count(data.get("malicious_count")) and data["malicious_count"] > 0:
+        color = C_CRITICAL if data["malicious_count"] > 3 else C_RED
+    domains = data.get("fraudulent_domains")
+    if isinstance(domains, list):
+        mailers = [item for item in domains if isinstance(item, dict)
+                   and item.get("mail_capable") is True]
+        if mailers:
+            color = C_CRITICAL if any(not item.get("serves_content") for item in mailers) else C_RED
+    parts = build_cat_card(title, color,
+                           "Observed findings; incomplete" if rows else "Not assessed",
+                           rows, [], S, fallback="Assessment incomplete; missing values are unknown.")
+    parts.append(Paragraph(
+        "<b>Not assessed in full.</b> A completed measurement was not recorded "
+        "for this check. Missing values are unknown, not zero. "
+        + ("The findings above remain evidence; additional exposure cannot be ruled out."
+           if rows else "Exposure cannot be confirmed or ruled out."), S["body"]))
+    parts.append(Spacer(1, 3 * mm))
+    return parts
+
+
 def cat_intelx(d, S):
-    ix = d.get("intelx", {})
-    if ix.get("status") == "no_api_key":
-        return []
-    if ix.get("status") in _CRED_NOT_ASSESSED:
-        # Everything except an absent key: the search was attempted and failed,
-        # so the reader is owed the distinction between "nothing is circulating"
-        # and "we could not look".
-        return _not_assessed_block("Dark Web Monitoring (IntelX)",
-                                   "Dark-web forums and leak databases",
-                                   ix.get("status"), S)
+    ix = d.get("intelx") or {}
+    incomplete = _incomplete_intelligence_card(
+        ix, "Dark Web Monitoring (IntelX)",
+        [("total_results", "Total references"), ("darkweb_count", "Dark web mentions"),
+         ("paste_count", "Paste site mentions"), ("leak_count", "Leak database entries")],
+        [("recent_results", ("date", "name", "media"))],
+        ("total_results", "darkweb_count", "paste_count", "leak_count"), S)
+    if incomplete is not None:
+        return incomplete
     total = ix.get("total_results", 0)
     darkweb = ix.get("darkweb_count", 0)
     pastes = ix.get("paste_count", 0)
@@ -1580,8 +1642,16 @@ def cat_credential_risk(d, S):
 
 
 def cat_virustotal(d, S):
-    vt     = d.get("virustotal", {})
-    status = vt.get("status", "completed")
+    vt = d.get("virustotal") or {}
+    incomplete = _incomplete_intelligence_card(
+        vt, "VirusTotal Reputation",
+        [("malicious_count", "Malicious detections"), ("suspicious_count", "Suspicious detections")],
+        [("flagging_engines", ("engine", "category", "result"))],
+        ("malicious_count", "suspicious_count", "harmless_count", "undetected_count"), S,
+        sample_keys=("malicious_count", "suspicious_count", "harmless_count", "undetected_count"))
+    if incomplete is not None:
+        return incomplete
+    status = vt["status"]
     mal    = vt.get("malicious_count", 0)
     sus    = vt.get("suspicious_count", 0)
     col    = (C_CRITICAL if mal > 3 else C_RED if mal > 0 else
@@ -1904,7 +1974,13 @@ def cat_info_disclosure(d, S):
 
 
 def cat_fraudulent_domains(d, S):
-    fd     = d.get("fraudulent_domains", {})
+    fd = d.get("fraudulent_domains") or {}
+    incomplete = _incomplete_intelligence_card(
+        fd, "Fraudulent Domains (Typosquat)", [("resolved_count", "Lookalikes found")],
+        [("fraudulent_domains", ("domain", "risk", "mail_capable", "serves_content"))],
+        ("resolved_count", "total_permutations"), S, sample_keys=("total_permutations",))
+    if incomplete is not None:
+        return incomplete
     found  = fd.get("resolved_count", 0)
     # Colour from the SHARED severity function, not from a second count-based
     # rule kept here. The card and the dashboard previously graded this category
@@ -2032,9 +2108,9 @@ def cat_fraudulent_domains(d, S):
         parts.append(Paragraph("4. Alert staff to the existence of these lookalike domains and reinforce phishing awareness.", S["body"]))
     else:
         parts.append(Paragraph(
-            "No active lookalike domains were detected. This means no one has registered domains that closely "
-            "mimic your brand for phishing purposes. Consider defensively registering common typo variants "
-            "to maintain this position.",
+            "No active lookalike domains were detected among the variants checked on this scan. "
+            "This is not a complete inventory of registered domains and does not rule out other "
+            "brand impersonation. Consider defensively registering common typo variants.",
             S["body"]))
     parts.append(Spacer(1, 3 * mm))
     return parts

@@ -678,7 +678,8 @@ def _check_credential_failclosed(failures):
         ("intelx/poll-error", pc.cat_intelx,
          {"intelx": {"status": "error", "total_results": 0, "issues": []}}, True),
         ("intelx/genuine-clean", pc.cat_intelx,
-         {"intelx": {"status": "completed", "total_results": 0, "issues": []}}, False),
+         {"intelx": {"status": "completed", "total_results": 0, "darkweb_count": 0,
+                     "paste_count": 0, "leak_count": 0, "issues": []}}, False),
         ("credrisk/unassessed", pc.cat_credential_risk,
          {"credential_risk": {"risk_level": "UNKNOWN", "assessed": False,
                               "status": "quota_exhausted"}}, True),
@@ -8186,7 +8187,7 @@ def _check_card_severity_equivalence(failures):
         # lookalikes rendered critical in the PDF and medium on the dashboard;
         # 1 mail-capable domain with no website rendered high and critical.
         ("fraudulent_domains", "cat_fraudulent_domains"): [
-            {"status": "completed", "resolved_count": 0, "fraudulent_domains": []},
+            {"status": "completed", "total_permutations": 10, "resolved_count": 0, "fraudulent_domains": []},
             {"status": "completed", "resolved_count": 4,
              "fraudulent_domains": [{"domain": "a%d.test" % i, "similarity": 80,
                                      "mail_capable": False,
@@ -8745,6 +8746,148 @@ def _check_breach_intel(failures):
               f"risk={got_risk} rsi_impact={got_rsi}")
 
 
+
+def _check_technical_card_measurement(failures):
+    """Rendered cards must distinguish absent measurement from clean evidence."""
+    import io
+    import math
+    import re
+    import fitz
+    import pdf_cards as pc
+    from pdf_helpers import build_styles
+    from card_severity import NON_CONCLUSIVE_STATUSES
+    from reportlab.lib.pagesizes import A4
+    from reportlab.platypus import SimpleDocTemplate
+
+    def render(fn, data):
+        buf = io.BytesIO()
+        SimpleDocTemplate(buf, pagesize=A4, leftMargin=24, rightMargin=24,
+                          topMargin=24, bottomMargin=24).build(fn(data, build_styles()))
+        doc = fitz.open(stream=buf.getvalue(), filetype="pdf")
+        try:
+            return "\n".join(page.get_text() for page in doc)
+        finally:
+            doc.close()
+
+    def flat(value):
+        return re.sub(r"\s+", " ", value).strip().lower()
+
+    def neutral(label, text, evidence=None):
+        low = text.lower().replace("not clean", "")
+        ok = "not assessed" in low and not re.search(
+            r"\bclean\b|no active lookalike|no references found|"
+            r"no malicious or suspicious detections|no issues detected", low)
+        if evidence is not None:
+            ok = ok and flat(evidence) in flat(text)
+        if not ok:
+            failures.append("technical_card[%s]: incomplete result was not neutral "
+                            "or lost observed evidence: %s" % (label, flat(text)[:240]))
+        return ok
+
+    def positive(label, text, *evidence):
+        ok = all(flat(item) in flat(text) for item in evidence)
+        if not ok:
+            failures.append("technical_card[%s]: completed finding lost evidence %r: %s" %
+                            (label, evidence, flat(text)[:240]))
+        return ok
+
+    # Missing/null and every non-conclusive status must be neutral. Positive
+    # counters remain visible, with the qualifier that the check is incomplete.
+    for label, fn, key, observed, clean, finding in (
+        ("intelx", pc.cat_intelx, "intelx",
+         {"status": "error", "total_results": 2, "darkweb_count": 1,
+          "paste_count": 1, "leak_count": 0},
+         {"status": "completed", "total_results": 0, "darkweb_count": 0,
+          "paste_count": 0, "leak_count": 0},
+         {"status": "completed", "total_results": 1, "darkweb_count": 1,
+          "paste_count": 0, "leak_count": 0}),
+        ("virustotal", pc.cat_virustotal, "virustotal",
+         {"status": "timeout", "malicious_count": 2, "suspicious_count": 0,
+          "harmless_count": 8, "undetected_count": 0},
+         {"status": "completed", "malicious_count": 0, "suspicious_count": 0,
+          "harmless_count": 1, "undetected_count": 0},
+         {"status": "completed", "malicious_count": 2, "suspicious_count": 0,
+          "harmless_count": 8, "undetected_count": 0}),
+    ):
+        neutral(label + ":missing", render(fn, {}))
+        neutral(label + ":null", render(fn, {key: None}))
+        for status in NON_CONCLUSIVE_STATUSES:
+            sample = dict(observed)
+            sample["status"] = status
+            neutral(label + ":" + status, render(fn, {key: sample}),
+                    "Total references 2" if label == "intelx" else "Malicious detections 2")
+        clean_text = render(fn, {key: clean})
+        if label == "intelx":
+            positive(label + ":clean", clean_text, "Total references 0", "Clean")
+        else:
+            positive(label + ":clean", clean_text, "Harmless", "1")
+        finding_text = render(fn, {key: finding})
+        positive(label + ":finding", finding_text,
+                 "Total references 1" if label == "intelx" else "Malicious detections 2")
+
+    # IntelX requires all four counters.  VT requires four valid finite counts.
+    for field, bad in (("total_results", None), ("darkweb_count", "1"),
+                       ("paste_count", True), ("leak_count", -1),
+                       ("total_results", float("nan"))):
+        sample = {"status": "completed", "total_results": 1,
+                  "darkweb_count": 0, "paste_count": 0, "leak_count": 0}
+        sample[field] = bad
+        neutral("intelx:malformed:" + field, render(pc.cat_intelx, {"intelx": sample}))
+    for field, bad in (("malicious_count", None), ("suspicious_count", "1"),
+                       ("harmless_count", True), ("undetected_count", -1),
+                       ("malicious_count", float("nan"))):
+        sample = {"status": "completed", "malicious_count": 0,
+                  "suspicious_count": 0, "harmless_count": 1, "undetected_count": 0}
+        sample[field] = bad
+        neutral("virustotal:malformed:" + field, render(pc.cat_virustotal, {"virustotal": sample}))
+    neutral("virustotal:zero-engines", render(pc.cat_virustotal, {
+        "virustotal": {"status": "completed", "malicious_count": 0,
+                        "suspicious_count": 0, "harmless_count": 0,
+                        "undetected_count": 0}}))
+
+    # Fraudulent-domain measurement requires a positive permutation count and
+    # a count/list match; retain a listed domain when the measurement is bad.
+    fd_clean = {"status": "completed", "total_permutations": 1,
+                "resolved_count": 0, "fraudulent_domains": []}
+    positive_fd = {"status": "completed", "total_permutations": 1,
+                   "resolved_count": 1, "fraudulent_domains": [{
+                       "domain": "example-secure.test", "risk": "high",
+                       "similarity": 94, "mail_capable": True,
+                       "serves_content": False}]}
+    neutral("fraudulent_domains:missing", render(pc.cat_fraudulent_domains, {}))
+    neutral("fraudulent_domains:null", render(pc.cat_fraudulent_domains,
+                                               {"fraudulent_domains": None}))
+    positive("fraudulent_domains:clean", render(pc.cat_fraudulent_domains,
+             {"fraudulent_domains": fd_clean}), "Lookalikes found 0")
+    positive("fraudulent_domains:finding", render(pc.cat_fraudulent_domains,
+             {"fraudulent_domains": positive_fd}), "Lookalikes found 1", "example-secure.test")
+    mismatch = dict(positive_fd)
+    mismatch["resolved_count"] = 2
+    neutral("fraudulent_domains:mismatch", render(pc.cat_fraudulent_domains,
+                                                   {"fraudulent_domains": mismatch}),
+            "example-secure.test")
+    neutral("fraudulent_domains:zero-variants", render(pc.cat_fraudulent_domains, {
+        "fraudulent_domains": {"status": "completed", "total_permutations": 0,
+                                "resolved_count": 0, "fraudulent_domains": []}}))
+
+    for field, bad in (("total_permutations", None), ("resolved_count", "1"),
+                       ("total_permutations", True), ("resolved_count", -1),
+                       ("resolved_count", float("nan"))):
+        sample = dict(fd_clean)
+        sample[field] = bad
+        neutral("fraudulent_domains:malformed:" + field,
+                render(pc.cat_fraudulent_domains, {"fraudulent_domains": sample}))
+    capped = dict(fd_clean, resolved_count=21, total_permutations=30,
+                  fraudulent_domains=[dict(domain="capped%d.test" % i,
+                                           mail_capable=False, serves_content=False)
+                                      for i in range(20)])
+    capped_text = render(pc.cat_fraudulent_domains, {"fraudulent_domains": capped})
+    positive("fraudulent_domains:valid_display_cap", capped_text, "21 found", "capped0.test")
+    if "Not assessed" in capped_text:
+        failures.append("technical_card[display_cap]: valid completed result marked incomplete")
+    print("  [%s] technical_card:measurement_and_rendering" %
+          ("FAIL" if any(item.startswith("technical_card[") for item in failures) else "PASS"))
+
 def main():
     failures = []
     _install_paid_egress_guard()   # must be first: the gate is offline by contract
@@ -8781,6 +8924,7 @@ def main():
     _check_dehashed_credit_guards(failures)
     _check_score_scale_agreement(failures)
     _check_card_severity_equivalence(failures)
+    _check_technical_card_measurement(failures)
     _check_exec_deck_credentials(failures)
     _check_report_degradation(failures)
     _check_balance_not_metered(failures)

@@ -41,7 +41,7 @@ def build(doc):
     add_body(doc, 'Read the coverage notice beside the score. Missing and failed raw checks are unassessed, not clean. The dashboard names them separately, shows assessment completeness, and retains the reason the score is qualified. A missing check does not imply WAF blocking. PDF summary and full reports show the qualification beside the score; the assessment deck shows completeness and the missing-check count below its KPIs.')
     add_body(doc, 'Five Executive Summary rows now use neutral Not assessed values when measurement is missing: known data breaches, exposed admin panels, database or service exposure, blacklist status, and RDP exposure. The three corresponding exposure KPIs use n/a. Positive observed findings remain visible even when a check is incomplete. The legend defines the neutral state.')
     add_body(doc, 'A partly assessed supply chain cannot claim an overall green low-exposure verdict merely because its measured subset is clean. Certificate discovery states how many of its two sources answered. Even two answers do not prove a complete asset inventory. Unconfirmed certificate names are candidates for broker review, not automatically owned or scored assets.')
-    add_body(doc, 'Known limitation still open: the full technical PDF cards for IntelX, VirusTotal, and fraudulent domains can show benign text when their category data is absent. Do not rely on their negative statements without confirming completed measurement. The top-level coverage warning does not correct those detailed statements. These three cards are outside the five corrected Executive Summary rows.')
+    add_body(doc, 'The full technical PDF cards for IntelX, VirusTotal, and fraudulent domains now require recorded completion and usable measurement counts before giving a clean result. Missing, failed, malformed, or incomplete results display Not assessed. Recorded positive findings remain visible with their severity and an incomplete-assessment caveat. Zero VirusTotal engine results and zero checked lookalike variants are unassessed. A clean lookalike result applies only to the variants checked, not every registered domain. These corrections extend the five Executive Summary rows fixed earlier.')
 
     add_body(
         doc,
@@ -1789,7 +1789,7 @@ def build(doc):
     # ------------------------------------------------------------------ #
     add_h1(doc, "11. Version History")
     add_bold_body(doc, "v2.1 sandbox review 16 September 2026", " Reporting and coverage corrections.")
-    add_body(doc, "Documents checkpoint b3cf0c8: missing-check pricing and completeness, CMS probe failure versus non-applicability, neutral summary values, partial supply-chain verdicts, certificate-source coverage, neutral legend, consistent Unicode domain-input handling, and independent assertions for positive due-diligence claims and measured footers. The three detailed-card gaps remain open. Master and live were not changed.")
+    add_body(doc, "Documents checkpoint b3cf0c8: missing-check pricing and completeness, CMS probe failure versus non-applicability, neutral summary values, partial supply-chain verdicts, certificate-source coverage, neutral legend, consistent Unicode domain-input handling, and independent assertions for positive due-diligence claims and measured footers. The follow-up closes the three detailed-card missing-measurement gaps with neutral states and preserved positive evidence. Master and live were not changed.")
 
     add_bold_body(doc, "v2.0: July 2026", " Major revision.")
     add_body(

@@ -49,15 +49,16 @@ Build the committed dashboard using the lockfile and
 Offline verification does not establish that a fresh dependency installation
 will succeed without a populated package cache.
 
-### Remaining detailed-report gap
+### Technical-report measurement qualification
 
 The full technical PDF cards for IntelX, VirusTotal, and fraudulent domains
-still render absent category data like completed zero-findings data. This was
-reproduced separately during visual review. It is outside the five Executive
-Summary rows addressed by FC13-3 and remains unresolved; the top-level coverage
-notice does not make those detailed clean statements reliable. Follow-up work
-must gate their negative claims on completed measurement while preserving
-positive evidence, then add renderer regressions and review PDF snapshots.
+require completed measurements and usable counts before making clean claims.
+Missing, failed, malformed, or incomplete data render as Not assessed. Positive
+observations remain visible with their severity and an incomplete-assessment
+caveat. Zero VirusTotal engine results and zero checked lookalike variants are
+unassessed. The lookalike checker stores at most twenty display records; this
+valid cap is preserved. Clean lookalike wording applies only to checked variants.
+These follow-up fixes extend FC13-3's five Executive Summary rows.
 
 ## How it's wired
 
