@@ -1428,9 +1428,12 @@ def _assessment_slide_supply_chain(results):
             _bits.append(str(len(flagged_full)) + " of " + str(len(assessed)) +
                          " assessed supply-chain signal(s) flagged for attention.")
         if flagged_partly:
+            _partial_scope = (
+                "in an assessment that was incomplete"
+                if any(c["label"] == "S-1 Related Domains" for c in flagged_partly)
+                else "on an SPF chain that was only partly read")
             _bits.append(str(len(flagged_partly)) + " signal(s) carry a finding "
-                         "on an SPF chain that was only partly read, so what "
-                         "they report is a lower bound.")
+                         + _partial_scope + ", so what they report is a lower bound.")
         sub = " ".join(_bits)
     elif assessed:
         verdict_text, vhex = "LOW EXPOSURE", _SC_SEV_HEX["LOW"]

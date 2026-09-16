@@ -892,6 +892,9 @@ def _check_checker_wiring(failures):
           f"{checked} checked, {len(missing)} missing")
 
 
+# Recommendation ordering uses a synthetic scanner address, not an
+# external IP-echo service. This fixture is unrelated to live egress.
+@mock.patch("egress.egress_ip", new=lambda: "192.0.2.10")
 def _check_recommendation_priority(failures):
     """The report calls this list "prioritised". It must actually be.
 
@@ -3903,10 +3906,24 @@ def _check_discovery_parity(failures):
 
     for _lbl_c2 in ("partial_with_critical", "partial_with_high"):
         _slide_c2 = slide_of(built[_lbl_c2])
+        if "on an SPF chain" in _slide_c2:
+            bad.append("%s: a partial related-domain finding is falsely "
+                       "described as an SPF-chain finding" % _lbl_c2)
+        if "in an assessment that was incomplete" not in _slide_c2:
+            bad.append("%s: the partial finding lacks its assessment "
+                       "coverage qualification" % _lbl_c2)
         if _deck_named_in(_slide_c2, "Assessed"):
             bad.append("%s: a partly assessed estate is named among the signals "
                        "this scan assessed, above its own not-fully-assessed "
                        "footnote: %r" % (_lbl_c2, _slide_c2[:260]))
+    _mixed_partial16 = slide_of(built["partial_with_high"], {
+        "email_vendor_surface": evs_real["vendor_plus_timeout"],
+        "vendor_breach": vb_real["vendor_plus_timeout"],
+    })
+    if ("in an assessment that was incomplete" not in _mixed_partial16
+            or "signal(s) carry a finding on an SPF chain" in _mixed_partial16):
+        bad.append("mixed partial domain and SPF findings are described "
+                   "as though they all came from an SPF chain")
     if (pc.cat_email_vendor_surface({"email_vendor_surface": stored_evs}, S)
             or pc.cat_vendor_breach({"vendor_breach": stored_vb}, S)):
         bad.append("stored completed: the technical report draws a card")
@@ -7017,7 +7034,10 @@ def _check_blocked_not_clean(failures):
             return cc.ExposedAdminChecker().check("example.com")
 
     def _simple(mod, cls, code):
-        with mock.patch.object(mod, "HTTP") as H:
+        # HTTP-response scenarios do not probe a real RDP port.
+        with mock.patch.object(mod, "HTTP") as H, \
+             mock.patch.object(cn_mod.socket, "socket",
+                               return_value=_FakeSocket({"open": set(), "banners": {}})):
             H.get.return_value = _Resp(code, "nope")
             H.stop_probing.return_value = False
             H.origin_answering.side_effect = lambda d, **k: _root_answers(code)
@@ -7147,7 +7167,9 @@ def _check_blocked_not_clean(failures):
                             ("denied",   403, 200),
                             ("walled",   403, 403)):
             H = _urlaware(pc, rc)
-            with mock.patch("http_client.HTTP", H), mock.patch.object(mod, "HTTP", H, create=True):
+            with mock.patch("http_client.HTTP", H), mock.patch.object(mod, "HTTP", H, create=True), \
+                 mock.patch.object(cn_mod.socket, "socket",
+                                   return_value=_FakeSocket({"open": set(), "banners": {}})):
                 got[row] = getattr(mod, cls)().check("example.com").get("status")
         ok = (got["ordinary"] == "completed"      # plain clean site
               and got["denied"] == "completed"    # hardened: refusals ANSWER the question
@@ -7379,6 +7401,9 @@ def _check_blocked_not_clean(failures):
 import re as _re
 
 
+# app captures the configured key at import; an environment-only fixture
+# added later cannot configure the already imported endpoint.
+@mock.patch("app.DEHASHED_API_KEY", "gate-synthetic-key")
 def _check_balance_not_metered(failures):
     """The credit indicator must not BE the biggest credit consumer.
 

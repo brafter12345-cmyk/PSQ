@@ -19,6 +19,8 @@ Backup/
 *.docx
 *.xlsx
 package-lock.json
+# Pin the scanner dashboard build dependencies.
+!security_scanner/frontend/package-lock.json
 security_scanner/scanner.db
 
 # Screenshots and generated output

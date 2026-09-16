@@ -37,6 +37,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
+from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
@@ -101,7 +102,12 @@ def check(name: str, cond: bool, detail: str = ""):
         FAILURES.append(name)
 
 
-def main():
+# These scenarios test endpoint controls, not DNS registration. The real
+# start_scan checks registration before the stubbed run_scan is reached.
+# Without this fixture, accepted requests perform live DNS and a blocked
+# resolver is silently treated as success by domain_exists.
+@mock.patch.object(A, "domain_exists", return_value=True)
+def main(_domain_exists):
     client = A.app.test_client()
     # Endpoint tests must not launch real scans. Keep the original for the
     # semaphore-timeout test, which exercises the real pre-scanner path.
