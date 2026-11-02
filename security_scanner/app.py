@@ -1353,6 +1353,7 @@ def view_results(scan_id: str):
         results = redact_credentials(json.loads(row["results"]))
     return render_template(
         "results.html",
+        scanner_api_key=SCANNER_API_KEY or "",
         scan_id=scan_id,
         domain=row["domain"],
         status=row["status"],

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { KeyRound, ShieldCheck, X, Copy, Check, Lock } from 'lucide-react'
 import { getResults } from '../../data/results'
-import { withBase } from '../../base'
+import { apiFetch } from '../../base'
 
 // Manual 6.4 authorisation portal: the ONLY route to the unmasked credential list
 // (incl. actual passwords). Captures the signed-consent authorisation + the client's
@@ -42,7 +42,7 @@ export default function CredentialExportPortal() {
 
   useEffect(() => {
     let live = true
-    fetch(withBase('/api/credential-export/status'))
+    apiFetch('/api/credential-export/status')
       .then((r) => r.json())
       .then((d) => { if (live) { setEnabled(!!d.enabled); setDisabledReason(d.reason || '') } })
       .catch(() => { if (live) setEnabled(false) })   // unreachable -> assume off
@@ -65,12 +65,12 @@ export default function CredentialExportPortal() {
       }
       if (useAge) body.age_public_key = ageKey.trim()
       else body.passphrase = passphrase
-      const res = await fetch(withBase('/api/credential-export'), {
+      const res = await apiFetch('/api/credential-export', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || data.status === 'error') {
-        setError(data.error || `Request failed (HTTP ${res.status})`)
+        setError(res.status === 401 || res.status === 403 ? `Request denied (HTTP ${res.status})` : (data.error || `Request failed (HTTP ${res.status})`))
       } else {
         setResult(data as ExportResult)
       }

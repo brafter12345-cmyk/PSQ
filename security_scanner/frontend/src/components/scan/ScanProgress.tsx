@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Shield, Server, Globe, CheckCircle2, Loader2, AlertTriangle } from 'lucide-react'
 import styles from './ScanProgress.module.css'
-import { withBase } from '../../base'
+import { apiFetch, withBase } from '../../base'
 
 type Status = 'pending' | 'running' | 'done'
 interface CheckerDef { id: string; label: string; per_ip?: boolean }
@@ -46,8 +46,11 @@ export default function ScanProgress({ scanId, domain }: { scanId: string; domai
       if (poll) return
       poll = setInterval(async () => {
         try {
-          const res = await fetch(withBase(`/api/scan/${scanId}`))
-          if (res.status === 200) { const d = await res.json(); if (d.status !== 'pending') reloadToResults() }
+          const res = await apiFetch(`/api/scan/${scanId}`)
+          if (res.status === 401 || res.status === 403) {
+            if (poll) clearInterval(poll)
+            setError(`Request denied (HTTP ${res.status})`)
+          } else if (res.status === 200) { const d = await res.json(); if (d.status !== 'pending') reloadToResults() }
           else if (res.status === 500) { const d = await res.json(); setError(d.error || 'Scan failed') }
         } catch { /* keep polling */ }
       }, 4000)

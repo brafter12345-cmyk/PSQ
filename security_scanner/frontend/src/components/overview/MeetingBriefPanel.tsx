@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { FileText, X, AlertTriangle, Check } from 'lucide-react'
 import { getResults } from '../../data/results'
-import { withBase } from '../../base'
+import { apiFetch } from '../../base'
 
 // Client meeting brief: a short, client-facing companion to the full report.
 //
@@ -54,7 +54,7 @@ export default function MeetingBriefPanel() {
   useEffect(() => {
     if (!scanId) return
     let live = true
-    fetch(withBase(`/api/scan/${scanId}/brief/options`))
+    apiFetch(`/api/scan/${scanId}/brief/options`)
       .then((r) => r.json())
       .then((d) => { if (live && !d.error) setOpts(d as Options) })
       .catch(() => { /* panel simply stays hidden */ })
@@ -62,7 +62,7 @@ export default function MeetingBriefPanel() {
   }, [scanId])
 
   const loadAudit = () => {
-    fetch(withBase('/api/brief-audit'))
+    apiFetch('/api/brief-audit')
       .then((r) => r.json())
       .then((d) => setAudit((d.entries || []) as AuditRow[]))
       .catch(() => setAudit([]))
@@ -79,13 +79,13 @@ export default function MeetingBriefPanel() {
     if (withFp && !reason.trim()) { setError('Enter a reason first'); return }
     setBusy(true); setError(null)
     try {
-      const res = await fetch(withBase(`/api/scan/${scanId}/brief`), {
+      const res = await apiFetch(`/api/scan/${scanId}/brief`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ include_fingerprints: withFp, reason: reason.trim() }),
       })
       if (!res.ok) {
         const d = await res.json().catch(() => ({}))
-        setError(d.error || `Request failed (HTTP ${res.status})`)
+        setError(res.status === 401 || res.status === 403 ? `Request denied (HTTP ${res.status})` : (d.error || `Request failed (HTTP ${res.status})`))
       } else {
         const blob = await res.blob()
         const url = URL.createObjectURL(blob)

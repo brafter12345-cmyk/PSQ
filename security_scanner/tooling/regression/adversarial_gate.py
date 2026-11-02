@@ -8944,6 +8944,14 @@ def main():
     _check_recommendation_priority(failures)
     _check_credential_failclosed(failures)
     _check_provider_budget(failures)
+    try:
+        from test_provider_transport_failures import run_checks as _provider_transport_checks
+        _provider_transport_checks(install_paid_guard=_install_paid_egress_guard,
+                                   blocked_egress=_BLOCKED_EGRESS)
+        print("  [PASS] provider_transport:retry_timeout_circuit")
+    except Exception as exc:
+        failures.append(f"provider_transport: {exc}")
+        print(f"  [FAIL] provider_transport: {exc}")
     _check_edge_measured_labelling(failures)
     _check_cdn_edge_detection(failures)
     _check_saas_service_ranges(failures)
@@ -8964,6 +8972,12 @@ def main():
     _check_table_headers(failures)
     _check_blocked_not_clean(failures)
     _check_base_path_links(failures)
+    try:
+        from verify_dashboard_auth import run_checks as _dashboard_auth_checks
+        _dashboard_auth_checks()
+    except Exception as exc:
+        failures.append(f"dashboard_auth: {exc}")
+        print(f"  [FAIL] dashboard_auth: {exc}")
     _check_scan_target_input(failures)
     _check_dehashed_credit_guards(failures)
     _check_score_scale_agreement(failures)
