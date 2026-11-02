@@ -1,6 +1,6 @@
 # Outstanding Items — Phishield Scanner
 
-**Last updated**: 2026-09-16 (sandbox reconciliation)
+**Last updated**: 2026-11-02 (local integration; historical reconciliation retained)
 **Owner**: SML Consulting (engineering) + Phishield UMA (ops)
 **Authoritative source** for items pending across the scanner project.
 Consolidates open items from gap analysis SCN-* entries, memory files,
@@ -15,6 +15,20 @@ outstanding item lands.
   branding and formats tables for printable / shareable output.
 
 ---
+
+## Integration update 2 November 2026
+
+The local integration includes merge checkpoint `b6a3c05` and runtime checkpoint `6e91167`; master and live remain unchanged. Six dashboard fetches now carry the existing scanner API key, reject cross-origin paths and fail closed on redirects. The key is embedded in the results HTML under the existing edge access model; this is not per-user authentication. Synthetic tests cover provider failure and retry behavior, but do not implement IntelX balance integration, which remains open. An authorized isolated fresh `npm ci` passed, and the pinned pre-change `/scanner` bundle reproduced the committed JavaScript and CSS byte for byte. At 6e91167 all 12 offline gates passed; nine targeted mutations failed by assertion, with no crashes. Paid-egress and offline blocks were zero. The full sweep detected 347 mutations: 345 by assertion, two by gate crashes (X01_probe_gets_raw_list: NameError; R13_api_door_whole_entry: IndentationError), none survived; all six baselines passed.
+
+The owner decided to keep scoring unchanged and record the gaps. Synthetic reproduction identified VirusTotal and SecurityTrails rate limits, entirely unanswered information-disclosure and dependency-manifest probes, and truncated VPN probing with confirmed RDP. The current weights, baselines and scoring/checker policy remain unchanged; no expected-loss change has been implemented. The counterfactual below excludes each affected category's weight in isolation, using the actual scoring and insurance pipeline on synthetic R10m revenue. It is a policy experiment, not a premium or a golden-fixture impact. Whole-category exclusion loses part of the positive RDP contribution and is not an approved evidence-preserving policy.
+
+| Synthetic case | Risk current → counterfactual | Completeness | Expected annual loss ZAR current → counterfactual | PML 1-in-250 ZAR current → counterfactual |
+|---|---:|---:|---:|---:|
+| VirusTotal 429 | 252 → 262 | 100% → 97% | 207,915 → 211,723 | 12,708,688 → 12,708,688 |
+| SecurityTrails 429 | 264 → 266 | 100% → 97% | 212,498 → 213,279 | 12,708,688 → 12,708,688 |
+| VPN truncated, RDP confirmed | 283 → 275 | 100% → 97% | 366,229 → 362,976 | 12,708,688 → 12,708,688 |
+| Information disclosure unanswered | 252 → 262 | 100% → 97% | 207,915 → 211,723 | 12,708,688 → 12,708,688 |
+| Dependency manifests unanswered | 255 → 263 | 100% → 97% | 209,045 → 212,111 | 12,708,688 → 12,708,688 |
 
 ## Sandbox reconciliation 16 September 2026
 
@@ -34,10 +48,10 @@ live-environment verification. No provider or production system was queried.
 
 | Priority | Item | Current state and completion requirement |
 |---|---|---|
-| Release | Fresh frontend installation | Lockfile and existing-install deterministic bundle are committed. A clean offline npm ci stopped with ENOTCACHED for vite-8.1.2.tgz. Requires an available vetted package cache or separately authorized package retrieval, then a fresh /scanner build comparison. |
+| Release | Fresh frontend installation | Authorized isolated npm ci passed; the pinned pre-change /scanner build reproduced both committed bundle files byte for byte. |
 | Release | Whole-branch review | Review includes earlier attribution, discovery, reporting and export-scope work, not only the latest fixes. Independent frontend/input and attribution reviews are recorded; release-critical source received bounded review. This is not a blanket approval of all historical behavior. |
 | Release | Origin verifier boundary | Follow-up fixes reject non-public/non-IPv4/non-literal candidates before TLS across all sources and at the verifier; wildcard certificates cover exactly one subdomain label. Synthetic regressions reproduce the old defects and pass after correction. |
-| Owner decision | Present but unmeasured raw checks | H-5y, H-5z and H-5af below are distinct from the approved absent-category policy. Rate-limited provider status is still outside RiskScorer's failed/skipped sets. Reproduce current outcomes and measure pricing changes before changing these policies. |
+| Owner decision | Present but unmeasured raw checks | The owner deferred scoring changes after synthetic measurement; retain H-5y, H-5z and H-5af and the partial-RDP concern. Any future policy needs evidence-preserving design and fresh measurement. |
 | Open | Asset discovery from partial addresses | Canonical section 5n remains open and unchanged. Related-domain parity does not complete this broader asset-discovery work. |
 | Blocked | Credential release | Signed scope/delivery/retention details and a recorded authorization control remain unresolved in the handoff. No real release or feature-flag change is authorized by these fixes. |
 | Owner only | Live release and ground-truth scans | No push, merge, deployment or live/DNS smoke test under offline authorization. Historical step-6 rescans and production/demo reversals need explicit instruction. |
