@@ -2,7 +2,7 @@ import Panel from '../../components/primitives/Panel'
 import { PageTitle, CheckerHeader, KV, IssueList, DetailGrid } from '../../components/detail/parts'
 import { MoreCheckers } from './ExposurePage'
 import { getResults } from '../../data/results'
-import { cat } from '../../data/selectors'
+import { cat, estateIpCount, vendorIpCount } from '../../data/selectors'
 import type { Results } from '../../types/results'
 import styles from './detail.module.css'
 
@@ -20,7 +20,10 @@ export default function DiscoveryPage({ r = getResults()! }: { r?: Results }) {
       <DetailGrid cols={3}>
         <Panel title="IP & Asset Discovery" action={<CheckerHeader category={ext} />}>
           <KV rows={[
-            { label: 'Discovered IPs', value: String(ips.length || (ext?.total_unique_ips as number) || 0) },
+            { label: 'Discovered IPs', value: String(estateIpCount(r) || ips.length || 0) },
+            ...(vendorIpCount(r) > 0
+              ? [{ label: 'Vendor-operated', value: `${vendorIpCount(r)} (not scored)` }]
+              : []),
             { label: 'IPv4 / IPv6', value: `${(ext?.ipv4_count as number) ?? 0} / ${(ext?.ipv6_count as number) ?? 0}` },
             { label: 'Subdomains', value: String((subs?.total_count as number) ?? ((subs?.subdomains as unknown[]) ?? []).length) },
           ]} />

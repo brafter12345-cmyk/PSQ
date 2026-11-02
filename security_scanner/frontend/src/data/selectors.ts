@@ -14,6 +14,8 @@ import {
   normalizeSeverity, severityRank, isConclusive,
 } from './checkerState'
 import type { CheckerState } from '../types/results'
+import { relatedDomainsPanel } from './relatedDomains'
+import type { RelatedDomainsPanelModel } from './relatedDomains'
 
 export function cat(r: Results | null, id: string): CategoryBase | undefined {
   return r?.categories?.[id]
@@ -100,6 +102,12 @@ export interface CoverageSummary {
   evidence: string
   affectedCheckers: string[]
   affectedCount: number
+  missingCheckers: string[]
+  failedCheckers: string[]
+  completenessPct: number | null
+  confidenceLevel: string | null
+  scoreQualified: boolean | null
+  disclaimer: string | null
   probeCodes: Record<string, number>
   probeSummary: string
 }
@@ -119,6 +127,12 @@ export function getCoverageSummary(r: Results | null): CoverageSummary {
     evidence: waf?.evidence ?? '',
     affectedCheckers: affected,
     affectedCount: affected.length,
+    missingCheckers: sc?.missing_checkers ?? [],
+    failedCheckers: (sc?.failed_checkers ?? []).filter(name => !(sc?.missing_checkers ?? []).includes(name)),
+    completenessPct: sc?.completeness_pct ?? null,
+    confidenceLevel: sc?.confidence_level ?? null,
+    scoreQualified: sc?.score_qualified ?? null,
+    disclaimer: sc?.disclaimer ?? null,
     probeCodes: codes,
     probeSummary: totalProbes
       ? `${blockedProbes} of ${totalProbes} probes returned 403 / 406 / 451`
@@ -1404,7 +1418,11 @@ export function getEmailSecuritySummary(r: Results | null): EmailSummary {
       dane: !!(h?.dane as { present?: boolean })?.present,
       tlsRpt: !!(h?.tls_rpt as { present?: boolean })?.present,
     },
-    vendors: (v?.vendors_detected as string[]) ?? [],
+    // The checker stores {vendor, includes} objects; a plain name is kept as
+    // it is (step-5 critique round 9).
+    vendors: ((v?.vendors_detected as unknown[]) ?? [])
+      .map((x) => (typeof x === 'string' ? x : String((x as { vendor?: unknown } | null)?.vendor ?? '')))
+      .filter(Boolean),
   }
 }
 
@@ -1428,4 +1446,55 @@ export const CATEGORY_LABELS: Record<string, string> = {
   securitytrails: 'SecurityTrails DNS', security_policy: 'Security Policy & VDP',
   payment_security: 'Payment Security', privacy_compliance: 'Privacy Compliance',
   glasswing: 'AI Readiness', web_ranking: 'Web Ranking',
+}
+
+/**
+ * Addresses DISCOVERED on this estate: own-attributed plus vendor-operated.
+ *
+ * Mirrors pdf_cards.estate_ip_count. Use this wherever the label means "how
+ * much of this client is visible from the internet"; use
+ * external_ips.total_unique_ips only where the question is "what is the client
+ * answerable for", because that field counts the POST-attribution pool.
+ *
+ * Without this the dashboard and the PDF disagree out loud. When the Microsoft
+ * 365 service ranges landed, 174 addresses across 19 of 30 scans left the
+ * own-attributed pool, so boston.ac.za's PDF says 15 discovered addresses while
+ * a panel labelled "Discovered IPs" reading total_unique_ips would say 3. The
+ * label is the giveaway: those hosts were discovered, they are simply somebody
+ * else's to patch.
+ *
+ * Falls back the same way the PDF does, so a stored scan predating the split
+ * renders as it always did rather than as zero.
+ */
+export function estateIpCount(r: Results | null): number {
+  const ext = (cat(r, 'external_ips') ?? {}) as Record<string, unknown>
+  const total = ext.estate_total_ips as number | undefined
+  if (typeof total === 'number') return total
+  const own = (ext.total_unique_ips as number) ?? 0
+  return own + vendorIpCount(r)
+}
+
+/** Vendor-operated addresses excluded from the client's own exposure. */
+export function vendorIpCount(r: Results | null): number {
+  const ext = (cat(r, 'external_ips') ?? {}) as Record<string, unknown>
+  const n = ext.vendor_ip_count as number | undefined
+  if (typeof n === 'number') return n
+  const hosts = ((r as unknown as Record<string, unknown>)?.third_party_hosting
+    ?? []) as Array<Record<string, unknown>>
+  return new Set(hosts.map((h) => String(h.ip ?? '').trim()).filter(Boolean)).size
+}
+
+/**
+ * Related domains: the state model and the panel's wording live in
+ * data/relatedDomains.ts, which the regression gate runs under node against
+ * the Python and the PDF card.
+ */
+export type {
+  DiscoveredDomain, RelatedDomainsState, RelatedDomainsDiscovery, RelatedDomainsPanelModel,
+} from './relatedDomains'
+export { relatedDomainsState, relatedDomainsFullyAssessed } from './relatedDomains'
+
+/** The related-domains panel for one scan. */
+export function getRelatedDomainsPanel(r: Results | null): RelatedDomainsPanelModel {
+  return relatedDomainsPanel((cat(r, 'related_domains') ?? null) as Record<string, unknown> | null)
 }

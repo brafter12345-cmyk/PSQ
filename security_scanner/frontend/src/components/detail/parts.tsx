@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { CategoryBase, Severity } from '../../types/results'
 import { StatusBadge } from '../primitives/Status'
-import { normalizeState, isConclusive, inconclusiveLabel, SEVERITY_COLOR } from '../../data/checkerState'
+import { headerBadge, isConclusive, inconclusiveLabel, SEVERITY_COLOR } from '../../data/checkerState'
 import styles from './parts.module.css'
 
 /** Page heading with optional one-line subtitle. */
@@ -20,9 +20,19 @@ export function PageTitle({ title, subtitle }: { title: string; subtitle?: strin
  *  failed credential lookup yields 0 records, and "0 leaked records" reads as a
  *  clean estate to anyone skimming. Render this INSTEAD of the numbers, so the
  *  absence of findings can never be mistaken for a finding of absence. */
-export function NotAssessedNote({ category, what }: { category: CategoryBase | undefined; what: string }) {
-  if (!category || isConclusive(category)) return null
-  const why = inconclusiveLabel(category.status as string).toLowerCase()
+export function NotAssessedNote({ category, what, why: reason, force = false }:
+  { category: CategoryBase | undefined; what: string; why?: string; force?: boolean }) {
+  // force: a checker can be conclusive by status and still be no measurement -
+  // a completed SPF walk stored before the outcome was recorded - and the panel
+  // must not print its counts either (step-5 critique round 11, R11-SC-2).
+  // reason: where the status is not the reason, the caller supplies it.
+  if (!category || (!force && isConclusive(category))) return null
+  // Forced, with no reason given, the status is not the reason: a completed
+  // checker marked assessed: false would explain itself as "(passed)" under a
+  // heading that says Not assessed (step-5 critique round 12, SC-NOTE-PASSED).
+  const why = (reason
+    || (force ? 'the checker recorded no measurement' : inconclusiveLabel(category.status as string))
+  ).toLowerCase()
   return (
     <div style={{ fontSize: 11.5, lineHeight: 1.55, color: 'var(--text-secondary)',
       background: 'var(--panel-bg-elevated)', border: '1px solid var(--border-emphasis)',
@@ -36,11 +46,12 @@ export function NotAssessedNote({ category, what }: { category: CategoryBase | u
 
 /** Status header for a checker that NEVER presents a stale score as a pass when
  *  the checker did not actually complete (spec §18/§33). */
-export function CheckerHeader({ category }: { category: CategoryBase | undefined }) {
-  if (!category) return <StatusBadge state="not_assessed" label="Not in scan" />
-  const state = normalizeState(category.status)
-  const label = isConclusive(category) ? undefined : inconclusiveLabel(category.status as string)
-  return <StatusBadge state={state} label={label} />
+export function CheckerHeader({ category, refine = false }: { category: CategoryBase | undefined; refine?: boolean }) {
+  // refine: a generic panel reads a completed checker's own severity and
+  // finding counts, never a bare "Passed" beside a finding (step-5 critique
+  // round 7). The state and its reason come from one function the gate runs.
+  const b = headerBadge(category, refine)
+  return <StatusBadge state={b.state} label={b.label} />
 }
 
 /** Render a checker's numeric score ONLY when the checker is conclusive. */

@@ -1079,7 +1079,28 @@ class CloudCDNChecker:
                     result["provider"] = provider
                     result["cdn_detected"] = True
                     result["hosting_type"] = "cloud/cdn"
+                    result["detected_by"] = "cname"
                     break
+
+            # ADDRESS-RANGE DETECTION. The CNAME chase alone cannot see the most
+            # common deployment there is. A domain fronted at its apex cannot
+            # carry a CNAME, so providers answer with address records directly
+            # (Cloudflare calls this CNAME flattening) and the chain walk finds
+            # nothing. Measured across 58 production scans before this change: a
+            # provider was named 0 times, while 14 scans resolved into a
+            # published edge range. Those scans assessed the provider's edge and
+            # reported the result as the client's own posture.
+            if not result["provider"] and result["ip_addresses"]:
+                from cdn_ranges import edge_provider
+                for ip in sorted(result["ip_addresses"]):
+                    prov = edge_provider(ip)
+                    if prov:
+                        result["provider"] = prov
+                        result["cdn_detected"] = True
+                        result["hosting_type"] = "cloud/cdn"
+                        result["detected_by"] = "edge_range"
+                        result["edge_ip"] = ip
+                        break
 
             if not result["provider"] and result["ip_addresses"]:
                 result["hosting_type"] = "self-hosted or undetected cloud"

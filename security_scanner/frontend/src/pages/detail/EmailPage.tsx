@@ -1,9 +1,11 @@
 import Panel from '../../components/primitives/Panel'
 import { PageTitle, CheckerHeader, CheckLine, KV, IssueList, DetailGrid } from '../../components/detail/parts'
 import EmptyState from '../../components/primitives/EmptyState'
+import { StatusBadge } from '../../components/primitives/Status'
 import { getResults } from '../../data/results'
 import { cat, getEmailSecuritySummary } from '../../data/selectors'
-import type { Results } from '../../types/results'
+import { vendorPanel } from '../../data/emailVendorPanel'
+import type { CheckerState, Results } from '../../types/results'
 import styles from './detail.module.css'
 
 export default function EmailPage({ r = getResults()! }: { r?: Results }) {
@@ -11,6 +13,7 @@ export default function EmailPage({ r = getResults()! }: { r?: Results }) {
   const auth = cat(r, 'email_security')
   const hard = cat(r, 'email_hardening')
   const vendor = cat(r, 'email_vendor_surface')
+  const vp = vendorPanel(vendor as Record<string, unknown> | undefined)
 
   return (
     <div className={styles.page}>
@@ -40,14 +43,11 @@ export default function EmailPage({ r = getResults()! }: { r?: Results }) {
         </Panel>
       </DetailGrid>
 
-      <Panel title="Email-Vendor Surface" action={<CheckerHeader category={vendor} />}>
-        {vendor ? (
-          <KV rows={[
-            { label: 'Vendors detected', value: e.vendors.length ? e.vendors.join(', ') : 'None identified' },
-            { label: 'SPF includes', value: ((vendor.spf_includes as string[]) ?? []).join(', ') || '—' },
-            { label: 'Weak DMARC', value: vendor.weak_dmarc ? 'Yes' : 'No', severity: vendor.weak_dmarc ? 'medium' : 'positive' },
-          ]} />
-        ) : <EmptyState compact title="No vendor-surface data" />}
+      <Panel title="Email-Vendor Surface"
+        action={vp.badge
+          ? <StatusBadge state={vp.badge.state as CheckerState} label={vp.badge.label} />
+          : <CheckerHeader category={vendor} />}>
+        {vp.kind === 'rows' ? <KV rows={vp.rows} /> : <EmptyState compact title={vp.title} />}
         <IssueList issues={vendor?.issues as string[]} />
       </Panel>
     </div>

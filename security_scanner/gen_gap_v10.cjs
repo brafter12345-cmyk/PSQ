@@ -412,7 +412,7 @@ const doc = new Document({
         new Paragraph({ spacing: { before: 600 } }),
         new Paragraph({
           alignment: AlignmentType.CENTER, spacing: { after: 100 },
-          children: [new TextRun({ text: "Version 10  |  14 May 2026  |  Revised 3 July 2026  |  SML Consulting", font: "Arial", size: 24, color: "666666" })]
+          children: [new TextRun({ text: "Version 10  |  Revised 16 September 2026  |  Sandbox review  |  SML Consulting", font: "Arial", size: 24, color: "666666" })]
         })
       ]
     },
@@ -436,7 +436,23 @@ const doc = new Document({
         })] })
       },
       children: [
-        new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: "1. Executive Summary", font: "Arial" })] }),
+        new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({text: "September 2026 sandbox review status"})] }),
+        new Paragraph({ spacing: {after: 180}, children: [new TextRun({text: "Current status at checkpoint b3cf0c8 on sandbox/remediation. The eight deferred findings below are implemented and verified offline. This is not a live release. The following historical sections retain their May to July context and do not override this dated status."})] }),
+        buildTable(["Finding", "Status", "Resolution"], [1100, 1700, CONTENT_W - 2800], [["FC13-2", "Implemented", "Absent raw weighted checks are unassessed; three derived metrics are exempt. Owner-approved scoring baselines updated."], ["FC13-3", "Implemented", "Five summary rows and three KPIs use neutral unknown states and preserve positive evidence."], ["B2", "Implemented", "Failed or inconclusive CMS probes are unreachable and unscored; answered non-WordPress evidence permits a skip."], ["B3", "Implemented", "Incomplete clean supply-chain subsets show NOT FULLY ASSESSED."], ["C3", "Implemented", "All four reporting surfaces disclose zero, one, or two answered certificate sources without claiming inventory completeness."], ["C4", "Implemented", "The PDF legend explains Not assessed."], ["A4", "Implemented", "JavaScript and Python domain-input handling agree on the reproduced Unicode cases."], ["D3", "Implemented", "Positive-claim and measured-footer assertions are independent and mutation tested."]]),
+        new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({text: "Approved pricing effect"})] }),
+        new Paragraph({children: [new TextRun({text: "Missing raw checks are excluded from weighting and counted against completeness; ransomware risk, data-breach index, and financial impact are derived metrics and exempt. No weights or measured findings were changed. Dashboard and PDF qualifications explain the missing evidence."})]}),
+        buildTable(["Fixture", "Score", "Completeness", "Annual loss ZAR"], [1900, 1600, 2000, CONTENT_W - 5500], [
+          ["Finance R10m", "282 to 372", "90% to 67%", "447,252 to 509,411"],
+          ["Retail R13.5bn", "205 to 262", "100% to 77%", "67,728,866 to 69,120,780"]]),
+        new Paragraph({children: [new TextRun({text: "The 100-, 200-, and 250-year loss totals were unchanged for these fixtures. These are not universal premium adjustments. Stored results have not been rewritten. Historical CMS skipped records cannot distinguish failed detection from non-applicability; rescoring alone cannot recover that evidence."})]}),
+        new Paragraph({ pageBreakBefore: true, heading: HeadingLevel.HEADING_2, children: [new TextRun({text: "Remaining gaps and release boundary"})] }),
+        new Paragraph({children: [new TextRun({text: "RESOLVED in the sandbox follow-up: IntelX, VirusTotal, and fraudulent-domain technical cards now require completed measurement before making negative claims. Missing, failed, malformed, or incomplete data are Not assessed; positive observations retain their severity and an incomplete-assessment caveat. Zero VirusTotal engine results and zero checked lookalike variants are unassessed. Clean lookalike wording is limited to the checked variants. These changes extend the eight findings above; they do not establish scanner-wide defect freedom."})]}),
+        new Paragraph({children: [new TextRun({text: "OPEN outside this review: asset-discovery item 5n and credential-release authorization. A fresh offline dependency installation was attempted and stopped with ENOTCACHED because the locked Vite archive is absent from the local npm cache. Fresh-install reproducibility remains unverified. The sandbox OUTSTANDING register is now reconciled against the canonical main working copy, with its 2,511-line historical sandbox version preserved verbatim in a linked archive. Remaining historical gaps include rate-limited provider scoring, entirely unanswered probe sets, timeout aggregation, operator attribution, registry boundaries, and partial-address asset discovery. They require current reproduction and, where prices change, measured policy decisions. The sandbox branch contains earlier work as well as this checkpoint; any release must review the entire branch. No merge, push, deployment, live scan, production database access, or real credential export was performed."})]}),
+        new Paragraph({children: [new TextRun({text: "RESOLVED in the origin follow-up: all candidate sources and the direct TLS verifier reject non-public addresses, IPv6, and names before connection setup. Wildcard certificates cover exactly one subdomain label, excluding the apex and deeper names. These corrections do not establish host-operator ownership, add IPv6 probing, or fix every scanner input path. Independent attribution review reproduced the defects and verified the corrected synthetic cases."})]}),
+        new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({text: "Verification evidence"})] }),
+        new Paragraph({children: [new TextRun({text: "At checkpoint b3cf0c8, all 12 offline gates passed and all 347 mutations were detected: 345 by assertions and two by gate crashes, recorded separately. Dashboard typecheck and isolated rebuild passed; 14 synthetic browser scenarios and 123 dashboard/PDF parity cases passed. Synthetic PDF layouts were reviewed. The final process audit recorded zero blocked network operations and zero database-variable leaks. For the three-card follow-up, all 12 offline gates passed again and five targeted mutations were caught by assertions with zero crashes. Three full-report snapshots changed; the six summary and assessment snapshots were unchanged. Independent review and synthetic PDF inspection passed. The earlier 347-mutation sweep was not repeated for this follow-up. For the origin follow-up, 25 synthetic cases passed, four targeted mutations were caught by assertions with zero crashes, and all 12 offline gates passed again. The paid-egress guard recorded no attempts. The full 347-mutation sweep was not repeated. These results support the bounded fixes, not scanner-wide defect freedom."})]}),
+        new Paragraph({children: [new PageBreak()]}),
+        new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: "1. Historical Executive Summary May to July 2026", font: "Arial" })] }),
         new Paragraph({
           spacing: { after: 200, line: 300 },
           children: [new TextRun({
@@ -563,7 +579,7 @@ const doc = new Document({
   ]
 });
 
-const OUTPUT = "C:/Users/sarel/Desktop/Sarel/SML Consulting/PSQ/security_scanner/Phishield_Scanner_Gap_Analysis_v10.docx";
+const OUTPUT = require("path").join(__dirname, "Phishield_Scanner_Gap_Analysis_v10.docx");
 
 Packer.toBuffer(doc).then(buffer => {
   fs.writeFileSync(OUTPUT, buffer);

@@ -21,6 +21,15 @@ def build(doc):
         add_note,
     )
 
+    # Section labels with no inline body must stay with the paragraph that
+    # explains them; otherwise Word can strand a bold heading at a page bottom.
+    _add_bold_body = add_bold_body
+    def add_bold_body(doc_, bold_text, normal_text):
+        paragraph = _add_bold_body(doc_, bold_text, normal_text)
+        if normal_text == "":
+            paragraph.paragraph_format.keep_with_next = True
+        return paragraph
+
     # ------------------------------------------------------------------ #
     #  SECTION 6 -- PDF REPORTS                                          #
     # ------------------------------------------------------------------ #
@@ -35,7 +44,17 @@ def build(doc):
     )
 
     # 6.0 Reading a report: assessed vs unassessed ---------------------- #
+
+    add_body(doc, 'Origin discovery safety update September 2026: only public IPv4 literals are eligible for origin TLS verification. Private, loopback, link-local, reserved, multicast, IPv6, and hostname candidates are rejected before a connection is attempted. A wildcard certificate such as *.example.test covers a.example.test, but neither example.test nor a.b.example.test. A matching certificate is evidence of a service presenting that name; it does not establish who operates the host. Operator attribution and complete IPv6 support remain separate open work.')
+    add_body(doc, 'The sandbox outstanding-work register has been reconciled with the canonical main working copy, including asset-discovery item 5n. Earlier review history is preserved in its linked archive. Known exceptions still needing reproduction or a pricing decision include rate-limited provider results and some entirely unanswered probe sets: do not infer complete assessment merely from a displayed score or a passing regression suite. The approved absent-raw-check policy does not settle every present-but-unmeasured result.')
+
     add_h2(doc, "6.0 Reading a report: \"not assessed\" is not \"clean\"")
+
+    add_body(doc, 'September 2026 sandbox update: the eight deferred review findings are implemented at checkpoint b3cf0c8. This describes the sandbox, not a deployment to live. The local verification passed all 12 gates and detected 347 mutations, including two gate crashes recorded separately.')
+    add_body(doc, 'Read the coverage notice beside the score. Missing and failed raw checks are unassessed, not clean. The dashboard names them separately, shows assessment completeness, and retains the reason the score is qualified. A missing check does not imply WAF blocking. PDF summary and full reports show the qualification beside the score; the assessment deck shows completeness and the missing-check count below its KPIs.')
+    add_body(doc, 'Five Executive Summary rows now use neutral Not assessed values when measurement is missing: known data breaches, exposed admin panels, database or service exposure, blacklist status, and RDP exposure. The three corresponding exposure KPIs use n/a. Positive observed findings remain visible even when a check is incomplete. The legend defines the neutral state.')
+    add_body(doc, 'A partly assessed supply chain cannot claim an overall green low-exposure verdict merely because its measured subset is clean. Certificate discovery states how many of its two sources answered. Even two answers do not prove a complete asset inventory. Unconfirmed certificate names are candidates for broker review, not automatically owned or scored assets.')
+    add_body(doc, 'The full technical PDF cards for IntelX, VirusTotal, and fraudulent domains now require recorded completion and usable measurement counts before giving a clean result. Missing, failed, malformed, or incomplete results display Not assessed. Recorded positive findings remain visible with their severity and an incomplete-assessment caveat. Zero VirusTotal engine results and zero checked lookalike variants are unassessed. A clean lookalike result applies only to the variants checked, not every registered domain. These corrections extend the five Executive Summary rows fixed earlier.')
 
     add_body(
         doc,
@@ -828,6 +847,8 @@ def build(doc):
 
     # 7.3 Scan Completeness -------------------------------------------- #
     add_h2(doc, "7.3 Scan Completeness")
+    add_body(doc, "Approved missing-check policy: absent raw weighted categories are excluded from scoring and their weight is redistributed over available signals. They count against completeness. The derived ransomware risk, data-breach index, and financial-impact metrics are exempt from the missing-probe rule. This changes confidence and can change annual-loss estimates; it does not add a new observed finding.")
+    add_body(doc, "Measured reference effects: the finance R10m fixture changes from score 282 to 372, completeness 90% to 67%, and estimated annual loss R447,252 to R509,411. The retail R13.5bn fixture changes from 205 to 262, 100% to 77%, and R67,728,866 to R69,120,780. The 100-, 200-, and 250-year loss totals are unchanged for these fixtures. These are fixture-specific effects, not universal premium adjustments. Stored production scores remain unchanged until explicitly rescored.")
 
     add_body(
         doc,
@@ -847,7 +868,7 @@ def build(doc):
         "configured to run (i.e., total checkers minus those skipped "
         "due to missing API keys or being disabled), and 'Failed' is "
         "the number of assessable checkers that returned an error or "
-        "timed out.",
+        "timed out, were unreachable, or have no stored raw checker result.",
     )
 
     add_bullet(
@@ -871,8 +892,10 @@ def build(doc):
 
     add_tip(
         doc,
-        "A completeness of 100% means every configured checker ran "
-        "successfully. If completeness drops below 80%, consider "
+        "A displayed completeness of 100% means no missing or failed checks "
+        "were recognized by the current status rules; it does not guarantee "
+        "complete assessment where known status-handling gaps remain. If "
+        "completeness drops below 80%, consider "
         "re-scanning after a short delay, transient API issues or "
         "rate limiting may have resolved.",
     )
@@ -1780,6 +1803,8 @@ def build(doc):
     #  SECTION 11 -- VERSION HISTORY                                     #
     # ------------------------------------------------------------------ #
     add_h1(doc, "11. Version History")
+    add_bold_body(doc, "v2.1 sandbox review 16 September 2026", " Reporting and coverage corrections.")
+    add_body(doc, "Documents checkpoint b3cf0c8: missing-check pricing and completeness, CMS probe failure versus non-applicability, neutral summary values, partial supply-chain verdicts, certificate-source coverage, neutral legend, consistent Unicode domain-input handling, and independent assertions for positive due-diligence claims and measured footers. The follow-up closes the three detailed-card missing-measurement gaps with neutral states and preserved positive evidence. Master and live were not changed.")
 
     add_bold_body(doc, "v2.0: July 2026", " Major revision.")
     add_body(
@@ -1788,6 +1813,10 @@ def build(doc):
         "delivered since the v1.0 initial release. The changes are listed below "
         "with the date each landed.",
     )
+    add_bullet(doc, "2026-09-11: The information-disclosure check now requests all 18 of its sensitive paths. A coding error introduced on 2026-06-28 meant only the 8 critical paths were requested; the 10 medium-risk paths (for example /phpinfo.php and /server-status) were silently skipped while the check still reported as completed. Scans from that period under-report medium-risk exposures.")
+    add_bullet(doc, "2026-09-11: The executive deck's supply-chain slide no longer counts the vendor cross-check (Hudson Rock against the email vendors and known vendor breaches) as clean when Hudson Rock did not complete, because the check then measured nothing. A slide on which no supply-chain signal reported a result says so instead of reporting a positive due-diligence result, and one on which nothing was assessed in full but a signal was in part says that nothing was fully assessed. The email-vendor surface and the vendor-breach correlation are counted as clean there only when every SPF lookup in the chain answered: not when a lookup did not answer, including one behind an include, not when a record in the chain delegates with redirect= (which the check does not follow, whatever the letter case), and not for a result stored before the lookup was recorded, including a stored completed result that identified no vendor; the slide gives the reason. Where a vendor was found beside a lookup that did not answer, the vendors are reported as a lower bound, the signal is not counted clean, and a finding it carries still counts. Where no vendor was identified, such a result is 'no data', which prices as a completed result with no vendors. A MEDIUM vendor cross-check now shows as a finding on the summary table and the dashboard. The dashboard's Additional Intelligence Sources panels no longer show 'Passed' for a completed check: they show the finding level its result states, and otherwise 'Completed', or 'Not assessed' for a result that says it was not assessed; the Email Security page's vendor panel shows its rows only for a completed result, and names the vendors and SPF includes it found, which it had shown as unreadable placeholders.")
+    add_bullet(doc, "2026-09-11: Related domains now read the same on every surface. The technical report, the executive deck, the summary table and the dashboard use one set of states, and a scan stored before discovery existed is never shown as having found nothing. A confirmed domain whose certificate check returns the worst possible score is now counted as such, where a TLS handshake took place or a web port was seen open (a port 443 that accepts a connection but never answers is not assessed, and so is one the port probe saw open whose connection timed out; where the probe saw only port 80 open, a 443 that fails counts as the worst result, and one that answers without TLS is a finding); it was previously read as clean. A check that returns no result is left out rather than counted as clean and is shown as not assessed; a confirmed domain that does not resolve, resolves only to IPv6 or to a non-public address, or on which no check returned a result, or that is still being checked when the time budget ends, is reported as not assessed; and a partly assessed confirmed domain is never described as having passed. Confirmed domains beyond the ten a scan assesses are listed as not assessed, whether entered on the form or through the API. A name counts as the client's subdomain only on a label boundary, so a different domain that merely contains the client's name is no longer treated, or probed, as the client's own. The scan form's candidate list uses the same rules as the report, and when it finds none it says that it searched crt.sh alone, so the report can list more. The summary table states when confirmed related domains were not fully assessed, when related domains await confirmation, and when discovery could not run or found none. The scanned domain and every related domain entered on the form or through the API are stored as the validated name, and an address pasted with a display name, as copied from an email header, or a URL with a chain of schemes, is cleaned to its domain. The scan form reports a certificate-lookup outage as unavailable, not as none found.")
+    add_bullet(doc, "2026-09-10: Related-domain discovery now runs on every scan, whether submitted through the web form or the API. Previously only the form looked for related domains, so an API scan was silently narrower. The scan lists domains that appear alongside the client's on public certificate records and marks each one unconfirmed. Discovered domains are not assessed or scored, because a shared certificate can list unrelated organisations. Only domains a broker confirms are scanned and scored, as before, and nothing is ticked automatically on the form. If the certificate-record lookup returns no result, discovery reads Not Assessed rather than as having found nothing. Automatic confirmation, and running the full checker suite against related domains, are deferred: they need the scanner to record which names a certificate carries, a stronger test of certificate ownership, and a recalibrated way of combining results across related domains.")
     add_bullet(doc, "2026-09-08: Client meeting brief added (Section 6.5), with OPT-IN password fingerprints. A fingerprint is the first character of a leaked password and its length, which lets an account owner confirm whether a password is still in rotation without the document becoming a credential dump if it is mislaid. Off by default; requires a stated reason that is recorded with the generating user, the domain and the credit spend; refused outright if the audit trail cannot be written. Because the scan deliberately stores no password material, fingerprints require a fresh query and the panel shows the estimated credit cost before the operator commits. Generating a brief without fingerprints makes no external request and spends nothing.")
     add_bullet(doc, "2026-09-08: The Partial Coverage Notice was renamed the EXTERNAL VISIBILITY NOTICE, and now states explicitly that external visibility (how much of the estate the target allowed the scan to see) is a different measure from scan completeness (how many checkers ran to completion). The two numbers were routinely read as the same thing. A scan can run every check and still see very little. The dashboard label changed from Coverage to Visibility to match.")
     add_bullet(doc, "2026-09-08: Reports no longer truncate their findings. The per-category findings cap was raised from six to twenty-four, known vulnerabilities on a port are listed in full rather than ending at 'and 1 more', and the credential detail lists every record retained with the scan followed by an honest statement of how many of the total that represents. A report that visibly withholds one finding costs more confidence than the line saves in space.")
@@ -1811,47 +1840,42 @@ def build(doc):
     add_bold_body(doc, "v1.0: April 2026", " Initial Release")
     add_body(
         doc,
-        "First public release of the Phishield Cyber Risk Scanner User "
-        "Manual, covering all scanner capabilities delivered through "
-        "Phase 3 implementation. This version includes:",
+        "Initial manual for the Phase 3 scanner, covering:",
     )
     add_bullet(
         doc,
-        "Detailed explanations of all 25+ security checkers across six "
-        "categories (Email Security, Network Security, Web Application "
+        "Explanations of all 25+ security checkers across six categories "
+        "(Email Security, Network Security, Web Application "
         "Security, Reputation & Intelligence, Identity & Access, "
         "Compliance & Privacy).",
     )
     add_bullet(
         doc,
-        "Insurance analytics methodology documentation including RSI, "
-        "DBI, hybrid financial impact model with Monte Carlo simulation, and the "
-        "remediation roadmap generation logic.",
+        "Insurance analytics methodology including RSI, DBI, the hybrid "
+        "financial-impact model with Monte Carlo simulation, and remediation "
+        "roadmap logic.",
     )
     add_bullet(
         doc,
-        "Complete scoring methodology with category weights, failsafe "
-        "behaviour, scan completeness calculation, and score reliability "
-        "guidance.",
+        "Scoring methodology with category weights, failsafe behaviour, scan "
+        "completeness calculation, and score-reliability guidance.",
     )
     add_bullet(
         doc,
-        "API integration guide covering all ten external data sources "
-        "with cost models, data provided, and toggle availability.",
+        "API integration guide for all ten external data sources, with cost "
+        "models, data provided, and toggle availability.",
     )
     add_bullet(
         doc,
-        "PDF report format documentation for both the Full Technical "
-        "Report and Broker Summary, including guidance on reading and "
-        "interpreting report content.",
+        "PDF format documentation for the Full Technical Report and Broker "
+        "Summary, including guidance on interpretation.",
     )
     add_bullet(
         doc,
-        "Known limitations and planned improvements referencing the "
-        "Phase 4-6 roadmap.",
+        "Known limitations and planned improvements from the Phase 4-6 "
+        "roadmap.",
     )
     add_bullet(
         doc,
-        "Comprehensive glossary of 40+ technical terms written for "
-        "non-technical readers.",
+        "A glossary of 40+ technical terms for non-technical readers.",
     )

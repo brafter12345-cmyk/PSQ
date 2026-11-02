@@ -35,6 +35,26 @@ import socket
 CHECKPOINT_TTL_S = int(os.environ.get("CHECKPOINT_TTL_S", "21600"))
 
 
+def _run_related_probe(ckpt, domain, domains):
+    """RelatedDomainsChecker on the broker-confirmed *domains*, checkpointed.
+
+    Module level so that the regression gate runs this exact function.
+    RelatedDomainsChecker returns when its own budget ends
+    (RelatedDomainsChecker.budget_seconds), and the outer timeout sits 60 s
+    above it. run_with_timeout waits for its worker even after it times out
+    (OUTSTANDING 5aa), so an outer budget at or below the checker's own saves
+    no time and only discards a result the checker went on to finish,
+    findings included. A "timeout" or "error" result is in the
+    checkpointer's not-done set, so a resumed scan probes again rather than
+    loading a NOT ASSESSED result; the builder maps both to "unassessed",
+    which prices exactly like an absent category.
+    """
+    return ckpt.run("related_domains", lambda: run_with_timeout(
+        RelatedDomainsChecker().check, args=(domain, domains),
+        timeout=RelatedDomainsChecker.budget_seconds(len(domains)) + 60,
+        on_timeout_result={"status": "timeout"}))
+
+
 # ---------------------------------------------------------------------------
 # Main Scanner Orchestrator
 # ---------------------------------------------------------------------------
@@ -615,25 +635,25 @@ class SecurityScanner:
             checker_durations[name] = round(time.perf_counter() - t0, 3)
             self._notify(on_progress, name, "done", cat_results[name])
 
-        # --- Related-domain LITE scan (broker-declared suppliers/siblings) ---
-        # Each declared sibling gets SSL + DNS-port + info_disclosure probes,
-        # rolled up worst-of-N into a single category. Skipped when no
-        # domains are declared. v1.0 broker-declared only — v1.1 will add
-        # cert-SAN/WHOIS/analytics-ID auto-discovery (see project memory:
-        # project_related_domain_discovery.md).
-        if related_domains:
-            self._notify(on_progress, "related_domains", "running")
-            t0 = time.perf_counter()
-            cat_results["related_domains"] = _ckpt.run(
-                "related_domains",
-                lambda: run_with_timeout(
-                    RelatedDomainsChecker().check,
-                    args=(domain, related_domains),
-                    timeout=min(300, 60 * max(1, len(related_domains))),
-                ))
-            checker_durations["related_domains"] = round(time.perf_counter() - t0, 3)
-            self._notify(on_progress, "related_domains", "done",
-                         cat_results["related_domains"])
+        # --- Related domains: DISCOVERY on every scan, PROBES on confirmed only ---
+        # Remediation step 5. Discovery used to run only in the form's
+        # pre-flight, so an API scan looked for related domains not at all. It
+        # now runs here, for every scan by every entry path, from the certificate
+        # names SubdomainChecker already fetched. Discovered domains are LISTED
+        # for confirmation and never probed or priced; only broker-confirmed or
+        # API-declared domains are probed. The whole category, status contract
+        # included, is built by estate_discovery.build_related_domains_category,
+        # the function the regression gate drives, and assigned exactly once.
+        from estate_discovery import build_related_domains_category
+
+        self._notify(on_progress, "related_domains", "running")
+        t0 = time.perf_counter()
+        _rd = build_related_domains_category(
+            domain, related_domains, cat_results.get("subdomains") or {},
+            lambda ds: _run_related_probe(_ckpt, domain, ds))
+        cat_results["related_domains"] = _rd
+        checker_durations["related_domains"] = round(time.perf_counter() - t0, 3)
+        self._notify(on_progress, "related_domains", "done", _rd)
 
         # --- Expand IP pool with subdomain-resolved IPs ---
         sub_result = cat_results.get("subdomains", {})
@@ -663,11 +683,22 @@ class SecurityScanner:
         # that currently serve THIS domain's certificate are added to the
         # scan pool. Unverified candidates are surfaced for transparency but
         # never scanned (they may have been reassigned to a third party).
+        # The scan has ALREADY resolved every subdomain it enumerated. Those
+        # addresses are the cheapest origin candidates in existence: no key, no
+        # credit, no extra lookup. Measured on the retained scans, the two South
+        # African targets whose apex is a CDN edge got NOTHING from historical
+        # DNS or the free Shodan hint, while the scan itself was holding 6 and 3
+        # non-edge addresses from subdomains resolved moments earlier. Each is
+        # still cert-verified before it can enter the scan pool, so this widens
+        # the candidate list without weakening the gate.
+        _local_candidates = sorted(subdomain_ips | set(discovered_ips))
+
         def _compute_origin():
             try:
                 from origin_discovery import discover_origin_ips
                 return discover_origin_ips(domain, self.securitytrails_api_key,
-                                           self.shodan_api_key)
+                                           self.shodan_api_key,
+                                           extra_candidates=_local_candidates)
             except Exception as e:
                 return {"status": "error", "error": str(e),
                         "candidates": [], "verified": [], "unverified": []}
@@ -697,7 +728,8 @@ class SecurityScanner:
         # is the strongest pre-scan signal (PTR is set by the IP owner); verified
         # origins are already cert-confirmed own infra and always scanned.
         from ip_classification import (classify_ip, OWNED, PRIVATE, is_third_party,
-                                       probe_default_cert)
+                                       probe_default_cert, forward_confirms,
+                                       tls_observed)
 
         def _ptr_lookup(ip):
             try:
@@ -715,19 +747,54 @@ class SecurityScanner:
                 except FuturesTimeoutError:
                     pass
 
+        # FORWARD-CONFIRM every reverse name before it is allowed to demote a
+        # host. A reverse record is written by whoever holds the address, so on
+        # its own it is an assertion by the party being judged; the forward
+        # lookup is controlled by the zone the name claims to belong to. Absent
+        # or failed confirmation never demotes (see classify_ip), so a DNS
+        # timeout cannot become a discount.
+        ptr_ok = {}
+        if ptr_map:
+            with ThreadPoolExecutor(max_workers=16) as _fc_ex:
+                _fc = {_fc_ex.submit(forward_confirms, ptr_map.get(ip), ip): ip
+                       for ip in ptr_map if ptr_map.get(ip)}
+                try:
+                    for _f in as_completed(_fc, timeout=30):
+                        ptr_ok[_fc[_f]] = _f.result(timeout=5)
+                except FuturesTimeoutError:
+                    pass
+
         _ip_to_subs = {}
         for _sub, _sips in (sub_result.get("resolved_ips", {}) or {}).items():
             for _sip in (_sips if isinstance(_sips, list) else [_sips]):
                 _ip_to_subs.setdefault(_sip, []).append(_sub)
+
+        # Attribution CONFIDENCE, recorded alongside the bucket. The bucket says
+        # who is answerable; this says how well we know. Without it, "cert-
+        # verified origin" and "nothing said otherwise, so we defaulted" render
+        # identically as owned, which is the absence-of-evidence reading this
+        # module refuses everywhere else. Changes no routing and no price.
+        from ip_attribution import attribution_for
+        ip_attribution = {}
 
         scan_ips, third_party_hosting, internal_dns_leak, ip_classification = [], [], [], {}
         for ip in all_ips:
             if "verified_origin" in ip_sources.get(ip, []):
                 scan_ips.append(ip)
                 ip_classification[ip] = "owned"
+                ip_attribution[ip] = dict(zip(
+                    ("confidence", "rule", "evidence"),
+                    attribution_for(ip, "owned", "", ip_sources=ip_sources.get(ip),
+                                    insured_domain=domain)))
                 continue
-            bucket, label = classify_ip(ip, reverse_dns=ptr_map.get(ip))
+            bucket, label = classify_ip(ip, reverse_dns=ptr_map.get(ip),
+                                        ptr_confirmed=ptr_ok.get(ip))
             ip_classification[ip] = bucket
+            ip_attribution[ip] = dict(zip(
+                ("confidence", "rule", "evidence"),
+                attribution_for(ip, bucket, label, ip_sources=ip_sources.get(ip),
+                                reverse_dns=ptr_map.get(ip), insured_domain=domain,
+                                apex_ips=discovered_ips)))
             if bucket == PRIVATE:
                 internal_dns_leak.append({"ip": ip, "subdomains": _ip_to_subs.get(ip, [])})
             elif bucket == OWNED:
@@ -739,6 +806,7 @@ class SecurityScanner:
                     "reverse_dns": ptr_map.get(ip),
                 })
         results["ip_classification"] = ip_classification
+        results["ip_attribution"] = ip_attribution
         results["third_party_hosting"] = third_party_hosting
         results["internal_dns_leak"] = internal_dns_leak
         self._notify(on_progress, "ip_classification", "done", {
@@ -821,16 +889,36 @@ class SecurityScanner:
             # AND managed hosting under the same PTR suffix and the same org, so
             # the IaaS rule below would claim a shared box as the insured's own.
             # One extra handshake per scanned IP, and only when 443 is open.
-            _default_cert = None
-            try:
-                if 443 in (shod.get("open_ports") or []):
-                    _default_cert = probe_default_cert(ip)
-            except Exception:
-                _default_cert = None
+            # Gate on a TLS port observed by EITHER source. Shodan's list is
+            # empty whenever it holds no record, and can simply disagree with
+            # our own scan: aggregato.co.za's 156.38.174.226 has a full Shodan
+            # record whose port list lacks the 443 our own scan saw. Measured,
+            # the old gate probed 77 hosts and missed 18 that had an observed
+            # 443, eight of them carrying the textbook shared-cPanel port set.
+            #
+            # The gate expression sits OUTSIDE any try: probe_default_cert
+            # already returns None on every failure of its own, so the only
+            # thing a try here could swallow is a bug in the gate itself.
+            _tls = tls_observed(shod.get("open_ports"), dns.get("open_ports"))
+            _default_cert = probe_default_cert(ip) if _tls else None
             bucket, label = classify_ip(ip, reverse_dns=dns.get("reverse_dns"),
                                         org=shod.get("org"), banner=banner,
                                         default_cert_names=_default_cert,
-                                        insured_domain=domain)
+                                        insured_domain=domain,
+                                        ptr_confirmed=ptr_ok.get(ip))
+            # Refine the confidence now that Shodan's observed hostnames exist.
+            # This is the only pass where CO-TENANCY can be seen: the pre-scan
+            # call has PTR alone. boston.ac.za's 20.126.184.33 carries
+            # mta-certs.sendmarc.com and mta-sts-policy.d.msp.proofpoint.com --
+            # two unrelated third parties on one address, and the same address
+            # appears on takealot.com's scan. It stays OWNED and stays scanned;
+            # it is the CLAIM that softens, not the coverage.
+            ip_attribution[ip] = dict(zip(
+                ("confidence", "rule", "evidence"),
+                attribution_for(ip, bucket, label, ip_sources=ip_sources.get(ip),
+                                hostnames=shod.get("hostnames"),
+                                reverse_dns=dns.get("reverse_dns"),
+                                insured_domain=domain, apex_ips=discovered_ips)))
             if is_third_party(bucket):
                 ip_classification[ip] = bucket
                 third_party_hosting.append({
@@ -841,7 +929,24 @@ class SecurityScanner:
                 del per_ip_results[ip]
         scan_ips = [ip for ip in scan_ips if ip in per_ip_results]
         results["ip_classification"] = ip_classification
+        # Re-bound explicitly rather than relying on the pre-scan write and
+        # in-place mutation. The sibling above it is re-bound here too, and a
+        # reader should not have to prove the dict identity is shared to know
+        # the post-scan refinements survive.
+        results["ip_attribution"] = ip_attribution
         results["third_party_hosting"] = third_party_hosting
+
+        # Bound ONCE, here, because external_ips is re-aggregated twice further
+        # down (after OSV enrichment, and again in the unconditional "ensure
+        # re-aggregation always runs" block). Both of those originally omitted
+        # vendor_ips, so the last one silently reset vendor_ip_count to 0 and
+        # estate_total_ips to the post-attribution own count on EVERY scan: the
+        # estate split was computed correctly and then thrown away a few hundred
+        # lines later. Measured, 19 of 30 estates shrank and 5 lost a
+        # Reconnaissance severity step. Every call site must pass this, and
+        # tooling/regression/verify_estate_wiring.py fails the build if one does
+        # not.
+        _vendor_ips = [e.get("ip") for e in third_party_hosting]
 
         # --- Phase 4: Aggregate IP-level results ---
         results["categories"] = cat_results
@@ -872,12 +977,16 @@ class SecurityScanner:
                     "directly accessible from internet")
 
         # --- Phase 4b: External IP Aggregation (feeds CVE panel) ---
-        # Own-infra surface = the insured's OWNED IPs only (scan_ips); third-party
-        # hosting + internal-DNS leaks are surfaced separately (results.
-        # third_party_hosting / internal_dns_leak).
+        # Own-infra surface = the insured's OWNED IPs only (scan_ips). Vendor-
+        # operated hosts are passed in separately so the ESTATE count stays
+        # whole: they are excluded from what the insured is answerable for, but
+        # they were still discovered on this client's surface and must not
+        # vanish. Correcting an attribution must never make a client look
+        # smaller and therefore cleaner.
         self._notify(on_progress, "external_ips", "running")
         results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
-            scan_ips, per_ip_results, ip_sources=ip_sources
+            scan_ips, per_ip_results, ip_sources=ip_sources,
+            vendor_ips=_vendor_ips,
         )
         self._notify(on_progress, "external_ips", "done",
                      results["categories"]["external_ips"])
@@ -1073,7 +1182,8 @@ class SecurityScanner:
                         per_ip_results, checker_name
                     )
                 results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
-                    scan_ips, per_ip_results, ip_sources=ip_sources
+                    scan_ips, per_ip_results, ip_sources=ip_sources,
+                    vendor_ips=_vendor_ips,
                 )
         except Exception as _osv_err:
             # Log OSV enrichment errors instead of silently swallowing
@@ -1086,7 +1196,8 @@ class SecurityScanner:
         # --- Ensure re-aggregation always runs (even if OSV failed) ---
         try:
             results["categories"]["external_ips"] = ExternalIPAggregator.aggregate(
-                scan_ips, per_ip_results, ip_sources=ip_sources
+                scan_ips, per_ip_results, ip_sources=ip_sources,
+                vendor_ips=_vendor_ips,
             )
         except Exception:
             pass
@@ -1384,6 +1495,43 @@ class SecurityScanner:
         # status field surfaces in the report renderers.
         # Reuse the pre-scoring WAF status (already read above).
         results["_scan_completeness"]["waf_status"] = waf_apex_status
+
+        # WHICH CHECKERS MEASURED THE EDGE RATHER THAN THE CLIENT.
+        #
+        # The web-layer checkers are invoked with the typed hostname. When the
+        # apex resolves into a CDN edge range and no origin was verified behind
+        # it, those checkers describe the PROVIDER's TLS, headers, admin paths
+        # and third-party scripts, not the client's. Three of the four
+        # must-have checkers are in that group.
+        #
+        # Measured on the retained scans: for boston.ac.za and www.zinia.co.za
+        # neither historical DNS, the free Shodan cert-host hint, nor the
+        # addresses the scan itself had already resolved produced a verified
+        # origin. The client's own estate IS discovered and IP-scanned (mail,
+        # Exchange and Azure hosts, correctly classified as owned), but the web
+        # origin is genuinely hidden. Saying so per card is the honest
+        # alternative to a clean-looking verdict about someone else's server.
+        #
+        # REPORTING-ONLY on purpose. Grading these categories non-conclusive
+        # would exclude their weight and move the score, which is a calibration
+        # decision, not a correctness fix. It is recorded in OUTSTANDING 5p.
+        _cdn_cat = cat_results.get("cloud_cdn") or {}
+        _org_cat = cat_results.get("origin_discovery") or {}
+        if _cdn_cat.get("cdn_detected") and not (_org_cat.get("verified") or []):
+            _EDGE_MEASURED = ("ssl", "http_headers", "website_security",
+                              "exposed_admin", "third_party_js", "waf")
+            _affected = [c for c in _EDGE_MEASURED if c in cat_results]
+            results["_scan_completeness"]["edge_measured_checkers"] = _affected
+            results["_scan_completeness"]["edge_provider"] = _cdn_cat.get("provider")
+            for _c in _affected:
+                if isinstance(cat_results.get(_c), dict):
+                    cat_results[_c]["measured_at"] = "cdn_edge"
+                    cat_results[_c]["measured_at_note"] = (
+                        "Measured at the %s edge. No origin server was verified "
+                        "behind it, so this describes the provider's "
+                        "infrastructure rather than the client's own. An absence "
+                        "of findings here is not evidence about the client."
+                        % (_cdn_cat.get("provider") or "content delivery network"))
         # Checkers that explicitly EARLY-EXITED because the apex hard-blocked
         # their path probing — they set their own `waf_truncated` flag. These are
         # "not fully assessed" even though their benign 'nothing found' line

@@ -49,11 +49,15 @@ from pdf_cards import (
     cat_rsi, cat_dbi, cat_remediation, cat_financial_impact,
     loss_exposure_scenarios_block, risk_probability_block, cover_ladder_block,
     records_assumption_disclosure, civil_liability_disclosure,
-    peer_benchmark_card, waf_coverage_notice, waf_card_disclaimer,
+    peer_benchmark_card, waf_coverage_notice, waf_card_disclaimer, assessment_coverage_notice,
+    estate_edge_notice,
+    vendor_estate_notice,
+    origin_exposure_notice,
     flag_audit_panel, scan_duration_profile, cat_risk_mitigations,
     build_summary_table, _build_legend, _build_vulnerability_posture,
     _build_attackers_view, _supply_chain_attacker_findings,
     _kill_chain_severities, _finding_colour, conclusive_count,
+    estate_ip_count,
 )
 
 
@@ -130,7 +134,13 @@ def _assessment_extract_kpis(results: dict) -> list:
     hrp_services = cats.get("high_risk_protocols", {}).get("exposed_services", [])
     db_ports = {3306, 5432, 27017, 6379, 9200, 1433}
     db_count = sum(1 for s in hrp_services if s.get("port") in db_ports)
-    rdp_exposed = cats.get("vpn_remote", {}).get("rdp_exposed", False)
+    vpn_cat = cats.get("vpn_remote") or {}
+    rdp_exposed = vpn_cat.get("rdp_exposed", False)
+    adm_cat = cats.get("exposed_admin") or {}
+    hrp_cat = cats.get("high_risk_protocols") or {}
+    adm_known = (adm_cat.get("status") == "completed" or adm_total > 0)
+    hrp_known = (hrp_cat.get("status") == "completed" or db_count > 0)
+    rdp_known = (vpn_cat.get("status") == "completed" or bool(rdp_exposed))
 
     def ssl_sev(g):
         if g in ("A+", "A"): return "ok"
@@ -148,9 +158,15 @@ def _assessment_extract_kpis(results: dict) -> list:
         {"value": f"{hh_score}%" if hh_score is not None else "n/a",
          "label": "HTTP Sec. Headers",     "description": "Web app exposure",
          "severity": "unknown" if hh_score is None else "ok" if hh_score >= 80 else "warn" if hh_score >= 50 else "bad"},
-        {"value": str(adm_total),     "label": "Exposed Admin Panels", "description": "Direct entry points",        "severity": "bad" if adm_total > 0 else "ok"},
-        {"value": str(db_count),      "label": "Critical DB Exposed",  "description": "Database internet-facing",   "severity": "bad" if db_count > 0 else "ok"},
-        {"value": "Yes" if rdp_exposed else "No", "label": "RDP Exposed", "description": "Top ransomware vector",    "severity": "bad" if rdp_exposed else "ok"},
+        {"value": str(adm_total) if adm_known else "n/a",
+         "label": "Exposed Admin Panels", "description": "Direct entry points",
+         "severity": "bad" if adm_total > 0 else "ok" if adm_known else "unknown"},
+        {"value": str(db_count) if hrp_known else "n/a",
+         "label": "Critical DB Exposed", "description": "Database internet-facing",
+         "severity": "bad" if db_count > 0 else "ok" if hrp_known else "unknown"},
+        {"value": "Yes" if rdp_exposed else "No" if rdp_known else "n/a",
+         "label": "RDP Exposed", "description": "Top ransomware vector",
+         "severity": "bad" if rdp_exposed else "ok" if rdp_known else "unknown"},
     ]
 
 
@@ -162,7 +178,7 @@ def _assessment_kill_chain(results: dict) -> list:
     sevs = _kill_chain_severities(results)
 
     # Phase 1: Reconnaissance
-    ip_count  = cats.get("external_ips", {}).get("total_unique_ips", 0)
+    ip_count  = estate_ip_count(cats, results)
     sub_count = cats.get("subdomains", {}).get("total_count", 0)
     dh = cats.get("dehashed", {})
     emails = dh.get("unique_emails", 0)
@@ -451,7 +467,7 @@ def _assessment_top_findings(results: dict) -> list:
         have = {c[1]["headline"] for c in cands}
         em_b = score_or_none(cats.get("email_security"))
         sub_count = cats.get("subdomains", {}).get("total_count", 0)
-        ip_count = cats.get("external_ips", {}).get("total_unique_ips", 0)
+        ip_count = estate_ip_count(cats, results)
         # conclusive_count, not a raw .get: an unassessed provider reports 0
         # and would otherwise be indistinguishable from a searched-and-clean
         # estate. Here it only suppresses a finding, but the next reader of
@@ -798,6 +814,8 @@ def _assessment_slide_score_and_kpis(results):
             Paragraph(k["description"], desc_st),
         ]
 
+    coverage = results.get("_scan_completeness") or (results.get("categories") or {}).get("_scan_completeness") or {}
+    qualified = bool(coverage.get("score_qualified"))
     # Build a 2x3 grid. Each cell gets a coloured LEFT line via per-cell style.
     cell_contents = [
         [kpi_cell(kpis[0]), kpi_cell(kpis[1]), kpi_cell(kpis[2])],
@@ -807,7 +825,7 @@ def _assessment_slide_score_and_kpis(results):
     right_inner_w = ASX_INNER_W + ASX_MARGIN - 330 - 50  # post-navy width
     kpi_grid = Table(cell_contents,
                       colWidths=[right_inner_w / 3] * 3,
-                      rowHeights=[160, 160])
+                      rowHeights=[140, 140] if qualified else [160, 160])
 
     style_cmds = [
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
@@ -840,6 +858,17 @@ def _assessment_slide_score_and_kpis(results):
         Spacer(1, 8),
         kpi_grid,
     ]
+
+    if qualified:
+        missing = len(coverage.get("missing_checkers") or [])
+        pct = coverage.get("completeness_pct")
+        message = f"Score qualified. Assessment completeness: {pct}%" if pct is not None else "Score qualified."
+        message += f". {missing} raw check(s) missing." if missing else "."
+        message += " Unavailable checks are not measured clean. Re-scan recommended before underwriting."
+        right_col.append(Spacer(1, 6))
+        right_col.append(Paragraph(message, ParagraphStyle(
+            "coverage_qualification", fontSize=9, leading=11,
+            fontName=ASX_SANS, textColor=ASX_GREY_MUTED)))
 
     # The navy panel needs to bleed to the left edge — use a 2-column container
     # with no padding on the left side.
@@ -967,10 +996,96 @@ def _assessment_slide_supply_chain(results):
             return "UNKNOWN", "Not assessed (no scan data)"
         return "UNKNOWN", "Not assessed"
 
+    # One rule for what an S-4/S-5 result measured, shared with the cards and
+    # the summary row (step-5 critique rounds 7 to 9). The SPF record may well
+    # have been read, so "no scan data" would be false: the slide says what was
+    # not measured, in a sentence of its own.
+    from pdf_cards import spf_surface_partial as _spf_partial
+    from pdf_cards import spf_surface_unmeasured as _spf_why
+    _LOWER_BOUND_FOOT = ("not fully assessed (a lookup in the SPF chain did not "
+                         "answer, or a record redirects, so the vendors found "
+                         "are a lower bound)")
+    _LOWER_BOUND_NOTE = ("the vendors found are a lower bound: a lookup in the "
+                         "SPF chain did not answer, or a record redirects")
+
     cards = []
 
-    # S-1 Related Domains
-    cls = _classify(rd)
+    # S-1 Related Domains. Classified from estate_discovery.related_domains_state,
+    # the one state model the full card, the summary tier and the dashboard also
+    # use. Domains found but not confirmed, or confirmed and not fully assessed
+    # without a finding, are NOT ASSESSED here. "None found" is not "not
+    # applicable" either: nothing was assessed, and the card says the empty
+    # result does not show the client has no other domains.
+    from estate_discovery import (related_domains_state as _rd_state_of,
+                                  related_domains_fully_assessed as _rd_full,
+                                  related_domains_gaps as _rd_gaps)
+    _rd_state = _rd_state_of(rd)
+    _rd_disc = rd.get("discovery") or {}
+    _rd_found = int(_rd_disc.get("candidate_count") or 0)
+    # Unconfirmed candidates in every state that lists them, listed or past the
+    # list. Confirmed ones are not awaiting confirmation.
+    _rd_unlisted = _rd_disc.get("not_listed_unconfirmed_count")
+    if _rd_unlisted is None:
+        _rd_unlisted = _rd_disc.get("not_listed_count")
+    _rd_waiting = ((sum(1 for c in (rd.get("discovered") or [])
+                        if isinstance(c, dict) and not c.get("attested"))
+                    + int(_rd_unlisted or 0))
+                   if _rd_state in ("awaiting_confirmation", "confirmed",
+                                    "confirmed_unassessed") else 0)
+    # Confirmed domains beside a discovery that could not run (never both this
+    # and candidates awaiting confirmation: without discovery there are none).
+    _rd_down = (_rd_state in ("confirmed", "confirmed_unassessed")
+                and "discovery" in rd and not _rd_disc.get("ran"))
+    if _rd_waiting:
+        _rd_also = ("; %d further related domain(s) found, awaiting broker "
+                    "confirmation" % _rd_waiting)
+    elif _rd_down:
+        _rd_also = "; related-domain discovery could not run"
+    else:
+        _rd_also = ""
+    # Every state except a scan that predates discovery says in a sentence of
+    # its own why nothing, or not everything, was assessed: in the footer, or,
+    # beside a finding, in a footnote. The footer's "Not assessed (no scan
+    # data)" would not say that.
+    _rd_foot = None
+    if _rd_state == "not_run":
+        cls = ("UNKNOWN", "Not assessed (scan predates related-domain discovery)")
+    elif _rd_state == "degraded":
+        _why = {
+            "ct_unanswered": "the certificate lookup returned no result",
+            "subdomains_failed": "the subdomain check did not complete",
+            "prechange_checkpoint": "the scan resumed from a checkpoint that "
+                                    "predates related-domain discovery",
+        }.get(_rd_disc.get("not_run_reason"), "related-domain discovery could not run")
+        cls = ("UNKNOWN", "Not assessed: " + _why)
+        _rd_foot = "not assessed (%s)" % _why
+    elif _rd_state == "confirmed_unassessed":
+        _why = {"timeout": "within the time allowed",
+                "error": "because the assessment failed",
+                "not_measured": "because none of the checks returned a result",
+                }.get(rd.get("unassessed_reason"), "on this scan")
+        cls = ("UNKNOWN", "%d confirmed domain(s) could not be assessed %s"
+               % (rd.get("declared_count", 0), _why))
+        # Confirmed domains past the ten-domain cap were not assessed either.
+        _over = len(rd.get("confirmed_over_cap") or [])
+        _rd_foot = ("not assessed (%d confirmed related domain(s) could not be "
+                    "assessed %s%s%s)" % (
+                        rd.get("declared_count", 0), _why,
+                        ("; %d further confirmed related domain(s) not assessed, "
+                         "because a scan assesses at most 10" % _over) if _over else "",
+                        _rd_also))
+    elif _rd_state == "awaiting_confirmation":
+        cls = ("UNKNOWN", "%d related domain(s) found, not assessed until "
+               "confirmed" % _rd_found)
+        _rd_foot = ("not assessed (%d found on certificate records, awaiting "
+                    "broker confirmation)" % _rd_found)
+    elif _rd_state == "none_found":
+        cls = ("UNKNOWN", "No related domains found on certificate records; "
+               "none assessed")
+        _rd_foot = ("not assessed (none found on certificate records, which "
+                    "does not show there are none)")
+    else:
+        cls = _classify(rd)
     if cls:
         sev, metric = cls
     else:
@@ -978,23 +1093,87 @@ def _assessment_slide_supply_chain(results):
         scanned = rd.get("scanned_count", 0)
         declared = rd.get("declared_count", 0)
         if declared == 0:
-            sev, metric = "NA", "No declared suppliers"
+            # Unreachable through the dispatch above, which handles every
+            # declared_count == 0 state itself. Kept as a defensive fallback.
+            sev, metric = "UNKNOWN", "No related domains assessed"
         elif crit > 0:
             sev = "CRITICAL"
-            metric = f"{crit} critical of {scanned} declared supplier(s)"
+            metric = f"{crit} critical of {scanned} assessed related domain(s)"
         elif rd.get("high_count", 0) > 0:
             sev = "HIGH"
-            metric = f"{rd['high_count']} of {scanned} suppliers below 60/100"
+            metric = f"{rd['high_count']} of {scanned} related domain(s) below 60/100"
+        elif not _rd_full(rd):
+            # No finding, but some confirmed domains, or some checks on them,
+            # returned nothing, or the result was stored by the earlier check:
+            # an incomplete assessment is not a clean one.
+            sev = "UNKNOWN"
+            if "discovery" not in rd:
+                metric = ("stored by an earlier version of the check, which "
+                          "counted a check returning no result, or the worst "
+                          "possible score, as a pass")
+            else:
+                # Confirmed related domains only: a rejected entry (the scanned
+                # domain, one of its hosts, a registry zone) is not one.
+                _denom = (int(declared or 0)
+                          + len(rd.get("confirmed_over_cap") or []))
+                metric = ("%d of %d confirmed related domain(s) assessed"
+                          % (scanned, _denom))
+                _part = _rd_gaps(rd)[2]
+                if _part:
+                    metric += ", some checks not assessed on %d" % len(_part)
+            _rd_foot = "not fully assessed (%s%s)" % (metric, _rd_also)
         else:
             sev = "LOW"
-            metric = f"{scanned} declared supplier(s) — clean"
+            metric = f"{scanned} confirmed related domain(s): clean"
+    # What a LOW or flagged S-1 card would otherwise leave unsaid: confirmed
+    # domains not fully assessed beside a finding, candidates still awaiting
+    # confirmation, or a discovery that could not run.
+    from estate_discovery import related_domains_certificate_coverage
+    _rd_coverage = related_domains_certificate_coverage(rd)
+    _rd_note_bits = []
+    if not _rd_foot and _rd_state == "confirmed":
+        if sev in ("CRITICAL", "HIGH") and not _rd_full(rd):
+            if "discovery" not in rd:
+                # Stored before step 5: the words of its footer without a
+                # finding (step-5 critique round 6).
+                _gap = ("not fully assessed (stored by an earlier version of the "
+                        "check, which counted a check returning no result, or the "
+                        "worst possible score, as a pass")
+            else:
+                _gap_denom = (int(rd.get("declared_count") or 0)
+                              + len(rd.get("confirmed_over_cap") or []))
+                _gap = ("not fully assessed (%d of %d confirmed related domain(s) "
+                        "assessed" % (int(rd.get("scanned_count") or 0), _gap_denom))
+                if _rd_gaps(rd)[2]:
+                    _gap += ", some checks not assessed on %d" % len(_rd_gaps(rd)[2])
+            _rd_note_bits.append(_gap + ")")
+        if _rd_waiting:
+            _rd_note_bits.append("%d further related domain(s) found on certificate "
+                                 "records, awaiting broker confirmation and not "
+                                 "assessed" % _rd_waiting)
+        elif _rd_down:
+            _rd_note_bits.append("related-domain discovery could not run on this "
+                                 "scan, so other related domains were not looked for")
+    if _rd_coverage:
+        _rd_note_bits.append(_rd_coverage.rstrip("."))
     cards.append({
         "label": "S-1 Related Domains",
         "headline": "Civil-liability inflator — supplier-domain compromise",
         "severity": sev,
         "metric": metric,
-        "support": "Declared sibling/supplier domains scanned in LITE mode; "
-                   "worst-of-N feeds the vulnerability uplift.",
+        "support": "Related domains are found on every scan from public "
+                   "certificate records and listed for confirmation. Only "
+                   "broker-confirmed domains are scanned (LITE mode) and scored.",
+        "footer": _rd_foot,
+        "footnote": "; ".join(_rd_note_bits) or None,
+        # A partly assessed estate is neither counted nor NAMED among the
+        # signals this scan assessed, exactly as S-4 and S-5 treat a partly read
+        # SPF chain (round 11, R11-SC-3). Without this key the deck listed
+        # Related domains under "Assessed:" directly above its own "not fully
+        # assessed" footnote (round 15, C2). Confirmed-and-not-fully-assessed is
+        # the only state that reaches here: the others already classify as
+        # UNKNOWN and never join the assessed groups.
+        "partly": _rd_state == "confirmed" and not _rd_full(rd),
     })
 
     # S-3 Dependency Manifests
@@ -1050,6 +1229,14 @@ def _assessment_slide_supply_chain(results):
 
     # S-4 Email-Vendor Surface
     cls = _classify(evs)
+    # A vendor surface is a measurement only where the SPF lookup is recorded
+    # as answered: a lookup that did not answer, a record the walk does not
+    # follow, and a result stored before the lookup was recorded are not
+    # assessed (step-5 critique rounds 7 to 9).
+    _evs_foot = _evs_note = None
+    _why = _spf_why(evs)
+    if _why and (cls is None or cls[0] == "CLEAN"):
+        cls, _evs_foot = ("UNKNOWN", "Not assessed"), "not assessed (" + _why + ")"
     if cls:
         sev, metric = cls
     else:
@@ -1065,13 +1252,25 @@ def _assessment_slide_supply_chain(results):
         else:
             sev = "LOW"
             metric = f"{count} vendor(s) — DMARC p={policy}"
+    if _spf_partial(evs):
+        # Part of the chain was never read: never clean, and a finding the
+        # walk did carry still loads (step-5 critique round 9).
+        if sev in ("LOW", "CLEAN"):
+            sev, _evs_foot = "UNKNOWN", _LOWER_BOUND_FOOT
+        else:
+            _evs_note = _LOWER_BOUND_NOTE
     cards.append({
         "label": "S-4 Email-Vendor Surface",
         "headline": "Phishing-via-supplier when DMARC is weak",
         "severity": sev,
         "metric": metric,
-        "support": "Walks the SPF include: chain; classifies against 24 known "
+        # Partly read: the finding it carries still loads, but the signal is not
+        # counted or named among those assessed (step-5 round 11, R11-SC-3).
+        "partly": _spf_partial(evs),
+        "support": "Walks the SPF include: chain; classifies against 25 known "
                    "email-SaaS patterns; cross-references DMARC policy.",
+        "footer": _evs_foot,
+        "footnote": _evs_note,
     })
 
     # S-10 CMS Plugin SBOM
@@ -1104,6 +1303,11 @@ def _assessment_slide_supply_chain(results):
 
     # S-5 Vendor Breach Correlation
     cls = _classify(vb)
+    _vb_foot = None
+    _vb_note = None
+    _why = _spf_why(vb)
+    if _why and (cls is None or cls[0] == "CLEAN"):
+        cls, _vb_foot = ("UNKNOWN", "Not assessed"), "not assessed (" + _why + ")"
     if cls:
         sev, metric = cls
     else:
@@ -1123,18 +1327,33 @@ def _assessment_slide_supply_chain(results):
         else:
             sev = "LOW"
             metric = "No vendor matches in lookback window"
+    if _spf_partial(vb):
+        if sev in ("LOW", "CLEAN"):
+            sev, _vb_foot = "UNKNOWN", _LOWER_BOUND_FOOT
+        else:
+            _vb_note = _LOWER_BOUND_NOTE
     cards.append({
         "label": "S-5 Vendor Breach Correlation",
         "headline": "Customer-key rotation often incomplete post-breach",
         "severity": sev,
         "metric": metric,
-        "support": "Curated 14-incident database (Mailchimp 2022/23, Okta 22/23, "
+        "partly": _spf_partial(vb),
+        "support": "Curated 11-incident database (Mailchimp 2022/23, Okta 22/23, "
                    "MS365 Storm-0558, etc.). 5-year lookback with age decay.",
+        "footer": _vb_foot,
+        "footnote": _vb_note,
     })
 
     # Phase 4f Cross-Correlation (Hudson Rock x S-4 x S-5)
     tpc = cats.get("third_party_correlation", {})
     cls = _classify(tpc)
+    # The join writes "no_data" when Hudson Rock found no third-party exposure,
+    # and also when Hudson Rock never completed. Only the first is a measured
+    # clean (step-5 critique round 6). The dashboard shows both as No data, and
+    # the technical report draws the card for neither.
+    if (cls and cls[0] == "CLEAN"
+            and (cats.get("hudson_rock") or {}).get("status") != "completed"):
+        cls = ("UNKNOWN", "Not assessed (no scan data)")
     if cls:
         sev, metric = cls
     else:
@@ -1149,8 +1368,12 @@ def _assessment_slide_supply_chain(results):
                        f"+ {tpc.get('spf_vendor_count', 0)} SPF vendor(s)")
         elif tpc.get("medium_count", 0) > 0:
             sev = "MEDIUM"
+            # A MEDIUM join is Hudson Rock alone, or an overlap whose worst
+            # matched breach is medium: say which (step-5 critique round 9).
+            _susp = tpc.get("suspected_vendors") or []
             metric = (f"{tpc.get('hudson_rock_third_party_count', 0)} HR exposure(s) "
-                       "(no SPF / breach overlap)")
+                      + (", overlap at " + ", ".join(s.get("vendor", "?") for s in _susp[:3])
+                         if _susp else "(no SPF / breach overlap)"))
         else:
             sev = "LOW"
             metric = "No HR third-party exposures"
@@ -1189,7 +1412,7 @@ def _assessment_slide_supply_chain(results):
     # report + HTML; an executive deck carries a single verdict and only the
     # signals with a material finding (no "not run"/"not applicable" tiles).
     _SC_PLAIN = {
-        "S-1 Related Domains": ("Declared suppliers",
+        "S-1 Related Domains": ("Related domains",
             "A supplier or sister-company domain you rely on is compromised and used to reach you."),
         "S-3 Dependency Manifests": ("Exposed code dependencies",
             "Your software 'parts list' is publicly readable, letting attackers target known flaws with no reconnaissance."),
@@ -1210,17 +1433,46 @@ def _assessment_slide_supply_chain(results):
     na = [c for c in cards if c["severity"] == "NA"]
     unknown = [c for c in cards if c["severity"] not in
                ("CRITICAL", "HIGH", "MEDIUM", "LOW", "CLEAN", "NA")]
-    assessed = flagged + clean
+    # A partly read signal is not fully assessed, whatever it found. It stays
+    # in `flagged`, so the finding still loads and still sets the verdict, and
+    # out of `assessed`, so it is neither counted nor named as one this scan
+    # assessed (step-5 critique round 11, R11-SC-3).
+    partly_cards = [c for c in cards if c.get("partly")]
+    flagged_full = [c for c in flagged if not c.get("partly")]
+    flagged_partly = [c for c in flagged if c.get("partly")]
+    assessed = flagged_full + clean
+    # A signal that was partly assessed says so in its own footer; with nothing
+    # assessed in full, "none could be assessed" would contradict it (step-5
+    # critique round 6).
+    _partly = bool(partly_cards) or any(
+        str(c.get("footer") or "").startswith("not fully assessed")
+        for c in unknown)
     flagged.sort(key=lambda c: -_SEV_ORDER.get(c["severity"], 0))
 
     if flagged:
         worst = flagged[0]["severity"]
         verdict_text, vhex = worst + " EXPOSURE", _SC_SEV_HEX.get(worst, "#475569")
-        sub = (str(len(flagged)) + " of " + str(len(assessed)) +
-               " assessed supply-chain signal(s) flagged for attention.")
+        _bits = []
+        if flagged_full:
+            _bits.append(str(len(flagged_full)) + " of " + str(len(assessed)) +
+                         " assessed supply-chain signal(s) flagged for attention.")
+        if flagged_partly:
+            _partial_scope = (
+                "in an assessment that was incomplete"
+                if any(c["label"] == "S-1 Related Domains" for c in flagged_partly)
+                else "on an SPF chain that was only partly read")
+            _bits.append(str(len(flagged_partly)) + " signal(s) carry a finding "
+                         + _partial_scope + ", so what they report is a lower bound.")
+        sub = " ".join(_bits)
     elif assessed:
         verdict_text, vhex = "LOW EXPOSURE", _SC_SEV_HEX["LOW"]
+        # A clean measured subset does not clear the unmeasured remainder.
+        if unknown or partly_cards:
+            verdict_text, vhex = "NOT FULLY ASSESSED", "#475569"
         sub = "All " + str(len(assessed)) + " assessed supply-chain signal(s) are clean."
+    elif _partly:
+        verdict_text, vhex = "NOT FULLY ASSESSED", "#475569"
+        sub = "No external supply-chain signal was fully assessed on this scan."
     else:
         verdict_text, vhex = "NOT ASSESSED", "#475569"
         sub = "No external supply-chain signals could be assessed on this scan."
@@ -1278,20 +1530,61 @@ def _assessment_slide_supply_chain(results):
             ("LINEBELOW",    (0, 0), (-1, -2), 0.4, colors.HexColor("#e2e8f0")),
             ("BOX",          (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e1")),
         ])))
-    else:
+    elif assessed:
+        # Proportionate to what was actually assessed: with signals left
+        # unassessed, an unqualified "positive due-diligence result" reads as a
+        # clean bill for a scan that mostly did not run (step-5 critique round
+        # 13, FC13-5). "Not applicable" is a measured answer, not a gap.
+        _un = len(unknown)
+        if _un:
+            out.append(Paragraph(
+                "%d of %d supply-chain signal(s) were assessed and are within "
+                "normal bounds; %d could not be assessed on this scan. A clean "
+                "reading covers only the signals that were assessed."
+                % (len(assessed), len(assessed) + _un, _un), frisk_st))
+        else:
+            out.append(Paragraph(
+                "No material supply-chain exposure was identified on this scan - "
+                "every assessed external signal is within normal bounds. This is a "
+                "positive due-diligence result, not an absence of checking.", frisk_st))
+    elif _partly:
         out.append(Paragraph(
-            "No material supply-chain exposure was identified on this scan - "
-            "every assessed external signal is within normal bounds. This is a "
-            "positive due-diligence result, not an absence of checking.", frisk_st))
+            "No supply-chain signal was fully assessed on this scan, so none is "
+            "reported as clean.", frisk_st))
+    else:
+        # Nothing was assessed: a "positive due-diligence result" would be the
+        # clean claim the verdict above rules out (step-5 critique round 5).
+        out.append(Paragraph(
+            "No supply-chain signal could be assessed on this scan, so none is "
+            "reported as clean.", frisk_st))
 
     def _plain_names(cardlist):
         return ", ".join(_SC_PLAIN.get(c["label"], (c["label"],))[0]
                           for c in cardlist) or "none"
-    foot = "<b>Assessed:</b> " + _plain_names(assessed) + ". "
+    # With nothing assessed in full, a partly assessed signal is not "none":
+    # say what the list is (step-5 critique round 7).
+    foot = (("<b>Fully assessed:</b> " if _partly else "<b>Assessed:</b> ")
+            + _plain_names(assessed) + ". ")
+    # A signal read only in part belongs to a group of its own: naming it in
+    # none leaves the reader to infer its state from an absence (step-5 critique
+    # round 11, R11-SC-3). One that already carries its own sentence below is
+    # not repeated here.
+    _partly_named = [c for c in partly_cards if not c.get("footer")]
+    if _partly_named:
+        foot += "<b>Partly assessed:</b> " + _plain_names(_partly_named) + ". "
     if na:
         foot += "<b>Not applicable:</b> " + _plain_names(na) + ". "
+    # A signal that gathered data but was not (fully) assessed says so in a
+    # sentence of its own; "no scan data" would be false for it.
+    own = [c for c in unknown if c.get("footer")]
+    unknown = [c for c in unknown if not c.get("footer")]
     if unknown:
         foot += "<b>Not assessed (no scan data):</b> " + _plain_names(unknown) + ". "
+    for c in own:
+        foot += "<b>%s:</b> %s. " % (_plain_names([c]), c["footer"])
+    for c in cards:
+        if c.get("footnote"):
+            foot += "<b>%s:</b> %s. " % (_plain_names([c]), c["footnote"])
     foot += "Full signal-by-signal detail is in the technical report."
     out += [Spacer(1, 12), Paragraph(foot, foot_st)]
     return out
@@ -1948,6 +2241,7 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         ("ROUNDEDCORNERS",(0, 0), (-1, -1), [6, 6, 6, 6]),
     ]))
     story.append(score_tbl)
+    story += assessment_coverage_notice(results, S)
     story.append(Spacer(1, 5 * mm))
 
     # Gauge
@@ -2058,6 +2352,9 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
             # summary so partial-coverage caveat sits next to the loss
             # numbers. Empty list when no intervention detected.
             story += waf_coverage_notice(results, S)
+            story += estate_edge_notice(results, S)
+            story += vendor_estate_notice(results, S)
+            story += origin_exposure_notice(results, S)
 
         # ── Why This Matters — The Reality of a Cyber Breach ──────────────
         why_banner = _section_header_banner("WHY THIS MATTERS", S)
@@ -2250,6 +2547,9 @@ def generate_pdf(results: dict, report_type: str = "full") -> bytes:
         # encounters the partial-coverage notice BEFORE reading individual
         # findings. Returns empty list when no WAF intervention detected.
         story += waf_coverage_notice(results, S)
+        story += estate_edge_notice(results, S)
+        story += vendor_estate_notice(results, S)
+        story += origin_exposure_notice(results, S)
 
         # ── Insurance Analytics ─────────────────────────────────────────────
         if results.get("insurance"):

@@ -181,14 +181,30 @@ class ExternalIPAggregator:
     """
 
     @staticmethod
-    def aggregate(discovered_ips: list, per_ip_results: dict, ip_sources: dict = None) -> dict:
+    def aggregate(discovered_ips: list, per_ip_results: dict, ip_sources: dict = None,
+                  vendor_ips: list = None) -> dict:
         """
         Args:
             discovered_ips: List of IP strings from Phase 1 discovery.
             per_ip_results: Dict of {ip: {checker_name: result}} from Phase 3.
+            vendor_ips: Addresses that were DISCOVERED on this estate but are
+                operated by a third party (CDN edges, M365 service endpoints,
+                shared hosting), so they are neither scanned nor priced as the
+                insured's own exposure.
 
         Returns:
             Dict matching the external_ips template shape.
+
+        WHY vendor_ips EXISTS (2026-09-09). This function is called with the
+        POST-demotion pool, so total_unique_ips is the count of hosts that
+        survived attribution, not the count discovered. When the M365 service
+        ranges landed, 174 of 307 addresses left that pool across 19 of 30
+        scans, and two clients' pools emptied completely. total_unique_ips is
+        what the report prints as "external IPs discoverable" and what the
+        kill-chain reads for Reconnaissance severity, so a correct attribution
+        fix would have handed those clients a cleaner-looking report for
+        running their mail on Microsoft. estate_total_ips keeps the discovered
+        footprint whole while total_unique_ips keeps its own-attributed meaning.
         """
         result = {
             "status": "completed",
@@ -212,6 +228,36 @@ class ExternalIPAggregator:
             "score": 100,
             "issues": [],
         }
+
+        # THE ESTATE FIELDS MUST BE SET BEFORE THIS EARLY RETURN.
+        # They used to be written 150 lines below it, which made them absent in
+        # exactly the case they exist for: when every discovered address has
+        # been re-attributed to a vendor, discovered_ips (the OWN pool) is
+        # empty, aggregate returned here, and vendor_ip_count came back None.
+        # RiskScorer then read a missing count as "no vendor hosts", so
+        # estate_confidence stayed "assessed" and confidence_level stayed
+        # "full": a client with no assessed infrastructure of its own rendered
+        # as fully assessed and clean. The no_own_estate_assessed ladder was
+        # unreachable code.
+        _vendor = sorted({str(v).strip() for v in (vendor_ips or []) if str(v).strip()})
+        result["vendor_ip_count"] = len(_vendor)
+        result["vendor_ip_addresses"] = _vendor
+        result["estate_total_ips"] = len(_vendor)          # own pool is empty here
+        # asn_coverage says whether unique_asns was computed over the WHOLE
+        # estate or only the own-attributed part. It is REPORTING ONLY and no
+        # pricing path reads it, deliberately.
+        #
+        # An earlier version of this comment asserted that the caller "must not
+        # charge a redundancy gap" once anything is demoted, and the caller does
+        # exactly that. The comment was wrong, not the caller. Measured on the
+        # 30-scan corpus, suppressing the +0.025 single_asn term on any demotion
+        # is a rate CUT, taking the charged set from 13 fixtures to 8; letting
+        # the existing rule read the corrected own-only pool raises it to 19.
+        # Removing a vendor's addresses makes unique_asns MORE faithful to the
+        # client's own hosting, because Microsoft hosting a client's mail was
+        # never redundancy for that client's website. See the single_asn comment
+        # in FinancialImpactCalculator, which records the same decision.
+        result["asn_coverage"] = "partial" if _vendor else "full"
 
         if not discovered_ips:
             return result
@@ -367,6 +413,16 @@ class ExternalIPAggregator:
         # from "0 = no IPs".
         result["asn_geo_unavailable"] = bool(seen_ips) and not asns and not countries
         result["ip_addresses"] = ip_entries
+
+        # --- Estate footprint: own-attributed PLUS vendor-operated ------------
+        # total_unique_ips counts what the insured is answerable for. It must
+        # NOT be read as the size of the estate, because a host correctly
+        # attributed to a vendor is still a discovered, internet-facing part of
+        # this client's surface, and a reader who sees the number shrink after
+        # an attribution fix would conclude the client got safer.
+        # vendor_ip_count / vendor_ip_addresses / asn_coverage were already set
+        # above the early return. Only the total needs the real own-pool size.
+        result["estate_total_ips"] = len(seen_ips) + len(_vendor)
 
         # Scoring
         if agg["critical_count"] > 0 or agg["kev_count"] > 0:
@@ -658,6 +714,8 @@ class RiskScorer:
     # low-confidence (see _scan_completeness in calculate()).
     COVERAGE_FLOOR = 0.30
     MUST_HAVE_CHECKERS = ("ssl", "http_headers", "exposed_admin", "shodan_vulns")
+    # Derived metrics are computed from raw evidence, not independent probes.
+    DERIVED_CATEGORIES = frozenset({"ransomware_risk", "data_breach_index", "financial_impact"})
 
     WEIGHTS = {
         "ssl":                  0.09,
@@ -805,9 +863,14 @@ class RiskScorer:
         # Skipped (no_api_key/disabled): intentionally not run — not a failure.
         # Both are excluded from weighting, but only failures trigger the
         # incomplete scan warning.
-        failed_checkers = []   # Genuine failures — flag in warning
+        failed_checkers = []   # Failed or absent raw measurements
+        missing_checkers = []
         skipped_checkers = []  # Intentionally skipped — no warning
         for name in self.WEIGHTS:
+            if name not in results and name not in self.DERIVED_CATEGORIES:
+                missing_checkers.append(name)
+                failed_checkers.append(name)
+                continue
             data = results.get(name, {})
             if isinstance(data, dict):
                 if self._is_failed(data):
@@ -1175,16 +1238,104 @@ class RiskScorer:
         total_weight = sum(self.WEIGHTS.values()) or 1
         excluded_fraction = round(excluded_weight / total_weight, 3)
         must_have_missing = sorted(set(self.MUST_HAVE_CHECKERS) & excluded)
+        # ESTATE CONFIDENCE. Completeness answers "did the checkers run"; it says
+        # nothing about WHOSE assets they ran against. boston.ac.za, 2026-08-14,
+        # returned 97/1000 Low at 100% completeness with no failed checkers,
+        # having assessed Cloudflare's edge: every must-have checker (ssl,
+        # http_headers, exposed_admin, shodan_vulns) ran, passed, and measured
+        # the provider rather than the client.
+        #
+        # This condition ships in the same change as address-range CDN detection
+        # and is not separable from it. Detection on its own is a DISCOUNT: the
+        # p_interruption term adds 0.035 when no CDN is detected, so every scan
+        # in the history has been carrying that penalty, and correcting
+        # detection would remove it from the CDN-fronted clients while the
+        # scanner still cannot see their origin. Shipping the cap alongside is
+        # what keeps the net effect honest.
+        # ORIGIN EXPOSURE. Derived here rather than in the scanner so it
+        # replays on frozen scans and could be measured before it shipped.
+        #
+        # REPORTING AND REMEDIATION ONLY, DELIBERATELY. The exposed apex is
+        # already a scanned OWNED host: aggregato.co.za's 156.38.174.226 carries
+        # 20 CVEs and 6 open ports that are counted today. Scoring the finding
+        # again would price the same exposure twice, which the anchoring rule
+        # forbids. The availability angle is already handled correctly too,
+        # because the apex is not fronted, so cdn_detected stays False and the
+        # +0.035 volumetric penalty still applies. What was missing was never a
+        # number; it was telling the client which door is open.
+        if isinstance(results, dict) and results.get("cloud_cdn") is not None:
+            try:
+                from origin_exposure import assess as _assess_origin
+                from cdn_ranges import edge_provider as _edge_prov
+                results["cloud_cdn"]["origin_exposure"] = _assess_origin(
+                    results, _edge_prov)
+            except Exception:
+                pass
+
+        _cdn = (results.get("cloud_cdn") or {}) if isinstance(results, dict) else {}
+        _origin = (results.get("origin_discovery") or {}) if isinstance(results, dict) else {}
+        _edge_only = bool(_cdn.get("cdn_detected")) and not (_origin.get("verified") or [])
+
+        # NO OWN ESTATE. The same failure one step further along: every
+        # discovered address was re-attributed to a vendor, so the checkers ran
+        # against nobody's infrastructure but a provider's. Left alone, such a
+        # scan renders "assessed" over an empty pool and scores as clean, which
+        # is precisely the absence-of-evidence reading this ladder refuses.
+        #
+        # MEASURED: riverport.co.za and www.zinia.co.za both go from six
+        # own-attributed hosts to ZERO. Their entire discovered external estate
+        # is Exchange Online, so without this state both render "assessed" over
+        # an empty pool and score as clean.
+        #
+        # That figure moved twice before settling, and the history is worth
+        # keeping. Diffing against each fixture's STORED bucket said zero. A
+        # harness that re-derived both sides said 7 to 1 and 8 to 2, and I
+        # believed it and rewrote this comment. The harness was wrong: an
+        # address the scan had already demoted has no per_ip entry, so
+        # re-deriving handed classify_ip no PTR, no org and no banner, and it
+        # fell through to the OWNED default -- silently re-promoting hosts
+        # production had correctly removed. With that fixed the harness agrees
+        # with the stored buckets and with the live scan (boston.ac.za: 9 own
+        # hosts to 3). Recomputing is the right instinct; recomputing from
+        # evidence the fixture no longer carries is not.
+        #
+        # adversarial_gate._check_no_own_estate ALSO drives this branch directly
+        # through the real aggregator, so it stays covered even if the corpus
+        # changes.
+        #
+        # Deliberately NOT triggered by an estate that was empty to begin with:
+        # the condition is that addresses were DISCOVERED and all of them went
+        # to a vendor, not that nothing was found.
+        _ext = (results.get("external_ips") or {}) if isinstance(results, dict) else {}
+        _own_n = _ext.get("total_unique_ips")
+        _vendor_n = _ext.get("vendor_ip_count") or 0
+        _no_own_estate = bool(_vendor_n) and (_own_n == 0)
+
+        if _no_own_estate:
+            estate_confidence = "no_own_estate_assessed"
+        elif _edge_only:
+            estate_confidence = "origin_not_reached"
+        else:
+            estate_confidence = "assessed"
+
         if excluded_fraction >= self.COVERAGE_FLOOR or must_have_missing:
             confidence = "low_confidence"
         elif failed_checkers:
             confidence = "partial"
         else:
             confidence = "full"
+
+        # An edge-only assessment can never claim full confidence, however many
+        # checkers completed. It is capped rather than downgraded to
+        # low_confidence: the checkers genuinely ran and their findings about
+        # the edge are real, but they are not findings about the client.
+        if (_edge_only or _no_own_estate) and confidence == "full":
+            confidence = "partial"
         scan_completeness = {
             "total_checkers": len(self.WEIGHTS),
             "assessable_checkers": assessable,
             "failed_checkers": failed_checkers,
+            "missing_checkers": missing_checkers,
             "skipped_checkers": skipped_checkers,
             "failed_count": len(failed_checkers),
             "completeness_pct": round((1 - len(failed_checkers) / assessable) * 100) if assessable > 0 else 100,
@@ -1192,11 +1343,46 @@ class RiskScorer:
             "excluded_weight_fraction": excluded_fraction,
             "must_have_missing": must_have_missing,
             "confidence_level": confidence,
+            "estate_confidence": estate_confidence,
+            "own_ip_count": _own_n,
+            "vendor_ip_count": _vendor_n,
+            "estate_note": (
+                "Every address discovered for this organisation is operated by "
+                "a third-party service provider, so no host belonging to the "
+                "client itself was assessed. The checkers ran and returned "
+                "findings about the providers' infrastructure. This is not "
+                "evidence that the client's own estate is sound; it is evidence "
+                "that none of it was visible to an external scan."
+                if _no_own_estate else
+                "" if not _edge_only else
+                "The assessed addresses belong to a content delivery network "
+                "edge and no origin server was verified behind it. Findings "
+                "describe the provider's infrastructure, not the client's own, "
+                "and an absence of findings here is not evidence about the "
+                "client's estate."),
             "score_qualified": confidence != "full",
+            # THE DISCLAIMER MUST NAME THE REASON THE SCORE IS QUALIFIED.
+            # When confidence is capped for an ESTATE reason -- an edge-only
+            # assessment, or an estate that is entirely vendor-operated -- every
+            # checker ran and excluded_fraction is 0, so the coverage sentence
+            # rendered literally as "Partial coverage: 0% of the weighted signal
+            # was unavailable". A broker cannot make sense of that, and it
+            # actively conceals the real reason: the checkers ran perfectly
+            # against somebody else's infrastructure.
             "disclaimer": (
                 "" if confidence == "full" else
-                f"Partial coverage: {round(excluded_fraction * 100)}% of the weighted "
-                f"signal was unavailable"
+                ("Estate not assessed: every discovered address is operated by "
+                 "a third-party provider, so no infrastructure belonging to "
+                 "this organisation was measured. The score reflects what could "
+                 "be seen, which is not the client's own estate."
+                 if _no_own_estate else
+                 "Origin not reached: the assessed addresses are a content "
+                 "delivery network edge and no origin server was verified "
+                 "behind it. Web-layer findings describe the provider, not the "
+                 "client."
+                 if (_edge_only and excluded_fraction == 0 and not failed_checkers) else
+                 f"Partial coverage: {round(excluded_fraction * 100)}% of the weighted "
+                 f"signal was unavailable")
                 + (f" (including must-have checker(s): {', '.join(must_have_missing)})"
                    if must_have_missing else "")
                 + ". This risk score is " + (
@@ -1204,6 +1390,12 @@ class RiskScorer:
                     "re-scan." if confidence == "low_confidence" else
                     "qualified — re-scan recommended for a complete assessment.")),
         }
+        if missing_checkers:
+            scan_completeness["disclaimer"] += (
+                " Missing raw checks are not assessed, not measured clean: "
+                + ", ".join(name.replace("_", " ") for name in missing_checkers)
+                + ". Their weights are excluded and redistributed over available signals."
+            )
         # Store in results so it can be accessed by PDF/HTML
         results["_scan_completeness"] = scan_completeness
 
@@ -2452,7 +2644,57 @@ class FinancialImpactCalculator:
         _wafc = categories.get("waf", {}) or {}
         waf_detected = bool(_wafc.get("detected") or _wafc.get("blocking_observed"))
         cdn_detected = categories.get("cloud_cdn", {}).get("cdn_detected", False)
-        single_asn = categories.get("external_ips", {}).get("unique_asns", 2) <= 1
+        # DELIBERATELY UNCHANGED by the 2026-09-09 attribution work, after
+        # measuring the alternative. The obvious move was to suppress this term
+        # once any host had been re-attributed to a vendor, on the argument that
+        # multi-homing cannot be judged over a partial pool. Measured on the
+        # 30-scan corpus that is a RATE CUT: it drops the charged set from 13
+        # fixtures to 8. The argument is also wrong. Removing a vendor's
+        # addresses makes unique_asns MORE faithful to the client's own hosting,
+        # not less: Microsoft hosting a client's mail was never redundancy for
+        # the client's website, and counting Microsoft's ASN is what made
+        # single-homed clients read as multi-homed. Letting the existing rule
+        # read the corrected pool raises the charged set to 19, which is the
+        # conservative direction and requires no new coefficient.
+        #
+        # A SEPARATE, PRE-EXISTING DEFECT IS LEFT ALONE HERE AND RECORDED IN
+        # docs/OUTSTANDING.md: unique_asns == 0 means "not collected" (see the
+        # aggregator's own comment beside result["unique_asns"]), yet <= 1 reads
+        # it as single-homed and charges +0.025. Five fixtures are charged for a
+        # control that was never measured. Fixing it is a rate movement in its
+        # own right and does not belong in an attribution change.
+        # == 1, NOT <= 1. The aggregator's own comment beside result["unique_asns"]
+        # is explicit that 0 means NOT COLLECTED and must never be fabricated as
+        # a count. The scorer did not honour that: <= 1 read 0 as single-homed
+        # and added this term for a control that was never measured. Measured on
+        # the 30 retained scans, 13 fixtures fired the term and FIVE were in that
+        # state -- four with no discovered addresses at all, and fundagroup.co.za
+        # with asn_geo_unavailable set because the free Shodan InternetDB path
+        # returns no ASN. Requiring exactly 1 means we charge the redundancy gap
+        # only when we actually measured the estate and found one ASN.
+        # Owner-approved 2026-09-10 as its own rate movement, with a golden
+        # re-baseline, rather than folded into an attribution fix.
+        _ext_asn = categories.get("external_ips", {}) or {}
+        _ua = _ext_asn.get("unique_asns", 2)
+        _vendor_n = _ext_asn.get("vendor_ip_count") or 0
+        # CHARGE ON EVIDENCE, AND NEVER REMOVE THE CHARGE BECAUSE WE MEASURED
+        # LESS. Two ways to qualify:
+        #   * unique_asns == 1  -- measured, and genuinely one.
+        #   * unique_asns == 0 WITH vendor hosts present -- addresses were
+        #     re-attributed away, and the only ASN we ever had belonged to one
+        #     of them. We cannot then claim redundancy we never evidenced.
+        #
+        # The second clause exists because of a measured interaction. For
+        # excellentmeat.co.za, riverport.co.za and www.zinia.co.za the single
+        # measured ASN was a Microsoft host; demoting it took the count 1 -> 0
+        # and, under `== 1` alone, un-charged them. That is a discount caused by
+        # the scanner knowing less, which the step-1 underwriting rule forbids
+        # outright: the absence of findings may never discount a rate.
+        #
+        # unique_asns == 0 with NO vendor hosts is the OUTSTANDING 5s case: the
+        # ASN was simply never collected, nothing was taken away, and charging
+        # it would be pricing a control we never looked at.
+        single_asn = (_ua == 1) or (_ua == 0 and _vendor_n > 0)
         # FAIR-anchored 2026-06-05. Base = Uptime Institute AOA serious/severe
         # outage rate (~3%/yr). Increments reflect the availability-relevant
         # control gaps: CDN/DDoS-mitigation is the PRIMARY lever (+0.035),
@@ -4167,7 +4409,14 @@ class RemediationSimulator:
          "Update privacy policy to cover all POPIA/GDPR required sections — failure to comply risks regulatory fines up to 2% of annual turnover.", "R9,000–R36,000", 0.01),
         ("fraudulent_domains", lambda c: c.get("resolved_count", 0) > 0,
          "Register key lookalike domains defensively and set up brand monitoring — lookalike domains enable phishing and brand impersonation.", "R9,000–R36,000", 0.01),
-        ("cloud_cdn", lambda c: not c.get("cdn_detected"),
+        # The apex bypasses an edge the client ALREADY PAYS FOR. This row must
+        # come before the generic "deploy a CDN" row below and that row must not
+        # also fire, because telling a client to buy protection they already
+        # have is wrong, checkable by them, and costs the report its credibility
+        # at renewal. Measured: 4 of 30 retained scans were getting that advice.
+        ("cloud_cdn", lambda c: (c.get("origin_exposure") or {}).get("exposed"),
+         "Move the apex DNS record behind the content delivery network the client already uses, and restrict the origin to accept traffic only from the provider's published address ranges — the apex currently resolves outside the edge, so DDoS absorption, WAF rules and rate limiting are all bypassed by connecting to the origin directly.", "R0–R3,600", 0.02),
+        ("cloud_cdn", lambda c: not c.get("cdn_detected") and not (c.get("origin_exposure") or {}).get("exposed"),
          "Deploy a CDN for DDoS resilience and improved availability — single-origin hosting is vulnerable to volumetric attacks.", "R0–R9,000/mo", 0.02),
         ("security_policy", lambda c: not c.get("security_txt", {}).get("present"),
          "Create a security.txt file at /.well-known/security.txt — establishes a vulnerability disclosure policy for responsible reporting.", "R0", 0.01),

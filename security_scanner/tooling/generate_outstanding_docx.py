@@ -122,6 +122,27 @@ def _set_fixed_layout(table):
     tblPr.append(layout)
 
 
+def _repeat_header_row(row):
+    """Tell Word to repeat a table's first row when it flows to a new page."""
+    tr_pr = row._tr.get_or_add_trPr()
+    if tr_pr.find(qn('w:tblHeader')) is None:
+        tr_pr.append(OxmlElement('w:tblHeader'))
+
+
+def _column_widths(rows, total_width):
+    """Return widths for known reconciliation tables; preserve equal widths elsewhere."""
+    header = tuple(cell.strip() for cell in rows[0])
+    named = {
+        ('Priority', 'Item', 'Current state and completion requirement'): (12, 26, 62),
+        ('Checkpoint', 'Scope and evidence boundary'): (17, 83),
+        ('Historical ID', 'Residual or decision retained'): (18, 82),
+    }.get(header)
+    if named is None:
+        n_cols = len(rows[0])
+        return [int(total_width / n_cols)] * n_cols
+    return [int(total_width * pct / 100) for pct in named]
+
+
 def _add_table(doc, rows):
     """Add a markdown-style table. `rows` is a list of row-cells; first
     row is treated as header."""
@@ -136,10 +157,12 @@ def _add_table(doc, rows):
     table.autofit = False
     _set_fixed_layout(table)
     sec = doc.sections[0]
-    col_w = int((sec.page_width - sec.left_margin - sec.right_margin) / n_cols)
-    for col in table.columns:
+    total_width = int(sec.page_width - sec.left_margin - sec.right_margin)
+    widths = _column_widths(rows, total_width)
+    for col, width in zip(table.columns, widths):
         for cell in col.cells:
-            cell.width = col_w
+            cell.width = width
+    _repeat_header_row(table.rows[0])
     for r_idx, row in enumerate(rows):
         for c_idx, cell_text in enumerate(row[:n_cols]):
             cell = table.rows[r_idx].cells[c_idx]

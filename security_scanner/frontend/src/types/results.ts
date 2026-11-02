@@ -8,6 +8,7 @@
 /** Normalised checker lifecycle state — never infer "pass" from score===100. */
 export type CheckerState =
   | 'passed'
+  | 'completed'
   | 'warning'
   | 'failed'
   | 'critical'
@@ -185,6 +186,12 @@ export interface ScanCompleteness {
   coverage_pct?: number
   waf_status?: WafStatus
   waf_affected_checkers?: string[]
+  missing_checkers?: string[]
+  failed_checkers?: string[]
+  completeness_pct?: number
+  confidence_level?: string
+  score_qualified?: boolean
+  disclaimer?: string
   slowest_checker?: [string, number]
   total_checker_seconds?: number
 }

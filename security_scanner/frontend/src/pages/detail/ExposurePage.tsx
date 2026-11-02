@@ -1,8 +1,11 @@
 import Panel from '../../components/primitives/Panel'
+import { getRelatedDomainsPanel } from '../../data/selectors'
+import { StatusBadge } from '../../components/primitives/Status'
 import { PageTitle, CheckerHeader, KV, IssueList, DetailGrid, NotAssessedNote } from '../../components/detail/parts'
 import { getResults } from '../../data/results'
 import { cat, CATEGORY_LABELS } from '../../data/selectors'
-import { isConclusive } from '../../data/checkerState'
+import { isConclusive, headerBadge, panelShowsCounts } from '../../data/checkerState'
+import { vendorSurfaceUnmeasured, panelBody } from '../../data/emailVendorPanel'
 import CredentialExportPortal from '../../components/overview/CredentialExportPortal'
 import MeetingBriefPanel from '../../components/overview/MeetingBriefPanel'
 import BreachIntelPanel from '../../components/detail/BreachIntelPanel'
@@ -199,7 +202,9 @@ export default function ExposurePage({ r = getResults()! }: { r?: Results }) {
         </Panel>
       </DetailGrid>
 
-      <MoreCheckers r={r} ids={['credential_risk', 'credential_correlation', 'vendor_breach', 'hudson_rock', 'intelx', 'related_domains', 'info_disclosure']} />
+      <RelatedDomainsPanel r={r} />
+
+      <MoreCheckers r={r} ids={['credential_risk', 'credential_correlation', 'vendor_breach', 'hudson_rock', 'intelx', 'info_disclosure']} />
     </div>
   )
 }
@@ -217,17 +222,89 @@ export function MoreCheckers({ r, ids }: { r: Results; ids: string[] }) {
             .filter(([k, v]) => !['status', 'issues', 'per_ip', 'score'].includes(k) && (typeof v !== 'object' || v === null))
             .slice(0, 4)
           const rows: KVRow[] = fields.map(([k, v]) => ({ label: k.replace(/_/g, ' '), value: String(v) }))
+          // Counts are only printed where something was measured. A chain that
+          // was never read yields "match count = 0", which reads as a clean
+          // vendor estate (step-5 critique round 11, R11-SC-2).
+          const badge = headerBadge(c, true)
+          // One function, which the regression gate runs under node on real
+          // checker output (step-5 critique round 11, R11-SC-2).
+          // Only the two SPF-bearing checkers carry an SPF reason to give.
+          const isSpf = id === 'vendor_breach' || id === 'email_vendor_surface'
+          // One function, run under node by the gate on real checker output, so
+          // the decision cannot be inverted while the pinned text stays present
+          // (step-5 critique round 13, GS13-2, GS13-3).
+          const body = panelBody(c as unknown as Record<string, unknown>,
+            { notAssessed: !panelShowsCounts(c), isSpf })
+          const spfWhy = isSpf
+            ? vendorSurfaceUnmeasured(c as unknown as Record<string, unknown>)
+            : ''
           return (
             <div key={id} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                 <span style={{ fontSize: 12, fontWeight: 600 }}>{CATEGORY_LABELS[id] ?? id.replace(/_/g, ' ')}</span>
-                <CheckerHeader category={c} />
+                <CheckerHeader category={c} refine />
               </div>
-              {rows.length > 0 && <KV rows={rows} />}
+              {body.kind === 'note' ? (
+                <NotAssessedNote category={c} force
+                  what={CATEGORY_LABELS[id] ?? id.replace(/_/g, ' ')}
+                  why={spfWhy || (badge.label ?? undefined)} />
+              ) : (
+                <>
+                  {rows.length > 0 && <KV rows={rows} />}
+                  {body.lowerBound && <KV rows={[{ label: 'SPF chain',
+                    value: 'Partly read - the figures above are a lower bound' }]} />}
+                </>
+              )}
             </div>
           )
         })}
       </DetailGrid>
+    </Panel>
+  )
+}
+
+/** Related domains, in the same six states as the PDF card, deck and summary
+ *  tier. Every word and number comes from data/relatedDomains.ts, which the
+ *  regression gate runs against the PDF card under node. */
+function RelatedDomainsPanel({ r }: { r: Results }) {
+  const m = getRelatedDomainsPanel(r)
+  return (
+    <Panel title="Related Domains">
+      {m.intro && (
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>{m.intro}</div>
+      )}
+      <div style={{ fontSize: 12.5, marginBottom: 10 }}>{m.lead}</div>
+      {m.sources && (
+        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 8 }}>
+          Certificate sources that answered: {m.sources.length ? m.sources.join(', ') : 'n/a'}
+        </div>
+      )}
+      {m.badge && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, marginBottom: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 600 }}>Broker-confirmed domains</span>
+            <StatusBadge state={m.badge.state} label={m.badge.label} />
+          </div>
+          {m.rows.length > 0 && <KV rows={m.rows} />}
+        </div>
+      )}
+      {m.notes.map((n) => (
+        <div key={n} style={{ fontSize: 11.5, color: 'var(--text-muted)', marginBottom: 8 }}>{n}</div>
+      ))}
+      {(m.pending.length > 0 || m.extra > 0) && (
+        <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 7 }}>
+          {m.pending.map((c) => (
+            <li key={c.domain} style={{ borderLeft: '2px solid var(--border)', paddingLeft: 9 }}>
+              <span style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, fontWeight: 600 }}>{c.domain}</span>
+              <span style={{ fontSize: 10, fontWeight: 700, marginLeft: 7, color: 'var(--text-muted)' }}>UNCONFIRMED</span>
+              <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>{c.evidence}</div>
+            </li>
+          ))}
+          {m.extra > 0 && (
+            <li style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>and {m.extra} more.</li>
+          )}
+        </ul>
+      )}
     </Panel>
   )
 }

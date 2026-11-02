@@ -25,14 +25,34 @@ POLICY (broker-confirmed 2026-06-30): attribute on WHO OPERATES THE HOST.
     - PRIVATE (RFC1918) -> never scanned; an info-disclosure finding (public DNS
       exposing internal infrastructure).
 
-Signals, strongest first: reverse-DNS suffix (PTR is set by the IP owner), HTTP
-Server banner, Shodan org/isp. Default is OWNED — a host is only re-homed to
+Signals, strongest first: provider-published first-party SERVICE address ranges
+(saas_ranges.py), reverse-DNS suffix (PTR is set by the IP owner), HTTP Server
+banner, Shodan org/isp. Default is OWNED — a host is only re-homed to
 third-party on a POSITIVE vendor signal, so the insured's own infra (including
 no-PTR hosts) is never silently dropped from coverage.
+
+WHAT THE ORG SIGNAL CANNOT DO (2026-09-09). Shodan's org names who holds the
+ALLOCATION, and the hyperscalers that dominate it sell the managed service and
+the customer VM out of one name. "Microsoft Corporation" is returned by both an
+Exchange Online front end and an Azure VM the client runs, so org can never
+separate them and must never decide this on its own. It previously did, in the
+insured's disfavour, returning the positive claim "cloud IaaS
+(insured-operated)". Measured on 30 retained scans, acting on org alone would
+have demoted 37 addresses including our own GCE host behind veilguard.phishield.
+com and client-run Azure hosts behind portal.nexgro.co.za and ifrs9.bdo.co.za —
+deleting real exposure. The provider's own published split of its address space
+is the same fact at a resolution that does separate them, which is why step 1b
+exists and why steps 4 and 5 now assert nothing.
 
 review-by: 2026-12-30  (provider tables are point-in-time; re-confirm)
 """
 import ipaddress
+
+# Imported directly, not behind a try/except. A silent fallback here would turn
+# a broken import into a silent regression: every Exchange Online endpoint would
+# quietly go back to being attributed to the insured, and the gate's own
+# rule-off mutation would become indistinguishable from an accident.
+from saas_ranges import service_provider as _service_provider
 
 # Buckets. OWNED is the only scannable / own-attributed bucket.
 OWNED = "owned"
@@ -101,11 +121,32 @@ def _suffix_match(host, suffix):
 
 
 def classify_ip(ip, reverse_dns=None, org=None, banner=None,
-                default_cert_names=None, insured_domain=None):
+                default_cert_names=None, insured_domain=None,
+                ptr_confirmed=None):
     """Classify *ip* by who operates the host.
 
     Returns (bucket, provider_label). bucket is OWNED / PRIVATE / CDN / SAAS.
     Only OWNED is port-scanned and attributed as the insured's own exposure.
+
+    ``ptr_confirmed`` says whether the reverse-DNS name resolves FORWARD back to
+    this address. A vendor reverse-DNS suffix may demote a host only when it is
+    True. Pass None (the default) when the check was not performed or could not
+    complete, and the reverse name will not be used to demote anything.
+
+    WHY. A reverse-DNS record is written by whoever holds the address, and many
+    providers let a customer set it. An insured wanting a cheaper premium could
+    put `something.wpengine.com` on their own exposed box and have it drop out
+    of the priced estate. Forward confirmation closes that: a customer who can
+    write the reverse record almost never also controls what `wpengine.com`
+    resolves to.
+
+    A MISSING CONFIRMATION MUST NEVER DEMOTE, which is why None and False behave
+    alike here. If a DNS timeout demoted a host, the timeout would become a
+    discount, and ptr_map in scanner.py already drops addresses silently on
+    FuturesTimeoutError. Measured on the 30 retained scans, ZERO addresses were
+    demoted by a reverse name alone: every one was also carried by Shodan org, a
+    server banner, or a published address range. So this closes a gaming vector
+    at no cost to current coverage.
     """
     # 1. private / reserved — never scan, never attribute.
     try:
@@ -115,12 +156,39 @@ def classify_ip(ip, reverse_dns=None, org=None, banner=None,
     if obj.is_private or obj.is_loopback or obj.is_link_local or obj.is_reserved or obj.is_multicast:
         return (PRIVATE, "internal")
 
+    # 1b. PROVIDER-PUBLISHED FIRST-PARTY SERVICE RANGES (2026-09-09).
+    #     Measured across 30 retained scans: 174 of 307 addresses classified as
+    #     the insured's own were Microsoft 365 service endpoints, reached because
+    #     subdomain enumeration resolves autodiscover / mail / mta-sts names and
+    #     nothing below could tell them from the client's own infrastructure.
+    #
+    #     THIS MUST RUN BEFORE EVERY OTHER SIGNAL, and specifically before the
+    #     org rule at step 5. Exchange Online and a customer-run Azure VM both
+    #     report org "Microsoft Corporation", so _IAAS_ORG short-circuits to
+    #     OWNED and ANY rule placed after it is dead code for exactly the hosts
+    #     this fixes. It also needs no argument beyond the address, which is why
+    #     it is the only new rule that can fire at the pre-scan call site, where
+    #     the caller has resolved nothing but PTR.
+    #
+    #     Address membership is the only signal in this whole chain that the
+    #     party being judged cannot author: a customer cannot arrange for their
+    #     VM to be allocated out of the Exchange Online service block. It is also
+    #     the only one that works on IPv6 and when PTR and Shodan org are both
+    #     absent, which is the state of most affected addresses.
+    _service = _service_provider(ip)
+    if _service:
+        return (SAAS, _service)
+
     rdns = (reverse_dns or "").strip().rstrip(".").lower()
     orgl = (org or "").strip().lower()
     bannerl = (banner or "").strip().lower()
 
     # 2. reverse-DNS VENDOR suffixes (CDN, then SaaS / shared hosting).
-    if rdns:
+    #    GATED ON FORWARD CONFIRMATION: the address holder writes this string,
+    #    so on its own it is an assertion by the party being judged. Absent or
+    #    failed confirmation leaves the host where it was rather than demoting
+    #    it, so a DNS timeout can never become a discount.
+    if rdns and ptr_confirmed is True:
         for suf, label in _CDN_RDNS.items():
             if _suffix_match(rdns, suf):
                 return (CDN, label)
@@ -144,18 +212,31 @@ def classify_ip(ip, reverse_dns=None, org=None, banner=None,
         _sample = sorted(default_cert_names)[0] if default_cert_names else "?"
         return (SAAS, "shared/managed hosting (default cert %s)" % _sample)
 
-    # 4. INSURED-operated IaaS VMs by reverse-DNS -> OWNED (scanned).
+    # 4. Address sits in a cloud provider's space by reverse-DNS -> OWNED, i.e.
+    #    still scanned, but WITHOUT claiming the insured operates it. The old
+    #    label here read "cloud IaaS (insured-operated)", which is a positive
+    #    assertion the signal cannot support: a provider-authored PTR suffix says
+    #    who the PROVIDER is, never who runs the workload. That false claim is
+    #    what a broker read next to a college's name beside an Exchange Online
+    #    endpoint. The bucket is deliberately unchanged, so coverage is identical
+    #    and nothing moves between scanned and unscanned.
     if rdns:
         for suf in _IAAS_RDNS:
             if _suffix_match(rdns, suf):
-                return (OWNED, "cloud IaaS (insured-operated)")
+                return (OWNED, "cloud IaaS (operator unconfirmed)")
 
     # 5. Shodan org/isp: VENDOR SaaS/CDN first, then IaaS providers (OWNED).
     for kw, (bucket, label) in _VENDOR_ORG:
         if kw in orgl:
             return (bucket, label)
+    # Same de-assertion as step 4, and for a stronger reason: a netblock
+    # registrant string is the WEAKEST possible evidence of who operates a host,
+    # because the hyperscalers that dominate it sell the managed service and the
+    # customer VM out of the same name. Kept as a branch rather than deleted so
+    # the org signal stays visible in the ledger; the bucket it yields is now
+    # identical to the default two lines below, which is what makes this inert.
     if any(kw in orgl for kw in _IAAS_ORG):
-        return (OWNED, "cloud IaaS (insured-operated)")
+        return (OWNED, "cloud provider netblock (operator unconfirmed)")
 
     # 5. no vendor signal -> OWNED (conservatively scanned; coverage preserved).
     return (OWNED, "")
@@ -210,6 +291,71 @@ def _cert_covers(names, domain):
     return False
 
 
+# --- Port lists come in TWO SHAPES, and that is the whole problem ------------
+#
+# shodan_vulns["open_ports"]        -> list of INTS          e.g. [80, 443]
+# dns_infrastructure["open_ports"]  -> list of DICTS         e.g. [{"port": 443, ...}]
+#
+# Measured across all 307 per-IP records in the retained corpus: 941 int
+# entries and 343 dict entries, never mixed within one list. Both naive unions
+# fail, and one fails SILENTLY:
+#
+#   set(dns) | set(shodan)   -> TypeError: unhashable type: 'dict'
+#   443 in [{"port": 443}]   -> False, forever, with no error
+#
+# The silent one is the dangerous shape: a regression written that way passes
+# green over zero real evaluations, which this codebase has shipped before.
+def observed_ports(*port_lists):
+    """Port numbers from any mixture of the two shapes. Never raises.
+
+    Anything unrecognised is ignored rather than guessed at: a port list we
+    cannot parse must not invent a port, and must not lose the ones we can.
+    """
+    out = set()
+    for lst in port_lists:
+        for entry in (lst or []):
+            if isinstance(entry, bool):
+                continue                      # bool is an int subclass; refuse it
+            if isinstance(entry, int):
+                out.add(entry)
+                continue
+            if isinstance(entry, dict):
+                val = entry.get("port")
+                if isinstance(val, bool):
+                    continue
+                if isinstance(val, int):
+                    out.add(val)
+                elif isinstance(val, str) and val.strip().isdigit():
+                    out.add(int(val.strip()))
+                continue
+            if isinstance(entry, str) and entry.strip().isdigit():
+                out.add(int(entry.strip()))
+    return out
+
+
+# TLS ports worth probing for a default vhost certificate. 8443 is deliberately
+# NOT here: it adds exactly one host on the retained corpus and needs a port=
+# argument threaded into probe_default_cert, so it is measured separately.
+TLS_PROBE_PORTS = (443,)
+
+
+def tls_observed(*port_lists):
+    """True when any source observed a TLS port on this host.
+
+    THE GATE THIS REPLACES was `443 in (shod.get("open_ports") or [])`, i.e.
+    Shodan's list alone. That list is empty whenever Shodan holds no record,
+    and it can also simply disagree with our own scan. Measured on the retained
+    corpus: the probe ran on 77 hosts, our own port scan saw 443 on 82, and the
+    union is 95 -- so 18 hosts across 14 of 30 scans were never probed despite
+    an observed 443. Eight of those carry the textbook shared-cPanel port set
+    (21/22/80/110/143/443/993/995/3306), which is to say the gate failed hardest
+    on exactly the population the probe exists to identify, because Shodan
+    indexes small South African hosting space poorly.
+    """
+    seen = observed_ports(*port_lists)
+    return any(p in seen for p in TLS_PROBE_PORTS)
+
+
 def probe_default_cert(ip, timeout=5.0, port=443):
     """Certificate names the host serves with NO SNI, or None if unavailable.
 
@@ -251,12 +397,126 @@ def probe_default_cert(ip, timeout=5.0, port=443):
         return None
 
 
-def looks_multi_tenant(default_cert_names, insured_domain):
-    """True when the box's DEFAULT identity does not include the insured.
+# Names that identify NOBODY. A default vhost certificate often carries the
+# box's own hostname, an appliance serial, or a control-panel placeholder. None
+# of these is evidence that somebody ELSE is on the host, and treating them as
+# such is what produced the demotions listed in the docstring below.
+_IDENTITY_FREE_EXACT = {
+    "localhost", "localhost.localdomain", "plesk", "cpanel", "webmail",
+    "mail", "server", "ubuntu", "debian", "default", "example.com",
+}
+_IDENTITY_FREE_SUFFIX = (".local", ".lan", ".internal", ".localdomain",
+                         ".invalid", ".test", ".home", ".corp")
 
-    None (unknown) whenever we could not read a default certificate, so the
-    caller keeps its existing behaviour instead of inventing a verdict.
+
+def _identity_free_cert_name(name):
+    """True when a certificate name names nobody in particular."""
+    import re as _re
+    n = (name or "").strip().lower().rstrip(".").lstrip("*.")
+    if not n:
+        return True
+    if n in _IDENTITY_FREE_EXACT:
+        return True
+    if any(n.endswith(sfx) for sfx in _IDENTITY_FREE_SUFFIX):
+        return True
+    if "." not in n:
+        # A bare label: a hostname, or an appliance serial such as the
+        # FortiGate "fg10e0tb20902714" that demoted a client's VPN endpoint.
+        return True
+    try:
+        ipaddress.ip_address(n)
+        return True                      # an address literal, not an identity
+    except ValueError:
+        pass
+    return False
+
+
+def _registrable(host):
+    """Crude registrable domain: last two labels, or three under a known
+    multi-part suffix. Deliberately local so this module stays importable
+    without the discovery stack."""
+    h = (host or "").strip().lower().rstrip(".").lstrip("*.")
+    parts = [x for x in h.split(".") if x]
+    if len(parts) < 2:
+        return h
+    if len(parts) >= 3 and parts[-2] in ("co", "com", "org", "net", "ac",
+                                         "gov", "web", "edu"):
+        return ".".join(parts[-3:])
+    return ".".join(parts[-2:])
+
+
+def looks_multi_tenant(default_cert_names, insured_domain):
+    """True only on POSITIVE evidence that the default vhost belongs to someone
+    else. False when it belongs to the insured. None when it names nobody.
+
+    THIS WAS AN ABSENCE TEST AND THE ABSENCE TEST WAS WRONG. It read
+    ``not _cert_covers(names, insured_domain)`` -- i.e. "the certificate does
+    not name the apex, therefore somebody else is on this box". A default vhost
+    routinely serves the box's OWN hostname rather than the apex, so the test
+    fired on the insured's own infrastructure. Measured on the 30 retained
+    scans, 3 of the 36 default-certificate demotions were wrong, and the three
+    are the worst possible ones to lose:
+
+        bbgroup.co.za  41.161.81.118   default cert ess.bbgroup.co.za
+                                       also serves autohubpol. and remote.
+        bbgroup.co.za  102.211.159.114 default cert autohubpta.bbgroup.co.za
+        dubetradeport  41.78.234.1     default cert fg10e0tb20902714,
+                                       a FortiGate serial; serves vpn.
+
+    All three are the insured's own hosts. All three were deleted from
+    per_ip_results and never port-scanned, so their remote-access and VPN
+    surfaces were removed from the priced estate entirely. A demotion removes
+    findings, which is the discount direction, and remediation step 1 forbids
+    the absence of findings from discounting anything.
+
+    THE THREE-WAY VERDICT:
+      False -- a name on the certificate shares the insured's registrable
+               domain, so this is the client's own box.
+      None  -- every name identifies nobody (a bare hostname, an appliance
+               serial, a control-panel placeholder, an address literal). Probed
+               but unreadable; the caller keeps its existing behaviour.
+      True  -- a name identifies a DIFFERENT organisation. Only this demotes.
     """
     if not default_cert_names or not insured_domain:
         return None
-    return not _cert_covers(default_cert_names, insured_domain)
+
+    # (a) The insured's own identity on the certificate, by apex or by wildcard.
+    if _cert_covers(default_cert_names, insured_domain):
+        return False
+    insured_apex = _registrable(insured_domain)
+    for n in default_cert_names:
+        if insured_apex and _registrable(n) == insured_apex:
+            return False
+
+    # (b) Nothing on it identifies anyone. Never demote on a non-identity.
+    if all(_identity_free_cert_name(n) for n in default_cert_names):
+        return None
+
+    # (c) A different organisation's identity. This is the only demoting case.
+    return True
+
+
+def forward_confirms(reverse_name, ip, timeout=3.0):
+    """Does *reverse_name* resolve forward to *ip*?
+
+    True only on a positive match. False on a definite non-match. None when the
+    lookup could not be completed, so the caller can tell "not this host" from
+    "we could not tell" and refuse to demote on the latter.
+    """
+    name = (reverse_name or "").strip().rstrip(".")
+    if not name or not ip:
+        return None
+    import socket
+    old = socket.getdefaulttimeout()
+    try:
+        socket.setdefaulttimeout(timeout)
+        infos = socket.getaddrinfo(name, None)
+    except Exception:
+        return None
+    finally:
+        try:
+            socket.setdefaulttimeout(old)
+        except Exception:
+            pass
+    addrs = {i[4][0] for i in infos if i and i[4]}
+    return str(ip).strip() in addrs

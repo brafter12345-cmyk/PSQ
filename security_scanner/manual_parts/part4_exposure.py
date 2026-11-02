@@ -510,7 +510,7 @@ def build(doc):
         "Phase 3, Subdomain Takeover Detection: ",
         "For every discovered subdomain, the scanner checks the CNAME "
         "record to determine whether it points to a third-party cloud "
-        "service. If the CNAME target matches one of 28 known takeover "
+        "service. If the CNAME target matches one of 29 known takeover "
         "signatures (GitHub Pages, AWS S3, Heroku, Azure Web Sites, Azure "
         "Blob, Azure Traffic Manager, Netlify, Vercel, Shopify, Ghost, "
         "Surge, Bitbucket, WordPress.com, Pantheon, Unbounce, Zendesk, "
@@ -1453,22 +1453,72 @@ def build(doc):
     add_bold_body(
         doc,
         "What it checks: ",
-        "When the broker declares sibling, supplier, or group-related "
-        "domains in the scan request, this checker scans each declared "
-        "domain in LITE mode (SSL/TLS certificate posture, DNS-port "
-        "exposure, and information disclosure paths). Findings are rolled "
-        "up worst-of-N into a single supply-chain category that feeds "
-        "both the headline risk score and the civil-liability uplift in "
-        "the financial-impact model."
+        "Two things, kept deliberately separate. First, DISCOVERY: on every "
+        "scan, whether submitted through the web form or the API, the scanner "
+        "looks for other domains that appear to belong to the same "
+        "organisation, using the public certificate records it already "
+        "consults for subdomains. What it finds is listed in the report for "
+        "confirmation and marked unconfirmed. Discovered domains are NOT "
+        "assessed and do NOT affect the score, because a shared certificate "
+        "can list unrelated organisations and appearing on one proves nothing "
+        "about ownership. Second, ASSESSMENT: domains a broker confirms (by "
+        "ticking them on the scan form, typing them in, or declaring them in "
+        "an API request) are scanned in LITE mode (SSL/TLS certificate "
+        "posture, DNS-port exposure, and information disclosure paths). Those "
+        "findings are rolled up worst-of-N into a single supply-chain category "
+        "that feeds both the headline risk score and the civil-liability "
+        "uplift in the financial-impact model."
+    )
+
+    add_bold_body(
+        doc,
+        "When discovery cannot run: ",
+        "If the certificate-record lookup does not return a result, or the "
+        "subdomain check that fetches it does not complete, related-domain "
+        "discovery is reported as Not Assessed, with the reason. It is never "
+        "reported as having found no related domains, because that would read "
+        "as a clean result the scan did not earn. When broker-confirmed "
+        "domains were assessed on the same scan, the report shows their "
+        "results and says that discovery could not run. A scan stored before "
+        "discovery existed never reads as having found nothing: its "
+        "discovery is shown as Not Assessed, and any confirmed-domain result "
+        "it stored is shown with its findings but never as a clean pass, "
+        "because the earlier version of the check counted a check that "
+        "returned no result, or the worst possible score, as a pass. The "
+        "scan form's candidate list says the same: a certificate lookup that "
+        "does not answer reads as unavailable, never as none found. The "
+        "form's preview searches crt.sh alone, with its own query and "
+        "retries, while the scan also searches CertSpotter, so the two lists "
+        "can differ; the report is authoritative, and the form says so when "
+        "it finds none. Under the underwriting rule, the absence of a finding "
+        "may never discount a rate."
     )
 
     add_bold_body(
         doc,
         "How it works: ",
-        "The broker provides the related_domains list as part of the "
-        "scan request body. Each sibling is probed in parallel with a "
-        "45-second wall-clock budget per domain (capped at 10 siblings to "
-        "bound scan time). For each sibling the scanner computes a LITE "
+        "Discovery reuses the certificate names the subdomain checker already "
+        "fetches, so it adds no network cost and gives an API scan and a form "
+        "scan of the same domain the same list. A name counts as a subdomain "
+        "of the scanned domain only on a label boundary, so a different domain "
+        "that merely contains the scanned name is treated as a separate "
+        "organisation. Candidates on shared hosting, content-delivery and "
+        "certificate-authority infrastructure are filtered out (a hosting "
+        "provider's own domain is listed only for an insured in the same "
+        "group, from a named list), and neither "
+        "the report nor the scan form's candidate list offers an IP address, "
+        "or a registry zone the scanner recognises (every .za zone, such as "
+        "school.za, and a listed set of second-level registries elsewhere), "
+        "as a related domain. An unrecognised registry zone can still appear "
+        "and should never be confirmed. "
+        "Nothing is ticked automatically on the scan form: "
+        "a candidate is assessed only once a broker confirms it. Confirmed "
+        "domains are provided in the related_domains list of the scan request. "
+        "Up to four confirmed domains are probed at a time, within a "
+        "wall-clock budget of 180 seconds for every four (at most ten "
+        "domains, and 540 seconds, per scan); a domain whose checks have "
+        "not finished when the budget ends is reported as not assessed. For "
+        "each sibling the scanner computes a LITE "
         "score (0-100) combining SSL grade, DNS-port risk, and "
         "info-disclosure findings. The worst-performing sibling drives "
         "the category traffic-light. Critical findings (e.g. exposed "
@@ -1486,7 +1536,22 @@ def build(doc):
         "that runs and finds nothing is reported as clean - a positive due-"
         "diligence result - which is distinct from a checker that did not run "
         "or is not applicable (for example, the CMS-plugin checker on a non-"
-        "WordPress site)."
+        "WordPress site); when no supply-chain signal reported a result, the "
+        "deck says so instead of reporting a clean result, and a signal that "
+        "gathered data without being assessed is listed with the reason. The "
+        "deck relies on each checker's own report of what it measured: one "
+        "known exception, the dependency-manifest checker, still reports a "
+        "clean result for a web host that never answers, and is recorded for "
+        "correction. Related "
+        "domains are the exception: when discovery finds nothing or could not "
+        "run, when the domains it finds are awaiting confirmation, or when "
+        "confirmed domains are only partly assessed (even beside a finding), "
+        "the deck says so in a sentence of its own rather than reporting them "
+        "as clean, because nothing, or not everything, was assessed. The "
+        "summary table "
+        "likewise states when confirmed related domains were not fully "
+        "assessed, when related domains await confirmation, and when "
+        "discovery could not run or found none."
     )
 
     add_bold_body(
@@ -1506,7 +1571,26 @@ def build(doc):
     add_bold_body(
         doc,
         "Scoring: ",
-        "Score = worst-of-N LITE score across all scanned siblings. The "
+        "Score = worst-of-N LITE score across all broker-confirmed "
+        "siblings. Domains that were discovered but not confirmed do not "
+        "affect the score. Within a confirmed domain, a check that returns "
+        "no result is left out rather than counted as clean and is shown as "
+        "not assessed, a check that returns the worst possible score counts "
+        "as exactly that (a certificate check counts where a TLS handshake "
+        "took place or port 443 answered without TLS; short of that, it "
+        "counts only where the port probe saw a web port open, and never "
+        "where port 443 accepted a connection and then never answered, or "
+        "where the connection to a port 443 the probe saw open timed out; "
+        "otherwise it is shown as not assessed), and a domain that does not "
+        "resolve, "
+        "resolves only to IPv6, or has any private or other non-public "
+        "address (IPv4 or IPv6), or on which no check returned a result, is "
+        "reported as not assessed. A partly "
+        "assessed confirmed domain is never described as having passed. At "
+        "most ten confirmed domains are assessed per scan, whether entered on "
+        "the form or through the API; any beyond that are listed as not "
+        "assessed. The scanned domain itself, and hosts under it, are not "
+        "assessed as related domains, and the report says so. The "
         "category contributes up to +0.03 to the RSI ransomware base "
         "(operational pivot path) and up to +0.04 to the vulnerability "
         "uplift in the financial model (civil-liability inflator). "
@@ -1516,10 +1600,15 @@ def build(doc):
 
     add_note(
         doc,
-        "v1.0 is broker-declared only. v1.1 (deferred) adds "
-        "auto-discovery via cert SAN, WHOIS registrant match, and "
-        "analytics-ID correlation, the broker confirms auto-detected "
-        "siblings via the same pre-flight UI used for regulatory flags."
+        "Discovery runs on every scan, whether submitted through the web "
+        "form or the API, and lists what it finds for confirmation. "
+        "Discovered domains are not assessed or scored; only domains a "
+        "broker confirms are. Automatic confirmation, and running the full "
+        "set of checks on confirmed domains, are deferred: they need the "
+        "scanner to record which names a certificate carries, a stronger "
+        "test of certificate ownership, and a recalibrated way of combining "
+        "results across related domains. Correlation by WHOIS registrant or "
+        "analytics ID is not implemented."
     )
 
     # ══════════════════════════════════════════════════════════════════════
@@ -1636,12 +1725,12 @@ def build(doc):
         doc,
         "What it checks: ",
         "The scanner walks the SPF include: chain (depth-5 cap) and "
-        "classifies each include against 24 known email-SaaS vendor "
+        "classifies each include against 25 known email-SaaS vendor "
         "patterns (SendGrid, Mailgun, Mailchimp, Amazon SES, Microsoft "
-        "365, Google Workspace, Klaviyo, HubSpot, Salesforce, "
+        "365, Google Workspace, Zoho, Klaviyo, HubSpot, Salesforce, "
         "Marketo, Constant Contact, ActiveCampaign, Mailjet, Postmark, "
         "SparkPost, SendinBlue/Brevo, Zendesk, Freshdesk, Intercom, "
-        "Pardot, Oracle Responsys, Netcore, and SA-local Everlytic). "
+        "Pardot, Oracle Responsys, Netcore, Okta, and SA-local Everlytic). "
         "It also fetches the DMARC policy at _dmarc.<domain>."
     )
 
@@ -1675,6 +1764,31 @@ def build(doc):
         "configuration artefact."
     )
 
+    add_note(
+        doc,
+        "An SPF lookup that does not answer (a timeout or a DNS server "
+        "failure), whether for the domain's own record or for one behind an "
+        "include, is recorded as such, and so is a record in the chain that "
+        "delegates with redirect=, which the check does not follow. Mechanism "
+        "and modifier names are read without regard to case, so Include: and "
+        "REDIRECT= count exactly as include: and redirect= do. Where no vendor "
+        "was identified, the status is 'no data', which prices exactly as a "
+        "completed result with no vendors, and the executive deck shows the "
+        "email-vendor surface and the vendor-breach correlation (S-5) as not "
+        "assessed, with the reason, rather than clean; so does a result stored "
+        "before the lookup was recorded, and a stored completed result that "
+        "identified no vendor, which the earlier check also wrote when a "
+        "lookup behind an include did not answer. A lookup that answered with "
+        "no SPF includes is a measured result. Where a vendor was identified "
+        "beside a lookup that did not answer, the vendors found are reported "
+        "as a lower bound: the signal is never counted clean, a finding it "
+        "carries still counts, the deck and the dashboard say the chain "
+        "was only partly read, and the summary table does not count it as a "
+        "clean signal. The dashboard's Email "
+        "Security page says the same as the deck, and prints the vendor rows "
+        "only for a measured result."
+    )
+
     # ══════════════════════════════════════════════════════════════════════
     # 4.6.16  CMS Plugin Surface (S-10)
     # ══════════════════════════════════════════════════════════════════════
@@ -1684,12 +1798,16 @@ def build(doc):
         doc,
         "What it checks: ",
         "WordPress-only. The checker first establishes a genuine WordPress "
-        "fingerprint by probing /wp-content/, /wp-login.php, and "
-        "/wp-includes/, guarded by a random-path catch-all test so a site "
+        "fingerprint in homepage HTML or the /wp-login.php response, "
+        "with a random-path catch-all control so a site "
         "that returns 200 for every URL (a soft-404 / SPA front end behind "
-        "a CDN) is NOT mistaken for WordPress. If no genuine fingerprint is "
-        "found the checker reports 'skipped' (the site is not WordPress and "
-        "the card does not render in the report). Only when WordPress is "
+        "a CDN) is not accepted as negative WordPress evidence. A usable homepage "
+        "and login response without a WordPress fingerprint allow a skipped, "
+        "not-applicable result. Failed, blocked, or inconclusive probes instead "
+        "return unreachable, with unknown WordPress status and no score. The "
+        "PDF card says Not assessed; the dashboard lists the failed check in "
+        "its coverage notice. Historical skipped results cannot establish why "
+        "the old checker skipped; rescoring cannot recover that evidence. Only when WordPress is "
         "confirmed does the scanner enumerate 25 popular plugin slugs by "
         "requesting /wp-content/plugins/<slug>/readme.txt; a plugin is "
         "counted only when that readme returns HTTP 200 AND passes a body-"
@@ -1732,12 +1850,15 @@ def build(doc):
         "The scanner re-extracts the email-vendor surface (same SPF "
         "include-chain walk as S-4) and cross-references each "
         "detected vendor against a curated editorial breach database "
-        "(vendor_breaches.json). The current database carries 14 "
-        "confirmed public-record breaches across 10 vendors: "
-        "Mailchimp (2022 x2 + 2023), Salesforce/Heroku (2022 + 2023), "
+        "(vendor_breaches.json). The current database carries 11 "
+        "confirmed public-record breaches across 7 vendors: "
+        "Mailchimp (2022 + 2023), Salesforce/Heroku (2022 + 2023), "
         "Okta (2022 + 2023), Microsoft 365 (Storm-0558 2023, Midnight "
-        "Blizzard 2024), HubSpot, Intercom, Zendesk, SendGrid, "
-        "Constant Contact, and Marketo."
+        "Blizzard 2024), HubSpot (2022), Intercom (2023) and Zendesk "
+        "(2022). A vendor S-4 can detect is not necessarily a vendor "
+        "S-5 can correlate: 18 of the 25 detected patterns have no "
+        "breach row at all, so a clean S-5 result for such a vendor "
+        "means there is no row, not that there was no incident."
     )
 
     add_bold_body(
@@ -1926,8 +2047,12 @@ def build(doc):
         "breaches, the K vendors in the intersection are the most "
         "likely candidates for the HR-reported harvest. The result is "
         "stored as cat_results['third_party_correlation'] with severity "
-        "ladder critical (triple-source match) / high (HR + SPF) / "
-        "medium (HR only)."
+        "ladder: where a detected vendor has a matched breach, the severity "
+        "of the worst matched breach; high where Hudson Rock reports "
+        "exposures beside SPF vendors with no matched breach; medium where "
+        "Hudson Rock reports them alone. When Hudson Rock did not complete, the "
+        "correlation measured nothing: the executive deck shows it as not "
+        "assessed, never as clean."
     )
 
     add_bold_body(
@@ -1970,8 +2095,8 @@ def build(doc):
     add_note(
         doc,
         "Surface coverage: this finding is explicitly rendered in "
-        "ALL six broker-facing surfaces: HTML cat-card (Exposure & "
-        "Reputation), top recommendations block (auto via "
+        "ALL six broker-facing surfaces: HTML cat-card (Technology & "
+        "Governance), top recommendations block (auto via "
         "RECOMMENDATIONS), PDF body cat_third_party_correlation, PDF "
         "Broker Summary spotlight row, PDF Executive Deck Slide 4 "
         "Supply-Chain Exposure (7th card), Executive Deck Slide 7 "

@@ -19,6 +19,8 @@ Backup/
 *.docx
 *.xlsx
 package-lock.json
+# Pin the scanner dashboard build dependencies.
+!security_scanner/frontend/package-lock.json
 security_scanner/scanner.db
 
 # Screenshots and generated output
@@ -90,3 +92,9 @@ casebook/tools/*
 casebook/quote_check/*
 !casebook/quote_check/check_quote.py
 !casebook/quote_check/README.md
+
+# Sandbox-only runtime state, never committed
+security_scanner/sandbox_scans.db
+
+# Private hosting material
+xneelo-ssh/

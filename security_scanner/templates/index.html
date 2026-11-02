@@ -311,7 +311,7 @@
             </div>
           </div>
           <textarea id="related-domains" name="related_domains" rows="2" placeholder="e.g. supplier-corp.co.za, group-holdings.com" style="background:var(--card-bg,#1a2332);color:#e2e8f0;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px 12px;font-size:.9rem;resize:vertical;font-family:monospace;width:100%;box-sizing:border-box;"></textarea>
-          <div class="field-hint">Supplier, sibling, or group-related domains the insured is contractually responsible for. Each is probed in LITE mode (SSL + DNS-port + info-disclosure) and worst-of-N findings feed the supply-chain category. Comma or newline separated. Capped at 10 for scan-time budget.</div>
+          <div class="field-hint">Every scan looks for related domains automatically and lists them in the report for confirmation; only the domains entered or ticked here are scanned and scored. Supplier, sibling, or group-related domains the insured is contractually responsible for. Each is probed in LITE mode (SSL + DNS-port + info-disclosure) and worst-of-N findings feed the supply-chain category. Comma or newline separated. At most 10 are assessed per scan; any beyond that are listed in the report as not assessed.</div>
         </div>
 
         <div class="field">
@@ -540,8 +540,7 @@ function setBadge(badgeId, autoDetected, evidence, isSuggestion) {
 
 async function runPreflight() {
   if (preflightInFlight) return;
-  const domain = document.getElementById('domain').value.trim().toLowerCase()
-    .replace(/^https?:\/\//, '').split('/')[0];
+  const domain = normalizeDomainInput(document.getElementById('domain').value);
   if (!domain || !domain.includes('.')) return;
   const sub = document.getElementById('sub-industry').value || '';
   preflightInFlight = true;
@@ -618,9 +617,14 @@ async function runPreflight() {
     const candCount = (d.related_candidates && d.related_candidates.candidates) ?
       d.related_candidates.candidates.length : 0;
     const candFragment = candCount > 0 ? ' + ' + candCount + ' related-domain candidate(s)' : '';
-    banner.textContent = detectedCount > 0 || candCount > 0
+    // A certificate-lookup outage is not "no candidates": say it was unavailable.
+    const rcStatus = d.related_candidates && d.related_candidates.status;
+    const rdDown = rcStatus !== 'ok' && rcStatus !== 'no_data';
+    banner.textContent = (detectedCount > 0 || candCount > 0
       ? 'Pre-flight detected ' + detectedCount + ' flag(s)' + candFragment + ' for ' + domain + '. Review and override below as needed.'
-      : 'Pre-flight ran for ' + domain + '. No flags or candidates auto-detected - tick manually as applicable.';
+      : 'Pre-flight ran for ' + domain + '. No flags' + (rdDown ? '' : ' or candidates')
+        + ' auto-detected - tick manually as applicable.')
+      + (rdDown ? ' Related-domain auto-discovery was unavailable.' : '');
   } catch (err) {
     banner.textContent = 'Pre-flight network error: ' + err.message + '. Tick flags manually below.';
     preflightResult = null;
@@ -647,16 +651,54 @@ function schedulePreflight() {
 // screen. Mirrors normalize_domain() in domain_validation.py; the server
 // normalises again regardless, this is so the broker SEES the target that will
 // actually be scanned rather than being silently corrected.
-function normalizeDomainInput(raw) {
+function normalizeDomainOnce(raw) {
   if (!raw) return '';
-  let s = String(raw)
-    .replace(/[​-‏‪-‮⁠﻿­⁦-⁩]/g, '')
-    .trim().replace(/^["'<]+|["'>]+$/g, '').trim().toLowerCase();
-  s = s.replace(/^(https?:\/\/|ftp:\/\/|\/\/|mailto:)/, '');
+  // Python's str.strip() also removes U+001C to U+001F and U+0085, which
+  // trim() keeps: strip the server's set (step-5 critique round 8).
+  const strip = (x) => x.replace(/^[\s\x1c-\x1f\x85]+|[\s\x1c-\x1f\x85]+$/g, '');
+  let s = strip(String(raw)
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2060\ufeff\u00ad\u2066-\u2069]/g, ''));
+  // A display-name address, as the server takes it: only where the value is a
+  // display name and one address, so an address in a URL's query or fragment
+  // never beats the host.
+  const angle = s.match(/^([^<>]*)<([^<>@\s]*@[^<>\s]*)>\s*$/);
+  if (angle && !/^\s*(?:(?:https?|ftp):\/\/|\/\/|mailto:)/.test(angle[1].toLowerCase())) {
+    // A host before the brackets is the target; without one the value is a
+    // display name and its address is (the server does the same).
+    const host = angle[1].match(/^\s*["']?(?:[a-z\u017f\u0130\u0131\u212a0-9-]+\.)+[a-z\u017f\u0130\u0131\u212a]{2,}(?![a-z\u017f\u0130\u0131\u212a0-9-])(?!\.[a-z\u017f\u0130\u0131\u212a0-9-])/i);
+    // Host-shaped but unreadable is an unreadable target, not a display name:
+    // it fails closed rather than becoming the contact's domain, as the server
+    // does (step-5 critique round 13, IH13-3).
+    if (host) {
+      s = host[0];
+    } else if (/^\s*["']?(?:[a-z\u017f\u0130\u0131\u212a0-9-]+\.)+[a-z\u017f\u0130\u0131\u212a]{2,}/i.test(angle[1])) {
+      return '';
+    } else {
+      s = angle[2];
+    }
+  }
+  s = strip(s.replace(/^["'<>]+|["'<>]+$/g, '')).toLowerCase();
+  // A scheme, or a chain of them (mailto://, https://http://), in one step, as
+  // the server does.
+  s = s.replace(/^(?:(?:https?|ftp):\/\/|\/\/|mailto:)+/, '');
+  s = s.replace(/\\/g, '/');                        // a backslash ends the authority
+  s = s.split(/[/?#]/)[0];                          // path, query, fragment first
   if (s.includes('@')) s = s.split('@').pop();      // pasted email address
-  s = s.split(/[/?#]/)[0];                          // path, query, fragment
   s = s.split(':')[0];                              // port
-  return s.trim().replace(/\.+$/, '');
+  return strip(s).replace(/\.+$/, '');
+}
+
+// Mirrors normalize_domain(): repeated until nothing changes, at most eight
+// passes, so the box shows the target the server scans (step-5 critique
+// round 7). A value still changing after eight passes is not a domain.
+function normalizeDomainInput(raw) {
+  let s = normalizeDomainOnce(raw);
+  for (let i = 0; i < 8; i++) {
+    const t = normalizeDomainOnce(s);
+    if (t === s) return s;
+    s = t;
+  }
+  return '';
 }
 
 const domainEl = document.getElementById('domain');
@@ -664,7 +706,7 @@ domainEl.addEventListener('paste', (e) => {
   const text = (e.clipboardData || window.clipboardData)?.getData('text');
   if (!text) return;                                // let the browser handle it
   const cleaned = normalizeDomainInput(text);
-  if (!cleaned || cleaned === text.trim().toLowerCase()) return;  // nothing to do
+  if (!cleaned || cleaned === text.trim()) return;   // already the target
   e.preventDefault();
   domainEl.value = cleaned;
   domainEl.dispatchEvent(new Event('input', { bubbles: true }));
@@ -708,8 +750,9 @@ form.addEventListener('submit', async (e) => {
   e.preventDefault();
   errorEl.style.display = 'none';
 
-  const domain = document.getElementById('domain').value.trim().toLowerCase()
-    .replace(/^https?:\/\//, '').split('/')[0];
+  // The cleaner the server uses, so a value sent with Enter (no blur) is the
+  // target the box shows (step-5 critique round 9).
+  const domain = normalizeDomainInput(document.getElementById('domain').value);
   if (!domain) { showError('Please enter a domain.'); return; }
 
   const body = { domain };
@@ -827,6 +870,13 @@ function renderRelatedCandidates(rc) {
   const cands = (rc && rc.candidates) || [];
 
   if (status === 'ok' && cands.length > 0) {
+    const note = document.createElement('div');
+    note.style.cssText = 'font-size:.75rem;color:var(--muted,#9ca3af);padding:0 0 6px;';
+    note.textContent = 'Tick only domains the client owns or is responsible for. '
+      + 'Ticked domains are scanned and scored. The report separately lists the '
+      + 'related domains the scan itself finds on certificate records; those are '
+      + 'not scanned or scored unless confirmed.';
+    list.appendChild(note);
     for (const c of cands) {
       const row = document.createElement('label');
       row.style.cssText = 'display:flex;align-items:flex-start;gap:8px;padding:4px 0;font-size:.8rem;cursor:pointer;';
@@ -835,7 +885,10 @@ function renderRelatedCandidates(rc) {
       cb.className = 'related-cand-cb';
       cb.dataset.domain = c.domain;
       cb.style.marginTop = '3px';
-      if (c.confidence === 'high') cb.checked = true;
+      // Never pre-ticked (remediation step 5). A candidate comes from a public
+      // certificate record, and a shared certificate can list unrelated
+      // organisations, so a machine guess must not become a confirmation by
+      // default. The report lists what the scan itself finds, for confirmation.
       const confColor = c.confidence === 'high' ? '#10b981'
         : (c.confidence === 'medium' ? '#fbbf24' : '#9ca3af');
       const meta = document.createElement('div');
@@ -857,9 +910,13 @@ function renderRelatedCandidates(rc) {
       badge.title = 'Auto-detected via Certificate Transparency log SAN entries (crt.sh).';
     }
   } else if (status === 'no_data') {
+    // The report's own caveat: an empty certificate lookup does not show that
+    // the client has no other domains. An outage arrives as status 'error'.
     list.innerHTML = '<div style="font-size:.78rem;color:var(--muted,#9ca3af);padding:6px 0;">'
-      + '&#10003; No sibling domains found via Certificate Transparency logs. '
-      + 'This is normal for well-isolated single-brand domains. '
+      + 'No related domains were found in the crt.sh certificate search. This does not '
+      + 'show that the client has no other domains: only a domain that appears on a '
+      + 'certificate alongside this one can be found this way, and the scan also '
+      + 'searches CertSpotter, so its report can list domains this preview did not. '
       + 'Enter any supplier / group-related domains manually below.</div>';
     box.style.display = 'block';
     if (badge) {
@@ -889,17 +946,94 @@ function renderRelatedCandidates(rc) {
 function collectRelatedDomains() {
   const set = new Set();
   document.querySelectorAll('.related-cand-cb:checked').forEach(cb => {
-    const d = (cb.dataset.domain || '').trim().toLowerCase();
+    const d = normalizeDomainInput(cb.dataset.domain || '');
     if (d) set.add(d);
   });
   const ta = document.getElementById('related-domains');
   if (ta && ta.value.trim()) {
-    ta.value.split(/[\s,;\n]+/).forEach(raw => {
-      const d = raw.trim().toLowerCase().replace(/^https?:\/\//, '').split('/')[0];
-      if (d && d.includes('.')) set.add(d);
+    // The server's cleaner, so an entry the API would keep is never dropped
+    // here unseen (step-5 critique round 9).
+    // A contact address beside a host on the same line is a contact, not a
+    // related domain: the API cleans the line as one entry and keeps the host,
+    // and the form used to send the contact's own domain into the client's
+    // supply-chain scope. Bracketed or bare, since a broker pastes both
+    // (round 11, IR11-3). A host must QUALIFY as a domain rather than merely
+    // clean to a truthy string, or a line whose host is a company name drops
+    // entirely and the confirmed domain is never sent (round 11, IR11-1). A
+    // line carrying only an address still yields that domain.
+    // A host is what the API would accept, not merely something with a dot in
+    // it: a date, an amount, an IP, initials or a version number all contain
+    // one, and any of them captured the hosts branch and dropped the broker's
+    // real domain (round 12, IH12-1). Mirrors domain_validation._DOMAIN_RE.
+    // The API strips a wildcard prefix before validating, and caps the length,
+    // so the form must too: rejecting "*.acme.co.za" sent NOTHING where the API
+    // keeps acme.co.za (round 13, IH13-1).
+    const dewild = (d) => {
+      let s = d || '';
+      // replace, not slice: the gate guards this function against a
+      // browser-side trim of the confirmed list by looking for slice/splice.
+      // Every layer that was pasted, in ONE pass, exactly as the server's
+      // lstrip("*.") does. One layer per pass left the form rejecting
+      // "*..host" and deep runs the server keeps, and on a line carrying a
+      // contact the form then sent the BROKER's domain where the server kept
+      // the client's (round 15).
+      for (let i = 0; i < 4 && s.startsWith('*.'); i++) {
+        s = normalizeDomainInput(s.replace(/^[*.]+/, ''));
+      }
+      return s;
+    };
+    const accept = (d) => {
+      const s = dewild(d);
+      return s.length <= 253
+        && /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/i.test(s);
+    };
+    const qualifies = (p) => accept(normalizeDomainInput(p));
+    // A contact is an ADDRESS, and the scheme is READ, not removed: after
+    // removal every @-bearing shape
+    // looks the same, and a portal URL carrying a username was dropped as if it
+    // were an address (rounds 12 and 13, IH12-5, IH13-2, R13-IN-2).
+    const isContact = (p) => {
+      const t = String(p).trim();
+      if (/^mailto:/i.test(t)) return true;
+      if (/^(?:https?|ftp):\/\//i.test(t)) return false;
+      // Protocol-relative: an address with no path is what a mail client
+      // autolinks; with a path it is a URL.
+      if (/^\/\//.test(t)) return /^\/\/[^/]*@[^/]*$/.test(t);
+      return t.split('/')[0].includes('@');
+    };
+    ta.value.split(/[\r\n]+/).forEach(line => {
+      // The SERVER's whitespace set, not trim()'s: Python's \s also matches
+      // U+001C to U+001F and U+0085, so a control character between a host and
+      // an address split the entry on the server and not here, and the form
+      // sent the contact's domain where the server kept the host. The strip
+      // helper above already knew this set (round 8); the splitter did not
+      // (round 15).
+      const parts = line.split(/[\s\x1c-\x1f\x85,;]+/).filter(Boolean);
+      const add = (raw) => {
+        const d = normalizeDomainInput(raw);
+        // The same rule that picked the branch also accepts the value, so
+        // the form cannot send what the API would discard (round 12,
+        // IH12-1).
+        if (accept(d)) set.add(dewild(d));
+      };
+      const hosts = parts.length > 1 ? parts.filter(p => !isContact(p)) : [];
+      if (parts.length > 1 && hosts.some(qualifies)) {
+        hosts.forEach(add);
+        return;
+      }
+      // Otherwise the WHOLE entry, exactly as clean_related_domains falls back
+      // to _keep(s). Cleaning each token on its own never reaches the
+      // display-name rule, so an unreadable host beside a contact handed the
+      // scan the BROKER's own domain while the server failed closed
+      // (round 15).
+      add(line);
     });
   }
-  return [...set].slice(0, 10);  // backend caps at 10 anyway
+  // Not trimmed here: the server assesses at most 10, after dropping the
+  // scanned domain and anything that is not a registrable domain, and lists
+  // any beyond that in the report as not assessed. Trimming in the browser
+  // silently dropped them, and let a rejected entry use up a slot.
+  return [...set];
 }
 
 // CSV upload: read file client-side and populate textarea

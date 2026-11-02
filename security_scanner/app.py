@@ -484,7 +484,8 @@ import re
 # can import it without booting Flask. normalize_domain() is what lets a broker
 # paste a URL, an email address, or a value copied out of a PDF form and still
 # have the scan target come out right.
-from domain_validation import normalize_domain, valid_domain, domain_exists
+from domain_validation import (normalize_domain, valid_domain, domain_exists,
+                               clean_related_domains)
 
 
 # WS2: the job queue + in-process worker pool. The job is run_scan(**payload). With
@@ -789,9 +790,13 @@ def credential_export():
         source_meta, leak_references = {}, []  # enrichment is best-effort
     try:
         from credential_export import generate_encrypted_export
-        fname, blob, method, n = generate_encrypted_export(
+        # Step 4: the release is authorised for the scanned domain and its
+        # subdomains. Records for mailboxes anywhere else are refused, because
+        # the client cannot consent on behalf of another company's employees.
+        fname, blob, method, n, excluded_count = generate_encrypted_export(
             domain, DEHASHED_API_KEY, age_recipient=age_pub, passphrase=passphrase,
-            source_meta=source_meta, leak_references=leak_references)
+            source_meta=source_meta, leak_references=leak_references,
+            authorised_domains=[domain])
     except Exception as e:
         return jsonify({"status": "error", "error": str(e)[:200]}), 500
     # Deliver via a ONE-TIME, expiring link (Manual 6.4 step 4). The encrypted blob
@@ -812,13 +817,19 @@ def credential_export():
     try:
         scanner_db.record_credential_export(
             secrets.token_hex(8), domain, authorised_by, consent, consent_ref,
-            method, n, token, expires_at, request.remote_addr or "")
+            method, n, token, expires_at, request.remote_addr or "",
+            authorised_domains=[domain], excluded_count=excluded_count)
     except Exception:
         pass  # audit is best-effort; never blocks a consented export
     return jsonify({
         "status": "ready",
         "download_url": f"{request.script_root}/api/credential-export/download/{token}",
         "filename": fname, "method": method, "record_count": n,
+        # Surfaced so the operator can see the filter ran. A release that
+        # refused nothing and one where the filter never ran look identical
+        # without this.
+        "excluded_out_of_scope": excluded_count,
+        "authorised_domains": [domain],
         "expires_at": expires_at, "expires_in_minutes": 15,
     })
 
@@ -881,8 +892,12 @@ def age_check():
 @rate_limited(_scan_limiter)
 def start_scan():
     data = request.get_json(silent=True) or {}
-    domain = str(data.get("domain", "")).strip().lower()
-    domain = domain.removeprefix("https://").removeprefix("http://").split("/")[0]
+    # Normalised as the pre-flight does, and to the same fixed point as the
+    # related domains, so the target that is validated is the target scanned: a
+    # pasted address, a port or an invisible character no longer reaches the
+    # scan, and the insured's own domain is recognised in the related list
+    # (step-5 critique round 6).
+    domain = normalize_domain(data.get("domain", ""))
 
     if not domain or not valid_domain(domain):
         return jsonify({"error": "Invalid or missing domain"}), 400
@@ -986,16 +1001,15 @@ def start_scan():
             else:
                 rejected_client_ips.append(candidate)
 
-    # Broker-declared related/supplier domains (S-1 supply-chain). Each is
-    # subject to the same valid_domain check as the primary; v1.1 will add
-    # auto-discovery from cert SAN/WHOIS/analytics ID feeding broker confirm.
-    raw_related = data.get("related_domains", [])
-    related_domains = []
-    if isinstance(raw_related, list):
-        for rd_str in raw_related:
-            rd_clean = str(rd_str).strip().lower().removeprefix("https://").removeprefix("http://").split("/")[0]
-            if rd_clean and valid_domain(rd_clean):
-                related_domains.append(rd_clean)
+    # Broker-CONFIRMED related/supplier domains (S-1 supply-chain). Each is
+    # subject to the same valid_domain check as the primary. These are the only
+    # related domains that are probed and scored. Discovery itself runs inside
+    # every scan (step 5) regardless of this list, so an API scan and a form
+    # scan of the same domain list the same candidates; this field only decides
+    # which of them the client has confirmed.
+    # Normalised like the primary; the value valid_domain accepts is the value
+    # kept (domain_validation.clean_related_domains, tested by the gate).
+    related_domains = clean_related_domains(data.get("related_domains", []))
 
     scan_id = str(uuid.uuid4())
     effective_revenue = annual_revenue_zar if annual_revenue_zar > 0 else annual_revenue

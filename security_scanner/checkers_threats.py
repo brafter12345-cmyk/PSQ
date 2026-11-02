@@ -2779,6 +2779,25 @@ class FraudulentDomainChecker:
         ".com", ".net", ".org", ".co", ".dev", ".online", ".io", ".info",
         ".biz", ".xyz", ".site", ".app", ".tech", ".store", ".shop",
         ".co.za", ".africa",
+        # South African second-level domains (OUTSTANDING 5n, owner-approved
+        # 2026-09-10). Without these, scanning boston.ac.za generated
+        # boston.co.za as a candidate while scanning boston.co.za never
+        # generated boston.ac.za, so the same organisation got a different
+        # answer depending on which apex was submitted, and a typosquat under an
+        # unlisted second-level domain was never probed at all.
+        #
+        # MEASURED BEFORE SHIPPING, across the 30 retained scans: 148 new
+        # candidates generated, of which THREE resolve -- boston.net.za,
+        # takealot.org.za and example.org.za. End to end that is boston.ac.za
+        # 97 -> 100 of 1000 and takealot UNCHANGED, because takealot already
+        # carries 20 resolving lookalikes and the penalty
+        # (min(100, resolved * 8)) is already capped. Cost is about five extra
+        # DNS lookups per South African client.
+        #
+        # Each candidate still passes through the certificate-based ownership
+        # check from remediation step 2, so a defensive registration the client
+        # owns is excluded rather than charged.
+        ".ac.za", ".org.za", ".net.za", ".gov.za", ".web.za",
     ]
 
     # Homoglyph map (visually similar ASCII characters)
@@ -2821,7 +2840,11 @@ class FraudulentDomainChecker:
     def _split_domain(self, domain: str) -> tuple:
         """Split domain into name and TLD (handles multi-part TLDs like .co.za)."""
         parts = domain.split(".")
-        if len(parts) >= 3 and parts[-2] in ("co", "com", "org", "net", "ac", "gov"):
+        # "web" was missing, so x.web.za split as ("x.web", ".za") and a client
+        # submitted at a .web.za address had its brand label taken as
+        # "<name>.web". Found while adding the second-level domains below.
+        if len(parts) >= 3 and parts[-2] in ("co", "com", "org", "net", "ac",
+                                             "gov", "web"):
             return ".".join(parts[:-2]), "." + ".".join(parts[-2:])
         return ".".join(parts[:-1]), "." + parts[-1]
 
@@ -2941,6 +2964,173 @@ class FraudulentDomainChecker:
     _PARKING_NS = ("afternic", "sedoparking", "sedo.com", "dan.com", "bodis",
                    "parkingcrew", "above.com", "undeveloped", "hugedomains",
                    "namecheapparking", "parklogic")
+
+    # --- ownership: is a candidate in fact the insured's own domain? ---------
+    # boston.ac.za, 2026-08-14: the checker generated boston.co.za as a
+    # tld-variant, found it mail-capable and serving a site, and listed it among
+    # the client's lookalike threats. boston.co.za is the client's own website.
+    # The only exclusion in the checker was an exact string match against the
+    # scanned name.
+
+    @staticmethod
+    def _validated_cert_names(domain: str, timeout: float = 4.0) -> set:
+        """Names on a certificate a public CA issued for this host.
+
+        VALIDATION IS THE POINT. Reading the certificate with verification
+        disabled makes the ownership test trivially forgeable: an attacker
+        registers a lookalike, serves a self-signed certificate carrying the
+        insured's name, and the scanner reclassifies the attacker's domain as
+        the insured's own asset, removes it from the report and improves the
+        risk score. One openssl command, no cost, and cheaper for the attacker
+        than not doing it.
+
+        The default context is used unmodified, so the chain must validate to a
+        public root AND match the candidate hostname. A certificate covering the
+        insured domain then means a certificate authority verified control of
+        the insured name, which the operator of a lookalike cannot obtain.
+        Requiring the hostname to match closes the SNI fall-through case, where
+        a shared host answers for a name it does not serve and hands back some
+        other tenant's certificate.
+
+        Returns an empty set on any failure, so an unreachable, expired or
+        untrusted host never produces an ownership claim.
+        """
+        import ssl
+        try:
+            ctx = ssl.create_default_context()      # verify + check_hostname ON
+            with socket.create_connection((domain, 443), timeout=timeout) as raw:
+                with ctx.wrap_socket(raw, server_hostname=domain) as tls:
+                    der = tls.getpeercert(binary_form=True)
+        except Exception:
+            return set()
+        if not der:
+            return set()
+        names = set()
+        try:
+            from cryptography import x509
+            from cryptography.x509.oid import ExtensionOID, NameOID
+            cert = x509.load_der_x509_certificate(der)
+            for attr in cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME):
+                if attr.value:
+                    names.add(str(attr.value).strip().lower().strip("."))
+            try:
+                san = cert.extensions.get_extension_for_oid(
+                    ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
+                for v in san.value.get_values_for_type(x509.DNSName):
+                    if v:
+                        names.add(str(v).strip().lower().strip("."))
+            except x509.ExtensionNotFound:
+                pass
+        except Exception:
+            return set()
+        return {n for n in names if n}
+
+    @staticmethod
+    def _covers(names, target: str) -> bool:
+        """Does a certificate name set cover ``target`` under RFC 6125?
+
+        A wildcard matches exactly one label and never the apex: ``*.example.com``
+        covers ``www.example.com`` but not ``example.com``. Comparing a stripped
+        wildcard against the apex would make every tenant of a shared host look
+        like the insured whenever the insured is the hosting provider, which is
+        a normal client type in this book.
+        """
+        target = (target or "").strip().lower().strip(".")
+        if not target:
+            return False
+        for n in (names or ()):
+            n = (n or "").strip().lower().strip(".")
+            if not n:
+                continue
+            if n == target:
+                return True
+            if n.startswith("*."):
+                base = n[2:]
+                if base and "." in base and target.endswith("." + base):
+                    if target[:-(len(base) + 1)].count(".") == 0:
+                        return True
+        return False
+
+    @staticmethod
+    def _brand_label(domain: str) -> str:
+        """The registrable brand token, e.g. boston.ac.za -> 'boston'."""
+        d = (domain or "").strip().lower().strip(".")
+        return d.split(".")[0] if d else ""
+
+    @classmethod
+    def _cert_scope_trusted(cls, names, insured: str) -> bool:
+        """Is a candidate-side certificate narrow enough to evidence ownership?
+
+        A certificate that names the insured is only meaningful if it belongs to
+        the insured's estate. Hosting platforms and some CDNs pack many
+        unrelated tenants onto one certificate, and a tenant of such a platform
+        could then present a chain-validated certificate listing the insured and
+        have their hostile domain excluded.
+
+        The discriminator is brand coherence, measured on real data: the client
+        estate certificate seen on boston.co.za carries 51 names, 45 of them
+        (88 per cent) containing the insured's brand token. A shared platform
+        certificate has no such concentration, because its tenants are unrelated
+        to one another. A short certificate is trusted outright, since a handful
+        of names cannot be a multi-tenant pool.
+        """
+        names = {n for n in (names or ()) if n}
+        if not names:
+            return False
+        if len(names) <= 4:
+            return True
+        label = cls._brand_label(insured)
+        if not label:
+            return False
+        related = sum(1 for n in names if label in n)
+        return (related / float(len(names))) >= 0.5
+
+    def _ownership_verdict(self, entry: dict, insured: str,
+                           insured_cert_names=None):
+        """Is this candidate an asset the insured demonstrably controls?
+
+        TWO signals, in order of how hard they are to forge. Both require a
+        CA-issued, chain-validated certificate; an attacker-writable record such
+        as an A record cannot evidence ownership and is not consulted.
+
+        1. INSURED-SIDE, and unforgeable. The insured's own certificate names
+           the candidate. An attacker cannot get a name onto a certificate the
+           insured controls. This direction was missing until now, and its
+           absence made the whole test one-way: scanning boston.ac.za excluded
+           boston.co.za, but scanning boston.co.za reported boston.ac.za as
+           hostile, because only the candidate's certificate was ever read.
+           Per-domain certificates, the common case, produced no exclusion at
+           all in either direction.
+
+        2. CANDIDATE-SIDE, and only when the certificate is narrow enough to be
+           an estate certificate rather than a shared multi-tenant one. See
+           _cert_scope_trusted.
+
+        Returns (reason, names) so the worker never mutates the shared entry
+        dict; the caller writes the result. Workers previously wrote into the
+        same dicts the main thread later enriched, which is a data race once the
+        pool is allowed to outlive the wait.
+        """
+        dom = (entry.get("domain") or "").strip().lower().strip(".")
+        if not dom:
+            return None, set()
+
+        if insured_cert_names and self._covers(insured_cert_names, dom):
+            return ("named on the certificate served by %s, which the insured "
+                    "controls" % insured), set()
+
+        names = self._validated_cert_names(dom)
+        if not names:
+            return None, set()
+        if self._covers(names, insured):
+            if self._cert_scope_trusted(names, insured):
+                return ("presents a CA-issued certificate, valid for this "
+                        "domain, that also covers %s (%d name(s) on that "
+                        "certificate)" % (insured, len(names))), names
+            # Names the insured, but on a certificate broad enough to be a
+            # shared platform pool. Recorded, deliberately not acted on.
+            return None, names
+        return None, names
 
     @staticmethod
     def _usable_mx(mx_raw):
@@ -3079,6 +3269,8 @@ class FraudulentDomainChecker:
             "total_permutations": 0,
             "resolved_count": 0,
             "fraudulent_domains": [],
+            "own_assets": [],
+            "own_assets_excluded": 0,
             "score": 100,
             "issues": [],
         }
@@ -3151,6 +3343,109 @@ class FraudulentDomainChecker:
 
             # Sort by similarity descending
             resolved.sort(key=lambda x: x["similarity"], reverse=True)
+
+            # OWNERSHIP PASS, before every cap and before enrichment.
+            #
+            # Over the WHOLE resolved set, not the display slice: a client with
+            # a common brand word can have more than twenty resolving variants,
+            # and that is exactly the population this bug came from, so testing
+            # only the top twenty would leave it unfixed for the clients who
+            # have it.
+            #
+            # Probes are pooled and the pass carries its own wall-clock budget.
+            # Serially, one four-second handshake per candidate would overrun
+            # the sixty-second budget this checker is given, and a hostile host
+            # can hold a connection open on purpose. A candidate not decided
+            # within the budget is treated as NOT owned, which reports it as a
+            # lookalike: the conservative direction and the prior behaviour.
+            _insured = str(domain).strip().lower().strip(".")
+            owned, hostile = [], []
+            if resolved:
+                # The pass is bounded three ways, because none of them alone
+                # holds. A `with ThreadPoolExecutor(...)` block calls
+                # shutdown(wait=True) on exit, so the budget below bounded only
+                # when results were COLLECTED, not when the call returned:
+                # measured, a 1s timeout still took 4s to leave the block, and
+                # with 60 stalling candidates check() ran 30s against a 3s
+                # budget. A lookalike operator who accepts the connection and
+                # dribbles bytes could therefore hang the scan and, by pushing
+                # the checker past its own timeout, delete the entire category
+                # from the report, including the finding about themselves.
+                _cap = int(_os.environ.get("LOOKALIKE_OWNERSHIP_CAP", "30"))
+                _budget = float(_os.environ.get("LOOKALIKE_OWNERSHIP_BUDGET_S", "20"))
+                _probe = resolved[:_cap]          # highest similarity first
+                _skipped = len(resolved) - len(_probe)
+
+                _insured_names = self._validated_cert_names(_insured)
+                if _insured_names:
+                    result["insured_cert_name_count"] = len(_insured_names)
+
+                _decided, _any_names = {}, False
+                ex3 = ThreadPoolExecutor(max_workers=10)
+                # Submission and collection are two blocks, not one nested in
+                # the other. The timeout gate requires every try that contains
+                # an as_completed(timeout=) loop to catch the futures
+                # TimeoutError, so that a broad outer handler cannot hide an
+                # inner `except TimeoutError` that misses it on Python 3.10. A
+                # cleanup-only try/finally around the loop fails that rule.
+                # Behaviour is unchanged: a submission failure still shuts the
+                # pool down and propagates, and the loop still stops at budget.
+                try:
+                    _futs = {ex3.submit(self._ownership_verdict, e, _insured,
+                                        _insured_names): idx
+                             for idx, e in enumerate(_probe)}
+                except BaseException:
+                    ex3.shutdown(wait=False, cancel_futures=True)
+                    raise
+                try:
+                    for _f in as_completed(_futs, timeout=_budget):
+                        try:
+                            _why, _names = _f.result(timeout=1)
+                        except Exception:
+                            _why, _names = None, set()
+                        if _names:
+                            _any_names = True
+                        _decided[_futs[_f]] = (_why, _names)
+                except Exception:
+                    pass          # budget expired; the rest stay undecided
+                finally:
+                    # Do NOT wait: an unbounded handshake would otherwise hold
+                    # the scan open for as long as the remote host chooses.
+                    ex3.shutdown(wait=False, cancel_futures=True)
+
+                for idx, _e in enumerate(_probe):
+                    _why, _names = _decided.get(idx, (None, set()))
+                    if _names:
+                        _e["cert_names_sample"] = sorted(_names)[:4]
+                    if _why:
+                        _e["owned_reason"] = _why
+                        owned.append(_e)
+                    else:
+                        hostile.append(_e)
+                hostile.extend(resolved[_cap:])
+
+                _undecided = len(_probe) - len(_decided) + _skipped
+                if _undecided > 0:
+                    # Never let a budget or a cap read as "confirmed hostile".
+                    result["ownership_undecided"] = _undecided
+                    result["issues"].append(
+                        "%d domain(s) could not be checked for client ownership "
+                        "within the time budget and are listed above as "
+                        "lookalikes; verify before acting on them." % _undecided)
+                if _probe and not _any_names:
+                    # Every probe came back empty. That is indistinguishable
+                    # from "all hostile" in the output unless it is said, and it
+                    # is what a blocked egress, a broken trust store or a
+                    # missing dependency looks like.
+                    result["ownership_signal"] = "unavailable"
+                    result["issues"].append(
+                        "Client-ownership verification produced no result for "
+                        "any candidate, so none could be excluded. Treat the "
+                        "list above as unverified rather than confirmed.")
+
+            resolved = hostile
+            result["own_assets"] = owned
+            result["own_assets_excluded"] = len(owned)
             result["resolved_count"] = len(resolved)
             shown = resolved[:20]  # cap display at 20
 
@@ -3204,12 +3499,14 @@ class FraudulentDomainChecker:
                     "name is not impersonation, and several of these turn out to be "
                     "unrelated businesses.")
 
-            if len(resolved) > 5:
-                result["issues"].append(
-                    f"CRITICAL: {len(resolved)} lookalike domains detected — "
-                    "high brand impersonation and phishing risk"
-                )
-            elif len(resolved) > 2:
+            # REMOVED 2026-09-08: an unconditional "CRITICAL: N lookalike
+            # domains detected" fired purely on the resolved count, with no
+            # reference to whether any candidate was hostile. It sat directly
+            # beneath the hedged lines above and contradicted them, and on
+            # boston.ac.za it counted the client's own site toward the total.
+            # Severity comes from capability instead, which the mail-capable
+            # branches above already state and which card_severity now bands.
+            if len(resolved) > 2:
                 result["issues"].append(
                     f"{len(resolved)} lookalike domains detected — "
                     "monitor for brand abuse and phishing campaigns"
@@ -3220,7 +3517,19 @@ class FraudulentDomainChecker:
                     "review for potential typosquatting"
                 )
 
-            # Score: penalize per resolved lookalike
+            if result["own_assets_excluded"]:
+                _names = ", ".join(o.get("domain", "")
+                                   for o in result["own_assets"][:4])
+                result["issues"].append(
+                    "%d domain(s) matching the search pattern are the insured's "
+                    "own assets and are excluded from the findings above: %s. "
+                    "Established by a CA-issued certificate valid for the domain "
+                    "that also covers %s."
+                    % (result["own_assets_excluded"], _names, domain))
+
+            # Score: penalize per resolved lookalike. `resolved` excludes the
+            # insured's own assets, so a client is no longer charged for owning
+            # more than one domain.
             penalty = min(100, len(resolved) * 8)
             result["score"] = max(0, 100 - penalty)
 
@@ -3733,6 +4042,7 @@ class InformationDisclosureChecker:
             _probed = {"n": 0}
             _plock = _threading.Lock()
             _codes: dict = {}       # HTTP status -> count, across all probes
+            _errors = {"n": 0}      # probes that raised: counted, never dropped
 
             def _probe_guarded(url, risk):
                 if risk == "medium":
@@ -3757,6 +4067,7 @@ class InformationDisclosureChecker:
                         try:
                             found, status, size = fut.result(timeout=2)
                         except Exception:
+                            _errors["n"] += 1
                             continue
                         # Track what the probes actually met. A WAF answering
                         # 403/406/451 to EVERY path produces found=False across
@@ -3787,7 +4098,11 @@ class InformationDisclosureChecker:
 
             # Directory listing probe (separate — checks root HTML, not path).
             # It doubles as the CONTROL for the blocked/denied question below.
-            from http_client import HTTP
+            # HTTP is the module-level client. A local `from http_client import
+            # HTTP` here made HTTP a local of check(), unbound while the pool
+            # above ran, so every medium-risk probe raised NameError inside
+            # _probe_guarded and was dropped: from 2026-06-28 only the 8 critical
+            # paths were ever requested (step-5 critique round 2, OUTSTANDING 5y).
             r = HTTP.get(f"{base}/", timeout=8)
             result["control_status"] = r.status_code if r is not None else None
             if r is not None and (
@@ -3808,6 +4123,8 @@ class InformationDisclosureChecker:
                 key=lambda e: (0 if e["risk_level"] == "critical" else 1, e["path"])
             )
             result["probe_status_codes"] = dict(sorted(_codes.items()))
+            if _errors["n"]:
+                result["probe_errors"] = _errors["n"]
 
             # If EVERY probe was refused by an edge and nothing was ever
             # retrieved, we did not assess this domain — we were turned away at
@@ -3829,8 +4146,21 @@ class InformationDisclosureChecker:
             # denials — a clean, EARNED result. Only when the control is refused
             # too is the host actually walled off.
             BLOCKING = {401, 403, 406, 409, 418, 429, 451, 503}
-            probed = sum(_codes.values())
-            blocked = sum(n for c, n in _codes.items() if c in BLOCKING)
+            # Only probes that got an HTTP answer decide this. Status 0 means no
+            # answer (no response, or not sent because an opt-in precheck
+            # flagged the apex as a catch-all): it is neither a refusal nor a
+            # sign that the origin is talking to us.
+            # Counted as probed, one unanswered probe turned a host that refused
+            # every answered probe from "unreachable" into a clean 100, a
+            # discount the absence of findings may never give (step-5 critique
+            # round 3).
+            answered = {c: n for c, n in _codes.items() if str(c) != "0"}
+            silent = sum(n for c, n in _codes.items() if str(c) == "0")
+            probed = sum(answered.values())
+            blocked = sum(n for c, n in answered.items() if c in BLOCKING)
+            refused_codes = ", ".join(str(c) for c in sorted(answered))
+            answered_txt = " that got an answer" if silent else ""
+            not_answered = ("; %d got no answer" % silent) if silent else ""
             ctl = result.get("control_status")
             if ctl is not None:
                 origin_answering = ctl not in BLOCKING
@@ -3842,18 +4172,18 @@ class InformationDisclosureChecker:
             if origin_answering and probed and blocked == probed:
                 result["sensitive_paths_denied"] = probed
                 result["issues"].append(
-                    f"All {probed} sensitive-file probes were refused (HTTP "
-                    f"{', '.join(str(c) for c in sorted(_codes))}) while the site "
+                    f"All {probed} sensitive-file probes{answered_txt} were refused "
+                    f"(HTTP {refused_codes}{not_answered}) while the site "
                     f"root responded normally (HTTP {ctl}) — the server is denying "
                     f"access to these paths, which is the correct configuration. "
                     f"No exposed files were found.")
             if probed and not exposed and blocked == probed and not origin_answering:
                 result["status"] = "unreachable"
-                result["http_status"] = max(_codes, key=_codes.get)
+                result["http_status"] = max(answered, key=answered.get)
                 result["unreachable_reason"] = (
                     f"Sensitive-file exposure could not be assessed — all {probed} "
-                    f"probes were refused by a WAF/CDN (HTTP "
-                    f"{', '.join(str(c) for c in sorted(_codes))}). No verdict on "
+                    f"probes{answered_txt} were refused by a WAF/CDN (HTTP "
+                    f"{refused_codes}{not_answered}). No verdict on "
                     f"exposed files is implied; this is not evidence that none exist.")
                 result.pop("score", None)
 

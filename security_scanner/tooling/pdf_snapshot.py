@@ -29,6 +29,12 @@ BASELINE_PATH = HERE / "pdf_snapshot_baseline.json"
 FIXTURES = (
     "test_fixtures/phishield_R10M_finance_2026-05-15.json",
     "test_fixtures/takealot_baseline.json",
+    # Carries a vendor estate and an ownership-unconfirmed host. The other two
+    # fixtures have third_party_hosting = 0 and no estate_total_ips, so the
+    # vendor-estate block and the co-tenancy warning rendered NOTHING under this
+    # gate: an entire new client-facing section shipped with no snapshot
+    # coverage, and estate_ip_count always took its legacy fallback branch.
+    "test_fixtures/vendor_estate_baseline.json",
 )
 TIERS = ("assessment", "summary", "full")
 

@@ -1,6 +1,6 @@
 # Outstanding Items — Phishield Scanner
 
-**Last updated**: 2026-07-02
+**Last updated**: 2026-09-16 (sandbox reconciliation)
 **Owner**: SML Consulting (engineering) + Phishield UMA (ops)
 **Authoritative source** for items pending across the scanner project.
 Consolidates open items from gap analysis SCN-* entries, memory files,
@@ -13,6 +13,87 @@ outstanding item lands.
   Regenerate after each edit with `py -3 tooling/generate_outstanding_docx.py`
   (from the `security_scanner/` directory). The script applies Phishield
   branding and formats tables for printable / shareable output.
+
+---
+
+## Sandbox reconciliation 16 September 2026
+
+This sandbox register starts from the canonical main working copy, including
+its uncommitted **5n asset-discovery** item. Main has not been edited. The former
+sandbox file mixed the backlog with critique history and reused 5n for an older
+lookalike issue. Its complete contents are preserved in
+[the sandbox history archive](archive/OUTSTANDING_sandbox_history_c0c1368_2026-09-16.md).
+Historical identifiers below use the prefix H to avoid that collision.
+
+The dated status in this section governs sandbox work. Older deployment, quota,
+price and schedule statements below are historical observations, not a current
+live-environment verification. No provider or production system was queried.
+"Implemented in sandbox" never means deployed.
+
+### Current work and release gates
+
+| Priority | Item | Current state and completion requirement |
+|---|---|---|
+| Release | Fresh frontend installation | Lockfile and existing-install deterministic bundle are committed. A clean offline npm ci stopped with ENOTCACHED for vite-8.1.2.tgz. Requires an available vetted package cache or separately authorized package retrieval, then a fresh /scanner build comparison. |
+| Release | Whole-branch review | Review includes earlier attribution, discovery, reporting and export-scope work, not only the latest fixes. Independent frontend/input and attribution reviews are recorded; release-critical source received bounded review. This is not a blanket approval of all historical behavior. |
+| Release | Origin verifier boundary | Follow-up fixes reject non-public/non-IPv4/non-literal candidates before TLS across all sources and at the verifier; wildcard certificates cover exactly one subdomain label. Synthetic regressions reproduce the old defects and pass after correction. |
+| Owner decision | Present but unmeasured raw checks | H-5y, H-5z and H-5af below are distinct from the approved absent-category policy. Rate-limited provider status is still outside RiskScorer's failed/skipped sets. Reproduce current outcomes and measure pricing changes before changing these policies. |
+| Open | Asset discovery from partial addresses | Canonical section 5n remains open and unchanged. Related-domain parity does not complete this broader asset-discovery work. |
+| Blocked | Credential release | Signed scope/delivery/retention details and a recorded authorization control remain unresolved in the handoff. No real release or feature-flag change is authorized by these fixes. |
+| Owner only | Live release and ground-truth scans | No push, merge, deployment or live/DNS smoke test under offline authorization. Historical step-6 rescans and production/demo reversals need explicit instruction. |
+
+### Completed sandbox checkpoints
+
+| Checkpoint | Scope and evidence boundary |
+|---|---|
+| 24fba49 | Partial-domain/SPF reporting correction, lockfile and rebuilt dashboard, offline isolation corrections. |
+| b3cf0c8 | Eight deferred findings FC13-2, FC13-3, B2, B3, C3, C4, A4 and D3 fixed after the owner's scoring-policy approval. 12 gates passed; 347 mutations detected, including two gate crashes recorded separately. |
+| e37af78 | User manual and gap analysis regenerated for the eight findings. |
+| c0c1368 | Three technical PDF cards (IntelX, VirusTotal, fraudulent domains) require measured evidence for clean claims, retain partial positive evidence and neutral footers. 12 gates passed; five targeted mutations detected by assertions. This did not rerun the earlier 347-mutation sweep. |
+| Current follow-up | Register reconciled with the main working copy; old sandbox history retained verbatim. Origin candidate/wildcard defects corrected: 25 synthetic cases, four assertion-killed mutations (zero crashes), and 12 offline gates pass; zero paid-egress attempts. The 347-mutation sweep was not repeated. Generated documentation follows the current sandbox state. |
+
+### Historical residuals retained for current-code verification
+
+An archived issue is not closed merely because a later suite passes. Except where
+current source verification is stated, these are preserved historical reports
+requiring a focused reproduction before implementation or closure. The full
+archive retains scenarios, caveats and corrections; counts and live examples there
+must not be presented as measurements of the current tree.
+
+| Historical ID | Residual or decision retained |
+|---|---|
+| H-5p | Whether edge-measured web checks should affect grading differently remains a calibration decision. Current edge/origin coverage disclosure is not that policy change. |
+| H-5q residuals | Shared mail appliances without published service ranges; co-tenancy threshold calibration; addresses outside vendor-published ranges; remediation wording when ownership is unconfirmed. Do not extend published ranges by guesswork. |
+| H-5q IPv6 | Historical report that discovery finds IPv6 while port scans use AF_INET; reproduce current per-IP coverage before calling such a host assessed. |
+| H-5q verified origins | Certificate service identity does not establish operator ownership; verified-origin paths can bypass classification. Public-address and wildcard fixes do not resolve this broader attribution policy. |
+| H-5u | Attribution measurement harness may omit the post-scan default-certificate rule; validate replay fidelity before relying on its counts. |
+| H-5w | Full apex-equivalent checks on confirmed siblings remain deferred: collect certificate-name evidence, review ownership assumptions and calibrate the roll-up first. Never meter providers per sibling or probe unconfirmed siblings. |
+| H-5w preflight | Form and scan historically used different certificate-transparency fetch/retry behavior. Shared input reduction alone does not prove identical provider requests. |
+| H-5w port 8443 | Additional TLS-port support requires separate measurement; no new probe was authorized here. |
+| H-5x | Five timeout loops and multi-IP aggregation can lose per-IP failure/partial coverage; reproduce current aggregate status and extend timeout coverage before closure. |
+| H-5y | Primary information-disclosure checks with no HTTP answer historically read completed/100. Medium-path and refusal fixes do not establish closure of the all-unanswered case. |
+| H-5z | VERIFIED IN CURRENT SOURCE: VirusTotal/SecurityTrails rate_limited is not excluded from weighting by the failed/skipped sets. The technical-card fix does not change pricing. |
+| H-5aa | General run_with_timeout worker shutdown still needs review; related-domain-specific time budgeting is not a general timeout fix. |
+| H-5ab | VERIFIED IN CURRENT SOURCE: ip_attribution imports the older _apex reducer. Registry-boundary confidence claims require reconciliation with the newer registrable-domain rule. |
+| H-5ac | Prior offline isolation defects were addressed in recent checkpoints. Keep default-deny execution and assert the paid-egress guard; a local cost counter alone is not evidence of no spend. |
+| H-5ad | Registry suffixes beyond the recognized list need a vendored public-suffix solution and synthetic boundary tests. |
+| H-5ae | Primary-target public-address validation is a separate historical gap. The origin-only candidate guard does not claim to fix every scanner input path. |
+| H-5af CD8-1 | An entirely unanswered dependency-manifest probe set can be misreported as completed/clean; needs current reproduction and pricing-policy adjudication. |
+| H-5af FC9-1 / IR9-1 | Multiple SPF records and truncated include walks may hide uncertainty; partial-lookup handling does not prove these cases covered. |
+| H-5af FC8-5 / ST8-3 | Vendor cross-check completeness and lower-bound severity need current verification when one joined leg is unmeasured. |
+| H-5af vendor pricing | Treatment of no_data on an unmeasured vendor surface remains a scoring decision. |
+| H-5af page panels | Page-specific run markers may still say Passed next to findings; generic and email-vendor panel fixes do not cover every custom panel. |
+| H-5af FC11-1 | Distinguish an unanswered DMARC lookup from confirmed absence before assigning a missing-policy penalty. |
+| H-5af R11-CVC-4/5 | Unrendered support strings and hand-maintained documentation counts need either removal or meaningful rendering/count tests. |
+| H-5af R12-S5 | Vendor breach-table coverage is not equivalent to having searched all vendors; preserve this gap even where the score is unchanged. |
+| H-5af IH12-4 / IH13-6 | Rejected related-domain entries and trailing-comma cases must be accounted for explicitly; require current two-door reproduction. |
+| H-5af IH12-3 / R13-IN-3 | Confirmed-domain input preview and multi-contact entry behavior need explicit accepted/rejected-list UX review. Later parity fixes may supersede parts of the historical report. |
+
+The old H-5n lookalike coverage item, H-5o origin-exposure reporting, H-5s ASN
+measurement, H-5t forward-confirmation and H-5v dashboard-build fixes are recorded
+in branch commits. Their historical IDs must not replace the canonical 5n asset
+discovery item. False round-14 mutation claims and subsequent corrections remain
+visible in the archive and git history; no history was rewritten.
 
 ---
 
@@ -67,13 +148,16 @@ re-enabled).
 
 | API | Current tier | Required tier for 4,000-cohort | Estimated monthly cost | Action by |
 |---|---|---|---|---|
-| Shodan | Free `oss` (0 query credits — confirmed via `/api-info` 2026-05-29) | **Freelancer ($69/mo, 10,000 query credits)** unlocks search + origin cert-search. One-time **Membership (~$49, 100 credits/mo)** is a low-volume stopgap. | ~$69/mo (≈R1,300) if per-IP vuln data stays on free InternetDB and only origin cert-search spends credits (~1 credit/scan). Higher only if per-IP `/shodan/host/{ip}` lookups are also moved to the paid API. | Before 1 July 2026 — **also gates origin IP discovery (see §5, item 4c), which is a scanner-breaking RDP false-negative on CDN-fronted targets** |
+| Shodan | Historical evidence recorded on sandbox 2026-09-08: paid basic plan and certificate search were working; the earlier free-oss assumption was stale. Current account state was not queried offline. | Confirm requirements before any future capacity change | Historical cost estimates are not current quotes | No purchase or live query authorized by this reconciliation |
 | SecurityTrails | Free (100/month; history endpoint works on current key — confirmed 2026-05-29, NOT paid-gated) | Paid tier for sustained usage | Similar order of magnitude | Before 1 July 2026 |
 | VirusTotal | Free (4/min, 500/day) | No upgrade needed | — | n/a |
 | IntelX | **CRITICAL.** Returning data in the 2026-05-29 live test (300 results: 260 leak + 40 paste mentions, with per-record dates) — the "expired 2026-04-08" note is stale, the configured key currently works. It is now **load-bearing**: the 4th signal (active forum/dump circulation + recency dates) in the **Credential Exposure Correlation**. | Confirm a sustainable IntelX subscription OR equivalent (Snusbase / LeakCheck Pro / SpyCloud) — must persist, not lapse | TBD | **CRITICAL — before shipping live.** Credential correlation degrades gracefully without it ("monitoring pending") but loses the active-circulation signal + its main recency source. |
 | HIBP, Hudson Rock, OSV.dev | Free unlimited | No upgrade needed | — | n/a |
 
-### Shodan origin cert-search — how to make it live
+### Shodan origin cert-search — historical setup notes
+
+The free-key premise below was superseded by the recorded September sandbox
+evidence above. Retained setup notes do not authorize purchases or live checks.
 
 Origin IP discovery (`origin_discovery.py`) is **already wired and deployed**.
 It works in two stages and the paid stage **auto-activates the moment a paid
@@ -396,7 +480,7 @@ fixture (`test_fixtures/takealot_baseline.json`) from a fresh scan, then re-run
 | Phase | Item | Status |
 |---|---|---|
 | 4b | CMS admin path detection (dynamic from tech stack) | Open |
-| 4c | CDN origin IP leakage / origin discovery | **Partial — implemented (`origin_discovery.py`, 2026-05-29):** SecurityTrails historical-DNS candidates + TLS cert-match verification live; verified origins scanned, candidates surfaced. Free Shodan cert-host count hint live. **Full Shodan cert-search IP retrieval pending paid key (see §2 go-live).** Also: RDP exposure now reconciled across all discovered IPs, not just the apex (was a false-negative on CDN-fronted targets). |
+| 4c | CDN origin IP leakage / origin discovery | Historical sandbox evidence recorded paid certificate search in use, so the earlier pending-paid-key blocker was stale. Origin discovery and exposure reporting are implemented in the sandbox; provider availability is not verified offline. The remaining attribution/coverage questions are listed in the reconciliation section. |
 | 4d | MFA presence on VPN login pages | Open |
 | 4c-ii | **Infrastructure-infection / C2-beaconing signal** (reinsurer "Infrastructure Infections — Malicious Connection Attempt" card). Distinct from credential/infostealer: it flags *org servers/hosts* observed connecting to malicious infra. We partially cover via DNSBL (reputation/blacklist), but lack infection-type + days-observed granularity. Would need a threat-intel feed (Spamhaus CSS/XBL, GreyNoise, abuse.ch Feodo). **Attribution caveat:** the reinsurer's example IP `152.111.191.48` reverse-resolves to `download.kalahari.com` (Kalahari merged into Takealot 2014) — a legacy/related-brand IP not in takealot.com's scope, so it would only surface via related-domain (S-1) discovery + cert-verification. The reassigned/legacy-IP attribution risk is now mitigated by the own-vs-vendor classification (`ip_classification.py`, 2026-06-30), which keeps vendor/legacy hosts out of the insured's own attack surface; the C2-beaconing signal itself still needs a threat-intel feed. | Open (signal not built; attribution risk mitigated) |
 | 4e | WAF rate limiting / bot protection detection | Open |
@@ -514,6 +598,33 @@ contribution to a score but is only `100 - dimension_score` (a display-only
 inversion; the five values summed to 326 on a scan whose overall risk score was
 251). Relabel. And "Data Protection" is currently driven by privacy-policy
 presence, which the name does not convey.
+
+### 5n. Asset discovery when the client supplies a partial address list (GAP, 2026-09-14)
+
+The scan consent form issued 2026-09-14 states the limit plainly: discovery cannot be
+guaranteed complete, infrastructure that is not reachable from the primary domain and
+appears in no public record will not be found, and anything neither supplied nor
+discovered is reported as not assessed. That wording is honest, and it is not a
+substitute for the discovery itself. Raised by the owner while reviewing the form:
+there will be situations where the full address list is not given, and the estate needs
+to be discovered as far as the available signals allow.
+
+What the scan does today: it resolves the primary domain, expands from public records
+(certificate transparency via crt.sh and CertSpotter, plus DNS), and accepts an optional
+list of additional external addresses from the form. Infrastructure on unrelated ranges,
+or fronted by a CDN, is reached only where the client lists it.
+
+| Item | Note |
+|---|---|
+| Expand the estate from a partial list | Reverse DNS over supplied ranges, shared-certificate and shared-nameserver pivots, ASN and netblock ownership where the registrant matches. Each pivot needs its own confidence level, as certificate-transparency candidates already have |
+| State model for a discovered but unconfirmed ASSET | Related domains already have one: candidates are listed, never assessed until confirmed, and named in the report as not assessed. Addresses and hosts need the equivalent, so a discovered-but-unconfirmed host cannot silently widen or narrow the rated estate |
+| Report what was not reached | An asset neither supplied nor discovered is not evidence of a clean estate. Whatever the coverage rule becomes, every surface must keep saying what the scan could not see, per the fail-closed rule |
+| Coverage basis for the underwriter | The report states which signals were assessed. It does not state how much of the estate was reachable. An explicit coverage basis would let an underwriter weigh a clean result against how much of the estate produced it |
+
+Dependency: the related-domain confirmation flow built in step 5 is the working model for
+"discovered, listed, not assessed until confirmed". Anything built here should reuse that
+state model rather than introduce a second one. Note that the step-5 records live on the
+unmerged `sandbox/remediation` branch (HEAD 510d46d at the time of writing), not on master.
 
 ## 6. Architectural follow-ups (low priority)
 
