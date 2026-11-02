@@ -68,6 +68,25 @@ def _is_contact_token(tok: str) -> bool:
 # surface, undoing round 12's IH12-1 (round 15).
 _HOSTISH_RE = re.compile(r"\s*[\"']?(?:[a-z0-9-]+\.)+[a-z]{2,}", re.I)
 
+
+def _looks_like_host_token(value: str) -> bool:
+    """Conservative guard for dotted, alphabetic tokens that failed syntax."""
+    raw = str(value).strip(" \t\"'")
+    token = raw.split()[0] if raw else ""
+    if "." not in token:
+        return False
+    tail = token.rsplit(".", 1)[-1]
+    # Numeric-leading tails are dates, versions, or amounts commonly used in
+    # display names ("v2.1", "R1.5m", "No.1"), not unreadable hostnames.
+    if len(tail) < 2 or tail[0].isdecimal():
+        return False
+    return any(ch.isalpha() for ch in tail) and (
+        any(ord(ch) > 127 for ch in tail)
+        or tail[-1].isdecimal()
+        or tail.endswith("-")
+        or not re.fullmatch(r"[a-z0-9-]+", tail, re.I)
+    )
+
 # A scheme, or a chain of them (mailto://jane@..., https://http://...).
 _SCHEME_RE = re.compile(r"^(?:(?:https?|ftp)://|//|mailto:)+")
 
@@ -100,7 +119,8 @@ def _normalize_once(raw: str) -> str:
         # is a display name and its address is (rounds 8 to 10).
         if host:
             s = host.group(0)
-        elif _HOSTISH_RE.match(m.group("pre")):
+        elif (_HOSTISH_RE.match(m.group("pre"))
+              or _looks_like_host_token(m.group("pre"))):
             # Host-shaped but unreadable: an unreadable target must not become
             # the contact's domain (step-5 critique round 13, IH13-3).
             return ""
@@ -211,6 +231,26 @@ def clean_related_domains(raw_related) -> list:
                 for t in hosts:
                     _keep(t)
                 continue
+            # A line may contain several contacts and no host.  Normalising the
+            # whole line keeps only the last address (the final @ wins), which
+            # silently drops the other confirmed contact domains.  Keep every
+            # contact token in input order; display names are ignored.
+            contacts = [t for t in toks if _is_contact_token(t)]
+            invalid_host = any(
+                not _is_contact_token(t) and _looks_like_host_token(t)
+                for t in toks
+            )
+            if contacts and not invalid_host:
+                for t in contacts:
+                    _keep(t)
+                continue
+        # Comma/semicolon-separated input commonly arrives as one list entry
+        # with a trailing separator (e.g. "supplier.co.za,").  The separator
+        # is already removed by the server tokenizer; validate that token
+        # rather than the raw entry so the API door matches the form door.
+        if len(toks) == 1 and toks[0] != s.strip():
+            _keep(toks[0])
+            continue
         _keep(s)
     return out
 

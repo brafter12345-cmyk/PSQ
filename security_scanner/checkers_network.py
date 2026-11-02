@@ -3,6 +3,8 @@ Network and infrastructure security checkers: Subdomains, VPN, DNS, Ports, Secur
 """
 
 from scanner_utils import *
+from scanner_utils import bounded_probe_results, PartialProbeList
+from target_safety import connect_public, public_ip, resolve_public, UnsafeTarget
 
 # WS0: route target probes through the egress seam (HTTP) and the CT logs through
 # their per-provider clients (CRTSH + CERTSPOTTER). All return None on a failed
@@ -379,19 +381,16 @@ class SubdomainChecker:
                 f"{prefix}.{domain}" for prefix in self.BRUTE_PREFIXES
                 if f"{prefix}.{domain}" not in seen
             ]
-            with ThreadPoolExecutor(max_workers=20) as ex:
-                futures = {ex.submit(self._resolves, host): host for host in brute_candidates}
-                for future in as_completed(futures, timeout=15):
-                    host = futures[future]
-                    try:
-                        ips = future.result(timeout=3)
-                        # Guard against any residual wildcard answers.
-                        if ips and not (set(ips) & wildcard_ips):
-                            seen.add(host)
-                            subdomains.append(host)
-                            brute_found += 1
-                    except Exception:
-                        pass
+            finished, incomplete = bounded_probe_results(
+                self._resolves, [(host, (host,)) for host in brute_candidates],
+                max_workers=20, timeout=15)
+            for host, ips in finished:
+                if ips and not (set(ips) & wildcard_ips):
+                    seen.add(host)
+                    subdomains.append(host)
+                    brute_found += 1
+            if incomplete:
+                result.setdefault("incomplete_probes", {})["brute_force"] = incomplete
         result["brute_count"] = brute_found
 
         # Honest coverage flag: if BOTH CT sources were unreachable this scan,
@@ -425,16 +424,14 @@ class SubdomainChecker:
 
         # --- Resolve all subdomains to IPs (for attack surface mapping) ---
         resolved_ips = {}
-        with ThreadPoolExecutor(max_workers=20) as ex:
-            futures = {ex.submit(self._resolves, sub): sub for sub in subdomains[:80]}
-            for future in as_completed(futures, timeout=15):
-                sub = futures[future]
-                try:
-                    ips = future.result(timeout=3)
-                    if ips:
-                        resolved_ips[sub] = ips
-                except Exception:
-                    pass
+        finished, incomplete = bounded_probe_results(
+            self._resolves, [(sub, (sub,)) for sub in subdomains[:80]],
+            max_workers=20, timeout=15)
+        for sub, ips in finished:
+            if ips:
+                resolved_ips[sub] = ips
+        if incomplete:
+            result.setdefault("incomplete_probes", {})["resolution"] = incomplete
         result["resolved_ips"] = resolved_ips
 
         # Unique IPs across all subdomains
@@ -468,15 +465,16 @@ class SubdomainChecker:
         # Per-subdomain GETs are spread across 150 distinct hosts so
         # no single per-apex WAF gets pummeled.
         takeover_vulnerable = []
-        with ThreadPoolExecutor(max_workers=10) as ex:
-            futures = {ex.submit(self._check_cname_takeover, sub): sub for sub in subdomains[:150]}
-            for future in as_completed(futures, timeout=90):
-                try:
-                    result_to = future.result(timeout=5)
-                    if result_to:
-                        takeover_vulnerable.append(result_to)
-                except Exception:
-                    pass
+        finished, incomplete = bounded_probe_results(
+            self._check_cname_takeover, [(sub, (sub,)) for sub in subdomains[:150]],
+            max_workers=10, timeout=90)
+        takeover_vulnerable.extend(value for _, value in finished if value)
+        if incomplete:
+            result.setdefault("incomplete_probes", {})["takeover"] = incomplete
+        if result.get("incomplete_probes"):
+            result["status"] = "timeout"
+            result["partial_coverage"] = True
+            result["issues"].append("Subdomain probing timed out; completed findings are partial")
         result["takeover_vulnerable"] = takeover_vulnerable
         if takeover_vulnerable:
             for tv in takeover_vulnerable:
@@ -597,20 +595,26 @@ class VPNRemoteAccessChecker:
         # host slipped a phantom RDP through). Only confirm the exposure when the
         # host is not saturated; a real RDP host (canaries closed) still fires.
         try:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            s.settimeout(3)
-            rdp_open = s.connect_ex((domain, 3389)) == 0
-            s.close()
+            s = connect_public(domain, 3389, timeout=3)
+            try:
+                apex_ip = s.getpeername()[0]
+            finally:
+                s.close()
+            rdp_open = True
             if rdp_open:
-                try:
-                    apex_ip = socket.gethostbyname(domain)
-                except Exception:
-                    apex_ip = None
                 if apex_ip and is_saturated_host(apex_ip):
                     rdp_open = False  # tarpit — 3389 "open" is a lie, not a service
             result["rdp_exposed"] = rdp_open
             if rdp_open:
                 result["issues"].append("RDP (port 3389) is exposed — directly accessible from internet")
+        except (UnsafeTarget, socket.gaierror):
+            result["status"] = "error"
+            result["partial_coverage"] = True
+            result["error"] = "Remote-access target did not resolve exclusively to public addresses"
+        except socket.timeout:
+            result["status"] = "timeout"
+            result["partial_coverage"] = True
+            result["error"] = "Remote-access port probe timed out"
         except Exception:
             pass
 
@@ -709,7 +713,7 @@ _saturated_host_cache: dict = {}
 def is_saturated_host(ip: str) -> bool:
     """True if *ip* answers connect() on closed-port canaries — a tarpit /
     firewall / load-balancer whose port-scan results are false positives."""
-    if not ip:
+    if not public_ip(ip):
         return False
     cached = _saturated_host_cache.get(ip)
     if cached is not None:
@@ -881,8 +885,16 @@ class DNSInfrastructureChecker:
                 result["dns_records"] = self._get_dns_records(domain)
                 result["reverse_dns"] = self._get_reverse_dns(domain, ip=ip)
                 result["zone_transfer"] = self._check_zone_transfer(domain, result["dns_records"])
+                if result["zone_transfer"].get("unassessed_nameservers"):
+                    result["status"] = "error"
+                    result["partial_coverage"] = True
                 result["dnssec_enabled"] = self._check_dnssec(domain)
-            result["open_ports"] = self._scan_ports(domain, ip=ip)
+            ports = self._scan_ports(domain, ip=ip)
+            result["open_ports"] = list(ports)
+            if getattr(ports, "incomplete", 0):
+                result["status"] = "timeout"
+                result["partial_coverage"] = True
+                result["incomplete_probes"] = ports.incomplete
             result["server_info"] = self._fingerprint_server(domain)
             result["risk_score"], result["issues"] = self._assess_risk(
                 result["open_ports"], result.get("zone_transfer"))
@@ -917,7 +929,12 @@ class DNSInfrastructureChecker:
             ns = ns.rstrip(".")
             zt["ns_tested"] += 1
             try:
-                zone = dns.zone.from_xfr(dns.query.xfr(ns, domain, lifetime=5))
+                answers = resolve_public(ns, 53)
+            except OSError:
+                zt.setdefault("unassessed_nameservers", []).append(ns)
+                continue
+            try:
+                zone = dns.zone.from_xfr(dns.query.xfr(answers[0][4][0], domain, lifetime=5))
                 record_count = len(zone.nodes)
                 if record_count > 0:
                     zt["vulnerable"] = True
@@ -961,6 +978,8 @@ class DNSInfrastructureChecker:
         except Exception:
             return []
 
+        if not public_ip(ip):
+            raise UnsafeTarget("port-scan target is not a public IP address")
         open_ports = []
 
         def probe(port):
@@ -985,25 +1004,20 @@ class DNSInfrastructureChecker:
                 except: pass
             return None
 
-        with ThreadPoolExecutor(max_workers=20) as ex:
-            futures = {ex.submit(probe, p): p for p in self.ALL_PORTS}
-            for f in as_completed(futures, timeout=30):
-                try:
-                    r = f.result()
-                    if r:
-                        open_ports.append(r)
-                except Exception:
-                    pass
+        finished, incomplete = bounded_probe_results(
+            probe, [(port, (port,)) for port in self.ALL_PORTS],
+            max_workers=20, timeout=30)
+        open_ports.extend(value for _, value in finished if value)
         # Saturated-host gate: a tarpit/firewall that SYN-ACKs everything yields
         # phantom "open" ports. If the IP fails the closed-port-canary test,
         # discard its port findings entirely — they are not real services.
         if open_ports and is_saturated_host(ip):
-            return []
+            return PartialProbeList((), incomplete)
         # Evidence flag: a port with a grabbed banner is service-confirmed; one
         # without is "open" by TCP connect only (no version evidence).
         for e in open_ports:
             e["confirmed"] = bool(e.get("banner"))
-        return sorted(open_ports, key=lambda x: x["port"])
+        return PartialProbeList(sorted(open_ports, key=lambda x: x["port"]), incomplete)
 
     def _grab_banner(self, sock, port: int, domain: str) -> str:
         """Attempt to grab service banner from an open port."""
@@ -1261,6 +1275,10 @@ class HighRiskProtocolChecker:
         except Exception:
             return result
 
+        if not public_ip(ip):
+            result["status"] = "error"
+            result["error"] = "service-scan target is not a public IP address"
+            return result
         exposed = []
 
         def probe(port, service):
@@ -1285,15 +1303,14 @@ class HighRiskProtocolChecker:
                 except: pass
             return None
 
-        with ThreadPoolExecutor(max_workers=20) as ex:
-            futures = {ex.submit(probe, port, svc): port for port, svc in self.CRITICAL_SERVICES.items()}
-            for f in as_completed(futures, timeout=30):
-                try:
-                    r = f.result()
-                    if r:
-                        exposed.append(r)
-                except Exception:
-                    pass
+        finished, incomplete = bounded_probe_results(
+            probe, [(port, (port, svc)) for port, svc in self.CRITICAL_SERVICES.items()],
+            max_workers=20, timeout=30)
+        exposed.extend(value for _, value in finished if value)
+        if incomplete:
+            result["status"] = "timeout"
+            result["partial_coverage"] = True
+            result["incomplete_probes"] = incomplete
 
         # Saturated-host gate (shared, cached with the port scanner): a
         # tarpit/firewall SYN-ACKs every CRITICAL_SERVICES port, fabricating

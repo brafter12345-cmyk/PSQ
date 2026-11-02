@@ -14,7 +14,9 @@ import RemediationQueue from '../components/overview/RemediationQueue'
 import ComplianceMatrix from '../components/overview/ComplianceMatrix'
 import PeerBenchmark from '../components/overview/PeerBenchmark'
 import EvidenceDrawer, { type DrawerTarget } from '../components/drawer/EvidenceDrawer'
+import { PartialCoverageNote } from '../components/detail/parts'
 import { getResults } from '../data/results'
+import { networkCoverageNotes } from '../data/selectors'
 import styles from './OverviewPage.module.css'
 
 export default function OverviewPage() {
@@ -29,6 +31,8 @@ export default function OverviewPage() {
       <CategoryTabs />
       <ExecutiveStrip r={r} onOpenCritical={() => setDrawer({ kind: 'critical' })} />
       <CoverageBanner r={r} onReview={openCat} />
+      {networkCoverageNotes(r).map(({ label, category }) =>
+        <PartialCoverageNote key={label} label={label} category={category} />)}
 
       <div className={styles.mainGrid}>
         <div className={styles.col}>

@@ -995,6 +995,7 @@ class EmailVendorSurfaceChecker:
     def _walk_includes(self, domain: str, depth: int = 0,
                        seen: set = None) -> list:
         if depth > 4:
+            self.__dict__["_spf_depth_limit_hit"] = True
             return []
         seen = seen if seen is not None else set()
         if domain in seen:
@@ -1010,6 +1011,8 @@ class EmailVendorSurfaceChecker:
         if self.REDIRECT_RE.search(record):
             self.__dict__.setdefault("_spf_unfollowed", set()).add(domain)
         out = []
+        if len(includes) > 10:
+            self.__dict__["_spf_include_limit_hit"] = True
         for inc in includes[:10]:
             out.append({"include": inc, "depth": depth})
             out.extend(self._walk_includes(inc, depth + 1, seen))
@@ -1024,6 +1027,7 @@ class EmailVendorSurfaceChecker:
         return "answered"
 
     def _fetch_dmarc_policy(self, domain: str) -> str:
+        self.__dict__["_dmarc_lookup"] = "failed"
         try:
             import dns.resolver
             answers = dns.resolver.resolve(f"_dmarc.{domain}", "TXT",
@@ -1036,9 +1040,12 @@ class EmailVendorSurfaceChecker:
                 if txt.startswith("v=DMARC1"):
                     m = re.search(r"p\s*=\s*(\w+)", txt)
                     if m:
+                        self.__dict__["_dmarc_lookup"] = "answered"
                         return m.group(1).lower()
-        except Exception:
-            return ""
+            self.__dict__["_dmarc_lookup"] = "no_record"
+        except Exception as exc:
+            if exc.__class__.__name__ in ("NXDOMAIN", "NoAnswer"):
+                self.__dict__["_dmarc_lookup"] = "no_record"
         return ""
 
     def check(self, domain: str) -> dict:
@@ -1049,12 +1056,21 @@ class EmailVendorSurfaceChecker:
             "vendor_count": 0,
             "unknown_count": 0,
             "dmarc_policy": "",
+            "dmarc_lookup": "not_run",
+            "spf_traversal": {"max_depth": 4, "max_includes_per_record": 10,
+                              "depth_limit_hit": False, "include_limit_hit": False},
             "weak_dmarc": False,
             "score": 100,
             "issues": [],
         }
         self._spf_failed, self._spf_unfollowed = set(), set()
+        self._spf_depth_limit_hit = False
+        self._spf_include_limit_hit = False
+        self._dmarc_lookup = "not_run"
         includes = self._walk_includes(domain)
+        result["spf_traversal"] = {"max_depth": 4, "max_includes_per_record": 10,
+                                   "depth_limit_hit": bool(self._spf_depth_limit_hit),
+                                   "include_limit_hit": bool(self._spf_include_limit_hit)}
         if not includes:
             result["status"] = "no_data"
             # Whether "no includes" was measured. Reporting only: the status,
@@ -1089,6 +1105,7 @@ class EmailVendorSurfaceChecker:
         result["spf_lookup"] = ("partial" if (self._spf_failed or self._spf_unfollowed)
                                 else "answered")
         result["dmarc_policy"] = self._fetch_dmarc_policy(domain)
+        result["dmarc_lookup"] = self._dmarc_lookup
         result["weak_dmarc"] = result["dmarc_policy"] in ("", "none")
 
         # Scoring rationale: the vendor surface itself is informational
@@ -1102,11 +1119,19 @@ class EmailVendorSurfaceChecker:
             penalty += 10
         if result["weak_dmarc"] and result["vendor_count"] >= 1:
             penalty += 20
-            result["issues"].append(
-                f"{result['vendor_count']} email-vendor(s) in SPF chain with "
-                f"DMARC p={result['dmarc_policy'] or 'missing'} — a breach at "
-                "any of these vendors enables direct phishing impersonation"
-            )
+            if self._dmarc_lookup == "failed":
+                result["issues"].append(
+                    f"{result['vendor_count']} email-vendor(s) in SPF chain; "
+                    "DMARC could not be verified. Verify the record before "
+                    "judging vendor impersonation protection."
+                )
+            else:
+                _dmarc_display = result["dmarc_policy"] or "missing"
+                result["issues"].append(
+                    f"{result['vendor_count']} email-vendor(s) in SPF chain with "
+                    f"DMARC p={_dmarc_display} — a breach at "
+                    "any of these vendors enables direct phishing impersonation"
+                )
         elif result["vendor_count"] >= 6:
             result["issues"].append(
                 f"{result['vendor_count']} email-vendor(s) in SPF chain — wide "
@@ -1373,6 +1398,9 @@ class VendorBreachChecker:
             "high_match_count": 0,
             "score": 100,
             "issues": [],
+            "vendor_breach_scope": "curated public-record database; not exhaustive",
+            "spf_traversal": {"max_depth": 4, "max_includes_per_record": 10,
+                              "depth_limit_hit": False, "include_limit_hit": False},
         }
         db = self._load_db()
         breaches_by_vendor = {}
@@ -1383,7 +1411,12 @@ class VendorBreachChecker:
         # dependency and keeps this checker self-contained for testing).
         surface = EmailVendorSurfaceChecker()
         surface._spf_failed, surface._spf_unfollowed = set(), set()
+        surface._spf_depth_limit_hit = False
+        surface._spf_include_limit_hit = False
         includes = surface._walk_includes(domain)
+        result["spf_traversal"] = {"max_depth": 4, "max_includes_per_record": 10,
+                                   "depth_limit_hit": bool(surface._spf_depth_limit_hit),
+                                   "include_limit_hit": bool(surface._spf_include_limit_hit)}
         if not includes:
             result["status"] = "no_data"
             # As for the vendor surface: was "no vendors" measured?

@@ -34,6 +34,9 @@ export interface CategoryBase {
   status?: string
   score?: number
   issues?: Array<string | Issue>
+  partial_coverage?: boolean
+  unassessed_ips?: Array<{ ip?: string; status?: string; [k: string]: unknown }>
+  incomplete_probes?: number | Array<{ probe?: string; status?: string; [k: string]: unknown } | string> | Record<string, unknown>
   [k: string]: unknown
 }
 

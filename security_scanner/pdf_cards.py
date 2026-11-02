@@ -333,6 +333,31 @@ def cat_waf(d, S):
     return parts
 
 
+def _per_ip_coverage_text(result):
+    if not isinstance(result, dict) or not result.get("partial_coverage"):
+        return ""
+    rows = result.get("unassessed_ips") or []
+    probes = result.get("incomplete_probes") or {}
+    ips = ", ".join(str(r.get("ip")) for r in rows[:4] if isinstance(r, dict) and r.get("ip"))
+    extra = len(rows) - min(len(rows), 4)
+    shown = ips + (f" (+{extra} more)" if extra > 0 else "")
+    if probes and not rows:
+        names = ", ".join(str(k) for k in probes) if isinstance(probes, dict) else str(probes)
+        return ("Partial probe coverage — incomplete probes: " + names
+                + "; aggregate findings are a lower bound.")
+    if not rows:
+        return "Partial coverage — assessment incomplete; aggregate findings are a lower bound."
+    return ("Partial per-IP coverage — some addresses were not assessed"
+            + (f" ({shown})" if shown else "")
+            + "; aggregate findings are a lower bound.")
+
+
+def _append_per_ip_coverage(rows, result):
+    note = _per_ip_coverage_text(result)
+    if note:
+        rows.insert(0, ("Coverage", note))
+
+
 def cat_dns(d, S):
     dns  = d.get("dns_infrastructure", {})
     ports= dns.get("open_ports", [])
@@ -355,6 +380,7 @@ def cat_dns(d, S):
         ("TXT records", str(len(txt)) + " record(s)" if txt else "None"),
         ("Zone transfer (AXFR)", f"VULNERABLE — {zt.get('records_leaked',0)} records leaked via {', '.join(zt.get('vulnerable_ns',[]))}" if zt.get("vulnerable") else ("Protected" if zt.get("tested") else "Not tested")),
     ]
+    _append_per_ip_coverage(rows, dns)
     # Map each port to the actual back-end IP(s) it was found on. On CDN-fronted
     # targets the merged port list otherwise reads as if every port sits on the
     # apex IP, hiding that e.g. FTP lives on a separate origin IP.
@@ -401,11 +427,20 @@ def cat_dns(d, S):
             if len(_ids) > len(_show):
                 rows.append(("", f"and {len(_ids) - len(_show)} further CVE(s) on this port"))
     fb = "Minimal attack surface — only essential ports are exposed." if len(high) == 0 and len(ports) <= 2 else (f"{len(high)} high-risk port(s) exposed — each is a potential entry point for attackers." if high else f"{len(ports)} ports open — review whether all exposed services are necessary.")
-    parts = build_cat_card("DNS & Open Ports", col, f"{len(ports)} open port(s)", rows, dns.get("issues", []), S, fallback=fb)
+    partial_clean = bool(dns.get("partial_coverage")) and not high
+    partial_clean_text = ("Completed probes found no high-risk ports. Coverage is incomplete, "
+                          "so the overall attack surface cannot be confirmed.")
+    if partial_clean:
+        fb = partial_clean_text
+    summary = (f"{len(ports)} observed open port(s) — partial assessment"
+               if dns.get("partial_coverage") else f"{len(ports)} open port(s)")
+    parts = build_cat_card("DNS & Open Ports", col, summary, rows, dns.get("issues", []), S, fallback=fb)
 
     parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
     parts.append(Spacer(1, 1 * mm))
-    if len(ports) <= 2 and not high:
+    if partial_clean:
+        parts.append(Paragraph(partial_clean_text, S["body"]))
+    elif len(ports) <= 2 and not high:
         parts.append(Paragraph(
             "Only essential services (typically HTTP/HTTPS) are exposed to the internet. A minimal attack surface "
             "means fewer entry points for attackers to probe, significantly reducing the risk of unauthorised access.",
@@ -448,6 +483,7 @@ def cat_hrp(d, S):
     svcs = hrp.get("exposed_services", [])
     col  = C_CRITICAL if svcs else C_GREEN
     rows = []
+    _append_per_ip_coverage(rows, hrp)
     for i, s in enumerate(svcs):
         if i > 0:
             rows.append(("———", "———"))  # separator between services
@@ -1150,6 +1186,7 @@ def cat_shodan(d, S):
         ("Breakdown",    f"Critical: {crit}  |  High: {high}  |  Medium: {med}  |  Low: {low}"),
         ("Open ports",   ", ".join(str(p) for p in sv.get("open_ports", [])) or "—"),
     ]
+    _append_per_ip_coverage(rows, sv)
     if sv.get("os"):
         rows.append(("OS", sv["os"]))
     if sv.get("org"):
@@ -2591,6 +2628,12 @@ def spf_surface_unmeasured(p):
     return None
 
 
+def spf_partial_note(p):
+    traversal = (p or {}).get("spf_traversal") or {}
+    return _SPF_LIMIT_NOTE if (traversal.get("depth_limit_hit") or
+                               traversal.get("include_limit_hit")) else _SPF_PARTIAL_NOTE
+
+
 def spf_surface_partial(p):
     """True where only part of the SPF chain was read: the walk recorded
     "partial" (a vendor found beside a lookup that did not answer, or a record
@@ -2603,6 +2646,9 @@ def spf_surface_partial(p):
         return False
     if p.get("spf_lookup") == "partial":
         return True
+    traversal = p.get("spf_traversal") or {}
+    if traversal.get("depth_limit_hit") or traversal.get("include_limit_hit"):
+        return True
     return (p.get("status") == "completed" and p.get("spf_lookup") is None
             and bool(p.get("vendors_detected") or p.get("vendor_count")))
 
@@ -2614,7 +2660,31 @@ _SPF_PARTIAL_NOTE = (
     "delegates with redirect=, which this check does not follow. The vendors "
     "below are a lower bound, so this is not a complete assessment of the "
     "sending surface. Re-scan to read the rest.")
+_SPF_LIMIT_NOTE = (
+    "The SPF traversal limit was reached, so this sending-surface assessment "
+    "is incomplete. Review the unassessed chain separately; a retry will not "
+    "read beyond the fixed traversal cap.")
 _SPF_PARTIAL_ROW = ("SPF chain", "Partly read - the vendors are a lower bound")
+
+
+def dmarc_policy_label(p):
+    """Display policy without turning a failed lookup into a confirmed absence."""
+    if isinstance(p, dict) and p.get("dmarc_lookup") == "failed":
+        return "not verified"
+    return (p.get("dmarc_policy") or "missing") if isinstance(p, dict) else "not verified"
+
+
+def _display_issues(p):
+    issues = list((p or {}).get("issues") or [])
+    if dmarc_policy_unverified(p):
+        issues = [str(i).replace("DMARC p=missing", "DMARC lookup not verified")
+                                      .replace("DMARC p=not verified", "DMARC lookup not verified")
+                  for i in issues]
+    return issues
+
+
+def dmarc_policy_unverified(p):
+    return isinstance(p, dict) and p.get("dmarc_lookup") == "failed"
 
 
 def cat_email_vendor_surface(d, S):
@@ -2625,9 +2695,10 @@ def cat_email_vendor_surface(d, S):
     vendors    = evs.get("vendors_detected", []) or []
     count      = evs.get("vendor_count", 0)
     weak_dmarc = evs.get("weak_dmarc", False)
-    policy     = evs.get("dmarc_policy") or "missing"
-    col = C_RED if (weak_dmarc and count >= 1) else (
-          C_AMBER if count >= 6 else (C_AMBER if count >= 3 else C_GREEN))
+    policy     = dmarc_policy_label(evs)
+    dmarc_unverified = dmarc_policy_unverified(evs)
+    col = C_AMBER if (dmarc_unverified and count >= 1) else (C_RED if (weak_dmarc and not dmarc_unverified and count >= 1) else (
+          C_AMBER if count >= 6 else (C_AMBER if count >= 3 else C_GREEN)))
     # A partly read chain is never the clean colour, and says so (step-5
     # critique round 10).
     partly = spf_surface_partial(evs)
@@ -2642,23 +2713,40 @@ def cat_email_vendor_surface(d, S):
         rows.append(_SPF_PARTIAL_ROW)
     for v in vendors[:8]:
         rows.append((v.get("vendor", ""), ", ".join(v.get("includes", []))))
-    fb = (f"{count} email-vendor(s) in SPF chain with weak DMARC (p={policy}) — phishing-via-supplier risk."
-          if (weak_dmarc and count >= 1) else
+    _dmarc_phrase = ("DMARC lookup not verified" if dmarc_unverified
+                      else f"weak DMARC (p={policy})")
+    fb = (f"{count} email-vendor(s) in SPF chain with {_dmarc_phrase} — phishing-via-supplier risk."
+          if (weak_dmarc and not dmarc_unverified and count >= 1) else
           (f"{count} email-vendor(s) detected in SPF chain — wide fourth-party surface."
            if count >= 6 else
            f"{count} email-vendor(s) detected — DMARC policy: {policy}."))
     if partly:
         fb = "Part of the SPF chain was not read — the vendors are a lower bound. " + fb
     parts = build_cat_card("Email-Vendor Surface (SPF)", col,
-                          f"{count} vendor(s), DMARC p={policy}",
-                          rows, evs.get("issues", []), S, fallback=fb)
+                          f"{count} vendor(s), {'DMARC not verified' if dmarc_unverified else 'DMARC p=' + policy}",
+                          rows, _display_issues(evs), S, fallback=fb)
 
     parts.append(Paragraph("<b>What This Means</b>", S["cat_title"]))
     parts.append(Spacer(1, 1 * mm))
-    if weak_dmarc and count >= 1:
+    if dmarc_unverified and count >= 1:
+        parts.append(Paragraph(
+            f"Your SPF record authorises {count} third-party email vendor(s), but the DMARC lookup was not verified. "
+            "The weak-policy finding is therefore unconfirmed; review the DNS response before relying on this control.",
+            S["body"]))
+        parts.append(Spacer(1, 2 * mm))
+        parts.append(Paragraph("<b>Recommended Actions</b>", S["cat_title"]))
+        parts.append(Spacer(1, 1 * mm))
+        parts.append(Paragraph("1. Verify the DMARC record and then set policy to p=quarantine or p=reject if appropriate.", S["body"]))
+        parts.append(Paragraph("2. Audit each vendor — confirm which still need send authority and remove the rest.", S["body"]))
+    elif weak_dmarc and count >= 1:
+        _dmarc_sentence = (
+            "DMARC could not be verified; a credential compromise at any one of these vendors may land "
+            if dmarc_unverified else
+            f"With DMARC policy set to '{policy}', a credential compromise at any one of these vendors lands "
+        )
         parts.append(Paragraph(
             f"Your SPF record authorises {count} third-party email vendor(s) to send mail on your behalf. "
-            f"With DMARC policy set to '{policy}', a credential compromise at any one of these vendors lands "
+            + _dmarc_sentence +
             "phishing emails in customer inboxes that pass authentication checks. This is the same attack "
             "class that drove the Mailchimp 2023 and Constant Contact 2021 incidents downstream into "
             "customer organisations.",
@@ -2683,14 +2771,16 @@ def cat_email_vendor_surface(d, S):
         parts.append(Paragraph("2. Confirm DMARC is set to p=quarantine or p=reject and TLS-RPT is enabled.", S["body"]))
         parts.append(Paragraph("3. Use sub-domain delegation (e.g. marketing.yourdomain.com) to compartmentalise vendor authority.", S["body"]))
     else:
+        _surface_posture = ("DMARC lookup not verified; authentication enforcement is unconfirmed."
+                            if dmarc_unverified else
+                            f"DMARC policy {policy} — a focused vendor surface with proper authentication enforcement.")
         parts.append(Paragraph(
-            f"Your SPF chain authorises {count} email vendor(s) with DMARC policy '{policy}' — a focused "
-            "vendor surface with proper authentication enforcement. Continue to review the vendor list "
-            "during quarterly compliance reviews so unused authorisations are removed.",
+            f"Your SPF chain authorises {count} email vendor(s); {_surface_posture} Continue to review "
+            "the vendor list during quarterly compliance reviews so unused authorisations are removed.",
             S["body"]))
     if partly:
         parts.append(Spacer(1, 2 * mm))
-        parts.append(Paragraph(_SPF_PARTIAL_NOTE, S["body"]))
+        parts.append(Paragraph(spf_partial_note(evs), S["body"]))
     parts.append(Spacer(1, 3 * mm))
     return parts
 
@@ -2991,6 +3081,7 @@ def cat_vendor_breach(d, S):
         ("Breach matches",          len(matches)),
         ("Critical severity",       crit),
         ("High severity",           high),
+        ("Lookup scope",             vb.get("vendor_breach_scope") or "curated public-record database; not exhaustive"),
     ]
     if partly:
         rows.append(_SPF_PARTIAL_ROW)
@@ -3003,9 +3094,11 @@ def cat_vendor_breach(d, S):
         if crit > 0 else
         (f"{high} high-severity breach(es) at vendor(s) in your email send-authority chain."
          if high > 0 else
-         ("Vendor surface matched against breach DB — no severe incidents within the lookback window."
-          if vb.get("vendors_detected") else
-          "No vendor surface detected in SPF chain — no correlation possible."))
+         (f"{len(matches)} matching record(s) in the curated public-record breach database; none were critical/high severity."
+          if matches else
+          ("No matching records in the curated public-record breach database within the lookback window."
+           if vb.get("vendors_detected") else
+           "No vendor surface detected in SPF chain; no curated-database correlation was possible.")))
     )
     if partly:
         fb = "Part of the SPF chain was not read — the vendors are a lower bound. " + fb
@@ -3036,19 +3129,19 @@ def cat_vendor_breach(d, S):
     elif vb.get("vendors_detected"):
         parts.append(Paragraph(
             "Your detected email vendors were correlated against the curated public-record breach database "
-            "and no severe incidents fell inside the lookback window. Continue to monitor each vendor's "
+            "and no matching records in the curated public-record breach database fell inside the lookback window. Continue to monitor each vendor's "
             "advisories and re-scan periodically — new disclosures will update this view.",
             S["body"]))
     else:
         parts.append(Paragraph(
-            "No third-party email vendors were detected in the SPF chain, so there is no fourth-party "
-            "vendor-breach exposure to correlate at this time.",
+            "No third-party email vendors were detected in the SPF chain, so no matching records in the "
+            "curated public-record breach database could be assessed for this surface.",
             S["body"]))
     # The matches are drawn from the vendors found in the chain, so a chain that
     # was only partly read makes this correlation a lower bound too.
     if partly:
         parts.append(Spacer(1, 2 * mm))
-        parts.append(Paragraph(_SPF_PARTIAL_NOTE, S["body"]))
+        parts.append(Paragraph(spf_partial_note(vb), S["body"]))
     parts.append(Spacer(1, 3 * mm))
     return parts
 
@@ -4645,6 +4738,13 @@ def build_summary_table(results: dict, S) -> Table:
             C_CRITICAL if vpn_rdp else C_GREEN if rdp_known else C_GREY_4),
     ]
 
+    # A partial per-IP aggregate is not a clean estate verdict. Preserve the
+    # historic scores/statuses, but make the summary/deck state the coverage gap.
+    _coverage = [k for k in ("dns_infrastructure", "high_risk_protocols", "shodan_vulns")
+                 if (cats.get(k) or {}).get("partial_coverage")]
+    if _coverage:
+        rows.append(row("Per-IP coverage", "Partial — assessment incomplete", C_AMBER))
+
     # Add insurance rows if available
     if rsi_score is not None:
         rows.insert(0, row("Ransomware Susceptibility", f"{rsi_score:.2f}",
@@ -5253,9 +5353,11 @@ def _supply_chain_attacker_findings(cats: dict) -> dict:
     if hr_tp:
         access.append(f"{hr_tp} third-party / vendor credential exposure(s) in infostealer "
                       f"data - supply-chain backdoor")
-    if evs.get("weak_dmarc") and evs.get("vendor_count", 0) >= 1:
-        access.append(f"{evs.get('vendor_count')} email vendor(s) authorised with weak DMARC "
-                      f"(p={evs.get('dmarc_policy') or 'missing'}) - phishing-via-supplier")
+    if (evs.get("weak_dmarc") and not dmarc_policy_unverified(evs)
+            and evs.get("vendor_count", 0) >= 1):
+        _p = dmarc_policy_label(evs)
+        access.append(f"{evs.get('vendor_count')} email vendor(s) authorised with "
+                      f"{'DMARC not verified' if dmarc_policy_unverified(evs) else 'weak DMARC (p=' + _p + ')'} - phishing-via-supplier")
     # Phase 3 - exploitable third-party components
     comp = tpjs.get("compromised_host_count", 0); miss = tpjs.get("missing_sri_count", 0)
     if comp:

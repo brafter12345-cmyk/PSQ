@@ -311,7 +311,7 @@
             </div>
           </div>
           <textarea id="related-domains" name="related_domains" rows="2" placeholder="e.g. supplier-corp.co.za, group-holdings.com" style="background:var(--card-bg,#1a2332);color:#e2e8f0;border:1px solid rgba(255,255,255,0.1);border-radius:8px;padding:8px 12px;font-size:.9rem;resize:vertical;font-family:monospace;width:100%;box-sizing:border-box;"></textarea>
-          <div class="field-hint">Every scan looks for related domains automatically and lists them in the report for confirmation; only the domains entered or ticked here are scanned and scored. Supplier, sibling, or group-related domains the insured is contractually responsible for. Each is probed in LITE mode (SSL + DNS-port + info-disclosure) and worst-of-N findings feed the supply-chain category. Comma or newline separated. At most 10 are assessed per scan; any beyond that are listed in the report as not assessed.</div>
+          <div class="field-hint">Every scan looks for related domains automatically and lists them in the report for confirmation; only the domains entered or ticked here are scanned and scored. The preview is indicative: the full scan may discover additional names, and only explicitly confirmed entries are assessed. Supplier, sibling, or group-related domains the insured is contractually responsible for. Each is probed in LITE mode (SSL + DNS-port + info-disclosure) and worst-of-N findings feed the supply-chain category. Comma or newline separated. At most 10 are assessed per scan; any beyond that are listed in the report as not assessed.</div>
         </div>
 
         <div class="field">
@@ -671,7 +671,15 @@ function normalizeDomainOnce(raw) {
     // does (step-5 critique round 13, IH13-3).
     if (host) {
       s = host[0];
-    } else if (/^\s*["']?(?:[a-z\u017f\u0130\u0131\u212a0-9-]+\.)+[a-z\u017f\u0130\u0131\u212a]{2,}/i.test(angle[1])) {
+    } else if (/^\s*["']?(?:[a-z\u017f\u0130\u0131\u212a0-9-]+\.)+[a-z\u017f\u0130\u0131\u212a]{2,}/i.test(angle[1])
+        || (() => { const token = (angle[1].replace(/^[ \t"']+|[ \t"']+$/g, '').split(/\s+/)[0] || '');
+          if (!token.includes('.')) return false;
+          const t = token.split('.').pop() || '';
+          const chars = Array.from(t);
+          return chars.length >= 2 && !/^\p{Decimal_Number}$/u.test(chars[0])
+            && /\p{L}/u.test(t)
+            && (/[^\x00-\x7f]/u.test(t) || /\p{Decimal_Number}$/u.test(t) || /-$/.test(t)
+              || /[^a-z\u017f\u0130\u0131\u212a0-9-]/i.test(t)); })()) {
       return '';
     } else {
       s = angle[2];
@@ -970,8 +978,8 @@ function collectRelatedDomains() {
     // keeps acme.co.za (round 13, IH13-1).
     const dewild = (d) => {
       let s = d || '';
-      // replace, not slice: the gate guards this function against a
-      // browser-side trim of the confirmed list by looking for slice/splice.
+      // replace, never shorten: the gate guards this function against a
+      // browser-side trim of the confirmed list.
       // Every layer that was pasted, in ONE pass, exactly as the server's
       // lstrip("*.") does. One layer per pass left the form rejecting
       // "*..host" and deep runs the server keeps, and on a line carrying a
@@ -1021,12 +1029,31 @@ function collectRelatedDomains() {
         hosts.forEach(add);
         return;
       }
+      // A contact-only line may contain several addresses.  Adding the whole
+      // line normalises to only the last @-domain; mirror the server cleaner
+      // and retain every contact domain when no host qualifies.
+      const contacts = parts.filter(isContact);
+      const invalidHost = parts.some((p) => {
+        if (isContact(p)) return false;
+        const token = String(p).replace(/^[ \t"']+|[ \t"']+$/g, '');
+        if (!token.includes('.')) return false;
+        const t = token.split('.').pop() || '';
+        const chars = Array.from(t);
+        return chars.length >= 2 && !/^\p{Decimal_Number}$/u.test(chars[0])
+          && /\p{L}/u.test(t)
+          && (/[^\x00-\x7f]/u.test(t) || /\p{Decimal_Number}$/u.test(t) || /-$/.test(t)
+            || /[^a-z\u017f\u0130\u0131\u212a0-9-]/i.test(t));
+      });
+      if (contacts.length > 0 && !invalidHost) {
+        contacts.forEach(add);
+        return;
+      }
       // Otherwise the WHOLE entry, exactly as clean_related_domains falls back
       // to _keep(s). Cleaning each token on its own never reaches the
       // display-name rule, so an unreadable host beside a contact handed the
       // scan the BROKER's own domain while the server failed closed
       // (round 15).
-      add(line);
+      add(parts.length > 1 ? line : parts[0]);
     });
   }
   // Not trimmed here: the server assesses at most 10, after dropping the

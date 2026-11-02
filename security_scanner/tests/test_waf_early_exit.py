@@ -75,7 +75,7 @@ def test_precheck_detects_catchall(monkeypatch):
     import http_client
     from harness import make_response
     # every path (incl. random bogus ones) returns 200 -> catch-all / soft-404
-    monkeypatch.setattr(http_client.requests, "request",
+    monkeypatch.setattr(http_client, "safe_request",
                         lambda method, url, **kw: make_response(200))
     c = HttpClient()
     summary = c.precheck("catchall.example", bogus=2)
@@ -88,7 +88,7 @@ def test_precheck_no_catchall_on_real_404(monkeypatch):
     from harness import make_response
     # bogus paths 404 (real not-found handling), trigger paths 403
     monkeypatch.setattr(
-        http_client.requests, "request",
+        http_client, "safe_request",
         lambda method, url, **kw: make_response(404 if "/zz-" in url else 403))
     c = HttpClient()
     summary = c.precheck("clean.example", bogus=2)

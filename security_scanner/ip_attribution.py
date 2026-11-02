@@ -38,7 +38,11 @@ adjudicate host by host.
 import ipaddress
 import re
 
-from related_domain_discovery import _apex as registrable_domain
+def registrable_domain(host):
+    # Lazy import avoids estate_discovery -> related_domain_discovery ->
+    # ip_attribution import cycles while keeping one canonical reducer.
+    from estate_discovery import registrable
+    return registrable(host)
 
 # Confidence tiers. Orthogonal to the bucket; affects reporting only.
 CONFIRMED = "confirmed"        # positive proof: cert-verified origin, apex record,

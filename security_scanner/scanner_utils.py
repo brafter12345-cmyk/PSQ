@@ -105,16 +105,65 @@ class _DNSCache:
 # Module-level singleton — any checker imports it via `from scanner_utils import *`
 dns_cache = _DNSCache()
 
+# Bound the number of still-running timeout workers process-wide. A running
+# thread cannot be killed by Future.cancel(); retain its slot until it exits.
+_TIMEOUT_WORKER_SLOTS = threading.BoundedSemaphore(32)
+_PARTIAL_PROBE_SLOTS = threading.BoundedSemaphore(512)
+
+
+def bounded_probe_results(func, jobs, *, max_workers, timeout):
+    """Collect finished probe values until deadline; late jobs own slots until done.
+
+    Jobs are (key, argument tuple). Returns (completed key/value pairs,
+    incomplete count). Running work cannot be killed and may finish later.
+    """
+    pool = ThreadPoolExecutor(max_workers=max_workers)
+    futures = {}
+    incomplete = 0
+    try:
+        for key, args in jobs:
+            if not _PARTIAL_PROBE_SLOTS.acquire(blocking=False):
+                incomplete += 1
+                continue
+            try:
+                future = pool.submit(func, *args)
+            except BaseException:
+                _PARTIAL_PROBE_SLOTS.release()
+                raise
+            future.add_done_callback(lambda _f: _PARTIAL_PROBE_SLOTS.release())
+            futures[future] = key
+        completed = []
+        skipped = incomplete
+        try:
+            for future in as_completed(futures, timeout=timeout):
+                try:
+                    completed.append((futures[future], future.result()))
+                except Exception:
+                    incomplete += 1
+        except FuturesTimeoutError:
+            # Count values not consumed by the iterator, including jobs that
+            # completed concurrently with the deadline.
+            incomplete = skipped + len(futures) - len(completed)
+        return completed, incomplete
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+
+
+class PartialProbeList(list):
+    """List-compatible port data carrying an incomplete-probe count."""
+    def __init__(self, values=(), incomplete=0):
+        super().__init__(values)
+        self.incomplete = incomplete
+
 
 def run_with_timeout(func, args=(), kwargs=None, timeout: float = 60.0,
                       on_timeout_result=None):
-    """Execute `func(*args, **kwargs)` in a worker thread with a hard wall-clock
-    timeout. If the task doesn't finish in time, returns `on_timeout_result`
-    (or an error dict). The thread is allowed to orphan — acceptable for
-    network probes because the scan still returns on time.
+    """Return at the deadline without pretending a running thread was stopped.
 
-    Use for slow, timeout-unsafe checkers such as sslyze (which spawns
-    subprocesses) and SubdomainChecker (which depends on crt.sh latency).
+    A late worker can continue its own side effects and delay interpreter exit.
+    At most 32 such workers may be outstanding in this process; a slot stays
+    owned until the worker actually finishes. Callers must not treat a timeout
+    as proof that the underlying operation was cancelled.
     """
     kwargs = kwargs or {}
     default_timeout_result = {
@@ -122,13 +171,28 @@ def run_with_timeout(func, args=(), kwargs=None, timeout: float = 60.0,
         "error": f"Checker timed out after {int(timeout)}s",
         "issues": [f"Checker did not complete within {int(timeout)}s — partial or unavailable result"],
     }
-    with ThreadPoolExecutor(max_workers=1) as ex:
+    if not _TIMEOUT_WORKER_SLOTS.acquire(blocking=False):
+        return {"status": "timeout", "error": "Checker worker capacity exhausted",
+                "issues": ["Checker was not started because timed-out workers are still running"]}
+    try:
+        ex = ThreadPoolExecutor(max_workers=1)
+    except BaseException:
+        _TIMEOUT_WORKER_SLOTS.release()
+        raise
+    try:
         future = ex.submit(func, *args, **kwargs)
-        try:
-            return future.result(timeout=timeout)
-        except FuturesTimeoutError:
-            future.cancel()
-            return on_timeout_result if on_timeout_result is not None else default_timeout_result
-        except Exception as e:
-            return {"status": "error", "error": str(e),
-                    "issues": [f"Checker failed: {e}"]}
+    except BaseException:
+        _TIMEOUT_WORKER_SLOTS.release()
+        ex.shutdown(wait=False, cancel_futures=True)
+        raise
+    future.add_done_callback(lambda _future: _TIMEOUT_WORKER_SLOTS.release())
+    try:
+        return future.result(timeout=timeout)
+    except FuturesTimeoutError:
+        future.cancel()
+        return on_timeout_result if on_timeout_result is not None else default_timeout_result
+    except Exception as e:
+        return {"status": "error", "error": str(e),
+                "issues": [f"Checker failed: {e}"]}
+    finally:
+        ex.shutdown(wait=False, cancel_futures=True)

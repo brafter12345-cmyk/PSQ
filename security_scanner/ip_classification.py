@@ -365,6 +365,9 @@ def probe_default_cert(ip, timeout=5.0, port=443):
     of single tenancy.
     """
     import socket, ssl as _ssl
+    from target_safety import public_ip
+    if not public_ip(str(ip)):
+        return None
     ctx = _ssl.SSLContext(_ssl.PROTOCOL_TLS_CLIENT)
     ctx.check_hostname = False              # we WANT the default vhost's cert
     ctx.verify_mode = _ssl.CERT_NONE        # self-signed defaults are still evidence

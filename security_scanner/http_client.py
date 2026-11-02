@@ -48,6 +48,8 @@ import threading
 from collections import defaultdict, deque, Counter
 from typing import Optional
 
+from target_safety import safe_request
+
 try:
     import requests
 except ImportError:
@@ -662,7 +664,7 @@ class HttpClient:
         kwargs.setdefault("timeout", 10)
 
         try:
-            r = requests.request(method, url, **kwargs)
+            r = safe_request(method, url, **kwargs)
         except requests.Timeout:
             if apex:
                 self.waf_tracker.record_timeout(apex)

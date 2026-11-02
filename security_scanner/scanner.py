@@ -29,6 +29,7 @@ import scanner_db
 # the moment a phase exceeds its 180s budget (e.g. a target with many IPs).
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 import socket
+from target_safety import resolve_public
 
 # WS3: checkpoints older than this are treated as absent on resume (freshness
 # bound; per-data-type TTLs refine this in WS6). Default 6h.
@@ -389,7 +390,10 @@ class SecurityScanner:
         """Merge per-IP results for a checker into a single aggregate (richest data)."""
         all_results = [per_ip[ip].get(checker_name, {}) for ip in per_ip if checker_name in per_ip.get(ip, {})]
         if not all_results:
-            return {"status": "completed", "issues": []}
+            # Keep existing scoring semantics; do not portray an empty pool as
+            # an entirely measured per-IP assessment.
+            return {"status": "completed", "issues": [], "partial_coverage": True,
+                    "unassessed_ips": []}
         if len(all_results) == 1:
             agg = dict(all_results[0])
             agg["per_ip"] = per_ip
@@ -424,6 +428,15 @@ class SecurityScanner:
             merged_ports.sort(key=lambda p: p.get("port", 0))
             agg["open_ports"] = merged_ports
         agg["per_ip"] = per_ip
+        # Keep the historic aggregate status and score, while exposing failed
+        # individual checks that would otherwise disappear from that status.
+        failures = [{"ip": ip, "status": per_ip[ip][checker_name].get("status")}
+                    for ip in per_ip if isinstance(per_ip.get(ip, {}).get(checker_name), dict)
+                    and per_ip[ip][checker_name].get("status") in
+                    ("error", "timeout", "unreachable")]
+        if failures and len(failures) < len(all_results):
+            agg["partial_coverage"] = True
+            agg["unassessed_ips"] = failures
         return agg
 
     def scan(self, domain: str, on_progress: callable = None,
@@ -437,6 +450,10 @@ class SecurityScanner:
              scan_id: str = None, resume: bool = False,
              waf_precheck: bool = None) -> dict:
         domain = domain.lower().strip().removeprefix("https://").removeprefix("http://").split("/")[0]
+        # Reject unsafe or unresolved targets before precheck and all checker
+        # execution. Propagate UnsafeTarget and transient DNS errors distinctly
+        # to the scan worker's failure path; neither is a completed assessment.
+        resolve_public(domain, 443)
         # Fresh DNS cache for this scan — prevents cross-scan leakage and stale records.
         dns_cache.clear()
         # Reset WAF tracker for this target apex (per-scan baseline; cache

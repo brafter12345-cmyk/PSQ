@@ -57,6 +57,9 @@ class _FakeSocket:
     def close(self):
         pass
 
+    def getpeername(self):
+        return (self._sc.get("ip", "8.8.8.8"), 3389)
+
 
 def _run(scenario):
     """Run both network checkers against a mocked host; return (scan, hrp)."""
@@ -71,12 +74,12 @@ def _run(scenario):
 # ---- ground-truth scenarios -------------------------------------------------
 SCENARIOS = {
     "tarpit": {
-        "ip": "10.9.9.1", "open": "ALL", "banners": {},
+        "ip": "8.8.8.8", "open": "ALL", "banners": {},
         "expect_scan_ports": set(),          # everything discarded
         "expect_hrp_ports": set(),
     },
     "real_mail_host": {
-        "ip": "10.9.9.2", "open": {21, 110, 143, 443, 993, 995},
+        "ip": "8.8.8.9", "open": {21, 110, 143, 443, 993, 995},
         "banners": {21: b"220 Pure-FTPd", 110: b"+OK Dovecot ready",
                     143: b"* OK Dovecot ready"},
         "expect_scan_ports": {21, 110, 143, 443, 993, 995},
@@ -84,13 +87,13 @@ SCENARIOS = {
         "expect_confirmed": {21: True, 443: False},
     },
     "cdn_edge": {
-        "ip": "10.9.9.3", "open": {80, 443},
+        "ip": "8.8.8.10", "open": {80, 443},
         "banners": {80: b"HTTP/1.1 403 Forbidden\r\nServer: cloudflare"},
         "expect_scan_ports": {80, 443},
         "expect_hrp_ports": set(),
     },
     "real_exposed_db": {                      # TRUE positive — must NOT be dropped
-        "ip": "10.9.9.4", "open": {443, 27017},
+        "ip": "8.8.8.11", "open": {443, 27017},
         "banners": {},
         "expect_scan_ports": {443},           # 27017 not in port-scan ALL_PORTS
         "expect_hrp_ports": {27017},          # but IS a CRITICAL_SERVICE -> reported
@@ -274,10 +277,14 @@ VPN_RDP_SCENARIOS = [
 def _check_vpn_rdp_tarpit(failures):
     for label, openset, expect in VPN_RDP_SCENARIOS:
         cn._saturated_host_cache.clear()
-        scenario = {"open": openset, "banners": {}, "ip": "10.9.9.9"}
+        scenario = {"open": openset, "banners": {}, "ip": "8.8.8.8"}
         sock_factory = lambda *a, **k: _FakeSocket(scenario)
+        def fake_connect(_host, _port, **_kwargs):
+            if openset == "ALL" or 3389 in openset:
+                return sock_factory()
+            raise ConnectionRefusedError("synthetic closed port")
         with mock.patch.object(cn.socket, "socket", sock_factory), \
-             mock.patch.object(cn.socket, "gethostbyname", lambda *a, **k: scenario["ip"]), \
+             mock.patch.object(cn, "connect_public", fake_connect), \
              mock.patch.object(cn.HTTP, "get", lambda *a, **k: None), \
              mock.patch.object(cn.HTTP, "stop_probing", lambda *a, **k: False):
             r = cn.VPNRemoteAccessChecker().check("target.example")
@@ -1772,6 +1779,38 @@ def _check_attribution_confidence(failures):
     import importlib
     ia = importlib.import_module("ip_attribution")
 
+    # Fresh-process import-order guard: estate_discovery imports related-domain
+    # helpers, so the canonical reducer must remain lazy and provider-zone
+    # rejection must survive either import order.
+    import subprocess as _sp, sys as _sys
+    _probe = ("import sys;sys.path.insert(0,%r);%s;import ip_attribution as ia;"
+              "print(ia.attribution_for('156.38.174.226','owned','',"
+              "hostnames=['ms1.serverflex.co.za'],"
+              "reverse_dns='ms1.serverflex.co.za',insured_domain='aggregato.co.za')[1])")
+    for _order in ("import ip_attribution;import estate_discovery",
+                   "import estate_discovery;import ip_attribution"):
+        _p = _sp.run([_sys.executable, "-c", _probe %
+                      (os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), _order)],
+                     capture_output=True, text=True, timeout=20)
+        if not (_p.returncode == 0 and "defaulted" in _p.stdout):
+            failures.append("registry import order/provider-zone guard failed: %s" % _order)
+
+    # Registry consistency: confidence and estate discovery must use one
+    # reducer. Keep these boundary cases narrow; this is not a PSL expansion.
+    from estate_discovery import registrable
+    registry_cases = (("stjohns.school.za", "stjohns.school.za"),
+                      ("www.acme.co.za", "acme.co.za"),
+                      ("example.com", "example.com"),
+                      ("school.za", ""))
+    for host, expected_apex in registry_cases:
+        got = ia.registrable_domain(host)
+        ok = (got == expected_apex and got == registrable(host))
+        if not ok:
+            failures.append("registry[%s]: %r != %r" %
+                            (host, got, expected_apex))
+        print("  [%s] attribution:registry:%-18s -> %s" %
+              ("PASS" if ok else "FAIL", host, got))
+
     for label, ip, hostnames, rdns, insured, expected in ATTRIBUTION_SCENARIOS:
         conf, rule, ev = ia.attribution_for(
             ip, "owned", "", hostnames=hostnames, reverse_dns=rdns,
@@ -3222,6 +3261,56 @@ def _check_review17_reporting(failures):
     check(ed.related_domains_certificate_coverage({}) is None, "C3 legacy fabricated coverage")
     check(ed.related_domains_certificate_coverage({"discovery": {}}) == "Certificate-source coverage was not recorded for this scan.",
           "C3 unrecorded coverage fabricated")
+
+    # Coverage metadata is reporting-only: it must surface without changing
+    # legacy checker score/status fields or implying a clean aggregate.
+    partial = {"partial_coverage": True,
+               "unassessed_ips": [{"ip": "203.0.113.9", "status": "timeout"}]}
+    check("not assessed" in pc._per_ip_coverage_text(partial).lower(),
+          "per-IP partial coverage note missing")
+    summary = text(pc.build_summary_table({"categories": {
+        "dns_infrastructure": dict(partial),
+        "high_risk_protocols": {"status": "completed"},
+        "shodan_vulns": {"status": "completed"},
+    }}, S))
+    check("Partial" in summary and "assessment incomplete" in summary,
+          "summary omits per-IP partial coverage")
+
+    from checkers_supply_chain import EmailVendorSurfaceChecker as _EVS
+    _old_walk, _old_dmarc = _EVS._walk_includes, _EVS._fetch_dmarc_policy
+    try:
+        _EVS._walk_includes = lambda self, domain: [{"include": "sendgrid.net", "depth": 0}]
+        _EVS._fetch_dmarc_policy = lambda self, domain: (setattr(self, "_dmarc_lookup", "failed") or "")
+        _failed = _EVS().check("synthetic.test")
+        _EVS._fetch_dmarc_policy = lambda self, domain: (setattr(self, "_dmarc_lookup", "no_record") or "")
+        _no_record = _EVS().check("synthetic.test")
+    finally:
+        _EVS._walk_includes, _EVS._fetch_dmarc_policy = _old_walk, _old_dmarc
+    check(_failed.get("dmarc_lookup") == "failed" and _no_record.get("dmarc_lookup") == "no_record",
+          "DMARC lookup outcome metadata missing")
+    check(_failed.get("score") == _no_record.get("score") and
+          _failed.get("weak_dmarc") == _no_record.get("weak_dmarc"),
+          "DMARC metadata changed legacy score/weak_dmarc")
+    _failed_render = text(pc.cat_email_vendor_surface(
+        {"email_vendor_surface": dict(_failed, status="completed")}, S)).lower()
+    check("not verified" in _failed_render and "weak dmarc" not in _failed_render
+          and "weak-policy finding is therefore unconfirmed" in _failed_render
+          and "enables direct phishing impersonation" not in _failed_render,
+          "failed DMARC actual checker-to-PDF flow still presents a confirmed weak policy")
+    check("enables direct phishing impersonation" not in " ".join(_failed.get("issues") or []),
+          "failed DMARC checker issue still claims confirmed impersonation risk")
+    _medium_vb = {"status": "completed", "vendors_detected": ["sendgrid"],
+                  "matches": [{"vendor": "sendgrid", "severity": "medium",
+                               "date": "2025-01-01", "age_days": 100,
+                               "exposure_class": "credentials"}],
+                  "match_count": 1, "critical_match_count": 0,
+                  "high_match_count": 0, "score": 100, "issues": [],
+                  "vendor_breach_scope": "curated public-record database; not exhaustive",
+                  "spf_lookup": "answered"}
+    _medium_render = text(pc.cat_vendor_breach({"vendor_breach": _medium_vb}, S)).lower()
+    check("confirmed public-record breach" in _medium_render
+          and "no matching records" not in _medium_render,
+          "medium/low vendor match incorrectly rendered as no matches")
     if bad:
         failures.append("review17[reporting]: " + "; ".join(bad))
     print("  [%s] review17 reporting: 12 status/finding cases and 10 provider/state cases" % ("FAIL" if bad else "PASS"))
@@ -6962,10 +7051,10 @@ def _selfsigned_probe_rejected(ct, insured):
         # Probe by name, but reach the loopback listener: patch the connector.
         real_conn = ct.socket.create_connection
 
-        def fake_conn(addr, timeout=None, *a, **kw):
+        def fake_conn(host, target_port, timeout=None, *a, **kw):
             return real_conn(("127.0.0.1", port), timeout=timeout)
 
-        with mock.patch.object(ct.socket, "create_connection", fake_conn):
+        with mock.patch.object(ct, "connect_public", fake_conn):
             names = ct.FraudulentDomainChecker._validated_cert_names(insured)
     except Exception as e:
         names = set()
@@ -7260,8 +7349,7 @@ def _check_blocked_not_clean(failures):
     def _simple(mod, cls, code):
         # HTTP-response scenarios do not probe a real RDP port.
         with mock.patch.object(mod, "HTTP") as H, \
-             mock.patch.object(cn_mod.socket, "socket",
-                               return_value=_FakeSocket({"open": set(), "banners": {}})):
+             mock.patch.object(cn_mod, "connect_public", side_effect=ConnectionRefusedError("synthetic closed port")):
             H.get.return_value = _Resp(code, "nope")
             H.stop_probing.return_value = False
             H.origin_answering.side_effect = lambda d, **k: _root_answers(code)
@@ -7392,8 +7480,7 @@ def _check_blocked_not_clean(failures):
                             ("walled",   403, 403)):
             H = _urlaware(pc, rc)
             with mock.patch("http_client.HTTP", H), mock.patch.object(mod, "HTTP", H, create=True), \
-                 mock.patch.object(cn_mod.socket, "socket",
-                                   return_value=_FakeSocket({"open": set(), "banners": {}})):
+                 mock.patch.object(cn_mod, "connect_public", side_effect=ConnectionRefusedError("synthetic closed port")):
                 got[row] = getattr(mod, cls)().check("example.com").get("status")
         ok = (got["ordinary"] == "completed"      # plain clean site
               and got["denied"] == "completed"    # hardened: refusals ANSWER the question
@@ -8934,6 +9021,20 @@ def _check_origin_candidate_boundary(failures):
 def main():
     failures = []
     _install_paid_egress_guard()   # must be first: the gate is offline by contract
+    try:
+        from test_bounded_probe_lifecycle import run_checks as _bounded_probe_checks
+        from test_partial_probe_groups import run_checks as _partial_probe_checks
+        _bounded_probe_checks()
+        _partial_probe_checks()
+        from test_target_safety import run_checks as _target_safety_checks
+        from test_current_input_dashboard import run as _current_input_checks
+        _target_safety_checks()
+        from test_scan_admission import run_checks as _scan_admission_checks
+        _scan_admission_checks()
+        _current_input_checks()
+    except Exception as exc:
+        failures.append(f"bounded_probe: {exc}")
+        print(f"  [FAIL] bounded_probe: {exc}")
     _check_breach_intel(failures)
     _check_key_probe(failures)
     _check_datastore_readiness(failures)

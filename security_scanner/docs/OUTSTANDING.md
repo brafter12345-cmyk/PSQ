@@ -16,9 +16,20 @@ outstanding item lands.
 
 ---
 
+## Current bounded fixes 2 November 2026
+
+The following changes are in the local sandbox integration; all 12 final offline gates passed with zero failures; fresh discovery and the scanner admission regression passed with zero network attempts. Golden, financial and PDF baselines were unchanged, with zero blocked operations. The frozen sweep had two survivors; see the integration record for counts and follow-ups. These changes are separate from the eight earlier fixes recorded below. They do not establish production readiness or cover every network path.
+
+- Multi-contact and trailing-separator input preserves accepted domains and broker exclusion. The dashboard preserves canonical severity when a numeric score is unavailable and reports coverage counts separately.
+- Registry attribution uses the existing canonical finite reducer via lazy import; this does not expand it to a public suffix list. Partial IP and probe results retain coverage qualifications and observed findings; partial DNS report wording limits clean claims to observed evidence.
+- SPF traversal limits and unanswered DMARC lookups qualify reporting while retaining existing numeric weak/status/score behavior. Vendor breach reporting states the curated table's scope and retains positive medium/low findings.
+- Timeout returns are bounded and late worker admission is capped; running threads are not killed. Public-address checks pin connections for guarded HTTP redirects, proxy, TLS and direct-network paths; scanner admission is implemented. This is bounded coverage, not a claim that all outbound paths are guarded.
+
+Scoring rules and baselines are unchanged. IntelX is left as-is by owner decision. Add-ons, item 5n, IPv6, full sibling assessment, PSL expansion, per-user authentication, scoring-model versioning and ownership policies remain deferred. Release review remains pending.
+
 ## Integration update 2 November 2026
 
-The local integration includes merge checkpoint `b6a3c05` and runtime checkpoint `6e91167`; master and live remain unchanged. Six dashboard fetches now carry the existing scanner API key, reject cross-origin paths and fail closed on redirects. The key is embedded in the results HTML under the existing edge access model; this is not per-user authentication. Synthetic tests cover provider failure and retry behavior, but do not implement IntelX balance integration, which remains open. An authorized isolated fresh `npm ci` passed, and the pinned pre-change `/scanner` bundle reproduced the committed JavaScript and CSS byte for byte. At 6e91167 all 12 offline gates passed; nine targeted mutations failed by assertion, with no crashes. Paid-egress and offline blocks were zero. The full sweep detected 347 mutations: 345 by assertion, two by gate crashes (X01_probe_gets_raw_list: NameError; R13_api_door_whole_entry: IndentationError), none survived; all six baselines passed.
+The local integration includes merge checkpoint `b6a3c05` and runtime checkpoint `6e91167`; master and live remain unchanged. Six dashboard fetches now carry the existing scanner API key, reject cross-origin paths and fail closed on redirects. The key is embedded in the results HTML under the existing edge access model; this is not per-user authentication. Synthetic tests cover provider failure and retry behavior, with IntelX left as-is by owner decision. An authorized isolated fresh `npm ci` passed, and the pinned pre-change `/scanner` bundle reproduced the committed JavaScript and CSS byte for byte. At 6e91167 all 12 offline gates passed; nine targeted mutations failed by assertion, with no crashes. Paid-egress and offline blocks were zero. The full sweep detected 347 mutations: 345 by assertion, two by gate crashes (X01_probe_gets_raw_list: NameError; R13_api_door_whole_entry: IndentationError), none survived; all six baselines passed.
 
 The owner decided to keep scoring unchanged and record the gaps. Synthetic reproduction identified VirusTotal and SecurityTrails rate limits, entirely unanswered information-disclosure and dependency-manifest probes, and truncated VPN probing with confirmed RDP. The current weights, baselines and scoring/checker policy remain unchanged; no expected-loss change has been implemented. The counterfactual below excludes each affected category's weight in isolation, using the actual scoring and insurance pipeline on synthetic R10m revenue. It is a policy experiment, not a premium or a golden-fixture impact. Whole-category exclusion loses part of the positive RDP contribution and is not an approved evidence-preserving policy.
 
@@ -29,6 +40,8 @@ The owner decided to keep scoring unchanged and record the gaps. Synthetic repro
 | VPN truncated, RDP confirmed | 283 → 275 | 100% → 97% | 366,229 → 362,976 | 12,708,688 → 12,708,688 |
 | Information disclosure unanswered | 252 → 262 | 100% → 97% | 207,915 → 211,723 | 12,708,688 → 12,708,688 |
 | Dependency manifests unanswered | 255 → 263 | 100% → 97% | 209,045 → 212,111 | 12,708,688 → 12,708,688 |
+
+These synthetic cases do not establish a production or premium impact.
 
 ## Sandbox reconciliation 16 September 2026
 
@@ -84,24 +97,24 @@ must not be presented as measurements of the current tree.
 | H-5w | Full apex-equivalent checks on confirmed siblings remain deferred: collect certificate-name evidence, review ownership assumptions and calibrate the roll-up first. Never meter providers per sibling or probe unconfirmed siblings. |
 | H-5w preflight | Form and scan historically used different certificate-transparency fetch/retry behavior. Shared input reduction alone does not prove identical provider requests. |
 | H-5w port 8443 | Additional TLS-port support requires separate measurement; no new probe was authorized here. |
-| H-5x | Five timeout loops and multi-IP aggregation can lose per-IP failure/partial coverage; reproduce current aggregate status and extend timeout coverage before closure. |
+| H-5x | Current sandbox changes retain positive results and qualify partial multi-IP and probe coverage when work fails or times out; pricing policy is unchanged. |
 | H-5y | Primary information-disclosure checks with no HTTP answer historically read completed/100. Medium-path and refusal fixes do not establish closure of the all-unanswered case. |
 | H-5z | VERIFIED IN CURRENT SOURCE: VirusTotal/SecurityTrails rate_limited is not excluded from weighting by the failed/skipped sets. The technical-card fix does not change pricing. |
-| H-5aa | General run_with_timeout worker shutdown still needs review; related-domain-specific time budgeting is not a general timeout fix. |
-| H-5ab | VERIFIED IN CURRENT SOURCE: ip_attribution imports the older _apex reducer. Registry-boundary confidence claims require reconciliation with the newer registrable-domain rule. |
+| H-5aa | Current sandbox timeout return is bounded and late-worker admission capped. A running thread is not killed and may finish later. |
+| H-5ab | Current sandbox attribution uses the shared canonical finite registry reducer via lazy import. This reconciles the two paths, not the full public suffix list. |
 | H-5ac | Prior offline isolation defects were addressed in recent checkpoints. Keep default-deny execution and assert the paid-egress guard; a local cost counter alone is not evidence of no spend. |
 | H-5ad | Registry suffixes beyond the recognized list need a vendored public-suffix solution and synthetic boundary tests. |
-| H-5ae | Primary-target public-address validation is a separate historical gap. The origin-only candidate guard does not claim to fix every scanner input path. |
+| H-5ae | Current sandbox guards connection-time public addresses on specified HTTP redirects, proxy, TLS and direct-network paths; scanner admission is implemented. This does not claim every outbound path is guarded. |
 | H-5af CD8-1 | An entirely unanswered dependency-manifest probe set can be misreported as completed/clean; needs current reproduction and pricing-policy adjudication. |
-| H-5af FC9-1 / IR9-1 | Multiple SPF records and truncated include walks may hide uncertainty; partial-lookup handling does not prove these cases covered. |
-| H-5af FC8-5 / ST8-3 | Vendor cross-check completeness and lower-bound severity need current verification when one joined leg is unmeasured. |
+| H-5af FC9-1 / IR9-1 | SPF traversal caps now qualify reporting and retain observed vendors as a lower bound; existing numeric policy is unchanged. Multiple SPF records remain open and unverified. |
+| H-5af FC8-5 / ST8-3 | Lower-bound handling for failed or unfollowed SPF legs was previously fixed. Current sandbox reporting retains positive medium and low evidence and qualifies incomplete coverage. |
 | H-5af vendor pricing | Treatment of no_data on an unmeasured vendor surface remains a scoring decision. |
 | H-5af page panels | Page-specific run markers may still say Passed next to findings; generic and email-vendor panel fixes do not cover every custom panel. |
-| H-5af FC11-1 | Distinguish an unanswered DMARC lookup from confirmed absence before assigning a missing-policy penalty. |
+| H-5af FC11-1 | Current sandbox reporting distinguishes an unanswered DMARC lookup from confirmed absence. Existing numeric weak/status/score behavior is preserved; a pricing-policy change remains a separate decision. |
 | H-5af R11-CVC-4/5 | Unrendered support strings and hand-maintained documentation counts need either removal or meaningful rendering/count tests. |
-| H-5af R12-S5 | Vendor breach-table coverage is not equivalent to having searched all vendors; preserve this gap even where the score is unchanged. |
-| H-5af IH12-4 / IH13-6 | Rejected related-domain entries and trailing-comma cases must be accounted for explicitly; require current two-door reproduction. |
-| H-5af IH12-3 / R13-IN-3 | Confirmed-domain input preview and multi-contact entry behavior need explicit accepted/rejected-list UX review. Later parity fixes may supersede parts of the historical report. |
+| H-5af R12-S5 | Current sandbox reporting discloses that the breach table is curated, not a search of every vendor; positive findings remain visible and scores unchanged. |
+| H-5af IH12-4 / IH13-6 | Current sandbox handles trailing separators without dropping accepted domains and retains rejection accounting. Accepted/rejected preview remains a separate open question. |
+| H-5af IH12-3 / R13-IN-3 | Current sandbox preserves accepted domains in multi-contact input while retaining broker exclusion. Confirmed-domain accepted/rejected preview remains open. |
 
 The old H-5n lookalike coverage item, H-5o origin-exposure reporting, H-5s ASN
 measurement, H-5t forward-confirmation and H-5v dashboard-build fixes are recorded
@@ -124,7 +137,7 @@ production, and again the moment demo feedback is concluded.
 | **Encrypted credential export DISABLED** | Fails closed by default (2026-07-28) | Set `CREDENTIAL_EXPORT_ENABLED=1` in the VM `.env` and `sudo systemctl restart phishield-scanner`. Config only — no code change, no redeploy. | The export releases a client's **actual breached passwords**. What makes that lawful is the client's signed consent, and the `consent: true` field on the request is only a broker attestation — with demo testers who have signed nothing, it is not a control at all. Both the POST **and** the one-time download route are gated (gating only the POST would let a token minted before the flip still be redeemed). The dashboard shows the control as unavailable rather than letting a tester complete a consent attestation and then hit a 503. Everything else in the scan — which accounts are exposed, in which breaches, how recent — is unaffected. **Re-enable only once the consent/authorisation page ships.** |
 | **Demo-facing manual in circulation** | Written 2026-07-28 | Withdraw the demo manual; the full manual stays internal. | `Phishield_Scanner_Demo_Guide.docx` deliberately omits scoring weights, calibration anchors, checker internals, data sources and thresholds. Do not circulate the full `Phishield_Cyber_Risk_Scanner_User_Manual.docx` to demo testers. |
 
-**Also open (2026-07-28):** wire IntelX's **free** `/authenticate/info` endpoint
+**Historical proposal (2026-07-28; owner now leaves IntelX as-is):** wire IntelX's **free** `/authenticate/info` endpoint
 into the budget guard. The guard currently counts HTTP calls and estimates the
 search quota from them (1 search = up to 4 calls); that endpoint reports remaining
 *searches* authoritatively, at no credit cost, and would remove the estimate.
@@ -165,7 +178,7 @@ re-enabled).
 | Shodan | Historical evidence recorded on sandbox 2026-09-08: paid basic plan and certificate search were working; the earlier free-oss assumption was stale. Current account state was not queried offline. | Confirm requirements before any future capacity change | Historical cost estimates are not current quotes | No purchase or live query authorized by this reconciliation |
 | SecurityTrails | Free (100/month; history endpoint works on current key — confirmed 2026-05-29, NOT paid-gated) | Paid tier for sustained usage | Similar order of magnitude | Before 1 July 2026 |
 | VirusTotal | Free (4/min, 500/day) | No upgrade needed | — | n/a |
-| IntelX | **CRITICAL.** Returning data in the 2026-05-29 live test (300 results: 260 leak + 40 paste mentions, with per-record dates) — the "expired 2026-04-08" note is stale, the configured key currently works. It is now **load-bearing**: the 4th signal (active forum/dump circulation + recency dates) in the **Credential Exposure Correlation**. | Confirm a sustainable IntelX subscription OR equivalent (Snusbase / LeakCheck Pro / SpyCloud) — must persist, not lapse | TBD | **CRITICAL — before shipping live.** Credential correlation degrades gracefully without it ("monitoring pending") but loses the active-circulation signal + its main recency source. |
+| IntelX (historical 2026-05-29; owner now leaves as-is) | **Historical priority.** Returning data in the 2026-05-29 live test (300 results: 260 leak + 40 paste mentions, with per-record dates) — the "expired 2026-04-08" note is stale, the configured key currently works. It is now **load-bearing**: the 4th signal (active forum/dump circulation + recency dates) in the **Credential Exposure Correlation**. | Confirm a sustainable IntelX subscription OR equivalent (Snusbase / LeakCheck Pro / SpyCloud) — must persist, not lapse | TBD | Historical priority, superseded by owner decision. Credential correlation degrades gracefully without it ("monitoring pending") but loses the active-circulation signal + its main recency source. |
 | HIBP, Hudson Rock, OSV.dev | Free unlimited | No upgrade needed | — | n/a |
 
 ### Shodan origin cert-search — historical setup notes
@@ -206,7 +219,7 @@ cert-search. Moving `/shodan/host/{ip}` per-IP lookups onto the paid API is
 the larger credit consumer (~1 credit per discovered IP per scan) and is a
 separate decision.
 
-### IntelX (free tier) — current state + Wednesday testing
+### IntelX free tier — historical May to July notes
 
 Confirmed 2026-05-29: the configured IntelX key **works** (the "trial expired"
 note was stale). **Verified 2026-05-31 via `/authenticate/info` + IntelX docs:**
@@ -218,8 +231,8 @@ Planning implication: the cohort runs at **~25-30 scans/day** (§3), which fits
 *under* 50/day with modest headroom — so the free daily tier is **borderline-
 viable for the steady cohort rate**, NOT "10× too small" as first thought.
 BUT: zero burst headroom, the 3-concurrent cap throttles throughput, and any
-broker ad-hoc scans eat into the same 50. So a **paid replacement
-(Snusbase / LeakCheck Pro / SpyCloud) is still recommended** for safety +
+broker ad-hoc scans eat into the same 50. The historical recommendation was a **paid replacement
+(Snusbase / LeakCheck Pro / SpyCloud)** for safety +
 throughput + always-on use, but it is no longer an emergency blocker. Avoid
 burning credits on test scans (`skip_intelx:true`; the smoke test is already
 credit-free).
@@ -230,7 +243,7 @@ credit-free).
 - **DONE (2026-07-01):** `INTELX_API_KEY` is now also set on the **Google VM**
   `.env` (service restarted, balance active). The key is account-scoped, so the
   VM and Render **share the same 50-credit/day pool** (they do not each get 50).
-- **Still seek a sustainable replacement** (Snusbase / LeakCheck Pro /
+- **Historical proposal to seek a replacement** (Snusbase / LeakCheck Pro /
   SpyCloud) for the cohort-scale + always-on case; the free tier can remain a
   fallback for ad-hoc use. The credential-correlation circulation slot is
   provider-agnostic, so swapping is a checker change, not a correlation rewrite.
@@ -508,6 +521,8 @@ fixture (`test_fixtures/takealot_baseline.json`) from a fresh scan, then re-run
 | 5L | **Confidence-gate the p(breach) / RSI input (scoring decision — NOT done)** | Open, **calibration-gated** (scoring-change rule). The export/dashboard now expose a `match_type`→`confidence` model, but the *score* does not yet use it: a recent LOW-confidence reference (aggregated index, browser-History visit) can still pull credential signals the same as a HIGH-confidence password capture. Decision to make: gate any p(breach)/RSI uplift on HIGH-confidence (or content-fetch-confirmed) evidence, so low-confidence freshness alone does not inflate the probability. Builds on the §6 "Credential-risk scoring calibration" ticket. **Cat model is unaffected — this is purely the p(breach) input.** Until decided, the disclaimer + content-fetch prompt (5k) is the interim control. **Design pre-read for the 2026-06-03 FIN-9 calibration session: `docs/credential_confidence_pbreach_design.md`** (current wiring, the model, the K1-K7 calibration knobs, and the empirical anchors that set them). |
 
 ### 5m. UI screening test — validate every dashboard display against the PDF/scoring path (NEW, 2026-08-06)
+
+Current sandbox update: canonical severity is displayed even without a numeric score, and coverage counts remain distinct. This bounded correction does not close the broader historical screening and roll-up work below.
 
 **The gap.** The React dashboard is a SECOND rendering path over the same scan
 results, and it has never been validated against the first. The PDF/scoring path

@@ -5,6 +5,7 @@ Credential Risk, IntelX, Fraudulent Domains, Privacy, Web Ranking, Info Disclosu
 """
 
 from scanner_utils import *
+from target_safety import connect_public
 
 # WS0: route target-apex probes through HTTP, paid/free providers through their
 # per-provider clients. All return None on a failed request instead of raising;
@@ -2998,7 +2999,7 @@ class FraudulentDomainChecker:
         import ssl
         try:
             ctx = ssl.create_default_context()      # verify + check_hostname ON
-            with socket.create_connection((domain, 443), timeout=timeout) as raw:
+            with connect_public(domain, 443, timeout=timeout) as raw:
                 with ctx.wrap_socket(raw, server_hostname=domain) as tls:
                     der = tls.getpeercert(binary_form=True)
         except Exception:

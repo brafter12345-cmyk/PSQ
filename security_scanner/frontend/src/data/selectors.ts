@@ -21,6 +21,14 @@ export function cat(r: Results | null, id: string): CategoryBase | undefined {
   return r?.categories?.[id]
 }
 
+export function networkCoverageNotes(r: Results): Array<{ label: string; category: CategoryBase | undefined }> {
+  return [
+    { label: 'DNS and ports', category: cat(r, 'dns_infrastructure') },
+    { label: 'High-risk protocols', category: cat(r, 'high_risk_protocols') },
+    { label: 'Shodan / InternetDB', category: cat(r, 'shodan_vulns') },
+  ]
+}
+
 // === Overall assessment (§6 panel 1) ========================================
 
 export interface OverallAssessment {
@@ -815,26 +823,18 @@ export function getRiskFactors(r: Results | null): RiskFactorRow[] {
     const authoritative = verdictFrom?.(r)
     if (authoritative) return { key, label, ...authoritative }
 
-    const scored: Array<{ id: string; score: number }> = []
-    for (const id of categories) {
-      const c = cat(r, id)
-      if (c && typeof c.score === 'number' && isConclusive(c)) {
-        scored.push({ id, score: toPercent(id, c.score) })
-      }
-    }
-    if (!scored.length) {
-      return {
-        key, label, score: null, severity: 'unknown', riskLabel: 'Not assessed',
-        blockers: [], topContributor: '—', assessed: 0, total: categories.length,
-      }
-    }
     // A dimension is as weak as its weakest member. Averaging is wrong for a
     // risk summary: a confirmed open FTP port does not become acceptable
     // because three sibling checks were clean. `_severity` is stamped during
     // scan assembly by card_severity.py -- the SAME rule the PDF card uses --
     // so the two artefacts cannot disagree about one scan.
     const stamped = categories
-      .map((id) => [id, cat(r, id)?._severity as Severity | undefined] as const)
+      .map((id) => [id, cat(r, id)] as const)
+      .filter((e): e is readonly [string, CategoryBase] => !!e[1] && !!e[1]._severity)
+      // A stale stamp on an error is still coverage evidence, but not a
+      // finding. Keep it in the denominator as unknown so partial coverage is
+      // visible instead of manufacturing the old severity.
+      .map(([id, c]) => [id, isConclusive(c) ? c._severity as Severity : 'unknown'] as const)
       .filter((e): e is readonly [string, Severity] => !!e[1])
 
     const real = stamped.filter(([, sv]) => sv !== 'unknown')

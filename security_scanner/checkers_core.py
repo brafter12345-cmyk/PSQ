@@ -3,6 +3,7 @@ Core security checkers: SSL, Email, HTTP Headers, WAF, Cloud/CDN, Domain Intel, 
 """
 
 from scanner_utils import *
+from target_safety import UnsafeTarget, connect_public, resolve_public
 
 # WS0: route target-apex probes through the single egress seam (per-apex
 # politeness limiter + identifying User-Agent + WAF tracking). HTTP.get returns
@@ -31,6 +32,8 @@ class SSLChecker:
                 try:
                     self._check_with_sslyze(domain, result)
                     result["data_source"] = "sslyze"
+                except UnsafeTarget:
+                    raise
                 except Exception:
                     self._check_with_stdlib(domain, result)
                     result["data_source"] = "stdlib_fallback"
@@ -59,7 +62,8 @@ class SSLChecker:
 
     def _check_with_sslyze(self, domain: str, result: dict):
         """Deep SSL/TLS analysis using sslyze library."""
-        location = ServerNetworkLocation(hostname=domain, port=443)
+        location = ServerNetworkLocation(hostname=domain, port=443,
+                                         ip_address=resolve_public(domain, 443)[0][4][0])
         scan_request = ServerScanRequest(server_location=location, scan_commands={
             ScanCommand.CERTIFICATE_INFO,
             ScanCommand.SSL_2_0_CIPHER_SUITES,
@@ -250,7 +254,7 @@ class SSLChecker:
         info = {"valid": False}
         try:
             ctx = ssl.create_default_context()
-            with socket.create_connection((domain, 443), timeout=DEFAULT_TIMEOUT) as raw:
+            with connect_public(domain, 443, timeout=DEFAULT_TIMEOUT) as raw:
                 with ctx.wrap_socket(raw, server_hostname=domain) as s:
                     cert = s.getpeercert()
                     not_after = cert.get("notAfter", "")
@@ -271,6 +275,8 @@ class SSLChecker:
                         "expiring_soon": 0 <= days_left <= 30,
                         "san_count": len(sans),
                     }
+        except UnsafeTarget:
+            raise
         except ssl.SSLCertVerificationError as e:
             info = {"valid": False, "error": str(e)}
         except Exception as e:
@@ -292,9 +298,11 @@ class SSLChecker:
                 ctx.minimum_version = ver; ctx.maximum_version = ver
                 ctx.check_hostname = verify
                 ctx.verify_mode = ssl.CERT_REQUIRED if verify else ssl.CERT_NONE
-                with socket.create_connection((domain, 443), timeout=DEFAULT_TIMEOUT) as raw:
+                with connect_public(domain, 443, timeout=DEFAULT_TIMEOUT) as raw:
                     with ctx.wrap_socket(raw, server_hostname=domain):
                         versions[label] = True
+            except UnsafeTarget:
+                raise
             except Exception:
                 pass
         return versions
@@ -302,12 +310,14 @@ class SSLChecker:
     def _get_cipher_suite_stdlib(self, domain: str) -> dict:
         try:
             ctx = ssl.create_default_context()
-            with socket.create_connection((domain, 443), timeout=DEFAULT_TIMEOUT) as raw:
+            with connect_public(domain, 443, timeout=DEFAULT_TIMEOUT) as raw:
                 with ctx.wrap_socket(raw, server_hostname=domain) as s:
                     c = s.cipher()
                     if c:
                         return {"name": c[0], "protocol": c[1], "bits": c[2] or 0,
                                 "is_weak": any(w in c[0].upper() for w in self.WEAK_CIPHERS)}
+        except UnsafeTarget:
+            raise
         except Exception as e:
             return {"name": "Unknown", "bits": 0, "is_weak": True, "error": str(e)}
         return {"name": "Unknown", "bits": 0, "is_weak": True}

@@ -1,9 +1,9 @@
 import Panel from '../../components/primitives/Panel'
 import { SeverityBadge, SeverityDot } from '../../components/primitives/Status'
 import EvidenceTable, { type Column } from '../../components/detail/EvidenceTable'
-import { PageTitle, KV, StatGrid, IssueList } from '../../components/detail/parts'
+import { PageTitle, KV, StatGrid, IssueList, PartialCoverageNote } from '../../components/detail/parts'
 import { getResults } from '../../data/results'
-import { cat, estateIpCount, getOpenServices, getVulnerabilitySummary, vendorIpCount, type OpenService } from '../../data/selectors'
+import { cat, estateIpCount, getOpenServices, getVulnerabilitySummary, networkCoverageNotes, vendorIpCount, type OpenService } from '../../data/selectors'
 import { SEVERITY_COLOR } from '../../data/checkerState'
 import type { Results } from '../../types/results'
 import styles from './detail.module.css'
@@ -46,6 +46,8 @@ export default function NetworkPage({ r = getResults()! }: { r?: Results }) {
   return (
     <div className={styles.page}>
       <PageTitle title="Network & Infrastructure" subtitle="External attack surface — discovered assets, exposed services and DNS posture." />
+      {networkCoverageNotes(r).map(({ label, category }) =>
+        <PartialCoverageNote key={label} label={label} category={category} />)}
 
       <Panel title="Asset & Exposure Summary">
         <StatGrid stats={[

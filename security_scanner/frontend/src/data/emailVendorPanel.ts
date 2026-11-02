@@ -69,8 +69,24 @@ export function vendorSurfaceUnmeasured(v: Record<string, unknown> | undefined):
 export function vendorSurfacePartial(v: Record<string, unknown> | undefined): boolean {
   if (!v) return false
   if (v.spf_lookup === 'partial') return true
+  const traversal = v.spf_traversal as Record<string, unknown> | undefined
+  if (traversal?.depth_limit_hit || traversal?.include_limit_hit) return true
   return v.status === 'completed' && v.spf_lookup === undefined
     && (names(v.vendors_detected, 'vendor').length > 0 || !!v.vendor_count)
+}
+
+function dmarcPolicyLabel(v: Record<string, unknown>): string {
+  if (v.dmarc_lookup === 'failed') return 'Not verified'
+  return String(v.dmarc_policy || 'Missing')
+}
+
+function traversalNote(v: Record<string, unknown>): string {
+  const t = v.spf_traversal as Record<string, unknown> | undefined
+  if (!t) return ''
+  if (t.depth_limit_hit || t.include_limit_hit) {
+    return 'Traversal limit reached: this sending-surface assessment is incomplete'
+  }
+  return ''
 }
 
 /** What a generic panel renders for one checker: the note, or the counts.
@@ -99,16 +115,20 @@ export function vendorPanel(v: Record<string, unknown> | undefined): VendorPanel
     const includes = names(v.spf_includes, 'include')
     const partial = vendorSurfacePartial(v)
     const weak = !!v.weak_dmarc
+    const dmarcUnverified = v.dmarc_lookup === 'failed'
+    const dmarcSeverity: VendorPanelRow['severity'] = dmarcUnverified ? undefined : undefined
+    const weakSeverity: VendorPanelRow['severity'] = dmarcUnverified ? undefined : weak ? 'medium' : 'positive'
     const rows: VendorPanelRow[] = [
       { label: 'Vendors detected', value: vendors.length ? vendors.join(', ') : 'None identified' },
       { label: 'SPF includes', value: includes.join(', ') || '—' },
-      { label: 'Weak DMARC', value: weak ? 'Yes' : 'No', severity: weak ? 'medium' : 'positive' },
+      ...(dmarcUnverified ? [{ label: 'DMARC policy', value: dmarcPolicyLabel(v), severity: dmarcSeverity }] : []),
+      { label: 'Weak DMARC', value: dmarcUnverified ? 'Not verified' : weak ? 'Yes' : 'No', severity: weakSeverity },
     ]
     if (partial) {
       rows.push({ label: 'SPF chain', severity: 'medium',
-        value: 'Partly read: a lookup did not answer, or a record redirects, so the vendors above are a lower bound' })
+        value: traversalNote(v) || 'Partly read: a lookup did not answer, or a record redirects, so the vendors above are a lower bound' })
     }
-    const finding: VendorPanelBadge | null = weak && vendors.length > 0
+    const finding: VendorPanelBadge | null = !dmarcUnverified && weak && vendors.length > 0
       ? { state: 'failed' }
       : vendors.length >= 6 ? { state: 'warning' } : null
     const badge = finding

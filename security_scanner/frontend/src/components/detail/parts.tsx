@@ -54,6 +54,39 @@ export function CheckerHeader({ category, refine = false }: { category: Category
   return <StatusBadge state={b.state} label={b.label} />
 }
 
+/** Explain mixed-IP checker results next to the affected network surface. */
+export function PartialCoverageNote({ category, label }: { category: CategoryBase | undefined; label: string }) {
+  if (!category?.partial_coverage) return null
+  const unassessed = Array.isArray(category.unassessed_ips) ? category.unassessed_ips : []
+  const probes = category.incomplete_probes
+  const validCount = (value: unknown): value is number =>
+    typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+  const counts = probes && !Array.isArray(probes) && typeof probes === 'object'
+    ? Object.values(probes) : null
+  const groups = counts && counts.length > 0 && counts.every(validCount)
+    ? counts.filter((count) => count > 0).length : 0
+  const probeCount = Array.isArray(probes) ? probes.length
+    : validCount(probes) ? probes : 0
+  const ips = unassessed
+    .map((entry) => entry?.ip)
+    .filter((ip): ip is string => typeof ip === 'string' && ip.length > 0)
+  const scope = ips.length
+    ? `Unassessed IPs: ${ips.join(', ')}`
+    : groups
+      ? `${groups} probe group${groups === 1 ? '' : 's'} did not complete.`
+      : probeCount
+        ? `${probeCount} probe${probeCount === 1 ? '' : 's'} did not complete.`
+        : 'Some probes did not complete.'
+  return (
+    <div style={{ fontSize: 11.5, lineHeight: 1.5, color: 'var(--text-secondary)',
+      background: 'var(--panel-bg-elevated)', border: '1px solid var(--border-emphasis)',
+      borderRadius: 8, padding: '9px 11px', marginBottom: 12 }}>
+      <b style={{ color: 'var(--text-primary)' }}>{label}: partial coverage.</b>{' '}
+      An unavailable IP or probe cannot be treated as clean. {scope}
+    </div>
+  )
+}
+
 /** Render a checker's numeric score ONLY when the checker is conclusive. */
 export function ScoreLine({ category, max = 100 }: { category: CategoryBase | undefined; max?: number }) {
   if (!category || typeof category.score !== 'number') return null
