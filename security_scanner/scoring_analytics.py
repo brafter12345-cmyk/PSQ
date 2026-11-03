@@ -863,14 +863,18 @@ class RiskScorer:
         # Skipped (no_api_key/disabled): intentionally not run — not a failure.
         # Both are excluded from weighting, but only failures trigger the
         # incomplete scan warning.
-        failed_checkers = []   # Failed or absent raw measurements
-        missing_checkers = []
-        skipped_checkers = []  # Intentionally skipped — no warning
+        failed_checkers = []    # Genuine failures — flag in warning
+        missing_checkers = []   # Absent raw measurements — REPORTING ONLY
+        skipped_checkers = []   # Intentionally skipped — no warning
         for name in self.WEIGHTS:
+            # PRODUCTION SCORING PRESERVED (owner decision, 3 November 2026).
+            # An absent raw checker is listed and disclosed as not assessed, but
+            # it does NOT join failed_checkers or the weight exclusion below: as
+            # in production it falls through to the per-category defaults.
+            # Excluding and redistributing its weight (b3cf0c8) moved the golden
+            # scores 282 -> 372 and 205 -> 262; that is a deferred rate decision.
             if name not in results and name not in self.DERIVED_CATEGORIES:
                 missing_checkers.append(name)
-                failed_checkers.append(name)
-                continue
             data = results.get(name, {})
             if isinstance(data, dict):
                 if self._is_failed(data):
@@ -1236,8 +1240,16 @@ class RiskScorer:
         # "partial coverage" notice). _scan_completeness is golden-masked, so adding
         # these fields doesn't perturb the scoring gate.
         total_weight = sum(self.WEIGHTS.values()) or 1
-        excluded_fraction = round(excluded_weight / total_weight, 3)
-        must_have_missing = sorted(set(self.MUST_HAVE_CHECKERS) & excluded)
+        # REPORTING ONLY. Missing raw checkers are NOT excluded from the score
+        # (production scoring, owner decision 3 November 2026), but they are
+        # unassessed, so they count toward the unavailable-signal fraction and
+        # the must-have test that grade confidence_level / score_qualified and
+        # write the disclaimer. No score, pricing or recommendation path reads
+        # excluded_fraction, must_have_missing or confidence.
+        _unassessed = excluded | set(missing_checkers)
+        excluded_fraction = round(
+            sum(self.WEIGHTS.get(f, 0) for f in _unassessed) / total_weight, 3)
+        must_have_missing = sorted(set(self.MUST_HAVE_CHECKERS) & _unassessed)
         # ESTATE CONFIDENCE. Completeness answers "did the checkers run"; it says
         # nothing about WHOSE assets they ran against. boston.ac.za, 2026-08-14,
         # returned 97/1000 Low at 100% completeness with no failed checkers,
@@ -1320,7 +1332,7 @@ class RiskScorer:
 
         if excluded_fraction >= self.COVERAGE_FLOOR or must_have_missing:
             confidence = "low_confidence"
-        elif failed_checkers:
+        elif failed_checkers or missing_checkers:
             confidence = "partial"
         else:
             confidence = "full"
@@ -1339,7 +1351,7 @@ class RiskScorer:
             "skipped_checkers": skipped_checkers,
             "failed_count": len(failed_checkers),
             "completeness_pct": round((1 - len(failed_checkers) / assessable) * 100) if assessable > 0 else 100,
-            "score_reliable": len(failed_checkers) == 0,
+            "score_reliable": not failed_checkers and not missing_checkers,
             "excluded_weight_fraction": excluded_fraction,
             "must_have_missing": must_have_missing,
             "confidence_level": confidence,
@@ -1394,7 +1406,9 @@ class RiskScorer:
             scan_completeness["disclaimer"] += (
                 " Missing raw checks are not assessed, not measured clean: "
                 + ", ".join(name.replace("_", " ") for name in missing_checkers)
-                + ". Their weights are excluded and redistributed over available signals."
+                + ". Under the current scoring policy they are not excluded from the "
+                "score: the scorer applies its default values for them, so re-scan "
+                "to assess them."
             )
         # Store in results so it can be accessed by PDF/HTML
         results["_scan_completeness"] = scan_completeness
@@ -2657,44 +2671,28 @@ class FinancialImpactCalculator:
         # read the corrected pool raises the charged set to 19, which is the
         # conservative direction and requires no new coefficient.
         #
-        # A SEPARATE, PRE-EXISTING DEFECT IS LEFT ALONE HERE AND RECORDED IN
-        # docs/OUTSTANDING.md: unique_asns == 0 means "not collected" (see the
-        # aggregator's own comment beside result["unique_asns"]), yet <= 1 reads
-        # it as single-homed and charges +0.025. Five fixtures are charged for a
-        # control that was never measured. Fixing it is a rate movement in its
-        # own right and does not belong in an attribution change.
-        # == 1, NOT <= 1. The aggregator's own comment beside result["unique_asns"]
-        # is explicit that 0 means NOT COLLECTED and must never be fabricated as
-        # a count. The scorer did not honour that: <= 1 read 0 as single-homed
-        # and added this term for a control that was never measured. Measured on
-        # the 30 retained scans, 13 fixtures fired the term and FIVE were in that
-        # state -- four with no discovered addresses at all, and fundagroup.co.za
-        # with asn_geo_unavailable set because the free Shodan InternetDB path
-        # returns no ASN. Requiring exactly 1 means we charge the redundancy gap
-        # only when we actually measured the estate and found one ASN.
-        # Owner-approved 2026-09-10 as its own rate movement, with a golden
-        # re-baseline, rather than folded into an attribution fix.
-        _ext_asn = categories.get("external_ips", {}) or {}
-        _ua = _ext_asn.get("unique_asns", 2)
-        _vendor_n = _ext_asn.get("vendor_ip_count") or 0
-        # CHARGE ON EVIDENCE, AND NEVER REMOVE THE CHARGE BECAUSE WE MEASURED
-        # LESS. Two ways to qualify:
-        #   * unique_asns == 1  -- measured, and genuinely one.
-        #   * unique_asns == 0 WITH vendor hosts present -- addresses were
-        #     re-attributed away, and the only ASN we ever had belonged to one
-        #     of them. We cannot then claim redundancy we never evidenced.
+        # PRODUCTION PARITY RESTORED BY OWNER DECISION, 3 NOVEMBER 2026.
+        # The rule below is production's (c0ffe7b): any unique_asns <= 1 carries
+        # the +0.025 multi-homing charge, including 0.
         #
-        # The second clause exists because of a measured interaction. For
-        # excellentmeat.co.za, riverport.co.za and www.zinia.co.za the single
-        # measured ASN was a Microsoft host; demoting it took the count 1 -> 0
-        # and, under `== 1` alone, un-charged them. That is a discount caused by
-        # the scanner knowing less, which the step-1 underwriting rule forbids
-        # outright: the absence of findings may never discount a rate.
-        #
-        # unique_asns == 0 with NO vendor hosts is the OUTSTANDING 5s case: the
-        # ASN was simply never collected, nothing was taken away, and charging
-        # it would be pricing a control we never looked at.
-        single_asn = (_ua == 1) or (_ua == 0 and _vendor_n > 0)
+        # The history is kept because the question is still open. The
+        # aggregator's own comment beside result["unique_asns"] says 0 means
+        # NOT COLLECTED, so <= 1 prices a count that was never measured as
+        # single-homed. On the 30 retained scans 13 fixtures fired the term and
+        # five were in that state: four with no discovered addresses, and
+        # fundagroup.co.za with asn_geo_unavailable because the free Shodan
+        # InternetDB path returns no ASN. The OUTSTANDING 5s branch work
+        # replaced it with a measured-evidence rule,
+        #     (unique_asns == 1) or (unique_asns == 0 and vendor_ip_count > 0)
+        # whose second clause kept excellentmeat.co.za, riverport.co.za and
+        # www.zinia.co.za charged after vendor re-attribution took their only
+        # measured ASN from 1 to 0. That rule drops the charge when the ASN was
+        # never collected, which changes production pricing. The owner chose to
+        # preserve production scoring, so the measured-ASN change is NOT shipped
+        # and remains a deferred rate decision, to be taken on its own with a
+        # golden re-baseline. adversarial_gate._check_single_asn_measured
+        # asserts this production behaviour.
+        single_asn = categories.get("external_ips", {}).get("unique_asns", 2) <= 1
         # FAIR-anchored 2026-06-05. Base = Uptime Institute AOA serious/severe
         # outage rate (~3%/yr). Increments reflect the availability-relevant
         # control gaps: CDN/DDoS-mitigation is the PRIMARY lever (+0.035),

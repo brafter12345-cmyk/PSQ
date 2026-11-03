@@ -2134,39 +2134,30 @@ def _check_origin_exposure(failures):
           % ("PASS" if any("Deploy a CDN" in a for a in naive) else "FAIL"))
 
 
-# ---- single_asn must mean MEASURED-and-one (OUTSTANDING 5s, 2026-09-10) -----
+# ---- single_asn: PRODUCTION rule `unique_asns <= 1` (owner decision 2026-11-03)
 #
-# ExternalIPAggregator's own comment beside result["unique_asns"] is explicit:
-# do not fabricate a count, 0 means NOT COLLECTED, and the renderers show "n/a"
-# rather than a number. The scorer did not honour it. `unique_asns <= 1` read 0
-# as single-homed and added +0.025 to p_interruption against a 0.03 base -- a
-# third of the whole availability probability -- for a control never measured.
+# Owner decision, 3 November 2026: preserve production scoring. The OUTSTANDING
+# 5s charge-on-evidence rule, (unique_asns == 1) or (unique_asns == 0 and
+# vendor_ip_count > 0), is DEFERRED as its own rate decision and is not shipped.
+# This guard asserts production behaviour: any count <= 1, INCLUDING 0, carries
+# the +0.025 availability charge, with or without vendor hosts.
 #
-# Measured on the 30 retained scans: 13 fixtures fired the term and FIVE were in
-# that state. Four had no discovered addresses at all; fundagroup.co.za had
-# asn_geo_unavailable set, because the free Shodan InternetDB path returns no
-# ASN at all.
+# Why the deferred rule exists is recorded beside single_asn in
+# FinancialImpactCalculator: 0 means NOT COLLECTED, so <= 1 prices a count that
+# was never measured (five of the 13 charged fixtures on the 30 retained scans).
 #
 # NEITHER GOLDEN FIXTURE EXERCISES THIS. phishield carries unique_asns=1 and
 # takealot 2, so golden --check passes either way and proves nothing about this
-# change. That is exactly why the condition is driven directly here.
+# rule. That is exactly why the condition is driven directly here.
 # (label, unique_asns, vendor_ip_count, should_charge)
-#
-# The vendor dimension exists because of a MEASURED interaction. For
-# excellentmeat.co.za, riverport.co.za and www.zinia.co.za the single measured
-# ASN belonged to a Microsoft host; re-attributing it took the count 1 -> 0 and,
-# under `== 1` alone, un-charged them. That is a discount caused by the scanner
-# knowing LESS, which the step-1 underwriting rule forbids outright. So a zero
-# count still charges when addresses were taken away, and only stops charging
-# when the ASN was simply never collected in the first place.
 SINGLE_ASN_SCENARIOS = [
-    ("never_collected",          0, 0,  False),
-    ("zero_after_demotion",      0, 6,  True),
-    ("measured_single_asn",      1, 0,  True),
-    ("measured_single_w_vendor", 1, 6,  True),
-    ("measured_multi_homed",     2, 0,  False),
-    ("measured_multi_w_vendor",  2, 6,  False),
-    ("measured_many",            7, 0,  False),
+    ("never_collected", 0, 0, True),
+    ("zero_after_demotion", 0, 6, True),
+    ("measured_single_asn", 1, 0, True),
+    ("measured_single_w_vendor", 1, 6, True),
+    ("measured_multi_homed", 2, 0, False),
+    ("measured_multi_w_vendor", 2, 6, False),
+    ("measured_many", 7, 0, False),
 ]
 
 
@@ -2199,26 +2190,26 @@ def _check_single_asn_measured(failures):
         if not ok:
             failures.append(
                 "single_asn[%s]: unique_asns=%d vendor=%d charged=%r, expected "
-                "%r (availability indicator %s). A never-collected count must "
-                "not be priced as single-homed; a count zeroed BY DEMOTION must "
-                "not un-charge, because that is a discount for measuring less."
+                "%r (availability indicator %s). Production charges every "
+                "unique_asns <= 1, including a count of 0; changing that is a "
+                "deferred rate decision (owner, 3 November 2026), not a fix."
                 % (label, ua, vendor_n, charged, want, ind))
         print("  [%s] single_asn:%-26s asns=%d vendor=%d charged=%s"
               % ("PASS" if ok else "FAIL", label, ua, vendor_n, charged))
 
-    # MUTATION: restore <= 1. The not-collected row must then flip to charged.
+    # MUTATION: the scorer must carry production's `<= 1`. A bare `== 1`, or
+    # the deferred charge-on-evidence rule, un-charges a never-collected count
+    # and moves production pricing without an owner decision.
     import inspect
     src = inspect.getsource(sa.FinancialImpactCalculator._calculate_zar)
-    uses_eq = "_ua == 1) or (_ua == 0 and _vendor_n > 0)" in src
-    if not uses_eq:
+    uses_prod = '.get("unique_asns", 2) <= 1' in src
+    if not uses_prod:
         failures.append(
-            "single_asn MUTATION: the scorer no longer carries the "
-            "charge-on-evidence rule. Back to `<= 1` and five clients are again "
-            "charged for an ASN count never collected; down to a bare `== 1` "
-            "and three clients get a discount because re-attribution removed "
-            "the only ASN we had ever measured.")
-    print("  [%s] single_asn:MUTATION scorer tests == 1"
-          % ("PASS" if uses_eq else "FAIL"))
+            "single_asn MUTATION: the scorer no longer carries production's "
+            "`unique_asns <= 1` rule. The measured-ASN change is deferred by "
+            "owner decision (3 November 2026) and must not ship as a side effect.")
+    print("  [%s] single_asn:MUTATION scorer tests <= 1 (production)"
+          % ("PASS" if uses_prod else "FAIL"))
 
 
 # ---- SA second-level domain coverage (OUTSTANDING 5n, 2026-09-10) ----------
@@ -3329,17 +3320,25 @@ def _check_review18_missing(failures):
             absent_score = RiskScorer().calculate(absent)
             sc = absent['_scan_completeness']
             if name in derived:
-                if name in sc['failed_checkers']:
+                if name in sc['failed_checkers'] or name in sc.get('missing_checkers', []):
                     problems.append(name + ': derived metric treated as raw probe')
                 continue
-            errored = copy.deepcopy(base)
-            errored[name] = {'status': 'error'}
-            error_score = RiskScorer().calculate(errored)
-            if absent_score[0] != error_score[0]:
-                problems.append(name + ': missing and unassessed scores differ')
+            # PRODUCTION SCORING (owner decision, 3 November 2026): an absent
+            # raw checker scores exactly like an empty, un-excluded category,
+            # i.e. through the per-category defaults. Excluding it and
+            # redistributing its weight is a deferred rate decision.
+            empty = copy.deepcopy(base)
+            empty[name] = {}
+            empty_score = RiskScorer().calculate(empty)
+            if absent_score[0] != empty_score[0]:
+                problems.append('%s: missing checker re-weighted (absent %s, production default %s)'
+                                % (name, absent_score[0], empty_score[0]))
+            if name in sc['failed_checkers']:
+                problems.append(name + ': missing checker joined failed_checkers (score/warning path)')
+            # Reporting is kept: listed, qualified and explained.
             if name not in sc.get('missing_checkers', []):
                 problems.append(name + ': missing metadata absent')
-            if name not in sc['failed_checkers'] or sc['completeness_pct'] >= 100:
+            if not sc.get('score_qualified') or sc.get('confidence_level') == 'full':
                 problems.append(name + ': missing check counted complete')
             if 'not measured clean' not in sc['disclaimer']:
                 problems.append(name + ': explanation absent')

@@ -116,11 +116,16 @@ must not be presented as measurements of the current tree.
 | H-5af IH12-4 / IH13-6 | Current sandbox handles trailing separators without dropping accepted domains and retains rejection accounting. Accepted/rejected preview remains a separate open question. |
 | H-5af IH12-3 / R13-IN-3 | Current sandbox preserves accepted domains in multi-contact input while retaining broker exclusion. Confirmed-domain accepted/rejected preview remains open. |
 
-The old H-5n lookalike coverage item, H-5o origin-exposure reporting, H-5s ASN
-measurement, H-5t forward-confirmation and H-5v dashboard-build fixes are recorded
-in branch commits. Their historical IDs must not replace the canonical 5n asset
-discovery item. False round-14 mutation claims and subsequent corrections remain
-visible in the archive and git history; no history was rewritten.
+The old H-5n lookalike coverage item, H-5o origin-exposure reporting, H-5t
+forward-confirmation and H-5v dashboard-build fixes are recorded in branch
+commits. H-5s ASN measurement is DEFERRED, not shipped: by owner decision on
+3 November 2026 production scoring is preserved, so the scorer keeps
+production's `unique_asns <= 1` multi-homing charge (a never-collected count of
+0 is still charged +0.025). The measured-ASN rule from the branch remains a
+deferred rate decision that needs its own golden re-baseline. Their historical
+IDs must not replace the canonical 5n asset discovery item. False round-14
+mutation claims and subsequent corrections remain visible in the archive and
+git history; no history was rewritten.
 
 ---
 
