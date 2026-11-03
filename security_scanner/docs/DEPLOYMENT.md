@@ -1,12 +1,80 @@
 # Phishield CyberRisk Scanner — VM Deployment Runbook
 
-**Status: LIVE (interim sub-path mount).** Last updated 2026-06-29.
+**Status: LIVE on the Xneelo server at https://apps.phishield.com/scanner/.** Last updated 2026-11-03.
+
+> **Read section 0 first.** Hosting moved from GCP to Xneelo. Sections 1 to 9 describe the
+> original GCP VM and the old `deploy/deploy_vm.sh` flow; keep them as history only. The path
+> layout, Caddy sub-path design and app internals still apply, but the host, SSH commands and
+> deploy script do not. Release record: [RELEASE_2026-11-03.md](RELEASE_2026-11-03.md).
 
 > Handoff note (for Sarel): this is the operational runbook for the production VM
 > deployment. Everything below reflects the **actual running state** — it was deployed
 > and verified end-to-end (a real `phishield.com` scan completed: score 208 / Medium,
 > persisted to Postgres, results page + PDF served). Reproducible scripts live in
 > [`security_scanner/deploy/`](../deploy/). See also [`SCALING_IMPLEMENTATION_STATUS.md`](SCALING_IMPLEMENTATION_STATUS.md).
+
+---
+
+## 0. Current production — Xneelo server (verified 2026-11-03)
+
+| | |
+|---|---|
+| **Public URL** | https://apps.phishield.com/scanner/ (Caddy staff sign-in; `/scanner/health` open) |
+| **SSH** | `ssh xneelo` (key-based, sudo). The GCP host and `gcloud` commands below are retired. |
+| **App** | `/opt/phishield-scanner/security_scanner`, venv `.venv` (Python 3.12.3), `systemd: phishield-scanner`, gunicorn `127.0.0.1:8001 --workers 1 --threads 16 --timeout 1200` |
+| **Database** | Docker `phishield-scanner-pg`, `127.0.0.1:5544`, db `phishield_scanner`. Do not confuse with `127.0.0.1:5433`. |
+| **Edge** | Caddy `/etc/caddy/Caddyfile`, `/scanner/*` stripped and proxied to `:8001` with `X-Forwarded-Prefix /scanner` |
+| **Shared host** | Also runs corp-rating, sme-rating-engine, veilguard-command-centre, veilguard-whatsapp-session, apps on `:8002` and `:8003`. Never restart them for a scanner release. |
+| **Deployed version** | `/opt/phishield-scanner/security_scanner/DEPLOYED_COMMIT` (currently `f7685f7`) |
+| **Not on the server** | Node, git checkout, pypdf. The tree is file-deployed, not pulled. |
+
+### 0.1 Release procedure (the one used for f7685f7)
+
+1. Land the release on master and push `origin` first, then `rjl667`, with the pre-push hook on.
+   Push from a checkout whose frontend files match the commit byte for byte; a CRLF checkout
+   rebuilds a different bundle and fails the bundle gate. Confirm both with
+   `git ls-remote <remote> refs/heads/master`.
+2. Build the package from the commit, never from a working directory:
+   `git archive --format=tar.gz -o scanner_<sha>.tar.gz <sha> security_scanner`. Record its sha256
+   and a per-file sha256 manifest. It must contain no `.env`, `*.db`, venvs, caches or captures.
+3. Back up on the server before touching live, into
+   `/var/backups/phishield-scanner-release-<UTC timestamp>/`: a tgz of `/opt/phishield-scanner`,
+   `pg_dump -Fc` of `phishield_scanner` run inside the container, `scans.db`, `pip freeze`, the
+   Caddyfile and unit file, plus `SHA256SUMS`. Write the folder path to
+   `/var/backups/phishield-scanner-rollback-latest`. Do not display database contents.
+4. Stage the package in `/opt/phishield-scanner-staging-<sha>`, compile and run the offline
+   transport and safety tests with the live venv, then verify staging still equals the manifest.
+5. Copy staging over live with `rsync -a --checksum`, excluding `.env`, `.env.*`, `*.env`, `*.db`,
+   `*.sqlite`, `.venv/`, `.venv.py310/`, `__pycache__/` and `scans/`, with no deletes. Re-check
+   every manifest hash on live, write `DEPLOYED_COMMIT`, then `systemctl restart phishield-scanner`
+   and wait for `curl 127.0.0.1:8001/health` to return 200. Migrations run on start and are idempotent.
+6. Verify: bundle hashes, health, public 401 on `/scanner/`, assets and API, fonts, credential
+   export status `enabled: false`, other services healthy. Render the dashboard and the three PDF
+   tiers from a synthetic fixture in an isolated copy with no env files, a temp SQLite DB and
+   network blocked. Never run a paid scan or a real export as a check.
+
+### 0.2 Rollback
+
+```bash
+B=$(sudo cat /var/backups/phishield-scanner-rollback-latest)
+cd "$B" && sudo sha256sum -c SHA256SUMS
+sudo systemctl stop phishield-scanner
+sudo mv /opt/phishield-scanner /opt/phishield-scanner.failed-$(date +%Y%m%dT%H%M%S)
+sudo tar -xzf "$B/opt-phishield-scanner.tgz" -C /opt      # restores code, venvs, .env, secrets.env
+sudo systemctl start phishield-scanner
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8001/health
+```
+
+The f7685f7 schema change is additive (two nullable columns on `credential_export_audit`), so a
+code rollback does not need a database restore. Restore the database only for data damage, and
+note that it discards scans made since the backup:
+
+```bash
+sudo docker exec -i phishield-scanner-pg pg_restore --clean --if-exists -U phishield \
+  -d phishield_scanner < "$B/phishield_scanner.pgdump"
+```
+
+The backup tgz holds server secrets: keep it root-only and delete old release backups on a schedule.
 
 ---
 
