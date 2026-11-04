@@ -46,7 +46,7 @@ def build(doc):
     # 6.0 Reading a report: assessed vs unassessed ---------------------- #
 
     add_body(doc, 'Origin discovery safety update September 2026: only public IPv4 literals are eligible for origin TLS verification. Private, loopback, link-local, reserved, multicast, IPv6, and hostname candidates are rejected before a connection is attempted. A wildcard certificate such as *.example.test covers a.example.test, but neither example.test nor a.b.example.test. A matching certificate is evidence of a service presenting that name; it does not establish who operates the host. Operator attribution and complete IPv6 support remain separate open work.')
-    add_body(doc, 'The sandbox outstanding-work register has been reconciled with the canonical main working copy, including asset-discovery item 5n. Earlier review history is preserved in its linked archive. Known reproduced exceptions include rate-limited provider results and some entirely unanswered probe sets; the owner deferred scoring changes: do not infer complete assessment merely from a displayed score or a passing regression suite. The approved absent-raw-check policy does not settle every present-but-unmeasured result.')
+    add_body(doc, 'The sandbox outstanding-work register has been reconciled with the canonical main working copy, including asset-discovery item 5n. Earlier review history is preserved in its linked archive. Known reproduced exceptions include rate-limited provider results and some entirely unanswered probe sets; the owner deferred scoring changes: do not infer complete assessment merely from a displayed score or a passing regression suite. Absent raw checks are disclosed as not assessed but keep the production scoring defaults; excluding them from the score was withdrawn by owner decision on 3 November 2026 and is deferred. That disclosure does not settle every present-but-unmeasured result.')
 
     add_body(doc, 'Current sandbox update: multi-contact inputs retain accepted domains while excluding broker domains. A dashboard risk factor can display its canonical severity even when no numeric score is available; read the coverage counts separately. Partial IP or probe results retain coverage qualifications and observed findings. SPF traversal limits qualify reporting. When a DMARC lookup fails, the policy is not verified; the failure does not confirm that a record is absent. Existing scoring rules remain unchanged. Vendor breach results describe the scope of the curated table and preserve positive medium and low findings.')
     add_body(doc, 'Timeouts return promptly, but a running check may finish later. Nonpublic target and redirect connections are rejected on the guarded paths. See the gap analysis for validation status; this does not establish production readiness or coverage of every network path. Domain grouping is consistent across the updated attribution paths. Scoring rules and baselines remain unchanged. IntelX is left as-is by owner decision. Asset discovery 5n, IPv6, full sibling assessment, per-user authentication, scoring-model versioning and ownership policy remain deferred.')
@@ -55,7 +55,7 @@ def build(doc):
 
     add_h2(doc, "6.0 Reading a report: \"not assessed\" is not \"clean\"")
 
-    add_body(doc, 'September 2026 sandbox update: the eight deferred review findings are implemented at checkpoint b3cf0c8. This describes the sandbox, not a deployment to live. The local verification passed all 12 gates and detected 347 mutations, including two gate crashes recorded separately.')
+    add_body(doc, 'September 2026 sandbox update: the eight deferred review findings were implemented at checkpoint b3cf0c8. This describes the sandbox, not a deployment to live. Historical note: the missing-check scoring exclusion in that checkpoint was withdrawn by owner decision on 3 November 2026; the deployed release f7685f7 keeps production scoring and retains only the not-assessed disclosure. The local verification passed all 12 gates and detected 347 mutations, including two gate crashes recorded separately.')
     add_body(doc, 'Read the coverage notice beside the score. Missing and failed raw checks are unassessed, not clean. The dashboard names them separately, shows assessment completeness, and retains the reason the score is qualified. A missing check does not imply WAF blocking. PDF summary and full reports show the qualification beside the score; the assessment deck shows completeness and the missing-check count below its KPIs.')
     add_body(doc, 'Five Executive Summary rows now use neutral Not assessed values when measurement is missing: known data breaches, exposed admin panels, database or service exposure, blacklist status, and RDP exposure. The three corresponding exposure KPIs use n/a. Positive observed findings remain visible even when a check is incomplete. The legend defines the neutral state.')
     add_body(doc, 'A partly assessed supply chain cannot claim an overall green low-exposure verdict merely because its measured subset is clean. Certificate discovery states how many of its two sources answered. Even two answers do not prove a complete asset inventory. Unconfirmed certificate names are candidates for broker review, not automatically owned or scored assets.')
@@ -136,13 +136,19 @@ def build(doc):
 
     add_body(
         doc,
-        "Scoring follows the same rule. An unassessed checker is EXCLUDED from "
-        "the composite and its weight is redistributed across the checkers that "
-        "did return data, rather than being filled in with an assumed value. "
-        "The practical consequence is that a heavily blocked scan tends to "
-        "score WORSE, not better: the organisation no longer receives credit "
-        "for checks that never ran. A score produced at reduced coverage is "
-        "therefore not directly comparable with one produced at full coverage, "
+        "Scoring depends on why a checker is unassessed. A checker that "
+        "failed (error, timeout, unreachable, quota or subscription failure, "
+        "or a failed balance probe) or was deliberately skipped (no API key, "
+        "failed authentication, disabled or skipped) is EXCLUDED from the "
+        "composite and its weight is redistributed across the remaining "
+        "weighted categories. A raw checker with no stored result at all is "
+        "disclosed as not assessed but, as in production, is NOT excluded: "
+        "the scorer applies the default value for that category, and some "
+        "defaults are favourable. A blocked scan whose checkers record a "
+        "failure therefore receives no credit for those checks, while a "
+        "missing checker can still contribute its default. A score produced "
+        "at reduced coverage is not directly comparable with one produced at "
+        "full coverage, "
         "and the coverage percentage shown alongside it should be quoted "
         "whenever the score is.",
     )
@@ -810,50 +816,74 @@ def build(doc):
     add_bold_body(doc, "How It Works", "")
     add_body(
         doc,
-        "When a checker fails (returns an error or times out), its weight "
-        "is set to zero and the weight it would have contributed is "
-        "redistributed proportionally across all checkers that completed "
-        "successfully. This means the overall score is calculated using "
-        "only the data that was actually collected, with the same relative "
-        "proportions between successful checkers preserved.",
+        "When a checker fails or is intentionally skipped, its weight is set "
+        "to zero and the weight it would have contributed is redistributed "
+        "proportionally across every category that still carries weight, "
+        "preserving their relative proportions. A raw checker with no stored "
+        "result at all is handled differently: it is listed as missing and "
+        "disclosed as not assessed, but its weight is NOT zeroed or "
+        "redistributed. As in production, the per-category formula uses its "
+        "default value, so it keeps its share of the weight. The derived "
+        "ransomware risk, data-breach index and financial-impact categories "
+        "are never treated as missing.",
     )
 
-    add_bold_body(doc, "Failure vs. Skipped Distinction", "")
+    add_bold_body(doc, "Failed, Skipped and Missing Checkers", "")
     add_body(
         doc,
-        "The failsafe distinguishes between two different reasons a "
-        "checker might not produce results:",
+        "The scorer distinguishes three reasons a checker might not "
+        "produce results:",
     )
     add_bullet(
         doc,
-        "Genuine failure (error or timeout), the checker attempted to "
-        "run but could not complete. These are flagged with a warning "
+        "Genuine failure (error, timeout, unreachable, quota_exhausted, "
+        "subscription_required, or probe_failed when a failing balance "
+        "probe switched a credential off), the checker attempted to run "
+        "but could not complete. These are flagged with a warning "
         "indicator in the report, the checker's weight is redistributed, "
-        "and a WARNING recommendation is injected advising a re-scan.",
+        "they count against scan completeness, and a WARNING "
+        "recommendation naming them is injected advising a re-scan.",
     )
     add_bullet(
         doc,
-        "Intentionally skipped (no_api_key or disabled), the checker "
+        "Intentionally skipped (no_api_key, auth_failed, disabled or "
+        "skipped), the checker "
         "was not configured to run (e.g., the Dehashed API key was not "
         "provided, or IntelX was toggled off). These are excluded from "
-        "the assessable checker count entirely and do not generate a "
-        "warning. The weight is still redistributed, but no warning is "
-        "shown because the omission was deliberate.",
+        "the assessable checker count, so they do not reduce completeness, "
+        "and they do not generate a warning. Their weight is still "
+        "redistributed. They are not neutral for confidence: their weight "
+        "counts toward the unavailable-signal fraction, and a skipped "
+        "must-have checker makes the scan low confidence (see Section 7.3).",
+    )
+    add_bullet(
+        doc,
+        "Missing (no stored result for a raw checker), the checker is "
+        "listed by name and disclosed as not assessed, not measured clean. "
+        "Its weight is NOT zeroed or redistributed: as in production, the "
+        "scorer applies the default value for that category. Missing "
+        "checkers do not count in the completeness percentage and do not "
+        "trigger the WARNING recommendation, but they make the score "
+        "unreliable and count toward the confidence level (see Section "
+        "7.3). Excluding missing checkers from the score was proposed in "
+        "the sandbox and withdrawn by owner decision on 3 November 2026; it "
+        "is deferred.",
     )
 
     add_warning(
         doc,
-        "When checkers fail, the overall score may be less reliable "
-        "because it is based on incomplete data. The scan completeness "
-        "percentage (see Section 7.3) quantifies this. Always review "
-        "the completeness indicator before relying on the score for "
-        "underwriting or remediation decisions.",
+        "When checkers fail or are missing, the overall score may be less "
+        "reliable because it is based on incomplete data. The scan "
+        "completeness percentage (see Section 7.3) counts failed checkers "
+        "only; missing checkers show in the confidence level and the "
+        "coverage notice instead. Always review both before relying on the "
+        "score for underwriting or remediation decisions.",
     )
 
     # 7.3 Scan Completeness -------------------------------------------- #
     add_h2(doc, "7.3 Scan Completeness")
-    add_body(doc, "Approved missing-check policy: absent raw weighted categories are excluded from scoring and their weight is redistributed over available signals. They count against completeness. The derived ransomware risk, data-breach index, and financial-impact metrics are exempt from the missing-probe rule. This changes confidence and can change annual-loss estimates; it does not add a new observed finding.")
-    add_body(doc, "Measured reference effects: the finance R10m fixture changes from score 282 to 372, completeness 90% to 67%, and estimated annual loss R447,252 to R509,411. The retail R13.5bn fixture changes from 205 to 262, 100% to 77%, and R67,728,866 to R69,120,780. The 100-, 200-, and 250-year loss totals are unchanged for these fixtures. These are fixture-specific effects, not universal premium adjustments. Stored production scores remain unchanged until explicitly rescored.")
+    add_body(doc, "Current missing-check policy (release f7685f7, owner decision 3 November 2026): an absent raw weighted checker is listed as missing and disclosed as not assessed, not measured clean, but its weight is NOT excluded or redistributed, and the scorer applies the production default for that category. Missing checkers do not count in the completeness percentage or the failed-checker WARNING. They make score_reliable false and count toward the unavailable-signal fraction and must-have test that set the confidence level, so confidence is at most partial. The derived ransomware risk, data-breach index, and financial-impact metrics are never treated as missing. Failed and skipped checkers are still excluded and their weight redistributed, as described in Section 7.2. Excluding missing checkers from the score is deferred. The single-ASN concentration charge in the financial-impact model is the production rule: it adds 0.025 when unique_asns <= 1, with 2 assumed when the ASN count is absent. A measured-ASN alternative is deferred.")
+    add_body(doc, "Withdrawn sandbox proposal, not current behaviour: sandbox checkpoint b3cf0c8 excluded missing checkers from scoring and redistributed their weight. On the frozen fixtures that moved the finance R10m score from 282 to 372, completeness from 90% to 67%, and estimated annual loss from R447,252 to R509,411, and the retail R13.5bn score from 205 to 262, completeness from 100% to 77%, and annual loss from R67,728,866 to R69,120,780. The owner rejected the change on 3 November 2026. Release f7685f7 reproduces the production results for these fixtures, 282 and 205, and stored production scores were not rescored.")
 
     add_body(
         doc,
@@ -870,16 +900,20 @@ def build(doc):
     add_body(
         doc,
         "Where 'Assessable' is the number of checkers that were "
-        "configured to run (i.e., total checkers minus those skipped "
-        "due to missing API keys or being disabled), and 'Failed' is "
-        "the number of assessable checkers that returned an error or "
-        "timed out, were unreachable, or have no stored raw checker result.",
+        "configured to run (i.e., all weighted categories, including the "
+        "three derived ones, minus those skipped with no_api_key, "
+        "auth_failed, disabled or skipped status), and 'Failed' is the "
+        "number of assessable checkers with a failure status: error, "
+        "timeout, unreachable, quota_exhausted, subscription_required or "
+        "probe_failed. A raw checker with no stored result is not counted "
+        "as failed and does not reduce the percentage.",
     )
 
     add_bullet(
         doc,
-        "Checkers skipped because of no_api_key or disabled status are "
-        "excluded from the assessable count entirely. They do not reduce "
+        "Checkers skipped because of no_api_key, auth_failed, disabled or "
+        "skipped status are excluded from the assessable count entirely. "
+        "They do not reduce "
         "the completeness percentage.",
     )
     add_bullet(
@@ -894,12 +928,26 @@ def build(doc):
         "recommendations list advising the user to re-scan to obtain "
         "complete results.",
     )
+    add_bullet(
+        doc,
+        "Confidence level (WS7 floor): the scan is low confidence when "
+        "failed, skipped and missing checkers together carry 30% or more "
+        "of the nominal weight, or when any must-have checker (ssl, "
+        "http_headers, exposed_admin, shodan_vulns) is unassessed. "
+        "Otherwise it is partial when any checker failed or is missing, "
+        "and full when none did. Edge-only or vendor-only estates are "
+        "capped at partial. Any level below full marks the score as "
+        "qualified. These fields are reporting only; no score, pricing or "
+        "recommendation path reads them.",
+    )
 
     add_tip(
         doc,
-        "A displayed completeness of 100% means no missing or failed checks "
-        "were recognized by the current status rules; it does not guarantee "
-        "complete assessment where known status-handling gaps remain. If "
+        "A displayed completeness of 100% means no failed checkers were "
+        "recognized by the current status rules. Missing checkers do not "
+        "reduce it, so also check the confidence level and the missing-check "
+        "list; 100% does not guarantee complete assessment, and known "
+        "status-handling gaps remain. If "
         "completeness drops below 80%, consider "
         "re-scanning after a short delay, transient API issues or "
         "rate limiting may have resolved.",
@@ -1115,9 +1163,13 @@ def build(doc):
     add_note(
         doc,
         "API keys are configured in the scanner's environment file. "
-        "Toggling a paid API off does not affect the scan, the "
-        "checker is simply skipped and its weight is redistributed "
-        "across the remaining checkers (see Section 7.2).",
+        "Toggling a paid API off records its checker as skipped: the "
+        "weight is redistributed across the remaining categories and it "
+        "does not reduce completeness or raise a warning, but it counts "
+        "toward the confidence level, and a skipped must-have checker makes "
+        "the scan low confidence (see Sections 7.2 and 7.3). If a failing "
+        "balance probe switched the toggle off instead of the operator, the "
+        "checker is graded as failed.",
     )
 
     # ------------------------------------------------------------------ #
@@ -1809,7 +1861,7 @@ def build(doc):
     # ------------------------------------------------------------------ #
     add_h1(doc, "11. Version History")
     add_bold_body(doc, "v2.1 sandbox review 16 September 2026", " Reporting and coverage corrections.")
-    add_body(doc, "Documents checkpoint b3cf0c8: missing-check pricing and completeness, CMS probe failure versus non-applicability, neutral summary values, partial supply-chain verdicts, certificate-source coverage, neutral legend, consistent Unicode domain-input handling, and independent assertions for positive due-diligence claims and measured footers. The follow-up closes the three detailed-card missing-measurement gaps with neutral states and preserved positive evidence. Master and live were not changed.")
+    add_body(doc, "Documents checkpoint b3cf0c8: missing-check pricing and completeness (both withdrawn by owner decision on 3 November 2026; release f7685f7 keeps production scoring and completeness and retains the not-assessed disclosure), CMS probe failure versus non-applicability, neutral summary values, partial supply-chain verdicts, certificate-source coverage, neutral legend, consistent Unicode domain-input handling, and independent assertions for positive due-diligence claims and measured footers. The follow-up closes the three detailed-card missing-measurement gaps with neutral states and preserved positive evidence. Master and live were not changed.")
 
     add_bold_body(doc, "v2.0: July 2026", " Major revision.")
     add_body(

@@ -74,7 +74,7 @@ live-environment verification. No provider or production system was queried.
 | Checkpoint | Scope and evidence boundary |
 |---|---|
 | 24fba49 | Partial-domain/SPF reporting correction, lockfile and rebuilt dashboard, offline isolation corrections. |
-| b3cf0c8 | Eight deferred findings FC13-2, FC13-3, B2, B3, C3, C4, A4 and D3 fixed after the owner's scoring-policy approval. 12 gates passed; 347 mutations detected, including two gate crashes recorded separately. |
+| b3cf0c8 | Eight deferred findings FC13-2, FC13-3, B2, B3, C3, C4, A4 and D3 fixed after the owner's scoring-policy approval. Historical: the FC13-2 scoring exclusion was withdrawn by owner decision on 3 November 2026; f7685f7 keeps production scoring and only the disclosure shipped. 12 gates passed; 347 mutations detected, including two gate crashes recorded separately. |
 | e37af78 | User manual and gap analysis regenerated for the eight findings. |
 | c0c1368 | Three technical PDF cards (IntelX, VirusTotal, fraudulent domains) require measured evidence for clean claims, retain partial positive evidence and neutral footers. 12 gates passed; five targeted mutations detected by assertions. This did not rerun the earlier 347-mutation sweep. |
 | Current follow-up | Register reconciled with the main working copy; old sandbox history retained verbatim. Origin candidate/wildcard defects corrected: 25 synthetic cases, four assertion-killed mutations (zero crashes), and 12 offline gates pass; zero paid-egress attempts. The 347-mutation sweep was not repeated. Generated documentation follows the current sandbox state. |
