@@ -285,7 +285,7 @@ doc.add_paragraph()
 
 ver = doc.add_paragraph()
 ver.alignment = WD_ALIGN_PARAGRAPH.CENTER
-run = ver.add_run("Version 2.3  |  August 2026\nConfidential \u2014 Internal Use Only")
+run = ver.add_run("Version 2.4  |  October 2026\nConfidential \u2014 Internal Use Only")
 run.font.size = Pt(10)
 run.font.color.rgb = PHISHIELD_GREY
 
@@ -403,7 +403,9 @@ add_screenshot_placeholder("Decision flowchart \u2014 visual representation of t
 
 flowchart_lines = [
     ("Client Details \u2192 Industry Check", 0, True, PHISHIELD_DARK),
-    ("\u251c\u2500 Healthcare / Public Admin \u2192 REFER FOR UNDERWRITING (blocked)", 1, False, PHISHIELD_RED),
+    ("\u251c\u2500 Public Admin \u2192 REFER FOR UNDERWRITING (blocked)", 1, False, PHISHIELD_RED),
+    ("\u251c\u2500 Healthcare, turnover R15M or more \u2192 REFER FOR UNDERWRITING (blocked, corporate product)", 1, False, PHISHIELD_RED),
+    ("\u251c\u2500 Healthcare, turnover below R15M \u2192 Continue with healthcare loadings + conditions (section 3.2.3)", 1, False, PHISHIELD_ACCENT),
     ("\u251c\u2500 Turnover > R200M \u2192 REFER FOR UNDERWRITING (blocked)", 1, False, PHISHIELD_RED),
     ("\u2514\u2500 All other industries \u2192 Continue", 1, False, PHISHIELD_GREEN),
     ("    \u2193", 1, False, PHISHIELD_GREY),
@@ -517,7 +519,7 @@ doc.add_paragraph(
     "The industry you select affects the premium in two ways:"
 )
 doc.add_paragraph("Industry modifier: Software & Technology and Finance industries attract higher premiums (see Section 3.2.1).", style='List Bullet')
-doc.add_paragraph("Referral: Healthcare and Public Administration industries are always referred to a senior underwriter and cannot be quoted through the engine.", style='List Bullet')
+doc.add_paragraph("Referral: Public Administration is always referred to a senior underwriter and cannot be quoted through the engine. Healthcare is referred only when turnover is R15M or more; below R15M it is rated on the SME product with extra loadings and conditions (see Section 3.2.3).", style='List Bullet')
 
 add_heading("3.2.1 Industry Modifiers", level=3)
 doc.add_paragraph(
@@ -543,15 +545,61 @@ add_tip_box(
 
 add_heading("3.2.2 Referred Industries", level=3)
 doc.add_paragraph(
-    "The following industries always trigger 'Refer for Underwriting' and block the quote:"
+    "The following industries trigger 'Refer for Underwriting' and block the quote:"
 )
-doc.add_paragraph("Healthcare (all sub-categories: Healthcare Services, Hospitals, Medical Practices, Pharmacies)", style='List Bullet')
-doc.add_paragraph("Public Administration (Government Services, Non-classifiable Establishments)", style='List Bullet')
+doc.add_paragraph("Public Administration (Government Services, Non-classifiable Establishments), always", style='List Bullet')
+doc.add_paragraph("Healthcare (all sub-categories: Healthcare Services, Hospitals, Medical Practices, Pharmacies), only when Actual Turnover is R15,000,000 or more. These risks go to the Corporate product.", style='List Bullet')
 
 add_tip_box(
     "If a client's industry triggers a referral, contact a senior underwriter. The engine will display "
     "a blocker overlay and the Continue button will be disabled.",
     "warning"
+)
+
+add_heading("3.2.3 Healthcare on the SME Product (October 2026)", level=3)
+doc.add_paragraph(
+    "Healthcare clients with an Actual Turnover below R15,000,000 can be quoted in the engine, within the "
+    "normal SME cover table (maximum R15M cover and maximum R5M Funds Protect). At R15,000,000 turnover or "
+    "more the engine shows 'Refer for Underwriting' and the risk goes to the Corporate product."
+)
+doc.add_paragraph(
+    "The normal SME path applies. Micro SME rates still apply at R1M, R2.5M and R5M cover, and the standard "
+    "band calculator applies above R5M. The following are added on top of whichever path is used:"
+)
+doc.add_paragraph(
+    "Sensitive records question. When a Healthcare industry is selected, Step 1 shows an extra field: the "
+    "number of sensitive (special personal information, e.g. health) records the client holds. Take this "
+    "from the proposal form.", style='List Bullet')
+doc.add_paragraph(
+    "Sensitive records loading. If the declared count is above the expected average of 23,445 records "
+    "(the IBM South Africa average breach size used by the rater), the base premium is loaded on its "
+    "Third Party Claims and Data Restoration Costs share (31.64%) by a factor of 1 + log10(declared / 23,445). "
+    "At or below 23,445 records there is no records loading.", style='List Bullet')
+doc.add_paragraph(
+    "Healthcare data-subject loading. +20% on the full premium, including Funds Protect, before posture "
+    "and discretionary discounts.", style='List Bullet')
+doc.add_paragraph(
+    "Conditions of cover. Multifactor Authentication (MFA) must be implemented on all privileged accounts, "
+    "and VPN and MFA must be implemented on all remote logins into the network. Both are added to the "
+    "conditions on the Step 4 panel, the Step 5 summary and the quote PDF.", style='List Bullet')
+doc.add_paragraph(
+    "Each loading is shown as its own line in the premium breakdown (audit trail), and the quote's "
+    "endorsements record the records count, the expected count and the records loading factor."
+)
+make_table(
+    ["Sensitive records declared", "Records factor", "Loading on base premium"],
+    [
+        ["23,445 or fewer", "1.00", "None"],
+        ["46,890 (2x expected)", "1.30", "+9.5%"],
+        ["234,450 (10x expected)", "2.00", "+31.6%"],
+    ]
+)
+add_tip_box(
+    "Example: a R14M healthcare practice at R5M cover with R2M Funds Protect qualifies for Micro SME rates. "
+    "With no records above 23,445, the Micro base premium of R7,908 plus Funds Protect of R26,640 is "
+    "increased by 20% to R41,458 per year incl. the RM fee (R3,259.28 per month excl. the RM fee), and the "
+    "two MFA conditions are printed on the quote.",
+    "note"
 )
 
 # ── 3.3 Turnover ──
@@ -1105,6 +1153,7 @@ make_table(
         ["Non-depository Credit Institutions", "Not eligible"],
         ["Security And Commodity Brokers, Dealers, Exchanges, And Services", "Not eligible"],
         ["Insurance Carriers", "Not eligible"],
+        ["Healthcare (turnover below R15M)", "Bands 1–2 (to R15M), with the healthcare loadings in section 3.2.3"],
         ["All other industries", "Bands 1–3 (full)"],
     ]
 )
@@ -1874,7 +1923,7 @@ faqs = [
     (
         "I see 'Refer for Underwriting'. Can I still generate a quote?",
         "No. Refer is now a hard block: Continue is disabled and a blocker overlay is shown. Triggers "
-        "include: industry is Healthcare / Public Administration, turnover > R200M, Prior claim "
+        "include: industry is Public Administration, Healthcare with turnover of R15M or more, turnover > R200M, Prior claim "
         "ticked, or Renewal with Q8 (prior cover) = No. Contact a senior underwriter \u2014 they "
         "must assess and override outside the engine before proceeding."
     ),
@@ -1884,8 +1933,8 @@ faqs = [
         "block the quote; those answers now record Conditions of Cover instead, so the client can be "
         "quoted and shown exactly which minimum controls must be in place to accept it. The controls "
         "remain a requirement of any bound cover. 'Refer' is unchanged and is still a hard block: it "
-        "is triggered by a Prior claim, a Renewal-with-Q8-No contradiction, a Healthcare / Public "
-        "Admin industry, or turnover > R200M, and needs a senior underwriter to assess offline."
+        "is triggered by a Prior claim, a Renewal-with-Q8-No contradiction, a Public Admin industry, "
+        "Healthcare with turnover of R15M or more, or turnover > R200M, and needs a senior underwriter to assess offline."
     ),
     (
         "Why does my Software & Technology client's premium look higher?",
@@ -2030,7 +2079,8 @@ doc.add_paragraph("Q2.1\u2013Q5 loading: 0\u20132 No = 0% | 3 No = 5% | 4 No = 1
 doc.add_paragraph("Q6/Q7 (FP > R250k): No = Condition of Cover")
 doc.add_paragraph("Q8 (prior cover): auto-Yes on Renewal; No on Renewal via data-load \u2192 Refer (hard block)")
 doc.add_paragraph("Prior claim ticked \u2192 Refer (hard block)")
-doc.add_paragraph("Healthcare / Public Admin \u2192 Always Refer")
+doc.add_paragraph("Public Admin \u2192 Always Refer")
+doc.add_paragraph("Healthcare: T/O R15M or more \u2192 Refer | below R15M \u2192 SME + 20% loading, records loading above 23,445 records, MFA conditions")
 
 doc.add_paragraph()
 
@@ -2249,6 +2299,16 @@ make_table(
          "on both the Micro SME and standard paths. See section 4.4.1. Also in this release: the renewal "
          "premium comparison now always compares on a with-Funds-Protect basis, and currency fields accept "
          "amounts typed with cents."],
+        ["2.4", "October 2026",
+         "Rating change - Healthcare on the SME product. Healthcare is no longer always referred. With "
+         "Actual Turnover below R15M it is rated on the normal SME path (Micro SME rates at R1M-R5M cover, "
+         "standard rating above R5M) within the SME cover table, plus: a sensitive records question in "
+         "Step 1; a sensitive records loading of 1 + log10(declared / 23,445) on the Third Party Claims and "
+         "Data Restoration share of the base premium when declared records exceed 23,445; a +20% "
+         "healthcare data-subject loading on the full premium incl. Funds Protect, before discounts; and "
+         "two conditions of cover (MFA on privileged accounts, VPN + MFA on remote logins). Healthcare at "
+         "R15M turnover or more is still referred to the Corporate product. Public Administration is "
+         "unchanged and always referred. See sections 1.4, 3.2.2, 3.2.3 and 4.4.1."],
     ]
 )
 
